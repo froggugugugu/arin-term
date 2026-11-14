@@ -16,13 +16,13 @@
 
 | 項目 | 内容 |
 | ---- | ---- |
-| 最終更新 | 2026-11-15(M0 は CI 緑。M1 の T14〜T21・T23・T24 が完了、T22 に着手) |
+| 最終更新 | 2026-11-15(M1 の実装 T14〜T25 が完了。本人の Go/No-Go(T26)待ち) |
 | ブランチ | `feat/m1-terminal`(`feat/m0-skeleton` から分岐)。`feat/m0-skeleton` は push 済みで、pull request #1(main 向け)が開いている |
 | 最後のコミット | `git log --oneline -1` で確認する(本ファイルに書くと古くなるため) |
 | 起動コマンド | `npm run dev`(開発用)。`.app` は `npm run app` で `target/aarch64-apple-darwin/release/bundle/macos/Arin.app` にできる |
-| スモークテスト | `npm run app && npm run smoke` → 期待: 終了コード 0、「スモーク成功」の表示 |
+| スモークテスト | `npm run app && npm run smoke` → 期待: 終了コード 0、「スモーク成功」の表示。WebGL は `node scripts/smoke.mjs --env=ARIN_RENDERER=webgl`、9 枚は `--env=ARIN_VERIFY_GRID=1` |
 | 既知の壊れている箇所 | なし。`scripts/smoke.test.mjs` の一時フォルダの数を数える検査は、ほかのテストを同時に動かすと落ちることがある(単独では通る) |
-| 待ち | 本人の確認: (1) `Arin.app` を開いて空ウィンドウを見る、(2) pull request #1 をマージするかの判断、(3) T1 の差分(コミット `b938d3d`)の了承。push は 2026-11-15 に了承済み。M1 は並行して進めてよい |
+| 待ち | **本人の Go/No-Go(T26)**: `output/tasks/M1_GO-NO-GO_CHECKLIST.md` に沿って実機で確かめ、4 章の判定を書く。あわせて M0 の残り: pull request #1 のマージの判断、T1 の差分(コミット `b938d3d`)の了承 |
 
 ---
 
@@ -58,10 +58,10 @@
 | T19 | ターミナルの画面の自動テスト | `npm run e2e` で、出力の表示、キー入力、リサイズ、10,000 行のさかのぼりが通る | ✅ 2026-11-15(Playwright 10 件(うちターミナル 7 件)が 3 回続けて合格) |
 | T20 | コピー・ペーストとキー入力の受け口 | 選択範囲を ⌘C でコピーでき、⌘V でペーストした文字がシェルに届く | ✅ 2026-11-15(Vitest 99 件、Playwright 14 件、メニューのテスト 3 件が合格。実際の ⌘ キーと本物のクリップボードは通していないので T26 で見る) |
 | T21 | WebGL 描画への切替(検証用) | 起動時の指定で DOM と WebGL を切り替えられる | ✅ 2026-11-15(Vitest 114 件、Playwright 23 件が合格。WebGL 指定のスモークが実アプリで成功。画面の目視は未実施で T26 で行う) |
-| T22 | 9 枚同時表示と非表示インスタンスの検証用の画面 | 開発用の指定で 9 枚が 3×3 に並ぶ。8 枚を隠しても出力の取り込みが続く | ❌ |
+| T22 | 9 枚同時表示と非表示インスタンスの検証用の画面 | 開発用の指定で 9 枚が 3×3 に並ぶ。8 枚を隠しても出力の取り込みが続く | ✅ 2026-11-15(Vitest 125 件、Playwright 28 件が合格。9 枚の検証画面のスモークが DOM・WebGL とも実アプリで成功し、9 個のシェルが終了後に残らない) |
 | T23 | 検証用の記録(開発ビルドだけ) | OSC 52 の出現回数、処理済みの通知の時刻、未処理の量の最大値が標準エラーに出る。リリースビルドでは出ない | ✅ 2026-11-15(走査器 17 件、記録 8 件、偽 PTY 3 件が合格。リリースビルドのバイナリに記録の文字列が無いことを確認) |
 | T24 | 性能の計測スクリプト(記録だけ) | `npm run perf` が `testreport/perf/` に結果を書き、数値で失敗しない | ✅ 2026-11-15(`npm run perf` が終了コード 0。結果は `testreport/perf/latest.md`) |
-| T25 | Go/No-Go の確認手順書 | `output/tasks/M1_GO-NO-GO_CHECKLIST.md` に設計書 §2.2 の 12 項目がすべて載っている | ❌ |
+| T25 | Go/No-Go の確認手順書 | `output/tasks/M1_GO-NO-GO_CHECKLIST.md` に設計書 §2.2 の 12 項目がすべて載っている | ✅ 2026-11-15(`output/tasks/M1_GO-NO-GO_CHECKLIST.md`。設計書 §2.2 の 12 項目が 2.1〜2.12 に載っている) |
 | T26 | M1 の Go/No-Go(人間ゲート) | 本人が Claude Code と Codex を動かして 12 項目の結果を書き、Go / No-Go を決めた | ❌ |
 | T27 | ADR-001 と M1 の締め、M2 以降の再計画 | ADR-001 にエンジン、描画方式、アドオン、CSP、OSC 52、Go/No-Go の結論がある。FR-039〜041・043 の合否一覧がある | ❌ |
 
@@ -133,10 +133,10 @@
 
 ## 3. 次にやること(優先順)
 
-1. T22(9 枚の検証画面)→ T25(手順書)→ T26(本人の Go/No-Go)の順に進める
-2. 本人の確認(M0 の人間ゲートの残り): `Arin.app` の空ウィンドウの目視、pull request #1 のマージの判断、T1 の差分の了承
-3. T25 で決めること: 検証用の記録(`[arin:verify]`)は開発ビルドでしか出ない。Go/No-Go では、配布用の `.app` とは別に、記録が出るデバッグ版の `.app`(`tauri build --debug`)を用意し、端末から起動して標準エラーを保存する手順にする
-4. M1 の末尾は Go/No-Go の人間ゲート(T26)
+1. **本人の Go/No-Go(T26)**: `output/tasks/M1_GO-NO-GO_CHECKLIST.md`。AI は合否を判定しない。手順の補助と、記録・計測の整理だけを行う
+2. Go のとき T27: ADR-001 を書く(エンジン、描画方式、アドオン、CSP、Go/No-Go の結果)。決まらなかった方の描画方式とアドオン、起動時の指定(`ARIN_RENDERER`・`ARIN_UNICODE`)、描画方式の表示(`RendererLabel`)を外す。しきい値を確定する。設計書を実装に合わせて直す(§1.3 #2 のスレッドの本数、§5.1 の `TerminalSurface` の操作、CSP、メニュー)。M2 以降を `/plan` で分解し直す
+3. No-Go のとき: T28 以降を止め、本人が描画方式の変更か実装技術の見直しを判断する
+4. pull request: M1 のブランチ `feat/m1-terminal` は push していない。push と pull request の作成は本人に確認してから行う
 
 ---
 
@@ -159,6 +159,7 @@
 - **T24 の計測結果(2026-11-15、Apple M5、参考値。合否にしない)**: 10 万行(7.7 MB)の `cat` は PTY の読み取りで約 39ms(約 189 MiB/s)、送り先まで約 41ms。7,638 回の読み取りが 117 回の送信にまとまる(1 回約 64 KiB。4ms の区切りにはほぼ達しない)。処理済みを返さないと未処理の量は 525,184 B(上限 512 KiB + 読み取り 1 回分)で止まり、メモリは増えない。起動からターミナルの印まで約 312ms。メモリはアプリ本体 30.5 MiB + WebKit 48.9 MiB = 79.7 MiB(ターミナル 1 枚)。下限 128 KiB が適切かは、画面の取り込みの速さで決まるので、この計測では分からない
 - **T21 で決めたこと**: `@xterm/addon-webgl` 0.19.0(2025-12-22 公開)。起動時の指定は環境変数 `ARIN_RENDERER`(`dom`/`webgl`)と `ARIN_UNICODE`(`unicode11`/`graphemes`)で、コマンド `get_launch_options` が画面へ渡す(`AppSnapshot` とは別)。M1 の検証用でリリースビルドでも有効。T27 で決まった方式に固定して外す。不正な値は既定に戻し、標準エラーに `[arin:launch]` で 1 行出す。WebGL を作れない・失ったときは DOM に戻し(一度戻したら作り直さない)、診断に出す。いまの描画方式を画面に小さく出す(`data-testid="terminal-renderer"`。検証用で T27 で外す)。`setVisible(false)` は要素を隠し、WebGL ならアドオンを破棄してコンテキストを明示的に返す。CSP の変更は不要だった。デバッグ版の `.app` は `npm run app:debug`(`target/aarch64-apple-darwin/debug/bundle/macos/Arin.app`。`[arin:verify]` が出る)。スモークは `--env=NAME=VALUE` で環境変数を足せる
 - **T21 の未確認**: 実機の WKWebView で WebGL が描いていることは、スモークが DOM 戻りの報告なしで通ったという間接の根拠だけ。本物の xterm.js での `setVisible` の往復は T22 で確かめる
+- **T22 で決めたこと**: `ARIN_VERIFY_GRID=1` のときだけ `Workspace` が `terminal-1`〜`terminal-9` を持ち、`VerificationGrid` が 3×3 に並べる(M1 の検証用。M4 の T49 で撤去)。操作は「1 枚だけ表示」と「9 枚表示に戻す」。隠している間は寸法を決め直さず送らない。戻したときにマスの大きさへ合わせ直し、変わったものだけ送る。`setVisible` での WebGL の手放し・作り直しは、失敗による DOM 戻りとは別扱い(往復しても WebGL のまま。Playwright で確認)。WebGL のコンテキスト 9 個は、Playwright の WebKit でも実機の WKWebView でも作れた(実機は、コンテキスト喪失の通知を待つ 6 秒のスモークでも DOM 戻りの報告なし)。「隠したまま作るインスタンスの寸法」は M1 の画面では起きないので未実装(M2・M4 の課題)
 - **残っている課題**: 前面プロセスグループの取得はポートに無い(実行中の印の判定に要る。M6)。`kill` はシェルの pid にだけ送るので、切り離された子孫が残らないかは未確認。書き込みが止まったままのシェルは、アプリの終了時に明示的には終わらせず OS の SIGHUP に任せる。`docs/data-model.md` と `docs/architecture.md` は T18 の後にまとめて更新する
 
 ### 2026-11-14〜15 — M0(骨格)の実装セッション

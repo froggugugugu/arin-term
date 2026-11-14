@@ -246,7 +246,7 @@ M1 は検証専用(PRD §7)。対象は単一プロジェクト・単一タブ�
 
 #### Phase 15(逐次。T21 完了後)
 
-- [ ] T22 — 9 枚同時表示と非表示インスタンスの検証用の画面を作る(開発ビルドだけ)(変更ファイル: src/ui/terminals/VerificationGrid.tsx, src/ui/shell/AppShell.tsx, src-tauri/src/lib.rs, crates/arin-core/src/workspace/ | 依存: T21)
+- [x] T22 — 9 枚同時表示と非表示インスタンスの検証用の画面を作る(開発ビルドだけ)(変更ファイル: src/ui/terminals/VerificationGrid.tsx, src/ui/shell/AppShell.tsx, src-tauri/src/lib.rs, crates/arin-core/src/workspace/ | 依存: T21)
   - 対応: NFR-009 の簡易確認、設計書 §2.2「9 枚の簡易確認」「非表示のインスタンス」。開発用の指定があるときだけ、ターミナルを 9 枚起動して 3×3 に並べる。1 枚だけ表示に切り替える操作(残り 8 枚は隠す)も付ける。WebGL のとき、描画コンテキストの数の上限に当たらないかを見られるようにする
   - 隠したまま作ったインスタンスの行・桁数は、表示中のターミナルと同じ寸法で始める案で作る(設計書 §2.2)
   - これは M4 のタイル表示ではない。M4(T49)で撤去する
@@ -256,7 +256,7 @@ M1 は検証専用(PRD §7)。対象は単一プロジェクト・単一タブ�
 
 #### Phase 16(逐次。T19〜T24 完了後)
 
-- [ ] T25 — Go/No-Go の確認手順書を作る(変更ファイル: output/tasks/M1_GO-NO-GO_CHECKLIST.md | 依存: T19, T20, T22, T23, T24)
+- [x] T25 — Go/No-Go の確認手順書を作る(変更ファイル: output/tasks/M1_GO-NO-GO_CHECKLIST.md | 依存: T19, T20, T22, T23, T24)
   - 対応: 設計書 §2.2 の 12 行(`ARCH_multi-terminal.md:189-202`)を、1 行ずつ「手順・見るところ・結果の欄(DOM / WebGL)」にする。下の「M1 で確かめる項目の割当」の表をもとにする
   - 確認は `npm run app` で作った `.app` を Finder から開いて行う(`npm run dev` では環境変数と WKWebView の条件が変わるため)
   - 並行: 不可
