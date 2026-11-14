@@ -1,0 +1,10 @@
+{
+  "productName": "Arin",
+  "identifier": "com.example.fixture",
+  "app": {
+    "withGlobalTauri": false,
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; connect-src ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'"
+    }
+  }
+}
