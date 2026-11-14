@@ -12,7 +12,9 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use arin_core::workspace::{AppSnapshot, SNAPSHOT_SCHEMA_VERSION};
-use support::request;
+use serde_json::json;
+use support::{request, request_with};
+use tauri::ipc::InvokeBody;
 use tauri::test::{MockRuntime, get_ipc_response};
 use tauri::{AppHandle, Manager, RunEvent, WebviewWindow};
 
@@ -63,6 +65,68 @@ fn スモークの指定が無ければ準備完了の通知で印のファイ�
     );
 }
 
+fn 画面の失敗の報告コマンドを画面から呼べて_null_を返し_印を書かない(
+    handle: &AppHandle<MockRuntime>,
+    window: &WebviewWindow<MockRuntime>,
+    state_dir: &support::TempDir,
+) {
+    let body = get_ipc_response(
+        window,
+        request_with(
+            handle,
+            "report_frontend_error",
+            InvokeBody::Json(json!({ "message": "テストからの報告(改行\nを含む)" })),
+        ),
+    )
+    .unwrap_or_else(|e| panic!("report_frontend_error が失敗した: {e}"));
+    body.deserialize::<()>()
+        .unwrap_or_else(|e| panic!("戻り値が null ではなかった: {e}"));
+    assert_eq!(state_dir.entries(), Vec::<String>::new());
+}
+
+fn 画面は状態の写しのイベントを購読と解除できるが_送信はできない(
+    handle: &AppHandle<MockRuntime>,
+    window: &WebviewWindow<MockRuntime>,
+    _state_dir: &support::TempDir,
+) {
+    // @tauri-apps/api の listen() と、その解除の関数が送るものと同じ形。
+    let listen = get_ipc_response(
+        window,
+        request_with(
+            handle,
+            "plugin:event|listen",
+            InvokeBody::Json(json!({
+                "event": arin_lib::SNAPSHOT_EVENT,
+                "target": { "kind": "Any" },
+                "handler": 7,
+            })),
+        ),
+    )
+    .unwrap_or_else(|e| panic!("イベントの購読が許されていない: {e}"));
+    let event_id: u32 = listen
+        .deserialize()
+        .unwrap_or_else(|e| panic!("購読の ID として読めなかった: {e}"));
+    get_ipc_response(
+        window,
+        request_with(
+            handle,
+            "plugin:event|unlisten",
+            InvokeBody::Json(json!({ "event": arin_lib::SNAPSHOT_EVENT, "eventId": event_id })),
+        ),
+    )
+    .unwrap_or_else(|e| panic!("イベントの解除が許されていない: {e}"));
+
+    let emit = get_ipc_response(
+        window,
+        request_with(
+            handle,
+            "plugin:event|emit",
+            InvokeBody::Json(json!({ "event": arin_lib::SNAPSHOT_EVENT, "payload": null })),
+        ),
+    );
+    assert!(emit.is_err(), "画面からのイベントの送信が許されている");
+}
+
 const CHECKS: &[(&str, Check)] = &[
     (
         "写しの取得コマンドが_app_snapshot_を返す",
@@ -75,6 +139,14 @@ const CHECKS: &[(&str, Check)] = &[
     (
         "スモークの指定が無ければ準備完了の通知で印のファイルを書かない",
         スモークの指定が無ければ準備完了の通知で印のファイルを書かない,
+    ),
+    (
+        "画面の失敗の報告コマンドを画面から呼べて_null_を返し_印を書かない",
+        画面の失敗の報告コマンドを画面から呼べて_null_を返し_印を書かない,
+    ),
+    (
+        "画面は状態の写しのイベントを購読と解除できるが_送信はできない",
+        画面は状態の写しのイベントを購読と解除できるが_送信はできない,
     ),
 ];
 

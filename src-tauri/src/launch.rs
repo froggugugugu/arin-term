@@ -37,6 +37,7 @@ pub struct TerminalEnv {
 pub struct LaunchConfig {
     paths: AppPaths,
     ready_marker: Option<PathBuf>,
+    terminal_marker: Option<PathBuf>,
     terminal: TerminalEnv,
 }
 
@@ -54,9 +55,11 @@ impl LaunchConfig {
         let paths = AppPaths::resolve(home, state_dir_override)?;
         let smoke_requested = smoke.is_some_and(|v| v == "1");
         let ready_marker = paths.smoke_ready_marker(smoke_requested);
+        let terminal_marker = paths.smoke_terminal_marker(smoke_requested);
         Ok(Self {
             paths,
             ready_marker,
+            terminal_marker,
             terminal: TerminalEnv {
                 home: home.map(Path::to_path_buf),
                 ..TerminalEnv::default()
@@ -103,6 +106,12 @@ impl LaunchConfig {
         self.ready_marker.as_deref()
     }
 
+    /// 起動スモークのターミナルの印の場所(最初の処理済みの通知で書く)。スモークが有効でなければ `None`。
+    #[must_use]
+    pub fn terminal_marker(&self) -> Option<&Path> {
+        self.terminal_marker.as_deref()
+    }
+
     /// ターミナルの起動に使う値。
     #[must_use]
     pub fn terminal(&self) -> &TerminalEnv {
@@ -134,6 +143,7 @@ mod tests {
             Path::new("/Users/someone/Library/Application Support/Arin")
         );
         assert_eq!(c.ready_marker(), None);
+        assert_eq!(c.terminal_marker(), None);
     }
 
     #[test]
@@ -141,6 +151,10 @@ mod tests {
         let c = config(Some("/tmp/arin-x"), Some("1"));
 
         assert_eq!(c.ready_marker(), Some(Path::new("/tmp/arin-x/smoke-ready")));
+        assert_eq!(
+            c.terminal_marker(),
+            Some(Path::new("/tmp/arin-x/smoke-terminal"))
+        );
     }
 
     #[test]
@@ -151,12 +165,18 @@ mod tests {
                 None,
                 "ARIN_SMOKE={value:?} で印が有効になった"
             );
+            assert_eq!(
+                config(Some("/tmp/arin-x"), Some(value)).terminal_marker(),
+                None,
+                "ARIN_SMOKE={value:?} でターミナルの印が有効になった"
+            );
         }
     }
 
     #[test]
     fn 差し替えが無ければスモークの指定があっても印を書かない() {
         assert_eq!(config(None, Some("1")).ready_marker(), None);
+        assert_eq!(config(None, Some("1")).terminal_marker(), None);
     }
 
     #[test]

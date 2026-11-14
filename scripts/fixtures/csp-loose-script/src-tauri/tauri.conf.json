@@ -1,0 +1,13 @@
+{
+  "app": {
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "connect-src": "ipc: http://ipc.localhost",
+        "script-src": "'self' 'unsafe-eval'",
+        "style-src-elem": "'self' 'unsafe-inline' https://cdn.example.com"
+      },
+      "devCsp": "default-src *; connect-src ipc:"
+    }
+  }
+}

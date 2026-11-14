@@ -12,6 +12,7 @@ import {
   checkCoreDependencies,
   checkCoreNoIo,
   checkCspConnectSrc,
+  checkCspScriptStyle,
   checkNoHtmlInjection,
   checkNoHttpClientCrates,
   checkNoNetworkApi,
@@ -36,8 +37,8 @@ describe("違反の無い見本", () => {
     assert.deepEqual(violations.map(formatViolation), []);
   });
 
-  it("10 項目すべてを走らせる", () => {
-    assert.equal(CHECKS.length, 10);
+  it("11 項目すべてを走らせる", () => {
+    assert.equal(CHECKS.length, 11);
   });
 
   it("CLI として実行すると終了コード 0 を返す", () => {
@@ -237,6 +238,27 @@ describe("10. CSP の connect-src", () => {
 
   it("IPC だけに絞った connect-src は通す", () => {
     assert.deepEqual(checkCspConnectSrc(fixture("clean")), []);
+  });
+});
+
+describe("11. CSP のスクリプトとスタイル", () => {
+  it("スクリプトを緩める値と、スタイルの外部の読み込み元を、csp と devCsp の両方で見つける", () => {
+    const violations = checkCspScriptStyle(fixture("csp-loose-script"));
+    const messages = violations.map((v) => v.message);
+
+    assert.equal(violations.length, 3, messages.join("\n"));
+    assert.ok(messages.some((m) => m.includes("csp") && m.includes("script-src") && m.includes("'unsafe-eval'")));
+    assert.ok(messages.some((m) => m.includes("style-src-elem") && m.includes("https://cdn.example.com")));
+    // devCsp には script-src が無いので default-src の * がスクリプトにも効く。
+    assert.ok(messages.some((m) => m.includes("devCsp") && m.includes("default-src") && m.includes("*")));
+  });
+
+  it("スタイルの 'unsafe-inline' と 'self' だけのスクリプトは通す", () => {
+    assert.deepEqual(checkCspScriptStyle(fixture("clean")), []);
+  });
+
+  it("tauri.conf.json や CSP が無いときは 10 の検査に任せて何も言わない", () => {
+    assert.deepEqual(checkCspScriptStyle(fixture("csp-missing")), []);
   });
 });
 

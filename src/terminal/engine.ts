@@ -1,12 +1,16 @@
 // ターミナルエンジンの抽象(設計書 §5.1、PRD §7 C4)。
 // 画面と TerminalManager はこの形だけを知り、xterm.js(src/terminal/xterm/)を直接使わない。
-// このファイルは @xterm/* も src/ipc も import しない。
+// このファイルは @xterm/* を import しない。src/ipc からは Rust から生成した型だけを使う。
 
-/**
- * ターミナルの ID。Rust 側の `TerminalId` の文字列表現。
- * 【仮定】Rust から生成した型(src/ipc/generated/)が入るまでは文字列で持つ(T18 で差し替える)。
- */
-export type TerminalId = string;
+import type { TerminalId } from "../ipc/generated/TerminalId";
+
+export type { TerminalId };
+
+/** 行・桁数。 */
+export interface TerminalSize {
+  readonly rows: number;
+  readonly cols: number;
+}
 
 /** ターミナル 1 枚ぶんの表示と入出力。1 つの ID に 1 つ。 */
 export interface TerminalSurface {
@@ -23,6 +27,8 @@ export interface TerminalSurface {
   onResize(listener: (cols: number, rows: number) => void): void;
   /** 置き場所の大きさに合わせて行・桁数を決め直す。置き場所が画面に無いときは何もしない。 */
   fit(): void;
+  /** いまの行・桁数。 */
+  size(): TerminalSize;
   /** 資源を手放す。2 回目以降は何もしない。 */
   dispose(): void;
 }

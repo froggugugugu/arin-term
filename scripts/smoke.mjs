@@ -1,17 +1,24 @@
 #!/usr/bin/env node
 // 実アプリの起動スモーク(設計書 §10.1)。`npm run smoke` で実行する。
 //
-// ビルド済みの Arin.app を、一時の状態フォルダを指す環境変数を付けて起動し、画面が Rust へ準備完了を通知したときに
-// Rust が書く印のファイル(状態フォルダの smoke-ready)が現れるのを待つ。現れたらアプリを終了させて後片付けをする。
+// ビルド済みの Arin.app を、一時の状態フォルダを指す環境変数を付けて起動し、Rust が状態フォルダに書く 2 つの印を待つ。
 //
-// - ソケットやポートは使わない(PRD N2・NFR-008)。外から知る手段は印のファイルだけ
+// - smoke-ready: 画面が Rust へ準備完了を通知した
+// - smoke-terminal: PTY の出力が画面に届き、ターミナルのエンジン(xterm.js)が取り込み、処理済みの量が Rust に戻った
+//
+// 2 つが現れたら少し待ち(CSP 違反などは描画のときに出るため)、そのあいだも含めてアプリの標準エラーに
+// 画面の失敗の行(頭が FRONTEND_ERROR_PREFIX。src-tauri/src/diagnostics.rs)が 1 行でもあれば失敗にする。
+// 最後にアプリを終了させ、アプリが起動したシェル(アプリの子プロセス)が残っていないことを確かめて後片付けをする。
+//
+// - ソケットやポートは使わない(PRD N2・NFR-008)。外から知る手段は印のファイルと標準エラーだけ
 // - .app が無ければビルドせずに失敗する(先に `npm run app`)
 // - 本物の ~/Library/Application Support/Arin/ が作られていない・変わっていないことを前後で確かめる
+// - シェルは利用者の設定ファイル(~/.zshrc など)を読む(M1 の仕様どおり)。ホームに書き込む操作はしない
 // - Node の標準モジュールだけで書く
 //
 // 使い方: node scripts/smoke.mjs [--timeout-ms=30000] [--app=<Arin.app のパス>]
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { access, mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
@@ -20,8 +27,12 @@ import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-/** 印のファイル名。crates/arin-core/src/paths/app_paths.rs の SMOKE_READY_MARKER_FILE_NAME と合わせる。 */
+/** 準備完了の印のファイル名。crates/arin-core/src/paths/app_paths.rs の SMOKE_READY_MARKER_FILE_NAME と合わせる。 */
 export const MARKER_FILE_NAME = "smoke-ready";
+/** ターミナルの印のファイル名。crates/arin-core/src/paths/app_paths.rs の SMOKE_TERMINAL_MARKER_FILE_NAME と合わせる。 */
+export const TERMINAL_MARKER_FILE_NAME = "smoke-terminal";
+/** 画面の失敗の行の頭。src-tauri/src/diagnostics.rs の FRONTEND_ERROR_PREFIX と合わせる。 */
+export const FRONTEND_ERROR_PREFIX = "[arin:frontend-error]";
 /** 状態フォルダの差し替え(src-tauri/src/launch.rs の ENV_STATE_DIR)。 */
 export const ENV_STATE_DIR = "ARIN_STATE_DIR";
 /** スモークの印を有効にする(src-tauri/src/launch.rs の ENV_SMOKE)。 */
@@ -35,6 +46,12 @@ export const DEFAULT_APP_PATH = path.join(
 );
 export const DEFAULT_REAL_STATE_DIR = path.join(homedir(), "Library", "Application Support", "Arin");
 export const DEFAULT_TIMEOUT_MS = 30_000;
+/** 印が揃ってから判定までに待つ時間(描画のときに出る CSP 違反などを拾うため)。 */
+export const DEFAULT_SETTLE_MS = 1_000;
+/** アプリの終了のあと、アプリが起動したシェルが終わるのを待つ上限。 */
+export const DEFAULT_CHILD_EXIT_MS = 5_000;
+/** 失敗の報告に載せる画面の失敗の行の数の上限。 */
+const MAX_FRONTEND_ERRORS = 20;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -106,14 +123,81 @@ async function terminate(child, graceMs) {
   throw new Error(`プロセス ${child.pid} を終了させられなかった`);
 }
 
+/** プロセスが生きているか(シグナル 0 を送れるか。権限が無いだけなら生きている)。 */
+export function isAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === "EPERM";
+  }
+}
+
+/** pid の直接の子プロセスの ID の一覧(pgrep -P)。 */
+export function childPids(pid) {
+  const r = spawnSync("pgrep", ["-P", String(pid)], { encoding: "utf8" });
+  if (r.error) throw new Error(`pgrep を実行できなかった: ${r.error.message}`);
+  // 終了コード 1 は「該当なし」。
+  if (r.status !== 0 && r.status !== 1) throw new Error(`pgrep が失敗した(終了コード ${r.status}): ${r.stderr}`);
+  return r.stdout
+    .split("\n")
+    .map((l) => Number(l.trim()))
+    .filter((n) => Number.isInteger(n) && n > 0);
+}
+
+/** プロセスの名前(ps)。分からなければ "?"。 */
+function processName(pid) {
+  const r = spawnSync("ps", ["-o", "comm=", "-p", String(pid)], { encoding: "utf8" });
+  return r.status === 0 && r.stdout.trim() !== "" ? r.stdout.trim() : "?";
+}
+
+/**
+ * 標準出力・標準エラーの流れを行に分け、画面の失敗の行を集める。末尾の出力も残す(失敗の報告に添える)。
+ */
+export function createOutputWatcher() {
+  const partial = new Map();
+  const frontendErrors = [];
+  let tail = "";
+  let dropped = 0;
+  const onLine = (line) => {
+    if (!line.startsWith(FRONTEND_ERROR_PREFIX)) return;
+    if (frontendErrors.length < MAX_FRONTEND_ERRORS) frontendErrors.push(line);
+    else dropped += 1;
+  };
+  return {
+    frontendErrors,
+    get dropped() {
+      return dropped;
+    },
+    get tail() {
+      return tail;
+    },
+    /** 流れの名前(stdout・stderr)ごとに、届いた塊を渡す。 */
+    feed(stream, chunk) {
+      const text = (partial.get(stream) ?? "") + chunk.toString();
+      tail = (tail + chunk.toString()).slice(-4000);
+      const lines = text.split("\n");
+      partial.set(stream, lines.pop());
+      for (const line of lines) onLine(line.replace(/\r$/, ""));
+    },
+    /** 改行で終わっていない最後の行も調べる。 */
+    end() {
+      for (const rest of partial.values()) if (rest) onLine(rest);
+      partial.clear();
+    },
+  };
+}
+
 /**
  * スモークを 1 回行う。
- * @returns {Promise<{ ok: boolean, message: string, seconds: number, pid?: number }>}
+ * @returns {Promise<{ ok: boolean, message: string, seconds: number, pid?: number, shells?: number[] }>}
  */
 export async function runSmoke({
   appPath = DEFAULT_APP_PATH,
   realStateDir = DEFAULT_REAL_STATE_DIR,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  settleMs = DEFAULT_SETTLE_MS,
+  childExitMs = DEFAULT_CHILD_EXIT_MS,
   pollMs = 100,
   killGraceMs = 5_000,
   log = console.log,
@@ -138,16 +222,22 @@ export async function runSmoke({
   const realBefore = await describeDir(realStateDir);
   const base = tmpdir();
   const stateDir = await mkdtemp(path.join(base, TEMP_PREFIX));
-  const marker = path.join(stateDir, MARKER_FILE_NAME);
+  const readyMarker = path.join(stateDir, MARKER_FILE_NAME);
+  const terminalMarker = path.join(stateDir, TERMINAL_MARKER_FILE_NAME);
 
   let child;
-  let output = "";
+  /** アプリが起動したシェル(アプリの直接の子プロセス)。終了の直前に調べる。 */
+  let shells = [];
+  /** 子プロセスの ID → 名前(終わったあとでは引けないので、調べたときに引く)。 */
+  const names = new Map();
+  const watcher = createOutputWatcher();
   // 自分が mkdtemp で作ったフォルダか(消してよいか)。
   const ownsStateDir = path.dirname(stateDir) === base && path.basename(stateDir).startsWith(TEMP_PREFIX);
   // スクリプトが途中で抜けても(Ctrl+C で process.exit したときを含む)アプリと一時フォルダを取り残さないための最後の砦。
   // exit のハンドラでは非同期の処理を待てないので、同期の API だけを使う。
   const killOnExit = () => {
     child?.kill("SIGKILL");
+    for (const pid of shells) if (isAlive(pid)) process.kill(pid, "SIGKILL");
     if (ownsStateDir) rmSync(stateDir, { recursive: true, force: true });
   };
   process.on("exit", killOnExit);
@@ -160,11 +250,8 @@ export async function runSmoke({
       env: { ...process.env, [ENV_STATE_DIR]: stateDir, [ENV_SMOKE]: "1" },
       stdio: ["ignore", "pipe", "pipe"],
     });
-    const keep = (chunk) => {
-      output = (output + chunk.toString()).slice(-4000);
-    };
-    child.stdout.on("data", keep);
-    child.stderr.on("data", keep);
+    child.stdout.on("data", (chunk) => watcher.feed("stdout", chunk));
+    child.stderr.on("data", (chunk) => watcher.feed("stderr", chunk));
     let spawnError = null;
     child.on("error", (e) => {
       spawnError = e;
@@ -172,13 +259,20 @@ export async function runSmoke({
 
     const deadline = started + timeoutMs;
     let outcome = "timeout";
+    const seen = { ready: false, terminal: false };
     while (Date.now() < deadline) {
       if (spawnError !== null) {
         outcome = "spawn-error";
         break;
       }
-      if (await exists(marker)) {
-        outcome = "marker";
+      seen.ready ||= await exists(readyMarker);
+      seen.terminal ||= await exists(terminalMarker);
+      if (seen.ready && seen.terminal) {
+        outcome = "markers";
+        break;
+      }
+      if (watcher.frontendErrors.length > 0) {
+        outcome = "frontend-error";
         break;
       }
       if (child.exitCode !== null || child.signalCode !== null) {
@@ -187,31 +281,57 @@ export async function runSmoke({
       }
       await sleep(pollMs);
     }
+    // 印が揃っても、画面の失敗が出ても、少し待ってから判定する(描画のときの CSP 違反などが続けて出るため)。
+    if (outcome === "markers" || outcome === "frontend-error") await sleep(settleMs);
 
-    if (outcome === "marker") {
-      const text = (await readFile(marker, "utf8")).trim();
-      if (text !== String(child.pid)) {
+    if (outcome === "spawn-error") {
+      result = done(false, `アプリを起動できなかった: ${spawnError.message}`);
+    } else if (watcher.frontendErrors.length > 0) {
+      const more = watcher.dropped > 0 ? `\n(ほか ${watcher.dropped} 行)` : "";
+      result = done(
+        false,
+        `画面で失敗が起きた(標準エラーの ${FRONTEND_ERROR_PREFIX} の行):\n${watcher.frontendErrors.join("\n")}${more}`,
+        child.pid,
+      );
+    } else if (outcome === "markers") {
+      const ready = (await readFile(readyMarker, "utf8")).trim();
+      const terminal = (await readFile(terminalMarker, "utf8")).trim();
+      if (ready !== String(child.pid) || terminal !== String(child.pid)) {
         result = done(
           false,
-          `印の中身(${text})が起動したプロセス ID(${child.pid})と違う。別のプロセスが書いた可能性がある`,
+          `印の中身(準備完了 ${ready}、ターミナル ${terminal})が起動したプロセス ID(${child.pid})と違う。別のプロセスが書いた可能性がある`,
           child.pid,
         );
       } else {
-        result = done(true, `準備完了の印を確認した(${seconds().toFixed(1)} 秒)`, child.pid);
+        result = done(
+          true,
+          `準備完了とターミナルの印を確認し、画面の失敗も無かった(${seconds().toFixed(1)} 秒)`,
+          child.pid,
+        );
       }
-    } else if (outcome === "spawn-error") {
-      result = done(false, `アプリを起動できなかった: ${spawnError.message}`);
     } else if (outcome === "exited") {
       result = done(
         false,
-        `準備完了の印を書く前にアプリが終了した(終了コード ${child.exitCode}、シグナル ${child.signalCode})`,
+        `印が揃う前にアプリが終了した(終了コード ${child.exitCode}、シグナル ${child.signalCode})`,
         child.pid,
       );
     } else {
-      result = done(false, `${timeoutMs} ミリ秒以内に準備完了の印が現れなかった`, child.pid);
+      const missing = [
+        seen.ready ? null : `準備完了の印(${MARKER_FILE_NAME})`,
+        seen.terminal ? null : `ターミナルの印(${TERMINAL_MARKER_FILE_NAME}。PTY の出力が画面で取り込まれた印)`,
+      ].filter((m) => m !== null);
+      result = done(false, `${timeoutMs} ミリ秒以内に ${missing.join("と")} が現れなかった`, child.pid);
     }
   } finally {
     if (child?.pid !== undefined) {
+      if (child.exitCode === null && child.signalCode === null) {
+        try {
+          shells = childPids(child.pid);
+          for (const pid of shells) names.set(pid, processName(pid));
+        } catch (e) {
+          log(`アプリの子プロセスを調べられなかった: ${e.message}`);
+        }
+      }
       const how = await terminate(child, killGraceMs);
       log(`アプリを終了させた(${how})`);
     }
@@ -221,6 +341,29 @@ export async function runSmoke({
       await rm(stateDir, { recursive: true, force: true });
     }
   }
+  watcher.end();
+
+  // アプリの終了で PTY が閉じ、シェルは SIGHUP で終わるはず。残っていたら失敗にして、取り残さないよう終了させる。
+  const exitDeadline = Date.now() + childExitMs;
+  let leftover = shells.filter(isAlive);
+  while (leftover.length > 0 && Date.now() < exitDeadline) {
+    await sleep(pollMs);
+    leftover = leftover.filter(isAlive);
+  }
+  if (leftover.length > 0) {
+    for (const pid of leftover) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // 既に終わっていればよい。
+      }
+    }
+    const list = leftover.map((pid) => `${pid}(${names.get(pid)})`).join("、");
+    result = { ...done(false, `アプリの終了後も、アプリが起動した子プロセスが残っていた: ${list}(SIGKILL で終了させた)`, result.pid) };
+  } else if (shells.length > 0) {
+    log(`アプリが起動した子プロセス ${shells.map((pid) => `${pid}(${names.get(pid)})`).join("、")} はアプリの終了後に終わった`);
+  }
+  result.shells = shells;
 
   const realAfter = await describeDir(realStateDir);
   if (JSON.stringify(realBefore) !== JSON.stringify(realAfter)) {
@@ -233,8 +376,8 @@ export async function runSmoke({
       : `本物の状態フォルダ ${realStateDir} は変わっていない`,
   );
 
-  if (!result.ok && output.trim() !== "") {
-    result.message += `\n--- アプリの出力(末尾) ---\n${output.trimEnd()}`;
+  if (!result.ok && watcher.tail.trim() !== "") {
+    result.message += `\n--- アプリの出力(末尾) ---\n${watcher.tail.trimEnd()}`;
   }
   return result;
 }

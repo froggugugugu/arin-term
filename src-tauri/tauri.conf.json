@@ -26,6 +26,8 @@
         "connect-src": "'self' ipc: http://ipc.localhost",
         "img-src": "'self' blob:",
         "style-src": "'self'",
+        "style-src-elem": "'self' 'unsafe-inline'",
+        "style-src-attr": "'unsafe-inline'",
         "object-src": "'none'",
         "base-uri": "'none'",
         "form-action": "'none'"
@@ -35,6 +37,8 @@
         "connect-src": "'self' ipc: http://ipc.localhost http://localhost:1420 ws://localhost:1420",
         "img-src": "'self' blob:",
         "style-src": "'self'",
+        "style-src-elem": "'self' 'unsafe-inline'",
+        "style-src-attr": "'unsafe-inline'",
         "object-src": "'none'",
         "base-uri": "'none'",
         "form-action": "'none'"

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createIpc } from "../ipc/client";
 import { createFakeIpc, sampleSnapshot } from "../test/fakeIpc";
 import { createAppStore } from "./appStore";
-import { describeError, startApp } from "./startApp";
+import { startApp } from "./startApp";
 
 /** 起動の手順を、偽の通信と記録用の描画・記録用のログで動かす。 */
 function setup(handlers: Parameters<typeof createFakeIpc>[0] = {}) {
@@ -13,7 +13,7 @@ function setup(handlers: Parameters<typeof createFakeIpc>[0] = {}) {
   const logged: unknown[][] = [];
   const run = () =>
     startApp({
-      ipc: createIpc(fake.invoke),
+      ipc: createIpc(fake.transport),
       store,
       mount: () => {
         // 描いた時点で、ストアに写しが入っているかどうかも記録する。
@@ -87,7 +87,7 @@ describe("startApp(画面側の起動の手順)", () => {
 
     await expect(
       startApp({
-        ipc: createIpc(fake.invoke),
+        ipc: createIpc(fake.transport),
         store,
         mount: () => {
           throw new Error("#root が無い");
@@ -98,23 +98,47 @@ describe("startApp(画面側の起動の手順)", () => {
 
     expect(fake.calls.map((c) => c.command)).toEqual(["get_app_snapshot"]);
   });
-});
 
-describe("describeError", () => {
-  it("Error はメッセージにする", () => {
-    expect(describeError(new Error("壊れた"))).toBe("壊れた");
+  it("写しの更新のイベントを取得より先に購読し、届いた写しでストアを置き換える", async () => {
+    const { fake, store, run } = setup({ get_app_snapshot: () => sampleSnapshot({ appVersion: "1" }) });
+
+    await run();
+    expect(fake.listenerCount("app-snapshot")).toBe(1);
+    fake.emit("app-snapshot", sampleSnapshot({ appVersion: "2" }));
+
+    expect(store.getState().snapshot?.appVersion).toBe("2");
   });
 
-  it("文字列はそのまま使う", () => {
-    expect(describeError("Rust からの失敗")).toBe("Rust からの失敗");
+  it("取得の応答より先にイベントで写しが届いたら、取得の応答で上書きしない", async () => {
+    let fakeRef: ReturnType<typeof setup>["fake"] | undefined;
+    const ctx = setup({
+      get_app_snapshot: () => {
+        // 取得の応答が画面に届く前に、新しい写しがイベントで届いた場合。
+        fakeRef?.emit("app-snapshot", sampleSnapshot({ appVersion: "新しい" }));
+        return sampleSnapshot({ appVersion: "古い" });
+      },
+    });
+    fakeRef = ctx.fake;
+
+    await ctx.run();
+
+    expect(ctx.store.getState().snapshot?.appVersion).toBe("新しい");
   });
 
-  it("それ以外は JSON にする", () => {
-    expect(describeError({ code: 1 })).toBe('{"code":1}');
-  });
+  it("購読に失敗したら、描画して原因を残し、写しの取得も準備完了の通知もしない", async () => {
+    const { fake, store, events, run } = setup();
+    fake.failListen = "Command plugin:event|listen not allowed by ACL";
 
-  it("JSON にできないものは String で文字にする", () => {
-    expect(describeError(undefined)).toBe("undefined");
-    expect(describeError(10n)).toBe("10");
+    const result = await run();
+
+    expect(result).toEqual({
+      ok: false,
+      error: "状態の更新を購読できなかった: Command plugin:event|listen not allowed by ACL",
+    });
+    expect(store.getState().startupError).toBe(
+      "状態の更新を購読できなかった: Command plugin:event|listen not allowed by ACL",
+    );
+    expect(fake.calls).toEqual([]);
+    expect(events).toEqual(["mount(snapshot=null)"]);
   });
 });

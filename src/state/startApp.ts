@@ -3,12 +3,17 @@
 // 通信の包み(ArinIpc)とストアは引数で受け取る。本物は main.tsx が createTauriIpc() で作り、
 // テスト(と T11 の画面の自動テスト)は偽の通信を渡す。
 //
-// 手順: 写しの取得を始める → 描画する → 写しをストアに入れる → Rust へ準備完了を通知する。
+// 手順: 写しの更新のイベントを購読する → 写しの取得を始める → 描画する → 写しをストアに入れる → Rust へ準備完了を通知する。
+// 購読を取得より先にするのは、取得と購読のあいだの変更を取りこぼさないため。
+// 取得の応答より先にイベントで写しが届いたら、そちらが新しいので取得の応答は捨てる。
 // 失敗は握りつぶさない。原因をストアの startupError に入れて画面に出し、ログにも残す。
 // 写しを取得できなかったときは準備完了を通知しない(起動スモークが失敗として気づけるように)。
 
 import type { ArinIpc } from "../ipc/client";
+import { describeError } from "../logic/describeError";
 import type { AppStore } from "./appStore";
+
+export { describeError };
 
 export interface StartAppDeps {
   /** Rust との通信の包み。 */
@@ -23,19 +28,6 @@ export interface StartAppDeps {
 
 export type StartAppResult = { ok: true } | { ok: false; error: string };
 
-/** 失敗の原因を、画面に出せる 1 行の文字列にする。Tauri のコマンドの失敗は文字列で届く。 */
-export function describeError(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  try {
-    const json = JSON.stringify(error);
-    if (json !== undefined) return json;
-  } catch {
-    // BigInt や循環参照など、JSON にできないものは下で String にする。
-  }
-  return String(error);
-}
-
 export async function startApp({
   ipc,
   store,
@@ -49,12 +41,24 @@ export async function startApp({
     return { ok: false, error };
   };
 
+  let updated = false;
+  try {
+    await ipc.onAppSnapshot((snapshot) => {
+      updated = true;
+      store.getState().replaceSnapshot(snapshot);
+    });
+  } catch (cause) {
+    mount();
+    return fail("状態の更新を購読できなかった", cause);
+  }
+
   // 取得は描画と並行して始める。失敗は下の await で受けるので、未処理の失敗にはならない。
   const snapshotRequest = ipc.getAppSnapshot();
   mount();
 
   try {
-    store.getState().replaceSnapshot(await snapshotRequest);
+    const snapshot = await snapshotRequest;
+    if (!updated) store.getState().replaceSnapshot(snapshot);
   } catch (cause) {
     return fail("状態の写しを取得できなかった", cause);
   }

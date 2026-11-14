@@ -9,7 +9,7 @@ import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { Terminal } from "@xterm/xterm";
 
-import type { TerminalEngine, TerminalId, TerminalSurface } from "../engine";
+import type { TerminalEngine, TerminalId, TerminalSize, TerminalSurface } from "../engine";
 
 /** スクロールバックの行数(FR-043、PRD C-09 で確定)。 */
 export const SCROLLBACK_LINES = 10_000;
@@ -93,6 +93,10 @@ class XtermSurface implements TerminalSurface {
   fit(): void {
     if (this.#disposed || !this.element.isConnected) return;
     this.#fitAddon.fit();
+  }
+
+  size(): TerminalSize {
+    return { rows: this.#terminal.rows, cols: this.#terminal.cols };
   }
 
   dispose(): void {

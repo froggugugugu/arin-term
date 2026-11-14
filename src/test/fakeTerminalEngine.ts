@@ -1,7 +1,7 @@
 // テスト用の偽のターミナルエンジン。作ったサーフェスと、サーフェスへの操作を記録する。
 // xterm.js も DOM も使わない(Vitest は node の環境で動く)。
 
-import type { TerminalEngine, TerminalId, TerminalSurface } from "../terminal/engine";
+import type { TerminalEngine, TerminalId, TerminalSize, TerminalSurface } from "../terminal/engine";
 
 export interface FakeSurface extends TerminalSurface {
   readonly id: TerminalId;
@@ -11,6 +11,10 @@ export interface FakeSurface extends TerminalSurface {
   fitCount: number;
   /** dispose が呼ばれた回数。 */
   disposeCount: number;
+  /** いまの行・桁数(既定は xterm.js と同じ 24 × 80)。 */
+  current: TerminalSize;
+  /** 次の fit で変わる先の行・桁数。変われば寸法の受け取り手へ流す(xterm.js の onResize と同じ)。 */
+  fitTo: TerminalSize | null;
   /** 登録された入力の受け取り手へ、キー入力を流す。 */
   emitInput(data: string): void;
   /** 登録された寸法の受け取り手へ、寸法の変更を流す。 */
@@ -41,6 +45,8 @@ export function createFakeTerminalEngine(): FakeTerminalEngine {
         written: [],
         fitCount: 0,
         disposeCount: 0,
+        current: { rows: 24, cols: 80 },
+        fitTo: null,
         write(data) {
           surface.written.push(data);
           return Promise.resolve(surface.disposeCount > 0 ? 0 : data.byteLength);
@@ -53,6 +59,14 @@ export function createFakeTerminalEngine(): FakeTerminalEngine {
         },
         fit() {
           surface.fitCount += 1;
+          const next = surface.fitTo;
+          if (next === null) return;
+          if (next.rows === surface.current.rows && next.cols === surface.current.cols) return;
+          surface.current = next;
+          surface.emitResize(next.cols, next.rows);
+        },
+        size() {
+          return surface.current;
         },
         dispose() {
           surface.disposeCount += 1;

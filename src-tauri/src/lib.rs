@@ -5,6 +5,7 @@
 //! コマンドを登録して tauri.conf.json のウィンドウを 1 枚出す。
 
 mod commands;
+pub mod diagnostics;
 pub mod launch;
 pub mod lifecycle;
 pub mod sessions;
@@ -19,7 +20,7 @@ use tauri::{Builder, Emitter, Manager, Runtime};
 
 pub use crate::commands::app::SNAPSHOT_EVENT;
 use crate::launch::LaunchConfig;
-use crate::lifecycle::ReadyNotice;
+use crate::lifecycle::{FirstOutputNotice, ReadyNotice};
 use crate::sessions::{SessionConfig, SessionRegistry, ShellDefaults, ShellProbe};
 
 /// アプリの組み立て。ランタイムを型引数で受け取り、テストでは模擬ランタイムに差し替える。
@@ -44,10 +45,12 @@ pub fn builder_with_pty<R: Runtime>(
     probe: ShellProbe,
 ) -> Builder<R> {
     let ready = ReadyNotice::new(launch.ready_marker().map(ToOwned::to_owned));
+    let first_output = FirstOutputNotice::new(launch.terminal_marker().map(ToOwned::to_owned));
     let terminal = launch.terminal().clone();
     Builder::<R>::new()
         .manage(launch.paths().clone())
         .manage(ready)
+        .manage(first_output)
         .setup(move |app| {
             let workspace = Workspace::new(
                 app.package_info().version.to_string(),
@@ -71,6 +74,7 @@ pub fn builder_with_pty<R: Runtime>(
         .invoke_handler(tauri::generate_handler![
             commands::app::get_app_snapshot,
             commands::app::notify_app_ready,
+            commands::app::report_frontend_error,
             commands::terminal::connect_terminal,
             commands::terminal::write_terminal,
             commands::terminal::ack_terminal_output,

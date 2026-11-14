@@ -10,8 +10,11 @@
 // - 製品のソース(src/)には差し込み口を一切置かない。偽物はテストのプロセスから注入するだけなので、
 //   `npm run build:web` や `npm run app` のビルド結果に偽物が入る余地が無い(N2: 外部から操作する口を作らない)
 // - @tauri-apps/api/mocks の mockIPC も同じ口を置くだけの関数だが、ES モジュールで export を持つため
-//   addInitScript(古典的なスクリプトとして実行される)にそのまま渡せない。Arin が使うのは invoke だけなので、
-//   必要な部分だけをここに書く。イベントの購読(listen)を使い始めたら、transformCallback などをここに足す
+//   addInitScript(古典的なスクリプトとして実行される)にそのまま渡せない。Arin が使うのは invoke と
+//   チャネル(Channel)とイベントの購読(listen)だけなので、必要な部分だけをここに書く
+// - チャネルとイベントの購読は「壊れない」最小限(T18)。登録は受け付けるが、偽の Rust 側から中身は流さない。
+//   ターミナルの画面テスト(T19)で、ここから出力やイベントを流せるようにする
+// - イベントの購読・解除(`plugin:event|listen` など)は Tauri の内部の口なので、記録(__ARIN_E2E_CALLS__)には残さない
 //
 // # 型の合わせ方
 //
@@ -47,11 +50,17 @@ export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapsho
 const DEFAULT_REPLIES: TauriMockConfig = {
   get_app_snapshot: { ok: sampleSnapshot() },
   notify_app_ready: { ok: null },
+  report_frontend_error: { ok: null },
+  connect_terminal: { ok: null },
+  write_terminal: { ok: null },
+  ack_terminal_output: { ok: null },
+  resize_terminal: { ok: null },
 };
 
 /** 画面のページの中で、偽の Rust 側が記録を置く場所(テストの側からだけ読む)。 */
 interface MockWindow {
   __TAURI_INTERNALS__?: Record<string, unknown>;
+  __TAURI_EVENT_PLUGIN_INTERNALS__?: Record<string, unknown>;
   __ARIN_E2E_CALLS__?: RecordedCall[];
 }
 
@@ -63,8 +72,26 @@ function injectTauriMock(replies: Record<string, { ok: unknown } | { error: stri
   const w = window as unknown as MockWindow;
   const calls: RecordedCall[] = [];
   w.__ARIN_E2E_CALLS__ = calls;
+  // Channel と listen が渡す受け取りの関数(@tauri-apps/api の transformCallback)。
+  const callbacks = new Map<number, (payload: unknown) => void>();
+  let nextCallback = 1;
+  let nextEvent = 1;
+  w.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
   w.__TAURI_INTERNALS__ = {
+    transformCallback: (callback: (payload: unknown) => void): number => {
+      const id = nextCallback++;
+      callbacks.set(id, callback);
+      return id;
+    },
+    unregisterCallback: (id: number): void => {
+      callbacks.delete(id);
+    },
+    runCallback: (id: number, payload: unknown): void => {
+      callbacks.get(id)?.(payload);
+    },
     invoke: async (command: string, args: unknown): Promise<unknown> => {
+      if (command === "plugin:event|listen") return nextEvent++;
+      if (command === "plugin:event|unlisten") return null;
       // 画面が渡した引数をそのまま残すと、あとで画面が書き換えたときに記録も変わるので、写しを取る。
       calls.push({ command, args: args === undefined ? undefined : JSON.parse(JSON.stringify(args)) });
       const reply = replies[command];

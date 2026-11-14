@@ -16,6 +16,12 @@ use thiserror::Error;
 /// `scripts/smoke.mjs` がこの名前のファイルが現れるのを待つ。変えるときは両方を合わせる。
 pub const SMOKE_READY_MARKER_FILE_NAME: &str = "smoke-ready";
 
+/// 起動スモークのターミナルの印のファイル名。状態フォルダの直下に置く。
+///
+/// 画面が PTY の出力を取り込み、処理済みの量(0 より大きい)を初めて返したときに書く。
+/// `scripts/smoke.mjs` がこの名前のファイルも待つ。変えるときは両方を合わせる。
+pub const SMOKE_TERMINAL_MARKER_FILE_NAME: &str = "smoke-terminal";
+
 /// ホームから見た既定の状態フォルダ。
 const DEFAULT_STATE_DIR_UNDER_HOME: [&str; 3] = ["Library", "Application Support", "Arin"];
 
@@ -97,7 +103,16 @@ impl AppPaths {
     /// 差し替えていなければ、スモークを求められても本物の状態フォルダに印を書かないよう `None` を返す。
     #[must_use]
     pub fn smoke_ready_marker(&self, smoke_requested: bool) -> Option<PathBuf> {
-        (smoke_requested && self.overridden)
-            .then(|| self.state_dir.join(SMOKE_READY_MARKER_FILE_NAME))
+        self.smoke_marker(smoke_requested, SMOKE_READY_MARKER_FILE_NAME)
+    }
+
+    /// 起動スモークのターミナルの印のファイルの場所。返す条件は `smoke_ready_marker` と同じ。
+    #[must_use]
+    pub fn smoke_terminal_marker(&self, smoke_requested: bool) -> Option<PathBuf> {
+        self.smoke_marker(smoke_requested, SMOKE_TERMINAL_MARKER_FILE_NAME)
+    }
+
+    fn smoke_marker(&self, smoke_requested: bool, name: &str) -> Option<PathBuf> {
+        (smoke_requested && self.overridden).then(|| self.state_dir.join(name))
     }
 }

@@ -5,7 +5,9 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
-use arin_core::paths::{AppPaths, AppPathsError, SMOKE_READY_MARKER_FILE_NAME};
+use arin_core::paths::{
+    AppPaths, AppPathsError, SMOKE_READY_MARKER_FILE_NAME, SMOKE_TERMINAL_MARKER_FILE_NAME,
+};
 
 const HOME: &str = "/Users/someone";
 
@@ -125,4 +127,32 @@ fn 状態フォルダを差し替えていなければスモークを求めて�
 fn 印のファイル名は_smoke_ready() {
     // scripts/smoke.mjs がこの名前を待つ。変えるときは両方を合わせる。
     assert_eq!(SMOKE_READY_MARKER_FILE_NAME, "smoke-ready");
+}
+
+#[test]
+fn ターミナルの印は差し替えた状態フォルダの中に置く() {
+    let paths = AppPaths::resolve(home(), Some(OsStr::new("/tmp/arin-smoke-5"))).unwrap();
+
+    assert_eq!(
+        paths.smoke_terminal_marker(true),
+        Some(PathBuf::from("/tmp/arin-smoke-5").join(SMOKE_TERMINAL_MARKER_FILE_NAME))
+    );
+    assert_eq!(paths.smoke_terminal_marker(false), None);
+}
+
+#[test]
+fn 状態フォルダを差し替えていなければターミナルの印も置かない() {
+    let paths = AppPaths::resolve(home(), None).unwrap();
+
+    assert_eq!(paths.smoke_terminal_marker(true), None);
+}
+
+#[test]
+fn ターミナルの印のファイル名は_smoke_terminal_で準備完了の印と違う() {
+    // scripts/smoke.mjs がこの名前を待つ。変えるときは両方を合わせる。
+    assert_eq!(SMOKE_TERMINAL_MARKER_FILE_NAME, "smoke-terminal");
+    assert_ne!(
+        SMOKE_TERMINAL_MARKER_FILE_NAME,
+        SMOKE_READY_MARKER_FILE_NAME
+    );
 }

@@ -5,6 +5,7 @@
 use arin_core::workspace::AppSnapshot;
 use tauri::State;
 
+use crate::diagnostics::frontend_error_line;
 use crate::lifecycle::ReadyNotice;
 use crate::sessions::SessionRegistry;
 
@@ -23,4 +24,12 @@ pub fn get_app_snapshot(sessions: State<'_, SessionRegistry>) -> AppSnapshot {
 #[tauri::command]
 pub fn notify_app_ready(ready: State<'_, ReadyNotice>) -> Result<(), String> {
     ready.on_app_ready()
+}
+
+/// 画面で起きた失敗(CSP 違反、未処理の例外など)を受け取り、決まった頭の文字列を付けた 1 行で標準エラーに書く。
+///
+/// 診断の機能として常に有効(起動スモークはこの行で画面の失敗を検出する)。
+#[tauri::command]
+pub fn report_frontend_error(message: String) {
+    eprintln!("{}", frontend_error_line(&message));
 }

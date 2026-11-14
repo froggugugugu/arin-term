@@ -67,6 +67,17 @@ export const CSP_ALLOWED_CONNECT_SOURCES = [
   "http://asset.localhost",
 ];
 
+/** CSP でスクリプト(script-src とその細目。無ければ default-src)に書いてよい値。インラインと eval は許さない。 */
+export const CSP_ALLOWED_SCRIPT_SOURCES = ["'self'", "'none'"];
+
+/**
+ * CSP でスタイル(style-src・style-src-elem・style-src-attr)に書いてよい値。
+ * xterm.js は実行時に <style> の要素を作り、truecolor の文字には style 属性を書くので 'unsafe-inline' が要る
+ * (T18。node_modules/@xterm/xterm/lib/xterm.mjs の createElement("style") と setAttribute("style")、
+ * 起動スモークで style-src-elem の違反を確認)。外部の読み込み元は許さない。
+ */
+export const CSP_ALLOWED_STYLE_SOURCES = ["'self'", "'none'", "'unsafe-inline'"];
+
 const SRC_EXTENSIONS = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"]);
 const TEST_FILE_PATTERN = /\.(test|spec)\.[cm]?[jt]sx?$/;
 
@@ -893,6 +904,74 @@ export function checkCspConnectSrc(root) {
 }
 
 // ---------------------------------------------------------------------------
+// 11. CSP のスクリプトとスタイル
+// ---------------------------------------------------------------------------
+
+const SCRIPT_DIRECTIVES = ["script-src", "script-src-elem", "script-src-attr"];
+const STYLE_DIRECTIVES = ["style-src", "style-src-elem", "style-src-attr"];
+
+/**
+ * `app.security.csp` と(あれば)開発時の `devCsp` で、スクリプトが自アプリのものだけに絞られ
+ * (script-src。無ければ default-src が効く)、スタイルが自アプリとインライン(xterm.js が要る)だけであること。
+ * ファイルや csp が無いときは 10 の検査が報告するので、ここでは何も言わない。
+ * @returns {Violation[]}
+ */
+export function checkCspScriptStyle(root) {
+  const rule = "csp-script-style";
+  const rel = "src-tauri/tauri.conf.json";
+  const text = readText(path.join(root, rel));
+  if (text === null) return [];
+  let conf;
+  try {
+    conf = JSON.parse(text);
+  } catch {
+    return [];
+  }
+  const security = conf?.app?.security ?? {};
+  const findLine = (needle) => {
+    const idx = text.split("\n").findIndex((l) => l.includes(needle));
+    return idx < 0 ? 1 : idx + 1;
+  };
+
+  const violations = [];
+  for (const key of ["csp", "devCsp"]) {
+    const csp = security[key];
+    if (csp === undefined || csp === null) continue;
+    const directives = parseCsp(csp);
+    const report = (directive, source, allowed, what) => {
+      const line = findLine(`"${key}"`);
+      violations.push(
+        violation(
+          rule,
+          rel,
+          line,
+          lineText(text, line),
+          `${key} の ${directive} が ${source} を許している(${what}。許可: ${allowed.join(" ")})`,
+        ),
+      );
+    };
+
+    const scriptDirectives = SCRIPT_DIRECTIVES.filter((d) => directives.has(d));
+    if (!directives.has("script-src")) scriptDirectives.push("default-src");
+    for (const directive of scriptDirectives) {
+      for (const source of directives.get(directive) ?? []) {
+        if (!CSP_ALLOWED_SCRIPT_SOURCES.includes(source)) {
+          report(directive, source, CSP_ALLOWED_SCRIPT_SOURCES, "スクリプトは自アプリのものだけにする");
+        }
+      }
+    }
+    for (const directive of STYLE_DIRECTIVES) {
+      for (const source of directives.get(directive) ?? []) {
+        if (!CSP_ALLOWED_STYLE_SOURCES.includes(source)) {
+          report(directive, source, CSP_ALLOWED_STYLE_SOURCES, "スタイルは自アプリとインラインだけにする");
+        }
+      }
+    }
+  }
+  return violations;
+}
+
+// ---------------------------------------------------------------------------
 // まとめて実行
 // ---------------------------------------------------------------------------
 
@@ -908,6 +987,7 @@ export const CHECKS = [
   { id: "network-api", title: "画面のソースに通信の API が無い", run: checkNoNetworkApi },
   { id: "html-injection", title: "画面のソースに HTML の差し込みが無い", run: checkNoHtmlInjection },
   { id: "csp-connect-src", title: "CSP の connect-src が制限されている", run: checkCspConnectSrc },
+  { id: "csp-script-style", title: "CSP のスクリプトが自アプリだけ、スタイルが自アプリとインラインだけ", run: checkCspScriptStyle },
 ];
 
 /** @returns {Violation[]} */

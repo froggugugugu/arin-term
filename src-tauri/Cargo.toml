@@ -53,3 +53,8 @@ harness = false
 # セッション管理を実 PTY(/bin/zsh)で動かす結合テスト。Tauri のアプリは作らないので標準のハーネスで走らせる。
 [[test]]
 name = "session_pty"
+
+# スモークの印を有効にして組み立てたときの、最初の処理済みの通知でのターミナルの印。理由は app_ready_marker と同じ。
+[[test]]
+name = "app_terminal_marker"
+harness = false

@@ -10,6 +10,7 @@ use arin_core::terminal::TerminalId;
 use tauri::State;
 use tauri::ipc::{Channel, InvokeResponseBody};
 
+use crate::lifecycle::FirstOutputNotice;
 use crate::sessions::{OutputSink, SessionError, SessionRegistry};
 
 /// Tauri のチャネルへ生のバイト列で送る(画面には `ArrayBuffer` で届く。ADR-004)。
@@ -64,13 +65,19 @@ pub async fn write_terminal(
 }
 
 /// 画面が出力を `bytes` バイト取り込んだことを知らせる(流量制御)。
+///
+/// 起動スモークが有効なら、最初の通知(0 より大きい)でターミナルの印を書く。
 #[tauri::command]
 pub async fn ack_terminal_output(
     sessions: State<'_, SessionRegistry>,
+    first_output: State<'_, FirstOutputNotice>,
     terminal_id: TerminalId,
     bytes: u64,
 ) -> Result<(), String> {
-    sessions.ack(&terminal_id, bytes).map_err(|e| e.to_string())
+    sessions
+        .ack(&terminal_id, bytes)
+        .map_err(|e| e.to_string())?;
+    first_output.on_output_acked(bytes)
 }
 
 /// 寸法(行・桁)を変える。

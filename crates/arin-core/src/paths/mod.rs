@@ -4,4 +4,6 @@
 
 mod app_paths;
 
-pub use app_paths::{AppPaths, AppPathsError, SMOKE_READY_MARKER_FILE_NAME};
+pub use app_paths::{
+    AppPaths, AppPathsError, SMOKE_READY_MARKER_FILE_NAME, SMOKE_TERMINAL_MARKER_FILE_NAME,
+};
