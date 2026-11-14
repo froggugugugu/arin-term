@@ -1,0 +1,13 @@
+[package]
+name = "arin-core"
+description = "Arin の状態・規則・ポート定義。OS への入出力を持たない"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+# 許可する依存はここに書いたものだけ(設計書 §3.1)。scripts/check-boundaries.mjs が検査する。
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

@@ -6,3 +6,8 @@ testreport/
 .agents/skills/*-workspace/
 .blueprint-migrate-backup/
 .claude/skills/*-workspace/
+
+# ビルドの生成物
+node_modules/
+target/
+dist/

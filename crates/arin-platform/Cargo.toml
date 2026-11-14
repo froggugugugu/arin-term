@@ -1,0 +1,10 @@
+[package]
+name = "arin-platform"
+description = "arin-core のポートの実装。OS への入出力をここに集める"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+arin-core = { workspace = true }
