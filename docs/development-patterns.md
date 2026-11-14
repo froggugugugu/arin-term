@@ -6,10 +6,20 @@
 
 ## 1. 境界の規則(`npm run lint` が検査)
 
-- `@tauri-apps/*` を import できるのは `src/ipc/` だけ。`src/ui/` は `src/ipc/` を import しない(操作は `src/state` 経由)
+- `@tauri-apps/*` を import できるのは `src/ipc/` だけ。`@xterm/*` を import できるのは `src/terminal/xterm/` だけ。`src/ui/` は `src/ipc/`・`src/terminal/xterm/` を import しない(操作は `src/state`・`src/terminal` 経由)。`src/terminal/xterm/` は `src/ipc/` を import しない
 - `arin-core` は `std::fs`・`std::process`・`std::net` を使わない。依存は serde・serde_json・thiserror・ts-rs だけ。入出力は `arin-platform` に置く
 - 環境変数を読むのは `src-tauri/src/launch.rs` だけ。`arin-core` は値を引数で受け取る
-- xterm.js の要素は React の管理の外に置く(ADR-003)。M1 で実装するときに守る
+- 画面のソースに通信の API(`fetch(` など)と HTML の差し込み(`innerHTML`・`dangerouslySetInnerHTML` など)を書かない
+- CSP(`tauri.conf.json` の `csp`・`devCsp`): `connect-src` は IPC と自アプリだけ、スクリプトは `'self'`/`'none'` だけ、スタイルは `'self'`/`'none'`/`'unsafe-inline'` だけ
+- xterm.js の要素は React の管理の外に置く(ADR-003)
+
+## 1.1 標準エラーの頭の文字列
+
+| 頭 | 出すところ | 備考 |
+| -- | ---------- | ---- |
+| `[arin:frontend-error]` | `diagnostics.rs`(`report_frontend_error`) | CSP 違反・例外・読み込み失敗。常に有効。スモークは 1 行でもあれば失敗 |
+| `[arin:verify]` | `verify_log.rs` | OSC 52 の回数と流量制御の集計。開発ビルド(`cfg(debug_assertions)`)だけ |
+| `[arin:launch]` | `launch.rs` | 起動時の指定の不正な値 |
 
 ## 2. 状態管理
 
@@ -27,8 +37,11 @@
 ## 5. テスト
 
 - 状態フォルダは `ARIN_STATE_DIR`(絶対パス)で差し替える。テストとスモークは本物の `~/Library/Application Support/Arin/` を読み書きしない。`ARIN_SMOKE=1` は差し替え時だけ有効
-- `src-tauri/tests/` は `harness = false`(macOS ではメニューの部品をメインスレッドでしか作れず、標準ハーネスの別スレッドでは panic する)。テストを足すときは `src-tauri/Cargo.toml` に `[[test]]` を足す
-- `npm run e2e` は実アプリではなく Vite の画面を WebKit で開き、Rust との通信は `e2e/fixtures/tauriMock.ts` が差し替える。製品のソースに差し込み口は置かない。1420 番を使うので `npm run dev` を動かしたままだと失敗する
+- Tauri のアプリ(模擬ランタイム)を作る `src-tauri/tests/` は `harness = false`(macOS ではメニューの部品をメインスレッドでしか作れず、標準ハーネスの別スレッドでは panic する)。テストを足すときは `src-tauri/Cargo.toml` に `[[test]]` を足す
+- 実 PTY のテスト(`crates/arin-platform/tests/pty.rs` にならう): シェルは `/bin/zsh` 固定、`HOME` を一時フォルダに向ける、出力は目印の文字列で囲ませて取り出す、共通のロックで直列にする、どの待ちにも上限時間を付ける
+- 性能の計測テストは `#[ignore]` にし、`npm run perf` が `--release -- --ignored` で動かす
+- `npm run e2e` は実アプリではなく Vite の画面を WebKit で開き、Rust との通信は `e2e/fixtures/tauriMock.ts` が差し替える(出力は `sendChannelBytes`、イベントは `emitEvent` で流す)。製品のソースに差し込み口は置かない。1420 番を使うので `npm run dev` を動かしたままだと失敗する
+- DOM 描画の要素から表示を読むテストは、WebGL 描画ではそのまま使えない
 
 ## 6. 過去の問題事例
 
@@ -39,3 +52,8 @@
 | `Cargo.lock` に `reqwest` が載る | Lock は全 OS の依存を載せる。Tauri は Android・iOS でだけ使う | 境界検査は `tauri → reqwest` の 1 辺だけを理由付きで除外。Tauri を上げたら `cargo tree -i reqwest --target aarch64-apple-darwin` で再確認 |
 | 型検査用の一時ファイルから `.d.ts` が `src/` に出てコミットされた | 型検査失敗時にも出力していた | `tsconfig` に `noEmitOnError: true`(src・src/logic・e2e) |
 | 素の `cargo build` のバイナリは最低 OS が 11.0 になる | 最低 OS 15.0(`tauri.conf.json` の `minimumSystemVersion`)は `tauri build` が渡す | 配布物は必ず `npm run app` で作る(`otool -l` の `minos` で確認できる) |
+| `portable-pty` でログインシェルの `argv[0]` を `-zsh` にできない・環境変数が漏れる・不正な値が黙って置き換わる | `CommandBuilder::new` は `argv[0]` を変えられない。作った時点で親の環境変数を取り込む。`SHELL` が実行できない・cwd がフォルダでないと別の値に切り替える | `new_default_prog()` + `SHELL` で起動し、`env_clear()` してから許可リストの値だけ渡す。シェルと cwd は起動前に確かめてエラーにする(`arin-platform/src/pty/native.rs`) |
+| xterm.js が CSP で止められる | 実行時に `<style>` 要素を作り、truecolor の文字に style 属性を書く | `style-src-elem 'self' 'unsafe-inline'` と `style-src-attr 'unsafe-inline'` を足す(`style-src`・`script-src` は変えない) |
+| Tauri の既定のメニューが ⌘W などを持つ | メニューを指定しないと macOS で既定のメニューが付く | `menu.rs` で「Arin」と「編集」だけのメニューに置き換えた。⌘C・⌘V はメニュー経由で画面の `copy`・`paste` イベントになる |
+| `footprint` が別のプロセスを測る | PID を位置引数で渡すと名前の部分一致になる | 必ず `-p <pid>` で渡す(`scripts/perf/app-memory.mjs`) |
+| `scripts/smoke.test.mjs` がときどき落ちる | 一時フォルダの数を数える検査が、ほかのテストと同時に動かすと乱れる | 単独で再実行して確かめる |

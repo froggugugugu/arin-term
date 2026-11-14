@@ -2,8 +2,8 @@
 
 ## 概要
 
-macOS 向けのライト・マルチターミナル「Arin」(Tauri 2、arm64、最低 OS 15.0)。現在は M0(骨格)のみ実装済みで、空ウィンドウ・状態の写しの取得・起動スモークまで。
-プロジェクト管理・ファイルツリー・ターミナル・設定ファイルは未実装(M1 以降)。設計は `output/design/ARCH_multi-terminal.md`、進捗は `output/tasks/PROGRESS.md`。
+macOS 向けのライト・マルチターミナル「Arin」(Tauri 2、arm64、最低 OS 15.0)。M0(骨格)と M1(ターミナル 1 枚。ログインシェル・PTY・xterm.js・コピー/ペースト)の実装が済み、M1 は本人の Go/No-Go 待ち。
+プロジェクト管理・タブ・ファイルツリー・設定ファイルは未実装(M2 以降)。設計は `output/design/ARCH_multi-terminal.md`、進捗は `output/tasks/PROGRESS.md`。
 
 ## コマンド
 
@@ -19,8 +19,13 @@ npm run test:coverage  # 行 80% を src/logic と arin-core に課す(testrepor
 npm run gen:types      # Rust の型から src/ipc/generated/ を再生成
 npm run e2e            # Playwright(WebKit、Vite の画面に対して)
 npm run app            # 配布用 .app(tauri build --target aarch64-apple-darwin)
-npm run smoke          # .app を一時の状態フォルダで起動し準備完了を確認(先に npm run app)
+npm run app:debug      # デバッグ版の .app(target/aarch64-apple-darwin/debug/bundle/macos/。[arin:verify] が出る)
+npm run smoke          # .app を一時の状態フォルダで起動し準備完了とターミナルの出力を確認(先に npm run app)
+                       #   -- --env=NAME=VALUE(繰り返し可)で環境変数を足す、-- --app=<パス> で .app を指定
+npm run perf           # 性能の計測(記録だけで失敗しない。結果は testreport/perf/。先に npm run app)
 ```
+
+起動時の指定(M1 の検証用。リリースビルドでも有効、T27・M4 で外す): `ARIN_RENDERER`(`dom`/`webgl`)、`ARIN_UNICODE`(`unicode11`/`graphemes`)、`ARIN_VERIFY_GRID`(`1` で 9 枚の検証画面)。不正な値は既定に戻し標準エラーに `[arin:launch]` で出す。
 
 ## 技術スタック
 
@@ -28,6 +33,7 @@ npm run smoke          # .app を一時の状態フォルダで起動し準備�
 | -------- | ---- |
 | アプリ基盤 | Tauri 2.12.5(Rust 1.98.1、edition 2024) |
 | 画面 | React 19.3.1、zustand 5.0.16(vanilla ストア)、Vite 8.3.5、TypeScript 6.0.3 |
+| ターミナル | @xterm/xterm 6.0.0(addon-fit 0.11.0、addon-unicode11 0.9.0、addon-unicode-graphemes 0.4.0、addon-webgl 0.19.0)、portable-pty 0.9.0 |
 | 型の生成 | ts-rs 12.0.1(Rust → `src/ipc/generated/`) |
 | テスト | Vitest 5.0.5、cargo test、node --test、Playwright 1.64.1(WebKit)、cargo-llvm-cov |
 | 実行環境 | Node 24 以上 |

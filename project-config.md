@@ -82,9 +82,9 @@ flowchart LR
 
 | カテゴリ         | 技術                                          |
 | ---------------- | --------------------------------------------- |
-| フレームワーク   | Tauri 2.12 系（Rust 1.98.1 + TypeScript 6.0 系）。画面は React + zustand（版は M0 で固定）。Electron は不採用 |
+| フレームワーク   | Tauri 2.12 系（Rust 1.98.1 + TypeScript 6.0 系）。画面は React 19.3.1 + zustand 5.0.16。Electron は不採用 |
 | ビルド           | Cargo ワークスペース（`arin-core` / `arin-platform` / `src-tauri`）と Vite 8 系。パッケージ管理は npm |
-| ターミナルエンジン | xterm.js 6.0.0（第一候補。M1 の Go/No-Go で最終判断し ADR-001 に残す）。描画方式（DOM / WebGL）は M1 で決める。PTY は Rust 側の `portable-pty` 0.9.0 |
+| ターミナルエンジン | xterm.js 6.0.0（第一候補。M1 の Go/No-Go で最終判断し ADR-001 に残す）。描画方式（DOM / WebGL）は M1 の Go/No-Go で決める（切り替え用に `@xterm/addon-webgl` 0.19.0 を入れてある）。アドオンは `addon-fit` 0.11.0、`addon-unicode11` 0.9.0、`addon-unicode-graphemes` 0.4.0。PTY は Rust 側の `portable-pty` 0.9.0 |
 | スタイリング     | 素の CSS とカスタムプロパティ（システムのライト／ダークに追従） |
 | 状態管理         | Rust の `arin-core` が正本。画面側は zustand のストアに写しを持つ。永続化は JSON ファイル、設定ファイルは TOML |
 | バリデーション   | なし                                           |
@@ -102,7 +102,7 @@ flowchart LR
 
 ## 3. コマンド <!-- 必須 -->
 
-コマンドは npm のスクリプトに集約する（M0 で用意する。現時点では未実装）。
+コマンドは npm のスクリプトに集約する（正本は `package.json`）。
 
 ```bash
 npm run build          # 画面の型検査とビルド + Rust のビルド
@@ -110,9 +110,10 @@ npm test               # 単体・結合テスト（vitest run + cargo test）
 npm run test:coverage  # カバレッジ付きテスト（出力先 testreport/coverage/）
 npm run lint           # tsc + cargo clippy + cargo fmt --check + 境界検査
 npm run app            # .app バンドルを生成（tauri build。署名なし）
+npm run app:debug      # デバッグ版の .app（検証用の記録 [arin:verify] が出る）
 npm run dev            # 開発用に起動（tauri dev。人間が体感確認するとき）
 npm run e2e            # Playwright（ブラウザ方式。出力先 testreport/e2e/）
-npm run smoke          # 実アプリの起動スモーク
+npm run smoke          # 実アプリの起動スモーク（-- --env=NAME=VALUE、-- --app=<パス> を付けられる）
 npm run perf           # 性能の計測（出力先 testreport/perf/。合否にしない）
 # npm run dist:mac     # 署名・公証。人間のみ実行（秘密情報を扱うため AI は実行しない）
 ```
