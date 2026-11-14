@@ -82,36 +82,39 @@ flowchart LR
 
 | カテゴリ         | 技術                                          |
 | ---------------- | --------------------------------------------- |
-| フレームワーク   | Swift 6、SwiftUI + AppKit（macOS ネイティブ。Electron / Tauri は不採用） |
-| ビルド           | Swift Package Manager。ロジックは GUI 非依存の SPM ターゲットに分離し、アプリターゲットは薄く保つ |
-| ターミナルエンジン | **未確定（ADR-001 で決定）**。第一候補 SwiftTerm、代替 libghostty。`TerminalEngine` プロトコルの裏に隠して差し替え可能にする |
-| スタイリング     | SwiftUI 標準（システムのライト／ダークに追従） |
-| 状態管理         | Swift Observation（`@Observable`）。永続化は JSON ファイル |
+| フレームワーク   | Tauri 2.12 系（Rust 1.98.1 + TypeScript 6.0 系）。画面は React + zustand（版は M0 で固定）。Electron は不採用 |
+| ビルド           | Cargo ワークスペース（`arin-core` / `arin-platform` / `src-tauri`）と Vite 8 系。パッケージ管理は npm |
+| ターミナルエンジン | xterm.js 6.0.0（第一候補。M1 の Go/No-Go で最終判断し ADR-001 に残す）。描画方式（DOM / WebGL）は M1 で決める。PTY は Rust 側の `portable-pty` 0.9.0 |
+| スタイリング     | 素の CSS とカスタムプロパティ（システムのライト／ダークに追従） |
+| 状態管理         | Rust の `arin-core` が正本。画面側は zustand のストアに写しを持つ。永続化は JSON ファイル、設定ファイルは TOML |
 | バリデーション   | なし                                           |
 | ルーティング     | なし（単一ウィンドウ）                         |
-| アイコン         | SF Symbols                                     |
-| コード品質       | SwiftLint、swift-format                        |
-| 依存方向チェック | SPM のターゲット依存で強制（UI → ロジック の一方向） |
+| アイコン         | 自作の少数の SVG（仮定）                       |
+| コード品質       | `tsc` の厳格オプション、`cargo clippy -- -D warnings`、`cargo fmt --check`、境界検査スクリプト |
+| 依存方向チェック | Cargo のクレート依存と TypeScript のプロジェクト参照で強制（UI → ロジック の一方向） |
 | Git Hooks        | なし                                           |
-| テスト           | Swift Testing または XCTest（単体・結合）。XCUITest はスモークのみ |
+| テスト           | `cargo test` と Vitest（単体・結合）。画面は Playwright のブラウザ方式（WebKit）と実アプリの起動スモーク |
 | 配布             | Developer ID 署名 + Hardened Runtime + notarytool + staple。App Sandbox は無効。Mac App Store 非対応 |
 
-> 上記は REQ_001 §8 の推奨案に基づく初期値。確定は `/architecture` の設計ゲートで行い、ADR に残す。
+> 2026-11-14 の設計ゲートで確定（実装技術を Swift ネイティブから Tauri に変更。本人決定）。詳細と根拠は `output/design/ARCH_multi-terminal.md` §2・§15.1。
 
 ---
 
 ## 3. コマンド <!-- 必須 -->
 
-本プロジェクトは Node.js を使わない。コマンドは Makefile に集約する（M0 で用意する。現時点では未実装）。
+コマンドは npm のスクリプトに集約する（M0 で用意する。現時点では未実装）。
 
 ```bash
-make build            # ビルド（swift build）
-make test             # 単体・結合テスト（swift test）
-make test-coverage    # カバレッジ付きテスト（出力先 testreport/coverage/）
-make lint             # SwiftLint + swift-format のチェック
-make app              # .app バンドルを生成
-make run              # .app を起動（人間が体感確認するとき）
-# make notarize       # 署名・公証。人間のみ実行（秘密情報を扱うため AI は実行しない）
+npm run build          # 画面の型検査とビルド + Rust のビルド
+npm test               # 単体・結合テスト（vitest run + cargo test）
+npm run test:coverage  # カバレッジ付きテスト（出力先 testreport/coverage/）
+npm run lint           # tsc + cargo clippy + cargo fmt --check + 境界検査
+npm run app            # .app バンドルを生成（tauri build。署名なし）
+npm run dev            # 開発用に起動（tauri dev。人間が体感確認するとき）
+npm run e2e            # Playwright（ブラウザ方式。出力先 testreport/e2e/）
+npm run smoke          # 実アプリの起動スモーク
+npm run perf           # 性能の計測（出力先 testreport/perf/。合否にしない）
+# npm run dist:mac     # 署名・公証。人間のみ実行（秘密情報を扱うため AI は実行しない）
 ```
 
 ---
