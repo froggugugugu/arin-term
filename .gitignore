@@ -3,4 +3,6 @@ testreport/
 .claude/settings.local.json
 .claude/worktrees/
 .claude/agent-memory-local/
+.agents/skills/*-workspace/
+.blueprint-migrate-backup/
 .claude/skills/*-workspace/
