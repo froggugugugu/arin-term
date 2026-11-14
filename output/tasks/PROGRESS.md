@@ -16,13 +16,13 @@
 
 | 項目 | 内容 |
 | ---- | ---- |
-| 最終更新 | 2026-11-15(M0 の T1〜T12 と T13 の AI の分が完了。人間の確認待ち) |
-| ブランチ | `feat/m0-skeleton`(`docs/prd-multi-terminal` から分岐) |
+| 最終更新 | 2026-11-15(M0 は CI 緑。M1 の T14・T16 が完了、T15 に着手) |
+| ブランチ | `feat/m1-terminal`(`feat/m0-skeleton` から分岐)。`feat/m0-skeleton` は push 済みで、pull request #1(main 向け)が開いている |
 | 最後のコミット | `git log --oneline -1` で確認する(本ファイルに書くと古くなるため) |
 | 起動コマンド | `npm run dev`(開発用)。`.app` は `npm run app` で `target/aarch64-apple-darwin/release/bundle/macos/Arin.app` にできる |
 | スモークテスト | `npm run app && npm run smoke` → 期待: 終了コード 0、「スモーク成功」の表示 |
-| 既知の壊れている箇所 | なし(ソースコードがまだ無い) |
-| 待ち | 本人の確認 3 点: (1) `Arin.app` を開いて空ウィンドウを見る、(2) push して CI が緑になるのを見る、(3) T1 の差分(コミット `b938d3d`)の了承。済んだら M1(T14〜)に進む |
+| 既知の壊れている箇所 | なし。`scripts/smoke.test.mjs` の一時フォルダの数を数える検査は、ほかのテストを同時に動かすと落ちることがある(単独では通る) |
+| 待ち | 本人の確認: (1) `Arin.app` を開いて空ウィンドウを見る、(2) pull request #1 をマージするかの判断、(3) T1 の差分(コミット `b938d3d`)の了承。push は 2026-11-15 に了承済み。M1 は並行して進めてよい |
 
 ---
 
@@ -43,16 +43,16 @@
 | T9 | カバレッジ付きテスト | `npm run test:coverage` が通り、`testreport/coverage/` に Rust と TypeScript の結果がある | ✅ 2026-11-14(`cargo-llvm-cov` 0.9.1。行 80% を `src/logic` と `arin-core` のそれぞれに課す。現状はどちらも 100%) |
 | T10 | 実アプリの起動スモーク | `npm run smoke` が、一時の状態フォルダで `.app` を起動し、準備完了を確かめて終了コード 0 で終わる。本物の `~/Library/Application Support/Arin/` を作らない | ✅ 2026-11-15(`npm run app && npm run smoke` が終了コード 0。0.6 秒で準備完了の印を確認。本物の状態フォルダは作られていない。環境変数は `ARIN_STATE_DIR` と `ARIN_SMOKE`) |
 | T11 | Playwright の骨格 | `npm run e2e` で、画面が開き `AppShell` が表示され、偽の Rust 側に準備完了が 1 回届く | ✅ 2026-11-15(`npm run e2e` で 3 件合格。WebKit 27.2。偽の通信はテスト側で差し替え、製品のソースに差し込み口は無い) |
-| T12 | CI | `.github/workflows/ci.yml` が lint・test・build・e2e を実行する | 🟡 2026-11-15(`ci.yml` を追加。手元の lint・test・build・e2e は成功。CI 自体は push していないので未確認) |
-| T13 | M0 の完了確認(人間ゲート) | 本人が `.app` の空ウィンドウを見た。push 後の CI が緑 | 🟡 2026-11-15(AI の分は完了。合否一覧は `output/reports/test/M0_acceptance.md`。人間の分が未: `.app` の目視、push して CI 緑) |
+| T12 | CI | `.github/workflows/ci.yml` が lint・test・build・e2e を実行する | ✅ 2026-11-15(pull request #1 の最初の実行で合格。4 分 11 秒) |
+| T13 | M0 の完了確認(人間ゲート) | 本人が `.app` の空ウィンドウを見た。push 後の CI が緑 | 🟡 2026-11-15(CI は緑。合否一覧は `output/reports/test/M0_acceptance.md`。`.app` の目視だけ未) |
 
 ### M1 ターミナル 1 枚
 
 | ID | 機能 | 受け入れ条件(確認できる粒度) | passes |
 | -- | ---- | ---------------------------- | ------ |
-| T14 | ログインシェルの起動の仕様と PTY のポート | 単体テストで、`argv[0]` が `-zsh` の形、環境変数が許可リストだけ、cwd が指定どおり | ❌ |
+| T14 | ログインシェルの起動の仕様と PTY のポート | 単体テストで、`argv[0]` が `-zsh` の形、環境変数が許可リストだけ、cwd が指定どおり | ✅ 2026-11-15(単体テスト 33 件合格。`arin-core` の行カバレッジ 100%) |
 | T15 | PTY の実装と実 PTY の結合テスト | 実 PTY で、ログインシェルが指定の cwd で起動し、`PATH` が `zsh -l` の値と同じ。寸法の変更が届く。1 枚の終了がもう 1 枚に波及しない | ❌ |
-| T16 | エンジンの抽象と xterm.js の実装(DOM) | `@xterm/*` を import するのが `src/terminal/xterm` だけ(`npm run lint`)。スクロールバックが 10,000 行 | ❌ |
+| T16 | エンジンの抽象と xterm.js の実装(DOM) | `@xterm/*` を import するのが `src/terminal/xterm` だけ(`npm run lint`)。スクロールバックが 10,000 行 | ✅ 2026-11-15(`TerminalManager` のテスト 12 件合格。xterm.js の実物の動作は T18・T19 で確かめる) |
 | T17 | セッション管理とターミナルのコマンド | テストで、出力が順序どおり届き、上限で読み取りが止まり、処理済みの通知で再開する | ❌ |
 | T18 | 画面とターミナルの接続 | `npm run dev` でシェルのプロンプトが出て、`echo ok` の結果が表示される。ウィンドウの大きさを変えると行・桁数が追従する | ❌ |
 | T19 | ターミナルの画面の自動テスト | `npm run e2e` で、出力の表示、キー入力、リサイズ、10,000 行のさかのぼりが通る | ❌ |
@@ -133,13 +133,22 @@
 
 ## 3. 次にやること(優先順)
 
-1. 本人の確認(M0 の人間ゲート): `npm run app` で作った `Arin.app` を開いて空ウィンドウを見る。push して CI が緑になるのを見る。T1 の差分(コミット `b938d3d`)を了承する
-2. CI が失敗したら原因を直す(`macos-26` での Rust 1.98.1 と WebKit の導入は未検証)
-3. M1(ターミナル 1 枚)に進む。T14・T15 から。M1 の末尾は Go/No-Go の人間ゲート(T26)
+1. T15(実 PTY の実装と結合テスト)→ T17(セッション管理とコマンド)→ T18(画面とつなぐ)の順に進める
+2. 本人の確認(M0 の人間ゲートの残り): `Arin.app` の空ウィンドウの目視、pull request #1 のマージの判断、T1 の差分の了承
+3. T18 で確かめること: `XtermEngine` は一度も実行していない(`write` が返すバイト数、`fit`、画面に入れる前の `open`)。CSP の調整も T18
+4. M1 の末尾は Go/No-Go の人間ゲート(T26)
 
 ---
 
 ## 4. セッションログ(新しいものを上に)
+
+### 2026-11-15 — M1(ターミナル 1 枚)の実装セッション
+
+- **やったこと**: `feat/m0-skeleton` を push して pull request #1 を作り、CI が緑になった。M1 の T14(`ShellLaunchSpec` と `PtyPort`)と T16(エンジンの抽象、`XtermEngine`、`TerminalManager`)を Opus のサブエージェントに並行で任せ、司令塔が再実行して確かめてからコミットした
+- **検証**: `npm test`(Vitest 29 件、cargo test、node --test)・`npm run lint`・`npm run build` が終了コード 0
+- **T16 で決めたこと**: 入れた版は `@xterm/xterm` 6.0.0、`@xterm/addon-fit` 0.11.0、`@xterm/addon-unicode11` 0.9.0、`@xterm/addon-unicode-graphemes` 0.4.0(4 つとも 2025-12-22 公開)。全角幅の既定は `unicode11` で、`graphemes` に切り替えて比べられる。`allowProposedApi` を有効にした(全角幅の切り替えの API が試験的な扱いのため)。`TerminalSurface` は M1 で使う操作だけ(設計書 §5.1 の `onFocus`・`setVisible`・`apply`・`getSelection`・`paste`・`showFind` は未実装)。`TerminalId` は仮に文字列(T18 で Rust から生成した型に替える)
+- **T14 で決めたこと**: `LANG` はシステムの言語設定から `言語_地域.UTF-8` を作り、作れなければ `en_US.UTF-8`。親の `LANG` は引き継がない。cwd が実在するかは `arin-core` では見ない(T15 の実装側で見る)。終了の検知は待たない `try_wait` だけ
+- **申し送り**: `portable-pty` の `CommandBuilder` は、`argv[0]` を自由に決められない、親の環境変数を取り込む、cwd がディレクトリでないと黙ってホームにする、という 3 点が未検証の懸念(T15 で確かめる)
 
 ### 2026-11-14〜15 — M0(骨格)の実装セッション
 

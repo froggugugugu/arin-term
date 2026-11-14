@@ -174,12 +174,12 @@ M1 は検証専用(PRD §7)。対象は単一プロジェクト・単一タブ�
 
 #### Phase 9(並行可能。M0 完了後)
 
-- [ ] T14 — ログインシェルの起動の仕様と PTY のポートを `arin-core` に書く(変更ファイル: crates/arin-core/src/terminal/, crates/arin-core/src/ports/, crates/arin-core/src/lib.rs | 依存: T13)
+- [x] T14 — ログインシェルの起動の仕様と PTY のポートを `arin-core` に書く(変更ファイル: crates/arin-core/src/terminal/, crates/arin-core/src/ports/, crates/arin-core/src/lib.rs | 依存: T13)
   - 対応: FR-040、FR-039(初期 cwd)。設計書 §7.1「ターミナルの起動」(`ARCH_multi-terminal.md:605-622`)。`ShellLaunchSpec`(シェルのパス、`argv[0]` を `-zsh` の形に、cwd、許可リストから組み立てた環境変数)と `PtyPort`
   - 並行: 可(T16 とファイルが重ならない)
   - 先に書くテスト: `argv[0]` が `-` とシェルのファイル名になる。環境変数が許可リストの名前だけになる(親の余計な変数が入らない)。`TERM` が `xterm-256color`、`COLORTERM` が `truecolor`。`PATH` が `/usr/bin:/bin:/usr/sbin:/sbin`。cwd が指定どおり。`LANG` の組み立て
   - 検証: `npm test && npm run lint`
-- [ ] T16 — ターミナルエンジンの抽象と xterm.js の実装(DOM 描画)を書く(変更ファイル: package.json, package-lock.json, src/terminal/engine.ts, src/terminal/TerminalManager.ts, src/terminal/TerminalManager.test.ts, src/terminal/xterm/ | 依存: T13)
+- [x] T16 — ターミナルエンジンの抽象と xterm.js の実装(DOM 描画)を書く(変更ファイル: package.json, package-lock.json, src/terminal/engine.ts, src/terminal/TerminalManager.ts, src/terminal/TerminalManager.test.ts, src/terminal/xterm/ | 依存: T13)
   - 対応: FR-041、FR-043(スクロールバック 10,000 行、寸法合わせ)、PRD §7 C4。設計書 §5.1 の `TerminalEngine` / `TerminalSurface`。`@xterm/xterm` 6.0.0、`@xterm/addon-fit`、全角幅と絵文字のためのアドオン(`addon-unicode11` か `addon-unicode-graphemes`。どちらにするかは T26 の実機確認の材料にする)を正確な版で入れる。`write` は取り込みが済んだバイト数を返す
   - 並行: 可(T14 とファイルが重ならない)
   - 先に書くテスト: `TerminalManager` を偽のエンジンでテストする(ID とサーフェスの対応、同じ ID で二重に作らない、破棄)。xterm.js の実物の表示は T19 の Playwright で見る
