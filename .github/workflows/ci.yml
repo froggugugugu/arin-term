@@ -1,0 +1,50 @@
+# push と pull request のたびに、lint・テスト・ビルド・画面の自動テストを実行する。
+# 署名と公証はここでは行わない(M5 で release.yml を足す)。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version: 24, cache: npm }
+      # ランナーには rustup が入っている。版と部品は rust-toolchain.toml のとおりに入る。
+      - name: Rust のツールチェーン
+        run: |
+          rustup show
+          rustc --version
+          cargo --version
+      # 依存の install スクリプトは実行しない(必要とする依存が無い)。
+      - run: npm ci --ignore-scripts
+      - name: Playwright の WebKit
+        run: npx playwright install webkit
+      - name: lint(型検査、clippy、rustfmt、境界検査)
+        run: npm run lint
+      - name: 単体・結合テスト(Vitest、cargo test、node --test)
+        run: npm test
+      - name: ビルド
+        run: npm run build
+      - name: 画面の自動テスト(Playwright)
+        run: npm run e2e
+      - name: 失敗時の手がかりを残す
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-results
+          path: testreport/e2e/
+          retention-days: 7
