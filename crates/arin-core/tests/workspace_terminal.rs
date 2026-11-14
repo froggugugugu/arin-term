@@ -357,3 +357,86 @@ fn ターミナルの_id_は文字列として_json_になる() {
     assert_eq!(serde_json::to_value(&id).unwrap(), json!("terminal-1"));
     assert_eq!(id.to_string(), "terminal-1");
 }
+
+// ---------------------------------------------------------------------------
+// 9 枚の検証画面(T22。M4 の T49 で外す)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn 枚数を指定すると_terminal_1_から順に_9_枚がまだ起動していない状態で載る() {
+    let ws = workspace().with_terminal_count(9);
+
+    let snapshot = ws.snapshot();
+
+    let ids: Vec<&str> = snapshot.terminals.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        (1..=9).map(|n| format!("terminal-{n}")).collect::<Vec<_>>()
+    );
+    assert!(
+        snapshot
+            .terminals
+            .iter()
+            .all(|t| t.status == TerminalStatus::NotStarted)
+    );
+}
+
+#[test]
+fn 枚数を指定しなければ_1_枚で_0_枚の指定も_1_枚になる() {
+    assert_eq!(only_id(&workspace()).as_str(), "terminal-1");
+    assert_eq!(
+        only_id(&workspace().with_terminal_count(0)).as_str(),
+        "terminal-1"
+    );
+    assert_eq!(
+        only_id(&workspace().with_terminal_count(1)).as_str(),
+        "terminal-1"
+    );
+}
+
+#[test]
+fn _9_枚ともホームフォルダで起動を計画し_状態はそれぞれ別に変わる() {
+    let mut ws = workspace().with_terminal_count(9);
+    let ids: Vec<TerminalId> = ws.snapshot().terminals.into_iter().map(|t| t.id).collect();
+
+    for id in &ids {
+        let spec = spawn_plan(&mut ws, id);
+        assert_eq!(spec.cwd(), Path::new(HOME));
+        ws.mark_running(id).unwrap();
+    }
+    // 1 枚が終わっても、ほかの 8 枚は動いたまま入力を受け付ける(NFR-006)。
+    assert!(ws.mark_exited(
+        &ids[4],
+        Some(ChildExit {
+            exit_code: 0,
+            signal: None,
+        })
+    ));
+    ws.mark_failed(&ids[8], "偽の失敗").unwrap();
+
+    assert_eq!(
+        ws.check_input(&ids[4]),
+        Err(TerminalError::Exited(ids[4].clone()))
+    );
+    for (i, id) in ids.iter().enumerate() {
+        if i == 4 || i == 8 {
+            continue;
+        }
+        assert_eq!(ws.check_input(id), Ok(()), "{id} が入力を受け付けない");
+    }
+    let statuses: Vec<TerminalStatus> = ws
+        .snapshot()
+        .terminals
+        .into_iter()
+        .map(|t| t.status)
+        .collect();
+    assert_eq!(
+        statuses
+            .iter()
+            .filter(|s| **s == TerminalStatus::Running)
+            .count(),
+        7
+    );
+    // 起動に失敗した 1 枚は、次の接続で起動し直せる。
+    assert_eq!(spawn_plan(&mut ws, &ids[8]).cwd(), Path::new(HOME));
+}

@@ -56,11 +56,32 @@ impl Workspace {
                 .map(|(k, v)| (k.as_ref().to_owned(), v.as_ref().to_owned()))
                 .collect(),
             terminals: vec![TerminalEntry {
-                id: TerminalId::new("terminal-1"),
+                id: terminal_id(1),
                 cwd: home,
                 status: TerminalStatus::NotStarted,
             }],
         }
+    }
+
+    /// ターミナルを `count` 枚(`terminal-1` 〜 `terminal-<count>`)持つようにする。0 は 1 として扱う。
+    /// どれも `new` で渡したホームフォルダを cwd にし、まだ起動していない状態で登録する(PTY はそれぞれの最初の接続で起動する)。
+    ///
+    /// M1 の 9 枚の検証画面(`ARIN_VERIFY_GRID`。T22)のためだけに使う。M4(T49)のタイル表示で外す前提。
+    #[must_use]
+    pub fn with_terminal_count(mut self, count: usize) -> Self {
+        let cwd = self
+            .terminals
+            .first()
+            .map(|t| t.cwd.clone())
+            .unwrap_or_default();
+        self.terminals = (1..=count.max(1))
+            .map(|n| TerminalEntry {
+                id: terminal_id(n),
+                cwd: cwd.clone(),
+                status: TerminalStatus::NotStarted,
+            })
+            .collect();
+        self
     }
 
     /// 画面へ渡す状態の写し。
@@ -203,6 +224,11 @@ impl Workspace {
     pub fn check_exists(&self, id: &TerminalId) -> Result<(), TerminalError> {
         find(&self.terminals, id).map(|_| ())
     }
+}
+
+/// `n` 枚目(1 から)のターミナルの ID。
+fn terminal_id(n: usize) -> TerminalId {
+    TerminalId::new(format!("terminal-{n}"))
 }
 
 fn find<'a>(

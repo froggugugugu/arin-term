@@ -169,6 +169,11 @@ class XtermSurface implements TerminalSurface {
     return !this.#disposed && active !== null && this.element.contains(active);
   }
 
+  focus(): void {
+    if (this.#disposed || !this.#visible) return;
+    this.#terminal.focus();
+  }
+
   dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;

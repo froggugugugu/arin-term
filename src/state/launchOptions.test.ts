@@ -25,7 +25,7 @@ describe("createWithLaunchOptions(起動時の指定を取ってからエンジ�
     await Promise.resolve();
     // 応答が届くまではエンジンを作らない。
     expect(events).toEqual(["get_launch_options"]);
-    resolveOptions?.({ renderer: "webgl", unicode: "graphemes" });
+    resolveOptions?.({ renderer: "webgl", unicode: "graphemes", verifyGrid: true });
 
     await expect(pending).resolves.toBe("engine");
     expect(events).toEqual(["get_launch_options", "create(webgl,graphemes)"]);
@@ -47,7 +47,7 @@ describe("createWithLaunchOptions(起動時の指定を取ってからエンジ�
     });
 
     expect(created).toEqual([DEFAULT_LAUNCH_OPTIONS]);
-    expect(DEFAULT_LAUNCH_OPTIONS).toEqual({ renderer: "dom", unicode: "unicode11" });
+    expect(DEFAULT_LAUNCH_OPTIONS).toEqual({ renderer: "dom", unicode: "unicode11", verifyGrid: false });
     expect(reported).toEqual([
       "起動時の指定を取得できなかったので、既定(dom・unicode11)で起動する: command get_launch_options not found",
     ]);

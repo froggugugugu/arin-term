@@ -49,6 +49,7 @@ pub fn builder_with_pty<R: Runtime>(
     let ready = ReadyNotice::new(launch.ready_marker().map(ToOwned::to_owned));
     let first_output = FirstOutputNotice::new(launch.terminal_marker().map(ToOwned::to_owned));
     let terminal = launch.terminal().clone();
+    let terminal_count = launch.options().terminal_count();
     Builder::<R>::new()
         .manage(launch.paths().clone())
         .manage(launch.options())
@@ -56,11 +57,13 @@ pub fn builder_with_pty<R: Runtime>(
         .manage(first_output)
         .menu(menu::build)
         .setup(move |app| {
+            // 9 枚の検証画面(`ARIN_VERIFY_GRID`。M1 の検証用、M4 の T49 で外す)なら 9 枚、そうでなければ 1 枚。
             let workspace = Workspace::new(
                 app.package_info().version.to_string(),
                 terminal.home.unwrap_or_default(),
                 terminal.vars,
-            );
+            )
+            .with_terminal_count(terminal_count);
             let handle = app.handle().clone();
             let listener = Arc::new(move |snapshot: AppSnapshot| {
                 // 画面がまだ無いときなどは送れない。写しは画面が取得のコマンドでも取れるので捨ててよい。

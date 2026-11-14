@@ -116,25 +116,33 @@ struct FakePty(Arc<Control>);
 
 impl PtyPort for FakePty {
     fn spawn(&self, spec: &ShellLaunchSpec, size: PtySize) -> Result<SpawnedPty, PtyError> {
-        let control = &self.0;
-        if control.fail_spawn.load(Ordering::SeqCst) {
-            return Err(PtyError::Spawn("偽の起動の失敗".to_owned()));
-        }
-        lock(&control.spawned).push((spec.clone(), size));
-        let (tx, rx) = mpsc::channel();
-        for chunk in lock(&control.initial_output).drain(..) {
-            tx.send(chunk).unwrap();
-        }
-        *lock(&control.feed) = Some(tx);
-        Ok(SpawnedPty {
-            session: Box::new(FakeSession(Arc::clone(control))),
-            output: Box::new(FakeOutput {
-                control: Arc::clone(control),
-                rx,
-                rest: Vec::new(),
-            }),
-        })
+        spawn_on(&self.0, spec, size)
     }
+}
+
+/// 偽の PTY を `control` で起動する(`FakePty` と、9 枚の検証画面の `GridPty` が共有する)。
+fn spawn_on(
+    control: &Arc<Control>,
+    spec: &ShellLaunchSpec,
+    size: PtySize,
+) -> Result<SpawnedPty, PtyError> {
+    if control.fail_spawn.load(Ordering::SeqCst) {
+        return Err(PtyError::Spawn("偽の起動の失敗".to_owned()));
+    }
+    lock(&control.spawned).push((spec.clone(), size));
+    let (tx, rx) = mpsc::channel();
+    for chunk in lock(&control.initial_output).drain(..) {
+        tx.send(chunk).unwrap();
+    }
+    *lock(&control.feed) = Some(tx);
+    Ok(SpawnedPty {
+        session: Box::new(FakeSession(Arc::clone(control))),
+        output: Box::new(FakeOutput {
+            control: Arc::clone(control),
+            rx,
+            rest: Vec::new(),
+        }),
+    })
 }
 
 struct FakeOutput {
@@ -908,4 +916,195 @@ fn 未処理の量の最大値と読み取りを止めた回数を記録する()
     assert!(summary.max_unacked <= config.high_water + config.read_buffer as u64);
     assert_eq!(summary.peak_unacked, summary.max_unacked);
     assert_eq!(summary.unacked, summary.max_unacked);
+}
+
+// ---------------------------------------------------------------------------
+// 9 枚の検証画面(T22。NFR-006。M4 の T49 で外す)
+// ---------------------------------------------------------------------------
+
+/// 起動のたびに、用意した偽の PTY を順に 1 つずつ使う(1 枚目の起動に 1 つ目、…)。
+struct GridPty {
+    controls: Vec<Arc<Control>>,
+    next: AtomicUsize,
+}
+
+impl PtyPort for GridPty {
+    fn spawn(&self, spec: &ShellLaunchSpec, size: PtySize) -> Result<SpawnedPty, PtyError> {
+        let index = self.next.fetch_add(1, Ordering::SeqCst);
+        let control = self
+            .controls
+            .get(index)
+            .ok_or_else(|| PtyError::Spawn("用意した偽の PTY を使い切った".to_owned()))?;
+        spawn_on(control, spec, size)
+    }
+}
+
+struct GridFixture {
+    registry: SessionRegistry,
+    controls: Vec<Arc<Control>>,
+    ids: Vec<TerminalId>,
+    sinks: Vec<Arc<CollectSink>>,
+}
+
+impl GridFixture {
+    /// 9 枚の Workspace を作る。`fail_spawn` の番号(0 から)の偽の PTY は起動に失敗する。
+    fn new(fail_spawn: &[usize]) -> Self {
+        let controls: Vec<Arc<Control>> =
+            (0..9).map(|_| Control::new(OutputMode::Scripted)).collect();
+        for &i in fail_spawn {
+            controls[i].fail_spawn.store(true, Ordering::SeqCst);
+        }
+        let workspace = Workspace::new("0.0.0-test", PathBuf::from(HOME), [("HOME", HOME)])
+            .with_terminal_count(9);
+        let registry = SessionRegistry::new(
+            workspace,
+            Arc::new(GridPty {
+                controls: controls.clone(),
+                next: AtomicUsize::new(0),
+            }),
+            Arc::new(|| ShellDefaults {
+                shell: PathBuf::from("/bin/zsh"),
+                locale: None,
+            }),
+            Arc::new(|_| {}),
+            test_config(),
+        );
+        let ids: Vec<TerminalId> = registry
+            .snapshot()
+            .terminals
+            .into_iter()
+            .map(|t| t.id)
+            .collect();
+        let sinks = ids.iter().map(|_| CollectSink::new()).collect();
+        Self {
+            registry,
+            controls,
+            ids,
+            sinks,
+        }
+    }
+
+    /// 9 枚を順に接続する。失敗した接続の結果も返す。
+    fn connect_all(&self) -> Vec<Result<(), SessionError>> {
+        self.ids
+            .iter()
+            .zip(&self.sinks)
+            .map(|(id, sink)| {
+                self.registry
+                    .connect(id, 12, 40, Arc::clone(sink) as Arc<dyn OutputSink>)
+            })
+            .collect()
+    }
+
+    fn status(&self, i: usize) -> TerminalStatus {
+        self.registry.snapshot().terminals[i].status.clone()
+    }
+
+    /// `i` 枚目に入力を書き、出力を流し、両方が届くことを確かめる。
+    fn assert_io(&self, i: usize, label: &str) {
+        let id = &self.ids[i];
+        let control = &self.controls[i];
+        let sink = &self.sinks[i];
+        let input = format!("echo {id}\r");
+        self.registry
+            .write(id, input.as_bytes())
+            .unwrap_or_else(|e| panic!("{label}: {id} に書き込めなかった: {e}"));
+        assert!(
+            lock(&control.written).ends_with(input.as_bytes()),
+            "{label}: {id} の入力が PTY に届かなかった"
+        );
+        let before = sink.total();
+        let output = format!("out-{id}\r\n");
+        control.feed(output.as_bytes());
+        assert!(
+            sink.wait_total(before + output.len()),
+            "{label}: {id} の出力が届かなかった"
+        );
+        assert!(sink.bytes().ends_with(output.as_bytes()));
+        self.registry.ack(id, output.len() as u64).unwrap();
+    }
+}
+
+impl Drop for GridFixture {
+    fn drop(&mut self) {
+        self.registry.shutdown();
+    }
+}
+
+#[test]
+fn _9_枚はそれぞれ最初の接続で別の_pty_をホームフォルダで起動し_それぞれ入出力できる() {
+    let f = GridFixture::new(&[]);
+    assert_eq!(f.ids.len(), 9);
+    assert!(
+        f.controls.iter().all(|c| c.spawn_count() == 0),
+        "接続の前に起動した"
+    );
+
+    for result in f.connect_all() {
+        result.expect("接続できなかった");
+    }
+
+    for (i, control) in f.controls.iter().enumerate() {
+        assert_eq!(control.spawn_count(), 1, "{} 枚目の起動の回数", i + 1);
+        let spawned = lock(&control.spawned);
+        assert_eq!(spawned[0].0.cwd(), Path::new(HOME));
+        assert_eq!(spawned[0].1, PtySize { rows: 12, cols: 40 });
+        drop(spawned);
+        assert_eq!(f.status(i), TerminalStatus::Running);
+    }
+    for i in 0..9 {
+        f.assert_io(i, "全部動いているとき");
+    }
+    // 出力はほかのターミナルの送り先に混ざらない。
+    for (i, sink) in f.sinks.iter().enumerate() {
+        assert_eq!(sink.bytes(), format!("out-{}\r\n", f.ids[i]).into_bytes());
+    }
+}
+
+#[test]
+fn _9_枚のうち_1_枚のシェルが終わっても_残りの_8_枚は入出力を続ける() {
+    let f = GridFixture::new(&[]);
+    for result in f.connect_all() {
+        result.expect("接続できなかった");
+    }
+
+    // 5 枚目のシェルが終わる(出力も終わる)。
+    f.controls[4].set_exit(1);
+    f.controls[4].close_output();
+    assert!(
+        wait_until(|| f.status(4) == exited(1)),
+        "5 枚目の終了が反映されなかった"
+    );
+
+    assert!(matches!(
+        f.registry.write(&f.ids[4], b"x"),
+        Err(SessionError::Terminal(TerminalError::Exited(_)))
+    ));
+    for i in (0..9).filter(|&i| i != 4) {
+        assert_eq!(f.status(i), TerminalStatus::Running);
+        f.assert_io(i, "1 枚が終わったあと");
+    }
+}
+
+#[test]
+fn _9_枚のうち_1_枚の起動に失敗しても_残りの_8_枚は起動して入出力を続ける() {
+    let f = GridFixture::new(&[2]);
+
+    let results = f.connect_all();
+
+    for (i, result) in results.iter().enumerate() {
+        if i == 2 {
+            assert!(
+                matches!(result, Err(SessionError::Pty(PtyError::Spawn(_)))),
+                "3 枚目の接続が失敗しなかった: {result:?}"
+            );
+        } else {
+            assert!(result.is_ok(), "{} 枚目の接続が失敗した: {result:?}", i + 1);
+        }
+    }
+    assert!(matches!(f.status(2), TerminalStatus::Failed { .. }));
+    for i in (0..9).filter(|&i| i != 2) {
+        assert_eq!(f.status(i), TerminalStatus::Running);
+        f.assert_io(i, "1 枚が起動に失敗したあと");
+    }
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createIpc } from "../ipc/client";
+import { type GridView, SHOW_ALL, showOnly, visibilityChanges } from "../logic/verifyGrid";
 import { createFakeIpc, type FakeHandlers } from "../test/fakeIpc";
 import { createFakeTerminalEngine } from "../test/fakeTerminalEngine";
 import { TerminalManager, type TerminalSlot } from "./TerminalManager";
@@ -636,5 +637,101 @@ describe("TerminalManager(コピー・ペーストの振り分け。FR-043、設
     manager.dispose("t1");
 
     expect(manager.handleClipboard("paste", fakeClipboard({ "text/plain": "x" }))).toBe(false);
+  });
+});
+
+describe("TerminalManager(9 枚の検証画面。T22、設計書 §2.2「非表示のインスタンス」)", () => {
+  const IDS = Array.from({ length: 9 }, (_, i) => `terminal-${i + 1}`);
+
+  /** 9 枚を置き場所に入れて接続し、ID ごとのサーフェスとチャネルを返す。 */
+  async function setupGrid() {
+    const ctx = setup();
+    for (const id of IDS) ctx.manager.attach(id, fakeSlot().slot);
+    await flush();
+    const surfaceOf = (id: string) => {
+      const surface = ctx.engine.created.find((s) => s.id === id);
+      if (surface === undefined) throw new Error(`${id} のサーフェスが無い`);
+      return surface;
+    };
+    const channelOf = (id: string) => {
+      const index = ctx.fake.calls
+        .filter((c) => c.command === "connect_terminal")
+        .findIndex((c) => (c.args as { terminalId: string }).terminalId === id);
+      const channel = ctx.fake.channels[index];
+      if (channel === undefined) throw new Error(`${id} のチャネルが無い`);
+      return channel;
+    };
+    const argsOf = (command: string) => ctx.fake.calls.filter((c) => c.command === command).map((c) => c.args);
+    const applyView = (from: GridView, to: GridView) => {
+      for (const change of visibilityChanges(IDS, from, to)) ctx.manager.setVisible(change.id, change.visible);
+    };
+    return { ...ctx, surfaceOf, channelOf, argsOf, applyView };
+  }
+
+  it("9 枚をそれぞれの寸法で 1 回ずつ接続する", async () => {
+    const { argsOf } = await setupGrid();
+
+    const connects = argsOf("connect_terminal") as { terminalId: string; rows: number; cols: number }[];
+    expect(connects.map((c) => c.terminalId)).toEqual(IDS);
+    expect(connects.every((c) => c.rows > 0 && c.cols > 0)).toBe(true);
+  });
+
+  it("1 枚だけ表示では残りの 8 枚に setVisible(false) が届き、隠した 8 枚も取り込みを続けて処理済みの量を返す", async () => {
+    const { surfaceOf, channelOf, argsOf, applyView, fake } = await setupGrid();
+
+    applyView(SHOW_ALL, showOnly(IDS, "terminal-1"));
+    for (const id of IDS) channelOf(id).send(new TextEncoder().encode(`out-${id}\r\n`).buffer);
+    await flush();
+
+    expect(surfaceOf("terminal-1").visibleCalls).toEqual([]);
+    for (const id of IDS.slice(1)) {
+      expect(surfaceOf(id).visibleCalls, id).toEqual([false]);
+      expect(surfaceOf(id).visible, id).toBe(false);
+    }
+    for (const id of IDS) {
+      expect(new TextDecoder().decode(surfaceOf(id).written[0]), id).toBe(`out-${id}\r\n`);
+    }
+    expect(argsOf("ack_terminal_output")).toEqual(
+      IDS.map((id) => ({ terminalId: id, bytes: `out-${id}\r\n`.length })),
+    );
+    expect(fake.channels.every((c) => !c.closed)).toBe(true);
+  });
+
+  it("隠している間に表示中の 1 枚の寸法が変わっても、隠した 8 枚の寸法は送らず、表示に戻したときに自分の置き場所に合わせ直す", async () => {
+    const { surfaceOf, argsOf, applyView, manager } = await setupGrid();
+    const single = showOnly(IDS, "terminal-1");
+    applyView(SHOW_ALL, single);
+
+    // ウィンドウの大きさを変えた: 表示中の 1 枚は合わせ直す。隠した 8 枚は置き場所の大きさが 0 なので決め直さない。
+    surfaceOf("terminal-1").fitTo = { rows: 60, cols: 200 };
+    for (const id of IDS.slice(1)) surfaceOf(id).fitTo = { rows: 0, cols: 0 };
+    for (const id of IDS) manager.fit(id);
+    await flush();
+    expect(argsOf("resize_terminal")).toEqual([{ terminalId: "terminal-1", rows: 60, cols: 200 }]);
+
+    // 9 枚表示に戻す: 8 枚はそれぞれのマスの大きさに合わせ直す(変わったものだけ寸法を送る)。
+    for (const id of IDS.slice(1)) surfaceOf(id).fitTo = { rows: 20, cols: 66 };
+    surfaceOf("terminal-9").fitTo = surfaceOf("terminal-9").size(); // 大きさが変わらなかったマス
+    applyView(single, SHOW_ALL);
+    await flush();
+
+    const resized = argsOf("resize_terminal") as { terminalId: string; rows: number; cols: number }[];
+    expect(resized.slice(1)).toEqual(IDS.slice(1, 8).map((id) => ({ terminalId: id, rows: 20, cols: 66 })));
+    expect(resized.every((r) => r.rows > 0 && r.cols > 0)).toBe(true);
+    for (const id of IDS) expect(surfaceOf(id).visible, id).toBe(true);
+  });
+
+  it("フォーカスを指定のサーフェスへ移す。隠しているもの・持っていない ID では何もしない", async () => {
+    const { surfaceOf, applyView, manager, engine } = await setupGrid();
+
+    manager.focus("terminal-4");
+    expect(surfaceOf("terminal-4").hasFocus()).toBe(true);
+
+    applyView(SHOW_ALL, showOnly(IDS, "terminal-1"));
+    manager.focus("terminal-6");
+    expect(surfaceOf("terminal-6").hasFocus()).toBe(false);
+
+    manager.focus("none");
+    expect(engine.created).toHaveLength(9);
   });
 });

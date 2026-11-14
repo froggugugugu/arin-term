@@ -3,13 +3,16 @@
 //! 環境変数を読むのは `from_env` だけにして薄くする。読んだ値の解釈は `from_inputs` に引数で渡し、
 //! 置き場所の規則そのものは `arin_core::paths::AppPaths` が持つ。テストは `from_inputs` を直接呼び、環境変数を書き換えない。
 //! ターミナルの起動に使う値(ホームフォルダ、`USER`、親の環境変数)もここで読み、`TerminalEnv` にして渡す。
-//! 画面の描画方式と全角幅の方式の指定(`ARIN_RENDERER`・`ARIN_UNICODE`。M1 の検証用、T27 で外す)もここで読み、
+//! 画面の描画方式と全角幅の方式の指定(`ARIN_RENDERER`・`ARIN_UNICODE`。M1 の検証用、T27 で外す)と、
+//! 9 枚の検証画面の指定(`ARIN_VERIFY_GRID`。M1 の検証用、T27 / M4 の T49 で外す)もここで読み、
 //! 解釈は `arin_core::launch_options::LaunchOptions::resolve` に任せる。
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
-use arin_core::launch_options::{ENV_RENDERER, ENV_UNICODE, LaunchOptionInputs, LaunchOptions};
+use arin_core::launch_options::{
+    ENV_RENDERER, ENV_UNICODE, ENV_VERIFY_GRID, LaunchOptionInputs, LaunchOptions,
+};
 use arin_core::paths::{AppPaths, AppPathsError};
 
 /// 状態フォルダの差し替え。絶対パスを指定する。空文字列は指定なしと同じ。
@@ -91,8 +94,8 @@ impl LaunchConfig {
 
     /// 環境変数とホームディレクトリを読んで設定を作る。
     ///
-    /// 起動時の指定(`ARIN_RENDERER`・`ARIN_UNICODE`)が使えない値なら既定に戻し、標準エラーに 1 行ずつ書く。
-    /// この指定は M1 の検証用で、配布用の `.app` でも比べられるようリリースビルドでも読む(T27 で外す)。
+    /// 起動時の指定(`ARIN_RENDERER`・`ARIN_UNICODE`・`ARIN_VERIFY_GRID`)が使えない値なら既定に戻し、標準エラーに 1 行ずつ書く。
+    /// この指定は M1 の検証用で、配布用の `.app` でも比べられるようリリースビルドでも読む(T27 / M4 の T49 で外す)。
     ///
     /// # Errors
     ///
@@ -103,9 +106,11 @@ impl LaunchConfig {
         let smoke = std::env::var_os(ENV_SMOKE);
         let renderer = std::env::var_os(ENV_RENDERER);
         let unicode = std::env::var_os(ENV_UNICODE);
+        let verify_grid = std::env::var_os(ENV_VERIFY_GRID);
         let (options, invalid) = LaunchOptions::resolve(LaunchOptionInputs {
             renderer: renderer.as_deref(),
             unicode: unicode.as_deref(),
+            verify_grid: verify_grid.as_deref(),
         });
         for warning in invalid {
             eprintln!("{LAUNCH_WARNING_PREFIX} {warning}");
@@ -234,7 +239,7 @@ mod tests {
     }
 
     #[test]
-    fn 起動時の指定は既定で_dom_と_unicode11_で_差し替えられる() {
+    fn 起動時の指定は既定で_dom_と_unicode11_と検証画面なしで_差し替えられる() {
         use arin_core::launch_options::{RendererKind, UnicodeWidth};
 
         let c = config(None, None);
@@ -243,6 +248,7 @@ mod tests {
         let options = LaunchOptions {
             renderer: RendererKind::Webgl,
             unicode: UnicodeWidth::Graphemes,
+            verify_grid: true,
         };
         assert_eq!(c.with_launch_options(options).options(), options);
     }

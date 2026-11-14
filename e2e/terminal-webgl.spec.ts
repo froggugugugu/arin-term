@@ -21,7 +21,7 @@ import {
 } from "./fixtures/tauriMock";
 
 const TERMINAL_ID = "t-e2e-webgl";
-const WEBGL: LaunchOptions = { renderer: "webgl", unicode: "unicode11" };
+const WEBGL: LaunchOptions = { renderer: "webgl", unicode: "unicode11", verifyGrid: false };
 
 interface StartedTerminal {
   channelId: number;
@@ -148,7 +148,7 @@ test.describe("WebGL の指定", () => {
 });
 
 test("既定(dom の指定)では DOM で描き、描画方式の表示が dom になる", async ({ page }) => {
-  const { channelId } = await openTerminal(page, { renderer: "dom", unicode: "unicode11" });
+  const { channelId } = await openTerminal(page, { renderer: "dom", unicode: "unicode11", verifyGrid: false });
 
   await expect(page.getByTestId("terminal-renderer")).toHaveText("dom");
   await sendAndWait(page, channelId, ["dom\r\n"]);

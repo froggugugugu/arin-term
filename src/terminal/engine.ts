@@ -58,6 +58,8 @@ export interface TerminalSurface {
   paste(text: string): void;
   /** 入力のフォーカスがこのサーフェスの中にあるか(コピー・ペーストの振り分けに使う。設計書 §9.1)。 */
   hasFocus(): boolean;
+  /** 入力のフォーカスをこのサーフェスへ移す。隠しているとき・破棄の後は何もしない。 */
+  focus(): void;
   /** 資源を手放す。2 回目以降は何もしない。 */
   dispose(): void;
 }

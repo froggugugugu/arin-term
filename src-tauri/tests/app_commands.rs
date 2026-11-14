@@ -20,9 +20,11 @@ use tauri::test::{MockRuntime, get_ipc_response};
 use tauri::{AppHandle, Manager, RunEvent, WebviewWindow};
 
 /// この組み立てに渡す起動時の指定。既定と違う値にして、組み立てからコマンドまで通ることを見る。
+/// 9 枚の検証画面(T22)も有効にする(既定の 1 枚は `terminal_commands.rs` が確かめる)。
 const LAUNCH_OPTIONS: LaunchOptions = LaunchOptions {
     renderer: RendererKind::Webgl,
     unicode: UnicodeWidth::Graphemes,
+    verify_grid: true,
 };
 
 type Check = fn(&AppHandle<MockRuntime>, &WebviewWindow<MockRuntime>, &support::TempDir);
@@ -43,6 +45,12 @@ fn 写しの取得コマンドが_app_snapshot_を返す(
         snapshot.app_version,
         handle.package_info().version.to_string()
     );
+    // 9 枚の検証画面の指定で組み立てたので、ターミナルが 9 枚載る。
+    let ids: Vec<&str> = snapshot.terminals.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        (1..=9).map(|n| format!("terminal-{n}")).collect::<Vec<_>>()
+    );
 }
 
 fn 起動時の指定の取得コマンドが組み立てに渡した指定を返す(
@@ -56,7 +64,7 @@ fn 起動時の指定の取得コマンドが組み立てに渡した指定を�
         body.clone()
             .deserialize::<serde_json::Value>()
             .unwrap_or_else(|e| panic!("JSON として読めなかった: {e}")),
-        json!({ "renderer": "webgl", "unicode": "graphemes" })
+        json!({ "renderer": "webgl", "unicode": "graphemes", "verifyGrid": true })
     );
     let options: LaunchOptions = body
         .deserialize()

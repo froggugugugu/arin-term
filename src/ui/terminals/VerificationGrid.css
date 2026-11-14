@@ -1,0 +1,54 @@
+/* 9 枚の検証画面(T22。M1 の検証用で、M4 の T49 で外す)。 */
+.verify-grid {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  min-height: 0;
+}
+
+/* 1 枚だけ表示: 表示している 1 枚が全面を使う(隠したマスは display: none で並びから外れる)。 */
+.verify-grid[data-mode="single"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.verify-cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.verify-cell[hidden] {
+  display: none;
+}
+
+.verify-cell__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+  font-size: 11px;
+}
+
+.verify-cell__header p {
+  margin: 0;
+  font-size: 11px;
+}
+
+.verify-cell__header button {
+  padding: 0 4px;
+  font-size: 11px;
+}
+
+.verify-cell__status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.verify-cell__toggle {
+  margin-left: auto;
+}

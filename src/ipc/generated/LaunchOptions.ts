@@ -13,4 +13,8 @@ renderer: RendererKind,
 /**
  * 全角幅の方式(`ARIN_UNICODE`)。
  */
-unicode: UnicodeWidth, };
+unicode: UnicodeWidth, 
+/**
+ * 9 枚の検証画面(`ARIN_VERIFY_GRID`)。M1 の検証用で、M4(T49)で外す。
+ */
+verifyGrid: boolean, };

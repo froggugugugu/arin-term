@@ -126,6 +126,11 @@ export class TerminalManager {
     if (visible) surface.fit();
   }
 
+  /** ID のサーフェスへ入力のフォーカスを移す。持っていない ID なら何もしない。 */
+  focus(id: TerminalId): void {
+    this.#entries.get(id)?.surface.focus();
+  }
+
   /** ID のサーフェスのいまの描画方式。サーフェスが無ければ undefined(作らない。描画中に呼ばれるため)。 */
   rendererOf(id: TerminalId): RendererKind | undefined {
     return this.#entries.get(id)?.surface.renderer();

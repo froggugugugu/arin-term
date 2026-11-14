@@ -17,7 +17,7 @@ export interface FakeSurface extends TerminalSurface {
   fitTo: TerminalSize | null;
   /** getSelection が返す選択の文字列(既定は空 = 選択なし)。 */
   selection: string;
-  /** hasFocus が返す値(既定は false)。 */
+  /** hasFocus が返す値(既定は false)。focus で true になる(隠しているときは変えない)。 */
   focused: boolean;
   /** paste に渡された順の文字列。 */
   readonly pasted: string[];
@@ -80,6 +80,8 @@ export function createFakeTerminalEngine(): FakeTerminalEngine {
           resizeListeners.push(listener);
         },
         fit() {
+          // xterm.js の実装と同じく、隠している間は寸法を決め直さない(置き場所の大きさが 0 になるため)。
+          if (!surface.visible) return;
           surface.fitCount += 1;
           const next = surface.fitTo;
           if (next === null) return;
@@ -117,6 +119,9 @@ export function createFakeTerminalEngine(): FakeTerminalEngine {
         },
         hasFocus() {
           return surface.focused;
+        },
+        focus() {
+          if (surface.visible) surface.focused = true;
         },
         dispose() {
           surface.disposeCount += 1;

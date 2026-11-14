@@ -33,9 +33,11 @@ export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartA
   const store = createAppStore();
   // 描画方式と全角幅の方式は起動時の指定で選ぶ(M1 の検証用。T27 で決まった方式に固定して外す)。
   // 指定を取ってからエンジンを作る。取れなければ既定で作り、報告する。WebGL を作れなかったときの報告も同じ口へ流す。
-  const engine = await createWithLaunchOptions(ipc, reporter.report, (options) =>
-    new XtermEngine({ renderer: options.renderer, unicode: options.unicode, reportError: reporter.report }),
-  );
+  const { engine, verifyGrid } = await createWithLaunchOptions(ipc, reporter.report, (options) => ({
+    engine: new XtermEngine({ renderer: options.renderer, unicode: options.unicode, reportError: reporter.report }),
+    // 9 枚の検証画面(ARIN_VERIFY_GRID。M1 の検証用、M4 の T49 で外す)。
+    verifyGrid: options.verifyGrid,
+  }));
   const terminals = new TerminalManager(engine, ipc, { reportError: reporter.report });
   // ⌘C・⌘V(メニューの「編集」から来る copy・paste のイベント)を、フォーカス位置で振り分ける。
   installClipboardRouting(document, terminals);
@@ -47,7 +49,7 @@ export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartA
       flushSync(() => {
         createRoot(container).render(
           <StrictMode>
-            <AppShell store={store} terminals={terminals} />
+            <AppShell store={store} terminals={terminals} verifyGrid={verifyGrid} />
           </StrictMode>,
         );
       });
