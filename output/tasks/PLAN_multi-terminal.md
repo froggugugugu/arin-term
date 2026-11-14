@@ -238,7 +238,7 @@ M1 は検証専用(PRD §7)。対象は単一プロジェクト・単一タブ�
 
 #### Phase 14(逐次。T20 完了後)
 
-- [ ] T21 — WebGL 描画に切り替えられるようにする(検証用)(変更ファイル: package.json, package-lock.json, src/terminal/engine.ts, src/terminal/xterm/ | 依存: T20)
+- [x] T21 — WebGL 描画に切り替えられるようにする(検証用)(変更ファイル: package.json, package-lock.json, src/terminal/engine.ts, src/terminal/xterm/ | 依存: T20)
   - 対応: 設計書 §2.2「描画方式」。`@xterm/addon-webgl` 0.19.0。DOM と WebGL を起動時の指定で切り替える(【仮定】開発用の環境変数。設定画面は作らない)。`setVisible(false)` のときに描画の資源を手放す
   - 並行: 不可(`src/terminal/xterm/` を T20 と共有)
   - 先に書くテスト: Playwright で、WebGL の指定でも T19 と同じ表示のテストが通る(Playwright の WebKit で WebGL が使えるかは未検証。使えなければ、切替の分岐だけ Vitest で確かめ、表示は T26 で人間が見る)
