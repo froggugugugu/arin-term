@@ -63,3 +63,8 @@ harness = false
 [[test]]
 name = "app_menu"
 harness = false
+
+# 性能の計測(T24)。セッション管理を実 PTY で動かす。Tauri のアプリは作らないので標準のハーネスで走らせる。
+# テストはすべて #[ignore] で、普段の cargo test では動かさない(npm run perf が --release -- --ignored で動かす)。
+[[test]]
+name = "perf_sessions"
