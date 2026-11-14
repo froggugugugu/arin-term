@@ -16,13 +16,13 @@
 
 | 項目 | 内容 |
 | ---- | ---- |
-| 最終更新 | 2026-11-15(T1〜T9 完了。T10 作業中。次は T11) |
+| 最終更新 | 2026-11-15(M0 の T1〜T12 と T13 の AI の分が完了。人間の確認待ち) |
 | ブランチ | `feat/m0-skeleton`(`docs/prd-multi-terminal` から分岐) |
-| 最後のコミット | `9de71c4 chore: project-config の技術スタックとコマンドを Tauri 向けに更新`(本ファイルと PLAN は未コミット) |
+| 最後のコミット | `git log --oneline -1` で確認する(本ファイルに書くと古くなるため) |
 | 起動コマンド | `npm run dev`(開発用)。`.app` は `npm run app` で `target/aarch64-apple-darwin/release/bundle/macos/Arin.app` にできる |
-| スモークテスト | 未実装。T10 の完了後は `npm run app && npm run smoke` → 期待: 終了コード 0 |
+| スモークテスト | `npm run app && npm run smoke` → 期待: 終了コード 0、「スモーク成功」の表示 |
 | 既知の壊れている箇所 | なし(ソースコードがまだ無い) |
-| 待ち | T1 の差分(設計書 §3・§4・§9〜§12 と ADR-003)を本人が読んで了承する。PLAN は承認済みで、#1〜#4 は推奨案で確定 |
+| 待ち | 本人の確認 3 点: (1) `Arin.app` を開いて空ウィンドウを見る、(2) push して CI が緑になるのを見る、(3) T1 の差分(コミット `b938d3d`)の了承。済んだら M1(T14〜)に進む |
 
 ---
 
@@ -41,10 +41,10 @@
 | T7 | 検証コマンドの npm スクリプト | `npm run build`・`npm test`・`npm run lint`・`npm run app` が終了コード 0。`.app` ができる | ✅ 2026-11-14(`npm run build`・`npm test`・`npm run lint`・`npm run app` が終了コード 0。`.app` を生成。整形違反で lint が失敗することを確認) |
 | T8 | 型の生成と通信の包みの最小 | 画面が Rust から状態の写しを取得できる。生成した型を作り直しても差分が出ない | ✅ 2026-11-14(`ts-rs` 12.0.1。Vitest 8 件、Rust 8 件合格。再生成は `npm run gen:types`) |
 | T9 | カバレッジ付きテスト | `npm run test:coverage` が通り、`testreport/coverage/` に Rust と TypeScript の結果がある | ✅ 2026-11-14(`cargo-llvm-cov` 0.9.1。行 80% を `src/logic` と `arin-core` のそれぞれに課す。現状はどちらも 100%) |
-| T10 | 実アプリの起動スモーク | `npm run smoke` が、一時の状態フォルダで `.app` を起動し、準備完了を確かめて終了コード 0 で終わる。本物の `~/Library/Application Support/Arin/` を作らない | ❌ |
-| T11 | Playwright の骨格 | `npm run e2e` で、画面が開き `AppShell` が表示され、偽の Rust 側に準備完了が 1 回届く | ❌ |
-| T12 | CI | `.github/workflows/ci.yml` が lint・test・build・e2e を実行する | ❌ |
-| T13 | M0 の完了確認(人間ゲート) | 本人が `.app` の空ウィンドウを見た。push 後の CI が緑 | ❌ |
+| T10 | 実アプリの起動スモーク | `npm run smoke` が、一時の状態フォルダで `.app` を起動し、準備完了を確かめて終了コード 0 で終わる。本物の `~/Library/Application Support/Arin/` を作らない | ✅ 2026-11-15(`npm run app && npm run smoke` が終了コード 0。0.6 秒で準備完了の印を確認。本物の状態フォルダは作られていない。環境変数は `ARIN_STATE_DIR` と `ARIN_SMOKE`) |
+| T11 | Playwright の骨格 | `npm run e2e` で、画面が開き `AppShell` が表示され、偽の Rust 側に準備完了が 1 回届く | ✅ 2026-11-15(`npm run e2e` で 3 件合格。WebKit 27.2。偽の通信はテスト側で差し替え、製品のソースに差し込み口は無い) |
+| T12 | CI | `.github/workflows/ci.yml` が lint・test・build・e2e を実行する | 🟡 2026-11-15(`ci.yml` を追加。手元の lint・test・build・e2e は成功。CI 自体は push していないので未確認) |
+| T13 | M0 の完了確認(人間ゲート) | 本人が `.app` の空ウィンドウを見た。push 後の CI が緑 | 🟡 2026-11-15(AI の分は完了。合否一覧は `output/reports/test/M0_acceptance.md`。人間の分が未: `.app` の目視、push して CI 緑) |
 
 ### M1 ターミナル 1 枚
 
@@ -133,13 +133,28 @@
 
 ## 3. 次にやること(優先順)
 
-1. 本人が `output/tasks/PLAN_multi-terminal.md` をレビューし、承認する(タスク分解ゲート)。「リスク・懸念事項」の【要確認】#1〜#4 に答える
-2. T1 — 設計書 §4 を React 前提に直す。`npm view` で React・zustand などの版を調べ、ADR-003 に書く
-3. T2・T3・T4 — ADR の起票、Rust のワークスペース、画面の骨格(並行できる)
+1. 本人の確認(M0 の人間ゲート): `npm run app` で作った `Arin.app` を開いて空ウィンドウを見る。push して CI が緑になるのを見る。T1 の差分(コミット `b938d3d`)を了承する
+2. CI が失敗したら原因を直す(`macos-26` での Rust 1.98.1 と WebKit の導入は未検証)
+3. M1(ターミナル 1 枚)に進む。T14・T15 から。M1 の末尾は Go/No-Go の人間ゲート(T26)
 
 ---
 
 ## 4. セッションログ(新しいものを上に)
+
+### 2026-11-14〜15 — M0(骨格)の実装セッション
+
+- **やったこと**: T1〜T12 を実装し、T13 の AI の分(全検証の通し実行、合否一覧、`docs/` の更新)を行った。T2・T5・T6・T8〜T11 と `docs/` の更新は Opus のサブエージェントに任せ、司令塔が結果を再実行して確かめてからコミットした
+- **検証**: `npm run build`・`npm test`・`npm run lint`・`npm run app`・`npm run smoke`・`npm run e2e`・`npm run test:coverage` がすべて終了コード 0(2026-11-15)。件数と数値は `output/reports/test/M0_acceptance.md`
+- **コミット**: ブランチ `feat/m0-skeleton`。push はしていない
+- **未完了 / 申し送り**:
+  - 人間の確認 3 点(`.app` の目視、push して CI 緑、T1 の差分の了承)
+  - アイコンは仮。公開から 2 週間未満の推移的な依存が 24 個ある。設計書に React への変更前の表現が数か所残っている。詳細は合否一覧の末尾
+  - サブエージェントの起動は、context-mode プラグインが有効だと auto mode の審査を通らない。`.claude/settings.local.json` でこのプロジェクトだけ無効にしてある
+- **判断・却下した案**:
+  - 実装技術を Swift ネイティブから Tauri に変更(本人決定。PRD §7 C3)。画面は React + zustand(ADR-003)
+  - 画面テストの偽の通信は、製品のソースに差し込み口を作らず、テスト側で Tauri の invoke の口を差し替える方式にした(N2 に合わせるため)
+  - カバレッジの基準は行 80%(Rust の分岐カバレッジは nightly でしか取れないため)
+  - `Cargo.lock` の `reqwest` は、直接依存だけを見る方式ではなく、`tauri → reqwest` の 1 辺を理由付きで除外する方式にした
 
 ### 2026-11-14 — `/plan` のセッション
 

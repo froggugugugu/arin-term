@@ -139,13 +139,13 @@
 
 #### Phase 6(並行可能。Phase 5 完了後)
 
-- [ ] T10 — 実アプリの起動スモークを作る(変更ファイル: scripts/smoke.mjs, crates/arin-core/src/paths/app_paths.rs, crates/arin-core/src/lib.rs, src-tauri/src/lib.rs, src-tauri/src/commands/app.rs | 依存: T8)
+- [x] T10 — 実アプリの起動スモークを作る(変更ファイル: scripts/smoke.mjs, crates/arin-core/src/paths/app_paths.rs, crates/arin-core/src/lib.rs, src-tauri/src/lib.rs, src-tauri/src/commands/app.rs | 依存: T8)
   - 対応: 設計書 §10.1「実アプリのスモーク」、§11(置き場所 `AppPaths` を環境変数で差し替える)。ビルドした `.app` を一時の状態フォルダで起動し、画面が準備完了を通知したことを確かめて終了させる
   - 準備完了を外から知る方法は、ソケットを開かない方式にする(N2、NFR-008)。【仮定】スモーク用の環境変数があるときだけ、状態フォルダに印のファイルを書く。環境変数の名前はこのタスクで決める
   - 並行: 可(T11 とファイルが重ならない)
   - 先に書くテスト: `arin-core` の「置き場所の決定」(差し替えの指定があればそれを使い、無ければ `~/Library/Application Support/Arin/` になる。入力は引数で渡し、`arin-core` が環境変数を直接読まない)
   - 検証: `npm run app && npm run smoke`(終了コード 0。本物の `~/Library/Application Support/Arin/` が作られていないこと)
-- [ ] T11 — 画面の自動テスト(Playwright。ブラウザ方式、WebKit)の骨格を作る(変更ファイル: playwright.config.ts, e2e/fixtures/tauriMock.ts, e2e/app-shell.spec.ts, src/main.tsx | 依存: T8)
+- [x] T11 — 画面の自動テスト(Playwright。ブラウザ方式、WebKit)の骨格を作る(変更ファイル: playwright.config.ts, e2e/fixtures/tauriMock.ts, e2e/app-shell.spec.ts, src/main.tsx | 依存: T8)
   - 対応: 設計書 §10.3、§15.1 #6。Vite の開発サーバーが配る画面を WebKit で開き、Rust との通信を偽物に差し替える。偽物は T8 で生成した型を使う。出力先は `testreport/e2e/`
   - `npx playwright install webkit` を実行する(ブラウザのダウンロードが起きるので、実行前に本人に伝える)
   - 並行: 可(T10 とファイルが重ならない)
@@ -154,7 +154,7 @@
 
 #### Phase 7(逐次。Phase 6 完了後)
 
-- [ ] T12 — CI(push と pull request で build / test / lint / e2e)を書く(変更ファイル: .github/workflows/ci.yml | 依存: T7, T9, T10, T11)
+- [x] T12 — CI(push と pull request で build / test / lint / e2e)を書く(変更ファイル: .github/workflows/ci.yml | 依存: T7, T9, T10, T11)
   - 対応: PRD §7「CI」、設計書 §13.3。`macos-26` で `npm ci --ignore-scripts`、`npm run lint`、`npm test`、`npm run build`、`npm run e2e`。ランナーとアクションの版を固定する。公証は入れない(M5)
   - `macos-26` のランナーに Rust 1.98.1 と Playwright の WebKit を入れる手順が通るかは未検証
   - 並行: 不可
