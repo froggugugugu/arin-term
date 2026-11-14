@@ -203,7 +203,7 @@ M1 は検証専用(PRD §7)。対象は単一プロジェクト・単一タブ�
 
 #### Phase 12(逐次。T16・T17 完了後)
 
-- [ ] T18 — 画面とターミナルをつなぐ(変更ファイル: src/ipc/, src/ipc/generated/, src/terminal/TerminalManager.ts, src/terminal/TerminalManager.test.ts, src/ui/terminals/TerminalHost.tsx, src/ui/shell/AppShell.tsx, src/main.tsx, src/state/, src-tauri/tauri.conf.json, scripts/check-boundaries.mjs | 依存: T16, T17)
+- [x] T18 — 画面とターミナルをつなぐ(変更ファイル: src/ipc/, src/ipc/generated/, src/terminal/TerminalManager.ts, src/terminal/TerminalManager.test.ts, src/ui/terminals/TerminalHost.tsx, src/ui/shell/AppShell.tsx, src/main.tsx, src/state/, src-tauri/tauri.conf.json, scripts/check-boundaries.mjs | 依存: T16, T17)
   - 対応: FR-039、FR-041、FR-043(リサイズ追従)。出力チャネル → `surface.write` → 処理済みの量を返す。キー入力 → 入力のコマンド。置き場所の大きさ → 行・桁 → 寸法のコマンド
   - CSP: xterm.js は実行時にスタイルの要素を作るので、`style-src 'self'` のままでは動かない見込み(設計書 §2.2)。動く最小の範囲まで緩め、緩めた内容と理由を PROGRESS に書く(ADR-001 への記録は T27)。境界検査の CSP の項目も合わせる
   - 並行: 不可
@@ -212,7 +212,7 @@ M1 は検証専用(PRD §7)。対象は単一プロジェクト・単一タブ�
 
 #### Phase 13(並行可能。T18 完了後)
 
-- [ ] T19 — ターミナルの画面の自動テストを書く(変更ファイル: e2e/fixtures/tauriMock.ts, e2e/terminal.spec.ts | 依存: T18)
+- [x] T19 — ターミナルの画面の自動テストを書く(変更ファイル: e2e/fixtures/tauriMock.ts, e2e/terminal.spec.ts | 依存: T18)
   - 対応: FR-043、設計書 §10.3(xterm.js の実物に偽のチャネルから出力を流す)
   - 並行: 可
   - 先に書くテスト(このタスク自体がテスト): 偽のチャネルから流した文字が画面に出る。キー入力が偽のコマンドに届く。ウィンドウの大きさを変えると行・桁数の通知が届く。10,000 行を超えて流したあと 10,000 行までさかのぼれる
@@ -223,7 +223,7 @@ M1 は検証専用(PRD §7)。対象は単一プロジェクト・単一タブ�
   - 並行: 可(T19・T23・T24 とファイルが重ならない。T21 とは `src/terminal/xterm/` が重なるので逐次)
   - 先に書くテスト: `src/logic/keys` の振り分け(フォーカスがターミナルのとき ⌘C は選択のコピー、⌘V はペースト)を Vitest で。Playwright で「選択 → コピー → ペーストで入力のコマンドに届く」
   - 検証: `npm test && npm run e2e && npm run lint`
-- [ ] T23 — 検証用の記録(開発ビルドだけ)を足す(変更ファイル: src-tauri/src/sessions.rs, src-tauri/src/lib.rs, crates/arin-core/src/terminal/ | 依存: T18)
+- [x] T23 — 検証用の記録(開発ビルドだけ)を足す(変更ファイル: src-tauri/src/sessions.rs, src-tauri/src/lib.rs, crates/arin-core/src/terminal/ | 依存: T18)
   - 対応: 設計書 §2.2 の「ウィンドウが隠れたとき」「クリップボードの制御シーケンス」「流量制御」。記録するもの: (1) PTY の生出力に OSC 52 が現れた回数(本文は記録しない)。(2) 画面が処理済みの量を返した時刻。(3) 未処理の量の最大値
   - リリースビルドには入れない(開発ビルドだけで有効にする)。出力先は標準エラー。ソケットやファイルの常設の口は作らない(N2)
   - 並行: 可
