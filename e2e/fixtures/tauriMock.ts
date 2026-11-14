@@ -52,6 +52,7 @@ export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapsho
 
 const DEFAULT_REPLIES: TauriMockConfig = {
   get_app_snapshot: { ok: sampleSnapshot() },
+  get_launch_options: { ok: { renderer: "dom", unicode: "unicode11" } },
   notify_app_ready: { ok: null },
   report_frontend_error: { ok: null },
   connect_terminal: { ok: null },

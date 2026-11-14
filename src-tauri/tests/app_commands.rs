@@ -11,12 +11,19 @@ mod support;
 use std::cell::Cell;
 use std::rc::Rc;
 
+use arin_core::launch_options::{LaunchOptions, RendererKind, UnicodeWidth};
 use arin_core::workspace::{AppSnapshot, SNAPSHOT_SCHEMA_VERSION};
 use serde_json::json;
 use support::{request, request_with};
 use tauri::ipc::InvokeBody;
 use tauri::test::{MockRuntime, get_ipc_response};
 use tauri::{AppHandle, Manager, RunEvent, WebviewWindow};
+
+/// この組み立てに渡す起動時の指定。既定と違う値にして、組み立てからコマンドまで通ることを見る。
+const LAUNCH_OPTIONS: LaunchOptions = LaunchOptions {
+    renderer: RendererKind::Webgl,
+    unicode: UnicodeWidth::Graphemes,
+};
 
 type Check = fn(&AppHandle<MockRuntime>, &WebviewWindow<MockRuntime>, &support::TempDir);
 
@@ -36,6 +43,25 @@ fn 写しの取得コマンドが_app_snapshot_を返す(
         snapshot.app_version,
         handle.package_info().version.to_string()
     );
+}
+
+fn 起動時の指定の取得コマンドが組み立てに渡した指定を返す(
+    handle: &AppHandle<MockRuntime>,
+    window: &WebviewWindow<MockRuntime>,
+    _state_dir: &support::TempDir,
+) {
+    let body = get_ipc_response(window, request(handle, "get_launch_options"))
+        .unwrap_or_else(|e| panic!("get_launch_options が失敗した: {e}"));
+    assert_eq!(
+        body.clone()
+            .deserialize::<serde_json::Value>()
+            .unwrap_or_else(|e| panic!("JSON として読めなかった: {e}")),
+        json!({ "renderer": "webgl", "unicode": "graphemes" })
+    );
+    let options: LaunchOptions = body
+        .deserialize()
+        .unwrap_or_else(|e| panic!("LaunchOptions として読めなかった: {e}"));
+    assert_eq!(options, LAUNCH_OPTIONS);
 }
 
 fn 準備完了の通知コマンドを画面から呼べる(
@@ -133,6 +159,10 @@ const CHECKS: &[(&str, Check)] = &[
         写しの取得コマンドが_app_snapshot_を返す,
     ),
     (
+        "起動時の指定の取得コマンドが組み立てに渡した指定を返す",
+        起動時の指定の取得コマンドが組み立てに渡した指定を返す,
+    ),
+    (
         "準備完了の通知コマンドを画面から呼べる",
         準備完了の通知コマンドを画面から呼べる,
     ),
@@ -155,7 +185,8 @@ const CHECKS: &[(&str, Check)] = &[
 fn main() {
     // 状態フォルダは一時フォルダに差し替え、スモークの印は有効にしない(通常の起動と同じ)。
     let state_dir = support::TempDir::new("commands");
-    let app = arin_lib::builder::<MockRuntime>(support::launch_in(&state_dir, false))
+    let launch = support::launch_in(&state_dir, false).with_launch_options(LAUNCH_OPTIONS);
+    let app = arin_lib::builder::<MockRuntime>(launch)
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| panic!("組み立てに失敗した: {e}"));
 

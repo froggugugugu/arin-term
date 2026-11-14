@@ -12,6 +12,7 @@ import type { ArinIpc } from "./ipc/client";
 import { createTauriIpc } from "./ipc/tauri";
 import { createAppStore } from "./state/appStore";
 import { installErrorReporter } from "./state/errorReporter";
+import { createWithLaunchOptions } from "./state/launchOptions";
 import { startApp, type StartAppResult } from "./state/startApp";
 import { TerminalManager } from "./terminal/TerminalManager";
 import { XtermEngine } from "./terminal/xterm/XtermEngine";
@@ -22,7 +23,7 @@ import { installClipboardRouting } from "./ui/terminals/clipboardRouting";
  * 画面を組み立てて起動する。通信の包みは引数で受け取る。
  * 本物の起動では createTauriIpc() を渡す。ブラウザだけで動かす画面の自動テスト(T11)は、ここに偽の通信を渡す。
  */
-export function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartAppResult> {
+export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartAppResult> {
   // 画面の失敗(CSP 違反など)を Rust の標準エラーへ流す。何より先に付ける。
   const reporter = installErrorReporter({
     window,
@@ -30,7 +31,12 @@ export function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartAppResu
     report: (message) => ipc.reportFrontendError(message),
   });
   const store = createAppStore();
-  const terminals = new TerminalManager(new XtermEngine(), ipc, { reportError: reporter.report });
+  // 描画方式と全角幅の方式は起動時の指定で選ぶ(M1 の検証用。T27 で決まった方式に固定して外す)。
+  // 指定を取ってからエンジンを作る。取れなければ既定で作り、報告する。WebGL を作れなかったときの報告も同じ口へ流す。
+  const engine = await createWithLaunchOptions(ipc, reporter.report, (options) =>
+    new XtermEngine({ renderer: options.renderer, unicode: options.unicode, reportError: reporter.report }),
+  );
+  const terminals = new TerminalManager(engine, ipc, { reportError: reporter.report });
   // ⌘C・⌘V(メニューの「編集」から来る copy・paste のイベント)を、フォーカス位置で振り分ける。
   installClipboardRouting(document, terminals);
   return startApp({

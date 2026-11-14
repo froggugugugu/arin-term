@@ -13,7 +13,7 @@
 import type { ArinIpc, OutputSubscription } from "../ipc/client";
 import { describeError } from "../logic/describeError";
 import { type ClipboardFocus, type ClipboardKind, routeClipboard } from "../logic/keys/clipboard";
-import type { TerminalEngine, TerminalId, TerminalSize, TerminalSurface } from "./engine";
+import type { RendererKind, TerminalEngine, TerminalId, TerminalSize, TerminalSurface } from "./engine";
 
 /** 画面のコピー・ペーストのイベントの clipboardData のうち、使う部分(DataTransfer はこの形を満たす)。 */
 export interface ClipboardText {
@@ -111,6 +111,29 @@ export class TerminalManager {
   /** 置き場所の大きさに合わせて行・桁を決め直す。変われば寸法のコマンドが送られる。 */
   fit(id: TerminalId): void {
     this.#entries.get(id)?.surface.fit();
+  }
+
+  /**
+   * 表示と非表示を切り替える(設計書 §2.2「非表示のインスタンス」)。隠すとサーフェスは描画の資源を手放す。
+   * 表示に戻したら寸法を合わせ直す(隠している間に置き場所の大きさが変わっていてもよいように)。
+   * 隠している間も出力は取り込み続け、処理済みの量を Rust へ返す(接続も切らない)。
+   * 持っていない ID なら何もしない。
+   */
+  setVisible(id: TerminalId, visible: boolean): void {
+    const surface = this.#entries.get(id)?.surface;
+    if (surface === undefined) return;
+    surface.setVisible(visible);
+    if (visible) surface.fit();
+  }
+
+  /** ID のサーフェスのいまの描画方式。サーフェスが無ければ undefined(作らない。描画中に呼ばれるため)。 */
+  rendererOf(id: TerminalId): RendererKind | undefined {
+    return this.#entries.get(id)?.surface.renderer();
+  }
+
+  /** ID のサーフェスの描画方式が変わったときに受け取る。サーフェスが無ければ作る。外す関数を返す。 */
+  onRendererChange(id: TerminalId, listener: (renderer: RendererKind) => void): () => void {
+    return this.#entry(id).surface.onRendererChange(listener);
   }
 
   /**

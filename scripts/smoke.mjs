@@ -16,7 +16,11 @@
 // - シェルは利用者の設定ファイル(~/.zshrc など)を読む(M1 の仕様どおり)。ホームに書き込む操作はしない
 // - Node の標準モジュールだけで書く
 //
-// 使い方: node scripts/smoke.mjs [--timeout-ms=30000] [--app=<Arin.app のパス>]
+// 使い方: node scripts/smoke.mjs [--timeout-ms=30000] [--app=<Arin.app のパス>] [--env=<名前>=<値> ...]
+//
+// --env はアプリに渡す環境変数を足す(何度でも指定できる)。例: --env=ARIN_RENDERER=webgl(T21 の描画方式の指定)。
+// WebGL を作れずに DOM へ戻ると画面が診断に 1 行出すので、そのスモークは失敗になる(黙って DOM で通らない)。
+// 状態フォルダとスモークの印の環境変数(ARIN_STATE_DIR・ARIN_SMOKE)は、このスクリプトが決めるので指定できない。
 
 import { spawn, spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
@@ -200,6 +204,7 @@ export async function runSmoke({
   childExitMs = DEFAULT_CHILD_EXIT_MS,
   pollMs = 100,
   killGraceMs = 5_000,
+  extraEnv = {},
   log = console.log,
 } = {}) {
   const started = Date.now();
@@ -246,8 +251,9 @@ export async function runSmoke({
   try {
     log(`起動: ${executable}`);
     log(`状態フォルダ: ${stateDir}`);
+    for (const [name, value] of Object.entries(extraEnv)) log(`追加の環境変数: ${name}=${value}`);
     child = spawn(executable, [], {
-      env: { ...process.env, [ENV_STATE_DIR]: stateDir, [ENV_SMOKE]: "1" },
+      env: { ...process.env, ...extraEnv, [ENV_STATE_DIR]: stateDir, [ENV_SMOKE]: "1" },
       stdio: ["ignore", "pipe", "pipe"],
     });
     child.stdout.on("data", (chunk) => watcher.feed("stdout", chunk));
@@ -382,12 +388,20 @@ export async function runSmoke({
   return result;
 }
 
-function parseArgs(argv) {
+/** コマンドラインの引数を runSmoke の引数にする。不正なら例外。 */
+export function parseArgs(argv) {
   const opts = {};
   for (const arg of argv) {
-    const m = /^--(timeout-ms|app)=(.+)$/.exec(arg);
+    const m = /^--(timeout-ms|app|env)=(.+)$/.exec(arg);
     if (m === null) throw new Error(`知らない引数: ${arg}`);
-    if (m[1] === "timeout-ms") {
+    if (m[1] === "env") {
+      const e = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(m[2]);
+      if (e === null) throw new Error(`--env は <名前>=<値> の形: ${m[2]}`);
+      if (e[1] === ENV_STATE_DIR || e[1] === ENV_SMOKE) {
+        throw new Error(`${e[1]} はスモークが決めるので --env で指定できない`);
+      }
+      opts.extraEnv = { ...opts.extraEnv, [e[1]]: e[2] };
+    } else if (m[1] === "timeout-ms") {
       const n = Number(m[2]);
       if (!Number.isInteger(n) || n <= 0) throw new Error(`--timeout-ms は正の整数: ${m[2]}`);
       opts.timeoutMs = n;

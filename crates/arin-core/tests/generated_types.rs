@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use arin_core::launch_options::LaunchOptions;
 use arin_core::workspace::AppSnapshot;
 use ts_rs::{Config, TS, TypeVisitor};
 
@@ -27,6 +28,7 @@ fn collect_generated(cfg: &Config) -> BTreeMap<PathBuf, String> {
         files: BTreeMap::new(),
     };
     collector.visit::<AppSnapshot>();
+    collector.visit::<LaunchOptions>();
     collector.files
 }
 

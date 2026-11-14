@@ -51,6 +51,7 @@ pub fn builder_with_pty<R: Runtime>(
     let terminal = launch.terminal().clone();
     Builder::<R>::new()
         .manage(launch.paths().clone())
+        .manage(launch.options())
         .manage(ready)
         .manage(first_output)
         .menu(menu::build)
@@ -78,6 +79,7 @@ pub fn builder_with_pty<R: Runtime>(
         })
         .invoke_handler(tauri::generate_handler![
             commands::app::get_app_snapshot,
+            commands::app::get_launch_options,
             commands::app::notify_app_ready,
             commands::app::report_frontend_error,
             commands::terminal::connect_terminal,

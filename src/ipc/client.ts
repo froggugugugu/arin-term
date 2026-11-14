@@ -2,6 +2,7 @@
 // 通信の実体(IpcTransport)は外から受け取る。本物は ./tauri.ts、テストでは src/test/fakeIpc.ts を渡す。
 
 import type { AppSnapshot } from "./generated/AppSnapshot";
+import type { LaunchOptions } from "./generated/LaunchOptions";
 import type { TerminalId } from "./generated/TerminalId";
 
 /**
@@ -16,6 +17,7 @@ export type ChannelToken = { readonly __channelToken: unique symbol };
  */
 export interface CommandMap {
   get_app_snapshot: { args: undefined; result: AppSnapshot };
+  get_launch_options: { args: undefined; result: LaunchOptions };
   notify_app_ready: { args: undefined; result: null };
   report_frontend_error: { args: { message: string }; result: null };
   connect_terminal: {
@@ -74,6 +76,8 @@ export interface OutputSubscription {
 export interface ArinIpc {
   /** 状態の写しを取得する。 */
   getAppSnapshot(): Promise<AppSnapshot>;
+  /** 起動時の指定(描画方式と全角幅の方式。M1 の検証用)を取得する。起動時に 1 回だけ呼ぶ。 */
+  getLaunchOptions(): Promise<LaunchOptions>;
   /** 画面の準備ができたことを Rust へ知らせる。 */
   notifyAppReady(): Promise<void>;
   /** 状態の写しが変わるたびに listener を呼ぶ。購読が済んだら、やめる関数で解決する。 */
@@ -120,6 +124,7 @@ export function createIpc(transport: IpcTransport): ArinIpc {
   };
   return {
     getAppSnapshot: () => invoke("get_app_snapshot", undefined),
+    getLaunchOptions: () => invoke("get_launch_options", undefined),
     notifyAppReady: () => done(invoke("notify_app_ready", undefined)),
     onAppSnapshot: (listener) => transport.listen("app-snapshot", listener),
     reportFrontendError: (message) => done(invoke("report_frontend_error", { message })),

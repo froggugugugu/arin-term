@@ -5,6 +5,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod launch_options;
 pub mod paths;
 pub mod ports;
 pub mod terminal;

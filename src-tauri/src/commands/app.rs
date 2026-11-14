@@ -2,6 +2,7 @@
 //!
 //! 画面側の呼び出しは `src/ipc/client.ts` の `CommandMap` と名前を合わせる。
 
+use arin_core::launch_options::LaunchOptions;
 use arin_core::workspace::AppSnapshot;
 use tauri::State;
 
@@ -16,6 +17,14 @@ pub const SNAPSHOT_EVENT: &str = "app-snapshot";
 #[tauri::command]
 pub fn get_app_snapshot(sessions: State<'_, SessionRegistry>) -> AppSnapshot {
     sessions.snapshot()
+}
+
+/// 起動時の指定(描画方式と全角幅の方式)を返す。画面は起動時に 1 回だけ呼び、ターミナルのエンジンを作る。
+///
+/// M1 の検証用(T21)。状態の写しとは分けて渡す(写しは保存する状態の正本で、開発用の指定を混ぜない)。T27 で外す。
+#[tauri::command]
+pub fn get_launch_options(options: State<'_, LaunchOptions>) -> LaunchOptions {
+    *options
 }
 
 /// 画面の準備ができたことを受け取る。

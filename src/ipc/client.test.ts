@@ -15,6 +15,16 @@ describe("src/ipc の包み", () => {
     expect(result).toBe(snapshot);
   });
 
+  it("起動時の指定の取得は get_launch_options を引数なしで呼び、届いた指定を返す", async () => {
+    const fake = createFakeIpc({ get_launch_options: () => ({ renderer: "webgl", unicode: "graphemes" }) });
+    const ipc = createIpc(fake.transport);
+
+    const result = await ipc.getLaunchOptions();
+
+    expect(fake.calls).toEqual([{ command: "get_launch_options", args: undefined }]);
+    expect(result).toEqual({ renderer: "webgl", unicode: "graphemes" });
+  });
+
   it("準備完了の通知は notify_app_ready を引数なしで 1 回だけ呼ぶ", async () => {
     const fake = createFakeIpc();
     const ipc = createIpc(fake.transport);

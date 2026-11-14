@@ -3,10 +3,13 @@
 //! 環境変数を読むのは `from_env` だけにして薄くする。読んだ値の解釈は `from_inputs` に引数で渡し、
 //! 置き場所の規則そのものは `arin_core::paths::AppPaths` が持つ。テストは `from_inputs` を直接呼び、環境変数を書き換えない。
 //! ターミナルの起動に使う値(ホームフォルダ、`USER`、親の環境変数)もここで読み、`TerminalEnv` にして渡す。
+//! 画面の描画方式と全角幅の方式の指定(`ARIN_RENDERER`・`ARIN_UNICODE`。M1 の検証用、T27 で外す)もここで読み、
+//! 解釈は `arin_core::launch_options::LaunchOptions::resolve` に任せる。
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
+use arin_core::launch_options::{ENV_RENDERER, ENV_UNICODE, LaunchOptionInputs, LaunchOptions};
 use arin_core::paths::{AppPaths, AppPathsError};
 
 /// 状態フォルダの差し替え。絶対パスを指定する。空文字列は指定なしと同じ。
@@ -18,6 +21,9 @@ pub const ENV_STATE_DIR: &str = "ARIN_STATE_DIR";
 ///
 /// `ENV_STATE_DIR` で状態フォルダを差し替えているときだけ効く(本物の状態フォルダには印を書かない)。
 pub const ENV_SMOKE: &str = "ARIN_SMOKE";
+
+/// 起動時の指定が使えない値だったときに、標準エラーに書く 1 行の頭。
+pub const LAUNCH_WARNING_PREFIX: &str = "[arin:launch]";
 
 /// ターミナルの起動に使う、アプリが受け取った値(設計書 §7.1「ターミナルの起動」)。
 ///
@@ -39,6 +45,7 @@ pub struct LaunchConfig {
     ready_marker: Option<PathBuf>,
     terminal_marker: Option<PathBuf>,
     terminal: TerminalEnv,
+    options: LaunchOptions,
 }
 
 impl LaunchConfig {
@@ -64,6 +71,7 @@ impl LaunchConfig {
                 home: home.map(Path::to_path_buf),
                 ..TerminalEnv::default()
             },
+            options: LaunchOptions::default(),
         })
     }
 
@@ -74,7 +82,17 @@ impl LaunchConfig {
         self
     }
 
+    /// 画面へ渡す起動時の指定を差し替える。
+    #[must_use]
+    pub fn with_launch_options(mut self, options: LaunchOptions) -> Self {
+        self.options = options;
+        self
+    }
+
     /// 環境変数とホームディレクトリを読んで設定を作る。
+    ///
+    /// 起動時の指定(`ARIN_RENDERER`・`ARIN_UNICODE`)が使えない値なら既定に戻し、標準エラーに 1 行ずつ書く。
+    /// この指定は M1 の検証用で、配布用の `.app` でも比べられるようリリースビルドでも読む(T27 で外す)。
     ///
     /// # Errors
     ///
@@ -83,6 +101,15 @@ impl LaunchConfig {
         let home = std::env::home_dir();
         let state_dir = std::env::var_os(ENV_STATE_DIR);
         let smoke = std::env::var_os(ENV_SMOKE);
+        let renderer = std::env::var_os(ENV_RENDERER);
+        let unicode = std::env::var_os(ENV_UNICODE);
+        let (options, invalid) = LaunchOptions::resolve(LaunchOptionInputs {
+            renderer: renderer.as_deref(),
+            unicode: unicode.as_deref(),
+        });
+        for warning in invalid {
+            eprintln!("{LAUNCH_WARNING_PREFIX} {warning}");
+        }
         let terminal = TerminalEnv {
             home: home.clone(),
             user: std::env::var("USER").ok(),
@@ -90,7 +117,8 @@ impl LaunchConfig {
         };
         Ok(
             Self::from_inputs(home.as_deref(), state_dir.as_deref(), smoke.as_deref())?
-                .with_terminal_env(terminal),
+                .with_terminal_env(terminal)
+                .with_launch_options(options),
         )
     }
 
@@ -116,6 +144,12 @@ impl LaunchConfig {
     #[must_use]
     pub fn terminal(&self) -> &TerminalEnv {
         &self.terminal
+    }
+
+    /// 画面へ渡す起動時の指定(`get_launch_options` が返す)。
+    #[must_use]
+    pub fn options(&self) -> LaunchOptions {
+        self.options
     }
 }
 
@@ -197,6 +231,20 @@ mod tests {
             vars: vec![("HOME".into(), "/Users/other".into())],
         };
         assert_eq!(c.with_terminal_env(env.clone()).terminal(), &env);
+    }
+
+    #[test]
+    fn 起動時の指定は既定で_dom_と_unicode11_で_差し替えられる() {
+        use arin_core::launch_options::{RendererKind, UnicodeWidth};
+
+        let c = config(None, None);
+        assert_eq!(c.options(), LaunchOptions::default());
+
+        let options = LaunchOptions {
+            renderer: RendererKind::Webgl,
+            unicode: UnicodeWidth::Graphemes,
+        };
+        assert_eq!(c.with_launch_options(options).options(), options);
     }
 
     #[test]

@@ -30,6 +30,11 @@ body,
   font-size: 12px;
 }
 
+/* 描画方式の表示(M1 の検証用。T27 で外す)。 */
+.app-shell__renderer {
+  opacity: 0.6;
+}
+
 .app-shell__terminal {
   display: flex;
   flex: 1;

@@ -60,6 +60,7 @@ export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapsho
 export function createFakeIpc(handlers: Partial<FakeHandlers> = {}): FakeIpc {
   const all: FakeHandlers = {
     get_app_snapshot: () => sampleSnapshot(),
+    get_launch_options: () => ({ renderer: "dom", unicode: "unicode11" }),
     notify_app_ready: () => null,
     report_frontend_error: () => null,
     connect_terminal: () => null,

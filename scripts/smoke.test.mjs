@@ -13,6 +13,7 @@ import {
   TEMP_PREFIX,
   TERMINAL_MARKER_FILE_NAME,
   createOutputWatcher,
+  parseArgs,
   readBundleExecutable,
   runSmoke,
 } from "./smoke.mjs";
@@ -246,6 +247,19 @@ describe("runSmoke", () => {
     assert.match(result.message, /プロセス ID/);
   });
 
+  it("追加の環境変数をアプリに渡す(状態フォルダとスモークの印の指定は上書きさせない)", async () => {
+    const app = await fakeApp(
+      "extra-env",
+      `if (process.env.ARIN_RENDERER !== "webgl") process.stderr.write("${FRONTEND_ERROR_PREFIX} ARIN_RENDERER=" + process.env.ARIN_RENDERER + "\\n");\n${WRITE_MARKER}`,
+    );
+
+    const result = await runSmoke(
+      options(app, { extraEnv: { ARIN_RENDERER: "webgl", ARIN_STATE_DIR: "/should-not-win", ARIN_SMOKE: "0" } }),
+    );
+
+    assert.equal(result.ok, true, result.message);
+  });
+
   it("本物の状態フォルダが作られたら失敗する", async () => {
     const real = path.join(root, "real-created");
     const app = await fakeApp(
@@ -274,5 +288,25 @@ describe("createOutputWatcher", () => {
       `${FRONTEND_ERROR_PREFIX} abc`,
       `${FRONTEND_ERROR_PREFIX} last`,
     ]);
+  });
+});
+
+describe("parseArgs", () => {
+  it("--env を何度でも受け、名前と値に分ける(値の中の = と空の値も受ける)", () => {
+    assert.deepEqual(parseArgs(["--env=ARIN_RENDERER=webgl", "--env=ARIN_UNICODE=graphemes", "--env=X=a=b", "--env=EMPTY="]), {
+      extraEnv: { ARIN_RENDERER: "webgl", ARIN_UNICODE: "graphemes", X: "a=b", EMPTY: "" },
+    });
+  });
+
+  it("--timeout-ms と --app もこれまでどおり受ける", () => {
+    assert.deepEqual(parseArgs(["--timeout-ms=500", "--app=/tmp/x.app"]), { timeoutMs: 500, appPath: "/tmp/x.app" });
+  });
+
+  it("形の違う --env、スモークが決める環境変数、知らない引数は失敗する", () => {
+    assert.throws(() => parseArgs(["--env=ARIN_RENDERER"]), /<名前>=<値>/);
+    assert.throws(() => parseArgs(["--env==webgl"]), /<名前>=<値>/);
+    assert.throws(() => parseArgs(["--env=ARIN_STATE_DIR=/tmp/x"]), /指定できない/);
+    assert.throws(() => parseArgs(["--env=ARIN_SMOKE=1"]), /指定できない/);
+    assert.throws(() => parseArgs(["--renderer=webgl"]), /知らない引数/);
   });
 });

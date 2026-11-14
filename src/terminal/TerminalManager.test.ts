@@ -486,6 +486,76 @@ function fakeClipboard(initial: Record<string, string> = {}) {
   };
 }
 
+describe("TerminalManager(表示と非表示・描画方式。T21、設計書 §2.2)", () => {
+  it("隠したターミナルにも出力が届き続け、取り込みが済んだ量が Rust へ返る。接続も切らない", async () => {
+    const { engine, fake, manager } = setup();
+    const { slot } = fakeSlot();
+    manager.attach("t1", slot);
+    await flush();
+    const surface = engine.created[0];
+    if (surface === undefined) throw new Error("サーフェスが無い");
+
+    manager.setVisible("t1", false);
+    fake.channels[0]?.send(new Uint8Array([121, 10]).buffer);
+    fake.channels[0]?.send(new Uint8Array([121, 10, 121, 10]).buffer);
+    await flush();
+
+    expect(surface.visible).toBe(false);
+    expect(surface.written.map((d) => d.byteLength)).toEqual([2, 4]);
+    expect(fake.calls.filter((c) => c.command === "ack_terminal_output").map((c) => c.args)).toEqual([
+      { terminalId: "t1", bytes: 2 },
+      { terminalId: "t1", bytes: 4 },
+    ]);
+    expect(fake.channels[0]?.closed).toBe(false);
+    expect(manager.get("t1")).toBe(surface);
+  });
+
+  it("隠すときは寸法を合わせず、表示に戻すと寸法を合わせ直す", () => {
+    const { engine, manager } = setup();
+    manager.getOrCreate("t1");
+    const surface = engine.created[0];
+    if (surface === undefined) throw new Error("サーフェスが無い");
+
+    manager.setVisible("t1", false);
+    expect(surface.visibleCalls).toEqual([false]);
+    expect(surface.fitCount).toBe(0);
+
+    manager.setVisible("t1", true);
+    expect(surface.visibleCalls).toEqual([false, true]);
+    expect(surface.visible).toBe(true);
+    expect(surface.fitCount).toBe(1);
+  });
+
+  it("持っていない ID の表示の切り替えは何もしない(サーフェスを作らない)", () => {
+    const { engine, manager } = setup();
+
+    manager.setVisible("none", false);
+
+    expect(engine.created).toEqual([]);
+  });
+
+  it("描画方式を引け(無ければ作らず undefined)、変わったら受け取り手に届き、外したら届かない", () => {
+    const { engine, manager } = setup();
+    const seen: string[] = [];
+
+    expect(manager.rendererOf("t1")).toBeUndefined();
+    expect(engine.created).toHaveLength(0);
+    const off = manager.onRendererChange("t1", (renderer) => seen.push(renderer));
+    const surface = engine.created[0];
+    if (surface === undefined) throw new Error("サーフェスが無い");
+    expect(engine.created).toHaveLength(1);
+    expect(manager.rendererOf("t1")).toBe("dom");
+
+    surface.rendererKind = "webgl";
+    expect(manager.rendererOf("t1")).toBe("webgl");
+    surface.emitRendererChange("dom");
+    off();
+    surface.emitRendererChange("webgl");
+
+    expect(seen).toEqual(["dom"]);
+  });
+});
+
 describe("TerminalManager(コピー・ペーストの振り分け。FR-043、設計書 §9.1)", () => {
   it("フォーカスのあるターミナルに選択があれば、コピーで選択の文字列を text/plain に書き、処理したと返す", () => {
     const { engine, manager } = setup();
