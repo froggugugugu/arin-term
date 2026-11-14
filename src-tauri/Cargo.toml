@@ -1,0 +1,34 @@
+[package]
+name = "arin"
+description = "Arin のアプリ本体。ポートの実装と Workspace を組み立てて Tauri に渡す"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+# バイナリ名と衝突しないよう、ライブラリ名を変える。
+name = "arin_lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "arin"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+arin-core = { workspace = true }
+arin-platform = { workspace = true }
+tauri = { workspace = true }
+
+[dev-dependencies]
+# Tauri の模擬ランタイム(tauri::test)を使うため、テストのときだけ test の機能を有効にする。
+tauri = { workspace = true, features = ["test"] }
+
+# macOS ではメニューの部品をメインスレッドでしか作れない。標準のテストハーネスは
+# テストを別スレッドで走らせるため、このテストは自前の main で(メインスレッドで)走らせる。
+[[test]]
+name = "app_builder"
+harness = false
