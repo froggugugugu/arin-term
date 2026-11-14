@@ -12,8 +12,11 @@
 // - @tauri-apps/api/mocks の mockIPC も同じ口を置くだけの関数だが、ES モジュールで export を持つため
 //   addInitScript(古典的なスクリプトとして実行される)にそのまま渡せない。Arin が使うのは invoke と
 //   チャネル(Channel)とイベントの購読(listen)だけなので、必要な部分だけをここに書く
-// - チャネルとイベントの購読は「壊れない」最小限(T18)。登録は受け付けるが、偽の Rust 側から中身は流さない。
-//   ターミナルの画面テスト(T19)で、ここから出力やイベントを流せるようにする
+// - チャネル(T19): @tauri-apps/api の Channel は transformCallback で受け取りの関数を登録し、
+//   コマンドの引数では `__CHANNEL__:<番号>` の文字列になる。Rust の送り出しと同じく、その番号の関数に
+//   `{ message, index }`(index は 0 から順に増える)を渡せば出力が届く。sendChannelMessages がこれを行う
+// - イベント(T19): `plugin:event|listen` で登録された受け取りの関数を覚え、emitEvent で
+//   Tauri と同じ `{ event, id, payload }` の形で呼ぶ
 // - イベントの購読・解除(`plugin:event|listen` など)は Tauri の内部の口なので、記録(__ARIN_E2E_CALLS__)には残さない
 //
 // # 型の合わせ方
@@ -24,7 +27,7 @@
 
 import type { Page } from "@playwright/test";
 
-import type { CommandMap, CommandName } from "../../src/ipc/client";
+import type { CommandMap, CommandName, EventMap, EventName } from "../../src/ipc/client";
 import type { AppSnapshot } from "../../src/ipc/generated/AppSnapshot";
 
 /**
@@ -62,6 +65,15 @@ interface MockWindow {
   __TAURI_INTERNALS__?: Record<string, unknown>;
   __TAURI_EVENT_PLUGIN_INTERNALS__?: Record<string, unknown>;
   __ARIN_E2E_CALLS__?: RecordedCall[];
+  __ARIN_E2E__?: MockControls;
+}
+
+/** 偽の Rust 側から画面へ送るための操作(画面のページの中にある。テストの側から page.evaluate で呼ぶ)。 */
+interface MockControls {
+  /** チャネルに中身を順に送る(index はチャネルごとに続きから振る)。受け取りの関数が無ければ false。 */
+  sendChannel(channelId: number, messages: unknown[]): boolean;
+  /** イベントを、購読している受け取りの関数すべてに届ける。届けた数を返す。 */
+  emit(event: string, payload: unknown): number;
 }
 
 /**
@@ -76,7 +88,36 @@ function injectTauriMock(replies: Record<string, { ok: unknown } | { error: stri
   const callbacks = new Map<number, (payload: unknown) => void>();
   let nextCallback = 1;
   let nextEvent = 1;
-  w.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
+  // チャネルごとの次の index(Rust の Channel と同じく 0 から)。
+  const channelIndex = new Map<number, number>();
+  // イベントの購読: 購読の番号 → { イベント名, 受け取りの関数の番号 }。
+  const listeners = new Map<number, { event: string; handler: number }>();
+  w.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+    unregisterListener: (_event: string, eventId: number) => {
+      listeners.delete(eventId);
+    },
+  };
+  w.__ARIN_E2E__ = {
+    sendChannel: (channelId, messages) => {
+      const callback = callbacks.get(channelId);
+      if (callback === undefined) return false;
+      for (const message of messages) {
+        const index = channelIndex.get(channelId) ?? 0;
+        channelIndex.set(channelId, index + 1);
+        callback({ message, index });
+      }
+      return true;
+    },
+    emit: (event, payload) => {
+      let delivered = 0;
+      for (const [id, listener] of listeners) {
+        if (listener.event !== event) continue;
+        callbacks.get(listener.handler)?.({ event, id, payload });
+        delivered++;
+      }
+      return delivered;
+    },
+  };
   w.__TAURI_INTERNALS__ = {
     transformCallback: (callback: (payload: unknown) => void): number => {
       const id = nextCallback++;
@@ -90,8 +131,16 @@ function injectTauriMock(replies: Record<string, { ok: unknown } | { error: stri
       callbacks.get(id)?.(payload);
     },
     invoke: async (command: string, args: unknown): Promise<unknown> => {
-      if (command === "plugin:event|listen") return nextEvent++;
-      if (command === "plugin:event|unlisten") return null;
+      if (command === "plugin:event|listen") {
+        const { event, handler } = args as { event: string; handler: number };
+        const id = nextEvent++;
+        listeners.set(id, { event, handler });
+        return id;
+      }
+      if (command === "plugin:event|unlisten") {
+        listeners.delete((args as { eventId: number }).eventId);
+        return null;
+      }
       // 画面が渡した引数をそのまま残すと、あとで画面が書き換えたときに記録も変わるので、写しを取る。
       calls.push({ command, args: args === undefined ? undefined : JSON.parse(JSON.stringify(args)) });
       const reply = replies[command];
@@ -118,4 +167,65 @@ export async function installTauriMock(page: Page, overrides: Partial<TauriMockC
 /** 画面から届いたコマンドを、届いた順に返す。 */
 export async function readRecordedCalls(page: Page): Promise<RecordedCall[]> {
   return page.evaluate(() => (window as unknown as MockWindow).__ARIN_E2E_CALLS__ ?? []);
+}
+
+/** 画面から届いた、指定のコマンドの引数だけを届いた順に返す。 */
+export async function readCallArgs<C extends CommandName>(page: Page, command: C): Promise<RecordedArgs<C>[]> {
+  const calls = await readRecordedCalls(page);
+  return calls.filter((call) => call.command === command).map((call) => call.args as RecordedArgs<C>);
+}
+
+/**
+ * 記録に残る引数の形。JSON にした写しなので、チャネル(ChannelToken)は `__CHANNEL__:<番号>` の文字列になる。
+ */
+export type RecordedArgs<C extends CommandName> = {
+  [K in keyof NonNullable<CommandMap[C]["args"]>]: K extends "onOutput"
+    ? string
+    : NonNullable<CommandMap[C]["args"]>[K];
+};
+
+/** `__CHANNEL__:<番号>` から番号を取り出す。形が違えば例外。 */
+export function parseChannelId(token: string): number {
+  const match = /^__CHANNEL__:(\d+)$/.exec(token);
+  if (match === null) throw new Error(`チャネルの形ではない: ${token}`);
+  return Number(match[1]);
+}
+
+/** チャネルで送る 1 回ぶん。文字列は UTF-8 にして送る。数の配列はそのままのバイト列(文字の途中で切った出力を作れる)。 */
+export type OutputChunk = string | readonly number[];
+
+/**
+ * チャネルへ生のバイト列を順に送る(Tauri が生のバイト列を ArrayBuffer で渡すのと同じ形)。
+ * 送ったバイト数の合計を返す。
+ */
+export async function sendChannelBytes(
+  page: Page,
+  channelId: number,
+  chunks: readonly OutputChunk[],
+): Promise<number> {
+  return page.evaluate(
+    ({ channelId, chunks }) => {
+      const encoder = new TextEncoder();
+      const buffers = chunks.map((chunk) => {
+        const bytes = typeof chunk === "string" ? encoder.encode(chunk) : Uint8Array.from(chunk);
+        // 中身ちょうどの ArrayBuffer にする(encode の結果は余白を持たないが、念のため切り出す)。
+        return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+      });
+      const controls = (window as unknown as MockWindow).__ARIN_E2E__;
+      if (controls === undefined || !controls.sendChannel(channelId, buffers)) {
+        throw new Error(`チャネル ${channelId} の受け取りの関数が無い`);
+      }
+      return buffers.reduce((sum, buffer) => sum + buffer.byteLength, 0);
+    },
+    { channelId, chunks: chunks.map((chunk) => (typeof chunk === "string" ? chunk : [...chunk])) },
+  );
+}
+
+/** Rust からのイベントを画面へ届ける。購読が無ければ例外(届かないまま気づかずに進まないように)。 */
+export async function emitEvent<E extends EventName>(page: Page, event: E, payload: EventMap[E]): Promise<void> {
+  const delivered = await page.evaluate(
+    ({ event, payload }) => (window as unknown as MockWindow).__ARIN_E2E__?.emit(event, payload) ?? 0,
+    { event, payload },
+  );
+  if (delivered === 0) throw new Error(`イベント ${event} の購読が無い`);
 }
