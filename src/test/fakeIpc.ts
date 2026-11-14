@@ -21,7 +21,7 @@ export interface FakeIpc {
 
 /** テスト用の写し。 */
 export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapshot {
-  return { schemaVersion: 1, appVersion: "0.0.0-test", ...overrides };
+  return { schemaVersion: 1, appVersion: "0.0.0-test", terminals: [], ...overrides };
 }
 
 /** 偽の通信を作る。渡さなかったコマンドは既定の応答を返す。応答の中で投げた例外は失敗として返す。 */

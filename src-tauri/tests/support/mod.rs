@@ -18,12 +18,17 @@ use tauri::webview::InvokeRequest;
 
 /// 画面(自アプリの画面)からコマンドを呼んだときの要求を作る。
 pub fn request(handle: &AppHandle<MockRuntime>, cmd: &str) -> InvokeRequest {
+    request_with(handle, cmd, InvokeBody::default())
+}
+
+/// 引数 `body`(JSON。キーは camelCase)を付けてコマンドを呼んだときの要求を作る。
+pub fn request_with(handle: &AppHandle<MockRuntime>, cmd: &str, body: InvokeBody) -> InvokeRequest {
     InvokeRequest {
         cmd: cmd.into(),
         callback: CallbackFn(0),
         error: CallbackFn(1),
         url: "tauri://localhost".parse().expect("URL が不正"),
-        body: InvokeBody::default(),
+        body,
         headers: Default::default(),
         invoke_key: handle.invoke_key().to_string(),
     }

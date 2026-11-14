@@ -20,7 +20,7 @@ describe("appStore", () => {
 
     // 中身を混ぜずに、届いたオブジェクトそのものに置き換わる。
     expect(store.getState().snapshot).toBe(second);
-    expect(store.getState().snapshot).toEqual({ schemaVersion: 2, appVersion: "2.0.0" });
+    expect(store.getState().snapshot).toEqual({ schemaVersion: 2, appVersion: "2.0.0", terminals: [] });
   });
 
   it("置き換えると購読者に 1 回だけ知らせる", () => {

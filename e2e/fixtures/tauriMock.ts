@@ -41,7 +41,7 @@ export interface RecordedCall {
 
 /** テスト用の写し。 */
 export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapshot {
-  return { schemaVersion: 1, appVersion: "0.0.0-e2e", ...overrides };
+  return { schemaVersion: 1, appVersion: "0.0.0-e2e", terminals: [], ...overrides };
 }
 
 const DEFAULT_REPLIES: TauriMockConfig = {

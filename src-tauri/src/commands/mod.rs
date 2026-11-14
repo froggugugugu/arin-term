@@ -3,3 +3,4 @@
 //! コマンドは引数を受けて Core を呼び、結果を返すだけにする。規則を書かない(設計書 §3.2)。
 
 pub mod app;
+pub mod terminal;

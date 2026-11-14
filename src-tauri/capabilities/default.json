@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "メインウィンドウに許す操作。画面から呼ぶコマンドがまだ無いので、何も許さない",
+  "description": "メインウィンドウに許す操作。本アプリのコマンド(アプリとターミナル)はアプリの ACL 定義を持たないので許可の記述は要らない。プラグインの操作は何も許さない",
   "windows": ["main"],
   "permissions": []
 }

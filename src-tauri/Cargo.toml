@@ -26,6 +26,8 @@ tauri = { workspace = true }
 [dev-dependencies]
 # Tauri の模擬ランタイム(tauri::test)を使うため、テストのときだけ test の機能を有効にする。
 tauri = { workspace = true, features = ["test"] }
+# コマンドの引数(JSON)を組み立てる。arin-core が既に使っている版と同じ。
+serde_json = { workspace = true }
 
 # macOS ではメニューの部品をメインスレッドでしか作れない。標準のテストハーネスは
 # テストを別スレッドで走らせるため、このテストは自前の main で(メインスレッドで)走らせる。
@@ -42,3 +44,12 @@ harness = false
 [[test]]
 name = "app_ready_marker"
 harness = false
+
+# ターミナルのコマンドを、偽の PTY と模擬ランタイムで画面から呼ぶテスト。理由は app_builder と同じ。
+[[test]]
+name = "terminal_commands"
+harness = false
+
+# セッション管理を実 PTY(/bin/zsh)で動かす結合テスト。Tauri のアプリは作らないので標準のハーネスで走らせる。
+[[test]]
+name = "session_pty"

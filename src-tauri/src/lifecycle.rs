@@ -1,8 +1,23 @@
 //! 起動まわり(設計書 §4 の `lifecycle.rs`)。
 //!
-//! いまは画面からの準備完了の通知を受けたときの処理だけを置く。
+//! 画面からの準備完了の通知を受けたときの処理と、アプリの終了時の後片付けを置く。
 
 use std::path::PathBuf;
+
+use tauri::{AppHandle, Manager, RunEvent, Runtime};
+
+use crate::sessions::SessionRegistry;
+
+/// アプリのイベントループのイベントを受ける(`run` に渡す)。
+///
+/// 終了するときは、全ターミナルのシェルを終わらせる(PTY を残さない)。
+pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
+    if let RunEvent::Exit = event
+        && let Some(sessions) = app.try_state::<SessionRegistry>()
+    {
+        sessions.shutdown();
+    }
+}
 
 /// 準備完了の通知を受けたときの処理。Tauri の管理状態に登録する。
 #[derive(Debug, Clone, PartialEq, Eq)]

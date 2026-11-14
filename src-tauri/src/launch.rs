@@ -2,8 +2,9 @@
 //!
 //! 環境変数を読むのは `from_env` だけにして薄くする。読んだ値の解釈は `from_inputs` に引数で渡し、
 //! 置き場所の規則そのものは `arin_core::paths::AppPaths` が持つ。テストは `from_inputs` を直接呼び、環境変数を書き換えない。
+//! ターミナルの起動に使う値(ホームフォルダ、`USER`、親の環境変数)もここで読み、`TerminalEnv` にして渡す。
 
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 use arin_core::paths::{AppPaths, AppPathsError};
@@ -18,15 +19,29 @@ pub const ENV_STATE_DIR: &str = "ARIN_STATE_DIR";
 /// `ENV_STATE_DIR` で状態フォルダを差し替えているときだけ効く(本物の状態フォルダには印を書かない)。
 pub const ENV_SMOKE: &str = "ARIN_SMOKE";
 
+/// ターミナルの起動に使う、アプリが受け取った値(設計書 §7.1「ターミナルの起動」)。
+///
+/// シェルへ渡す環境変数は `arin_core::terminal::ShellLaunchSpec` が許可リストで絞る。ここでは読んだまま持つ。
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TerminalEnv {
+    /// ホームフォルダ。【仮定】M1 のターミナルの cwd(計画書 M1 の冒頭)。
+    pub home: Option<PathBuf>,
+    /// `USER` の値。既定のシェルをユーザー情報から引くのに使う。
+    pub user: Option<String>,
+    /// アプリが受け取った環境変数の全部。
+    pub vars: Vec<(OsString, OsString)>,
+}
+
 /// 組み立てに渡す起動時の設定。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LaunchConfig {
     paths: AppPaths,
     ready_marker: Option<PathBuf>,
+    terminal: TerminalEnv,
 }
 
 impl LaunchConfig {
-    /// 読んだ値から設定を作る。
+    /// 読んだ値から設定を作る。ターミナルの値はホームフォルダだけを持つ(`with_terminal_env` で差し替える)。
     ///
     /// # Errors
     ///
@@ -42,7 +57,18 @@ impl LaunchConfig {
         Ok(Self {
             paths,
             ready_marker,
+            terminal: TerminalEnv {
+                home: home.map(Path::to_path_buf),
+                ..TerminalEnv::default()
+            },
         })
+    }
+
+    /// ターミナルの起動に使う値を差し替える。
+    #[must_use]
+    pub fn with_terminal_env(mut self, terminal: TerminalEnv) -> Self {
+        self.terminal = terminal;
+        self
     }
 
     /// 環境変数とホームディレクトリを読んで設定を作る。
@@ -54,7 +80,15 @@ impl LaunchConfig {
         let home = std::env::home_dir();
         let state_dir = std::env::var_os(ENV_STATE_DIR);
         let smoke = std::env::var_os(ENV_SMOKE);
-        Self::from_inputs(home.as_deref(), state_dir.as_deref(), smoke.as_deref())
+        let terminal = TerminalEnv {
+            home: home.clone(),
+            user: std::env::var("USER").ok(),
+            vars: std::env::vars_os().collect(),
+        };
+        Ok(
+            Self::from_inputs(home.as_deref(), state_dir.as_deref(), smoke.as_deref())?
+                .with_terminal_env(terminal),
+        )
     }
 
     /// 状態の置き場所。
@@ -67,6 +101,12 @@ impl LaunchConfig {
     #[must_use]
     pub fn ready_marker(&self) -> Option<&Path> {
         self.ready_marker.as_deref()
+    }
+
+    /// ターミナルの起動に使う値。
+    #[must_use]
+    pub fn terminal(&self) -> &TerminalEnv {
+        &self.terminal
     }
 }
 
@@ -117,6 +157,26 @@ mod tests {
     #[test]
     fn 差し替えが無ければスモークの指定があっても印を書かない() {
         assert_eq!(config(None, Some("1")).ready_marker(), None);
+    }
+
+    #[test]
+    fn ターミナルの値は既定でホームフォルダだけを持ち_差し替えられる() {
+        let c = config(None, None);
+        assert_eq!(
+            c.terminal(),
+            &TerminalEnv {
+                home: Some(PathBuf::from(HOME)),
+                user: None,
+                vars: Vec::new(),
+            }
+        );
+
+        let env = TerminalEnv {
+            home: Some(PathBuf::from("/Users/other")),
+            user: Some("other".to_owned()),
+            vars: vec![("HOME".into(), "/Users/other".into())],
+        };
+        assert_eq!(c.with_terminal_env(env.clone()).terminal(), &env);
     }
 
     #[test]

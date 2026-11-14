@@ -7,7 +7,9 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-/// 写しの形の版。写しの項目の意味を変えたり項目を消したりしたときに 1 つ上げる。
+use crate::terminal::TerminalSnapshot;
+
+/// 写しの形の版。写しの項目の意味を変えたり項目を消したりしたときに 1 つ上げる(項目の追加では上げない)。
 pub const SNAPSHOT_SCHEMA_VERSION: u32 = 1;
 
 /// 画面へ渡す状態の写し。
@@ -18,15 +20,18 @@ pub struct AppSnapshot {
     pub schema_version: u32,
     /// アプリの版(例: `0.1.0`)。
     pub app_version: String,
+    /// ターミナルの一覧(M1 は 1 枚)。
+    pub terminals: Vec<TerminalSnapshot>,
 }
 
 impl AppSnapshot {
     /// いまの形の版で写しを作る。アプリの版は組み立て側(`src-tauri`)から受け取る。
     #[must_use]
-    pub fn new(app_version: impl Into<String>) -> Self {
+    pub fn new(app_version: impl Into<String>, terminals: Vec<TerminalSnapshot>) -> Self {
         Self {
             schema_version: SNAPSHOT_SCHEMA_VERSION,
             app_version: app_version.into(),
+            terminals,
         }
     }
 }
