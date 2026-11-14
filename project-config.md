@@ -1,0 +1,539 @@
+# Project Configuration
+
+> **人間が記入するプロジェクトパラメータファイル。**
+> 技術選定・品質基準・ポリシーなど「人間が決定すべき事項」をここに集約する。
+>
+> **AI が管理する領域（このファイルに含めない）:**
+> - ルーティング定義 → `docs/project.md` にAIが自動生成・更新
+> - ストア一覧 → `docs/project.md` にAIが自動生成・更新
+> - データモデル/スキーマ → `docs/data-model.md` にAIが自動生成・更新
+>
+> **AI によるメンテナンス:**
+> 各スキル（`/implementing-features`, `/plan` 等）は設計・実装の進行に伴い、
+> このファイルのセクション11（既知の落とし穴）やセクション2（技術スタック）を
+> 必要に応じて更新し、`docs/` 配下との整合性を保つ。
+
+---
+
+## セクション別の導入ガイド
+
+**すべてを一度に記入する必要はない。** 使いたいスキルに応じて段階的に記入する。
+
+```mermaid
+flowchart LR
+    subgraph MINIMAL["ミニマル（§1+§2+§3）"]
+        S1["§1 基本情報"]
+        S2["§2 技術スタック"]
+        S3["§3 コマンド"]
+    end
+
+    subgraph RECOMMEND["推奨（+§4）"]
+        S4["§4 アーキテクチャ"]
+    end
+
+    subgraph FULL["フル（+残り）"]
+        S5["§5 データ永続化"]
+        S6["§6 品質基準"]
+        S7["§7 デザインシステム"]
+        S8["§8 E2Eテスト環境"]
+        S9["§9 Gitポリシー"]
+        S10["§10 セキュリティ"]
+        S11["§11 注意事項"]
+        S12["§12 プラグイン"]
+        S13["§13 モデル・マルチ LLM"]
+    end
+
+    MINIMAL -- "+§4を追記" --> RECOMMEND
+    RECOMMEND -- "必要に応じて" --> FULL
+```
+
+| 段階 | 記入セクション | 利用可能になるスキル・機能 |
+| --- | --- | --- |
+| **ミニマル** | §1 + §2 + §3 | `/prd`, `/plan`, `/code-review` — 設計・分析・レビュー |
+| **推奨** | + §4 | `/architecture`, `/implementing-features`, `/refactoring`, 全チーム — 実装・リファクタリング |
+| **フル** | 必要なセクションを追記 | `/security-scan`(§10), `/legal-check`, `/e2e-testing`(§8), `/performance` 等 |
+
+> **§6（品質基準）** はTDD・カバレッジ目標・品質ゲートの有効化に使用する。スキルの前提条件ではないため空欄でも動作するが、記入すると品質管理が自動化される。
+>
+> **未記入のセクション** はスキル実行時にスキップされる。エラーにはならない。
+>
+> **注意**: 上記の「ミニマル/推奨/フル」は *project-config.md のどのセクションを記入するか* という軸。
+> `.claude/` 配下にどの skill/agent/hook/team を物理的に同梱するかは `setup.sh --profile minimal|standard|full` という
+> **別の独立した軸**で制御する。両者は名前が似ているが対応関係はない
+> (例: `setup.sh --profile minimal` で導入しても project-config.md はフルまで記入して構わない)。
+
+---
+
+## 1. プロジェクト基本情報 <!-- 必須 -->
+
+| 項目           | 値                                   |
+| -------------- | ------------------------------------ |
+| プロジェクト名 | <!-- プロジェクト名を記入 -->        |
+| 概要           | <!-- プロジェクトの概要を記入 -->    |
+| 対応言語       | ja                                   |
+| Node.js要件    | <!-- 例: 20以上 -->                  |
+
+---
+
+## 2. 技術スタック <!-- 必須 -->
+
+<!-- プロジェクトで使用する技術を記入。AIが開発中にバージョン変更を追記する。 -->
+
+| カテゴリ         | 技術                                          |
+| ---------------- | --------------------------------------------- |
+| フレームワーク   | <!-- 例: React 19, TypeScript 5.x, Vite 7 --> |
+| スタイリング     | <!-- 例: Tailwind CSS 4, shadcn/ui -->         |
+| 状態管理         | <!-- 例: Zustand 5 -->                         |
+| バリデーション   | <!-- 例: Zod 3.x -->                           |
+| ルーティング     | <!-- 例: React Router DOM 7 -->                |
+| アイコン         | <!-- 例: lucide-react -->                      |
+| コード品質       | <!-- 例: Biome 2.x / ESLint 9 -->              |
+| 依存方向チェック | <!-- 例: dependency-cruiser 17 / なし -->       |
+| Git Hooks        | <!-- 例: husky 9, lint-staged 16 / なし -->     |
+| テスト           | <!-- 例: Vitest 4, Playwright 1.x -->          |
+
+---
+
+## 3. コマンド <!-- 必須 -->
+
+<!-- プロジェクトの開発・テスト・ビルドコマンドを記入 -->
+<!-- `<pm>` をプロジェクトのパッケージマネージャーに置き換えること -->
+
+**パッケージマネージャー参考:**
+
+| ツール | 実行コマンド | インストール | 備考 |
+| --- | --- | --- | --- |
+| npm | `npm run` | `npm install` | Node.js 標準 |
+| yarn | `yarn` | `yarn` | yarn は `run` 省略可 |
+| pnpm | `pnpm run` | `pnpm install` | ディスク効率が高い |
+| bun | `bun run` | `bun install` | 高速な代替ランタイム |
+
+```bash
+<pm> run dev              # 開発サーバー
+<pm> run build            # 本番ビルド
+<pm> run lint             # リント
+<pm> run test             # テスト
+<pm> run test:run         # テスト一回実行
+<pm> run test:coverage    # カバレッジ付きテスト
+# <pm> run e2e            # E2Eテスト（使用する場合）
+# <pm> run depcruise      # 依存方向チェック（使用する場合）
+```
+
+---
+
+## 4. アーキテクチャ <!-- 推奨 -->
+
+### 4.1 パターン
+
+<!-- プロジェクト規模に合わせてパターンを選定する。以下のガイドを参考に記入。 -->
+
+**パターン選定ガイド:**
+
+| 規模 | チーム | 推奨パターン | 特徴 |
+| --- | --- | --- | --- |
+| MVP・小規模 | 1-2名 | シンプル構成 | フラットで学習コスト低。素早く立ち上げ可能 |
+| 中規模 | 2-5名 | モジュラー/Feature-Based | 機能単位で分離。FSDほど厳格でなく柔軟 |
+| 大規模・長期運用 | 5名以上 | FSD（Feature-Sliced Design） | 厳格なレイヤー制約。大規模チームの秩序を維持 |
+| Next.js / Nuxt | — | Pages-Based | ファイルシステムルーティングに準拠 |
+
+選定パターン: <!-- 例: シンプル構成 / モジュラー / FSD / Pages-Based -->
+
+### 4.2 パスエイリアス
+
+<!-- 例: `@/` → `src/` -->
+
+### 4.3 ディレクトリ構成（概要）
+
+<!-- ソースコードのディレクトリ構成を記入。詳細は docs/architecture.md にAIが生成する。 -->
+<!-- §4.1で選定したパターンに合わせて記入する。下の折りたたみにパターン別の具体例あり。 -->
+
+```text
+src/
+├── <!-- プロジェクトのディレクトリ構成を記入 -->
+```
+
+### 4.4 依存方向ルール
+
+<!-- プロジェクトの依存方向ルールを記入。検出コマンドも記載する。 -->
+<!-- §4.1で選定したパターンに合わせて記入する。下の折りたたみにパターン別の具体例あり。 -->
+
+- <!-- 依存方向ルールを記入 -->
+- 循環依存: 禁止
+- 検出コマンド: <!-- 例: `npx depcruise src --config` / なし -->
+
+---
+
+<details>
+<summary>📁 パターン別ディレクトリ構成・依存方向ルールの具体例（クリックで展開）</summary>
+
+#### A. シンプル構成 — MVP・小規模向け
+
+フラットに `components/hooks/utils` を配置。機能が増えたらモジュラーへ移行。
+
+```text
+src/
+├── main.tsx               # エントリーポイント
+├── App.tsx                # ルーティング定義
+├── components/            # UIコンポーネント
+├── hooks/                 # カスタムフック
+├── utils/                 # ユーティリティ関数
+├── types/                 # 型定義
+├── stores/                # 状態管理
+└── test/                  # テストセットアップ
+```
+
+依存方向ルール例:
+- `utils` → `components`: 禁止（utils は純粋関数のみ）
+- `stores` → `components`: 禁止
+- 循環依存: 禁止
+
+#### B. モジュラー/Feature-Based — 中規模向け
+
+機能（feature）単位で自己完結するモジュール構成。FSDほど厳格でなく柔軟。
+
+```text
+src/
+├── main.tsx               # エントリーポイント
+├── App.tsx                # ルーティング定義
+├── features/              # 機能モジュール（各featureが自己完結）
+│   ├── auth/              #   認証（components, hooks, utils, types）
+│   ├── dashboard/         #   ダッシュボード
+│   └── settings/          #   設定
+├── shared/                # 機能横断の共有コード
+│   ├── components/        #   共有UIコンポーネント
+│   ├── hooks/             #   共有フック
+│   └── utils/             #   共有ユーティリティ
+├── stores/                # グローバル状態管理
+└── test/                  # テストセットアップ
+```
+
+依存方向ルール例:
+- `features/X` → `features/Y` の直接依存: 禁止（shared経由で連携）
+- `shared` → `features`: 禁止
+- `stores` → `features`: 禁止
+- 循環依存: 禁止
+
+#### C. FSD（Feature-Sliced Design） — 大規模・長期運用向け
+
+厳格なレイヤー制約と依存方向制御。大規模チームでの秩序維持に適する。
+
+```text
+src/
+├── main.tsx               # エントリーポイント
+├── App.tsx                # ルーティング定義
+├── features/              # 機能モジュール
+├── shared/                # 共有レイヤー
+├── infrastructure/        # インフラ層（API通信・外部サービス）
+├── stores/                # 状態管理
+├── test/                  # テストセットアップ
+└── lib/                   # 汎用ユーティリティ
+```
+
+依存方向ルール例:
+- `features/X` → `features/Y` の直接依存: 禁止（shared経由で連携）
+- `shared` → `features`: 禁止
+- `infrastructure` → `features`: 禁止
+- `stores` → `features`: 禁止
+- 循環依存: 禁止
+- 検出コマンド: `npx depcruise src --config`
+
+#### D. Pages-Based — Next.js App Router / Nuxt 向け
+
+ファイルシステムがルーティングを担う構成。フレームワーク規約に準拠。
+
+```text
+src/  # または app/（Next.js App Router）
+├── app/                   # ルーティング（App Router）
+│   ├── layout.tsx         #   ルートレイアウト
+│   ├── page.tsx           #   トップページ
+│   ├── dashboard/         #   /dashboard
+│   └── settings/          #   /settings
+├── components/            # UIコンポーネント
+├── hooks/                 # カスタムフック（use-client）
+├── lib/                   # ユーティリティ・API関数
+├── stores/                # クライアント状態管理
+└── types/                 # 型定義
+```
+
+依存方向ルール例:
+- Server Components → Client Components: 可（逆は禁止）
+- `lib` → `components`: 禁止
+- `stores` → `components`: 禁止
+- 循環依存: 禁止
+
+</details>
+
+---
+
+## 5. データ永続化 <!-- 任意 -->
+
+| 項目               | 値                                             |
+| ------------------ | ---------------------------------------------- |
+| 戦略               | <!-- 例: localStorage / IndexedDB / REST API -->|
+| ストレージキー     | <!-- 例: `app-data`（業務データ）-->            |
+| マイグレーション方針 | <!-- 例: optional + デフォルト値で後方互換 --> |
+
+---
+
+## 6. 品質基準 <!-- 推奨 -->
+
+| 項目                 | 値         |
+| -------------------- | ---------- |
+| テストカバレッジ目標 | <!-- 例: 80% --> |
+| TDD                  | <!-- yes / no --> |
+| 品質ゲート           | <!-- yes / no --> |
+| ツール出力先         | `testreport/` |
+| サマリー出力先       | `output/reports/` |
+
+### 6.1 レポート出力構成
+
+レポートは用途に応じて2つのディレクトリに分離する:
+
+- `testreport/` — ツールが生成する生データ（HTML/JSON/LCOV等）。`.gitignore`に追加すること
+- `output/reports/` — 人間がレビューするMarkdownサマリー。Gitで管理する
+
+```text
+testreport/                    ← ツール直接出力（.gitignore対象）
+├── coverage/              # ユニットテストカバレッジ（HTML/LCOV）
+├── e2e/                   # Playwright E2Eテストレポート・トレース
+└── security/              # セキュリティスキャンレポート（JSON/HTML）
+
+output/reports/                ← 人間向けサマリー（Git管理）
+├── review/                # コードレビュー結果
+├── test/                  # テスト結果サマリー
+├── security/              # セキュリティスキャンサマリー
+└── legal/                 # 法務チェック結果
+```
+
+---
+
+## 7. デザインシステム <!-- 推奨 -->
+
+| 項目                       | 値                                         |
+| -------------------------- | ------------------------------------------ |
+| 参照するデザインシステム   | <!-- URL or 「なし」 -->                   |
+| UIコンポーネントライブラリ | <!-- 例: shadcn/ui（Radix UI）-->          |
+| アイコンライブラリ         | <!-- 例: Lucide Icons -->                  |
+| アクセシビリティ基準       | <!-- 例: WCAG 2.1 AA -->                   |
+| カラートークン定義ファイル | <!-- 例: src/index.css -->                 |
+
+---
+
+## 8. E2E テスト環境 <!-- 任意 -->
+
+| 項目                 | 値                              |
+| -------------------- | ------------------------------- |
+| ブラウザ             | <!-- 例: Chromium -->           |
+| ベースURL            | <!-- 例: http://localhost:5173 -->|
+| テストファイル配置   | <!-- 例: e2e/ -->               |
+| テストデータ注入方式 | <!-- 例: localStorage直接注入 -->|
+
+---
+
+## 9. Git ポリシー <!-- 任意 -->
+
+| 項目           | 値                                           |
+| -------------- | -------------------------------------------- |
+| pre-commit     | <!-- 例: lint-staged（Biome check）-->       |
+| pre-push       | <!-- 例: lint + 型チェック + テスト -->       |
+| `--no-verify`  | 禁止                                         |
+| `--force`      | 原則禁止                                     |
+
+---
+
+## 10. セキュリティポリシー <!-- 任意 -->
+
+<!-- プロジェクトのセキュリティポリシーを記入 -->
+
+- ユーザー入力は必ずバリデーション
+- 依存パッケージの脆弱性は定期確認
+- <!-- その他プロジェクト固有のポリシーを追記 -->
+
+### ハーネス側の安全機構(本テンプレート提供)
+
+- **3 層防御**: フック(Layer 1) → deny ルール(Layer 2) → allow ルール(Layer 3)。詳細は `.claude/guardrails.md`
+- **Self-SAST**: `scan-harness.sh`(PreToolUse: Skill)が secret 混入 / constitution 改竄 / settings.local の deny 弱体化を検出
+- **不変原則**: `@constitution.md` の 7 原則が `.claude/.constitution.sha256` で hash 監視される
+- **Hook profile**: `BLUEPRINT_HOOK_PROFILE=minimal|standard|strict` で検査の厳しさを切替可能
+- **高リスク skill 抑止**: `deploy*` 系 skill は `scan-harness.sh` で常時ブロック(profile=minimal でのみ通過)
+- **3 階層 permission 運用**: allowlist / auto / sandbox の使い分けは `.claude/permissions-guide.md` 参照
+
+---
+
+## 11. プロジェクト固有の注意事項 <!-- 推奨 -->
+
+> このセクションはAIが開発中に発見した問題を追記・更新する。
+> 人間が初期値を記入してもよい。
+
+### 既知の落とし穴
+
+<!-- 開発中に発見された問題・注意点をAIが追記する。初期値として既知の問題があれば記入。 -->
+
+| 問題 | 原因 | 対策 |
+| ---- | ---- | ---- |
+| <!-- 問題の概要 --> | <!-- 根本原因 --> | <!-- 対策 --> |
+
+### フレームワーク固有パターン
+
+<!-- 使用するフレームワーク・ライブラリ固有の注意点を記入。AIも追記する。 -->
+
+---
+
+## 12. Claude Code プラグイン設定 <!-- 任意 -->
+
+<!-- 使用するプラグインを記入。不要なものは削除する。 -->
+
+| プラグイン        | 有効 | 用途                                       |
+| ----------------- | ---- | ------------------------------------------ |
+| context7          | yes  | ライブラリドキュメント参照                 |
+| playwright        | yes  | E2Eテスト実行・デバッグ                    |
+| mermaid           | yes  | アーキテクチャ図・フロー図（Markdown 内に記述） |
+| pr-review-toolkit | yes  | GitHub PR連携                              |
+| sentry            | no   | 本番エラー調査（必要に応じて有効化）       |
+
+---
+
+## 13. モデル選定戦略 <!-- 推奨 -->
+
+> Claude Opus / Sonnet / Haiku のどれを、どのスキル・チーム・エージェントで使うか。
+> コスト・品質・速度のトレードオフを明示する。未記入時はセッション既定モデルにフォールバック。
+> Claude Code 以外のエージェント(Codex / Cursor / Copilot / Gemini CLI 等)との併用は §13.7。
+
+### 13.1 Tier 定義
+
+| Tier | エイリアス | 固定 ID | 用途 | コスト感 |
+| ---- | ---------- | ------- | ---- | -------- |
+| **Frontier** | `fable` | `claude-fable-5-2` | 数時間〜複数日の自律実行・根本原因調査・難度の高い設計判断（既定にはならない。明示して使う） | 最高 |
+| **Critical** | `opus` | `claude-opus-5-5` | アーキテクチャ判断・セキュリティ監査・複雑なリファクタリング | 高 |
+| **Complex** | `sonnet` | `claude-sonnet-5-5` | 設計・実装・コードレビュー・E2E 作成 | 中（推奨） |
+| **Operational** | `haiku` | `claude-haiku-5-5` | 探索・ドキュメント同期・軽量な繰り返し作業 | 低 |
+
+> **エイリアスを既定にする**: `.claude/agents/*.md` の `model:` にはエイリアス（`opus` / `sonnet` / `haiku`）を書く。
+> モデル世代が上がっても追随でき、ID の陳腐化でエージェントが起動しなくなる事故を防げる。
+> バージョンを固定したい本番運用でのみ固定 ID を使う。最新・正確な ID は
+> [Anthropic Console の Models 一覧](https://console.anthropic.com/settings/models) で確認。
+
+旧モデル（`claude-opus-4`, `claude-sonnet-3-5`, `claude-haiku-3-5` 等）は本テンプレートでは非推奨。
+
+> **effort の既定はモデルで違う**: Opus 5.5 / Sonnet 5.5 / Haiku 5.5 は `medium`、それ以外の effort 対応モデルは `high`(Opus 4.7 は `xhigh`)。skill / agent の `effort:` はセッションの既定を上書きするので、
+> レビュー・設計系を Opus 5.5 で走らせるなら `high` 以上が明示されているか確認する。`best` エイリアスは Fable が使えれば Fable、
+> 無ければ Opus に解決する。Fable は数時間規模の自律実行に向く一方、cybersecurity / biology 領域では安全分類器で Opus にフォールバックする。
+
+### 13.1b effort（推論深度）の軸
+
+モデル選択とは独立に **effort** で推論の深さを制御できる（`low` / `medium` / `high` / `xhigh` / `max`）。
+同じモデルでもコスト・品質のダイヤルとして機能するため、**Pro 契約など Opus 枠が限られる環境では
+モデルを上げるより effort を上げる方が費用対効果が高い**。
+
+| 設定箇所 | フィールド | 例 |
+| -------- | ---------- | -- |
+| skill | `effort:` | `/security-scan`・`/code-review`・`/architecture`・`/refactoring`・`/harness-refine` = `high`、`/adr` = `low` |
+| subagent | `effort:` | `security-reviewer`・`planner`・`performance-analyst` = `high`、`explorer` = `low` |
+| セッション全体 | `/effort <level>` または `settings.json` の `effortLevel` | — |
+
+> 本テンプレートの skill / agent は **`model:` を固定せず `effort:` のみ指定**している。
+> どのモデルで走らせるかはセッション側（`/model`）の判断に委ね、本節はその指針として使う。
+
+> Sonnet 5.5 の `low` は、検証を実行せずに完了を報告しがち(公式プロンプティングガイド)。実装系は `medium` 以上にし、
+> 検証ゲート(`verify-gate.sh`)を standard 以上で有効にしておく。
+
+effort の動かし方(公式 best-practices。`medium` が日常の機能実装の基準):
+
+| 場面 | 設定 |
+| ---- | ---- |
+| 見落としやすいケースに正しさが依存する(他人のコードのバグ・flaky テスト・スキーマ変更の影響範囲) | `high` / `xhigh` |
+| 対話的に往復し、結果を毎回人が見る(ブレスト・たたき台・数ファイルのリネーム) | `low` |
+| 人が付かない難問(脆弱性探索など)。通常タスクでは考え過ぎて `high` と変わらない | `max` |
+| その 1 ターンだけ深く考えさせたい | プロンプトに `ultrathink`(v2.1.311 以降はそのターンを `xhigh` で実行。設定は変えない) |
+| `effort:` の無い subagent の既定 | 親と同じモデルならセッションの effort を継承し、別モデルならそのモデルの保存済み effort か既定値(v2.1.317)。固定するなら env `CLAUDE_CODE_SUBAGENT_EFFORT`(v2.1.316) |
+
+### 13.1c advisor(上位モデルへの相談、任意)
+
+主モデルを下げたまま、設計判断・再発するエラー・完了判定の節目だけ上位モデルに相談させる(`/advisor` または settings の `advisorModel`。Anthropic API 限定)。
+Sonnet 主 + Opus advisor、Sonnet 主 + Fable advisor が代表的な組み合わせ。毎ターン上位モデルを走らせるより安く、長い多段タスクで効く。
+短いタスクや毎ターン最強モデルが要る作業には向かない(主モデルを上げる)。advisor の切替もキャッシュを無効化するので、セッション開始時に決める。
+
+### 13.2 スキル × モデル推奨マッピング
+
+| スキル | 推奨 Tier | 根拠 |
+| ------ | --------- | ---- |
+| `/prd` | Complex | 要件構造化。推論量は中程度 |
+| `/architecture` | Critical | システム設計の判断ミスが後工程に波及 |
+| `/plan` | Complex | タスク分解・依存関係把握 |
+| `/implementing-features` | Complex | TDD 実装の主力 |
+| `/ui-ux-design` | Complex | デザインシステム準拠判断 |
+| `/hig-compliance` | Complex | 画面間整合性の横断判定 |
+| `/design-system-audit` | Complex | 比率・トークン計算 |
+| `/code-review` | Critical | 指摘の質が品質を左右 |
+| `/security-scan` | Critical | 脆弱性見逃しの影響大 |
+| `/legal-check` | Complex | ライセンス・GDPR の条文照合 |
+| `/e2e-testing` | Complex | Page Object 設計・安定性 |
+| `/performance` | Complex | 計測データ解釈 |
+| `/refactoring` | Critical | 構造変更のリスク管理 |
+| `/adr` | Operational | 定型フォーマット記録 |
+| `/review-fix` | Complex | 指摘の意図を正しく汲む必要あり |
+
+### 13.3 チーム × モデル推奨マッピング
+
+| チーム | PJM | アナリスト | プランナー | 開発者 | レビュアー | テスター |
+| ------ | --- | ---------- | ---------- | ------ | ---------- | -------- |
+| `TEAM_PJM` | Critical | Complex | Complex | Complex | Critical | Complex |
+| `TEAM_FEATURE` | — | — | Complex | Complex | Complex | Complex |
+| `TEAM_QA` | — | — | — | — | Critical | Complex |
+| `TEAM_PLANNING` | Critical | Complex | Complex | — | — | — |
+| `TEAM_DESIGN` | — | Complex | — | Complex | Complex | — |
+| `TEAM_REFACTOR` | — | — | Complex | Critical | Complex | Complex |
+
+PJM（リーダー）は判断精度が重要なので Critical を推奨。
+レビュアーは監査観点のズレが致命的なので Critical。
+
+### 13.4 サブエージェント × モデル推奨マッピング
+
+| agent | Tier | 理由 |
+| ----- | ---- | ---- |
+| `explorer` | Operational | Grep/Read の軽量反復 |
+| `planner` | Complex | 影響範囲判断 |
+| `security-reviewer` | Critical | 脆弱性見逃しの影響大 |
+| `performance-analyst` | Complex | 計測データ解釈 |
+| `doc-synchronizer` | Operational | 決定論的な差分更新 |
+| `test-writer` | Complex | エッジケース網羅 |
+| `verifier` | Complex | 差分と受け入れ条件・検証結果の照合 |
+
+### 13.5 コスト最適化の原則
+
+1. **Operational を積極活用**: 探索・同期・定型生成は Haiku で十分。Opus を使う必要はない
+2. **並行実行時はTier分散**: `TEAM_PJM --parallel` で全員 Opus にしない。役割に応じて Tier を混在
+3. **Subagent は Haiku 優先**: 単発の委譲は軽量運用。必要に応じて Critical に昇格
+4. **コスト上限を API キーに設定**: `.claude/pitfalls.md` #6 参照
+5. **月次使用量レビュー**: Anthropic Console で確認。想定と乖離したら Tier を見直す
+6. **セッション途中でモデルを切り替えない**: 切替はプロンプトキャッシュを無効化する。役割ごとの違いは skill / agent の `model:` に持たせる(subagent は別キャッシュ)
+
+### 13.6 未記入時の挙動
+
+- フロントマター `model:` を省略した skill / agent はセッション既定モデルを継承
+- 本セクションの表は**推奨値**であり、プロジェクト要件に応じてオーバーライド可能
+- 個人設定で常に Opus を使いたい場合は `~/.claude/settings.json` の `model` で指定
+
+### 13.7 マルチ LLM 併用(Claude Code 以外のエージェント)
+
+> **主系は Claude Code**。skill・team・フック・権限による品質ゲートと安全装置は Claude Code 上でだけ動く。
+> 他のエージェントはルートの `AGENTS.md`(共通ルール)を読み、本節で割り当てた役割と書込範囲に従う。
+> 本節で `yes` になっていないエージェントは**読取専用**として振る舞う(`AGENTS.md` に明記済み)。
+
+| エージェント | 利用 | 役割 | 書込範囲 | `AGENTS.md` を読ませる方法 |
+| ------------ | ---- | ---- | -------- | -------------------------- |
+| Claude Code | yes(主系・固定) | 全フェーズ・品質ゲート・成果物の確定 | skill / agent の定義どおり | `CLAUDE.md` の `@AGENTS.md` で取り込む |
+| OpenAI Codex CLI | no | 例: レビューのセカンドオピニオン | 例: なし(読取専用) | 既定で読む |
+| Cursor | no | 例: エディタ内の小修正 | 例: `src/**` | 既定で読む |
+| GitHub Copilot | no | 例: 補完・PR 要約 | 例: なし(読取専用) | VS Code は設定 `chat.useAgentsMdFile: true` が必要 |
+| Gemini CLI | no | 例: 大規模コードの横断調査 | 例: なし(読取専用) | 既定は `GEMINI.md`。`.gemini/settings.json` に `{"context": {"fileName": ["AGENTS.md"]}}` を置く |
+
+> 読み込み方法はツールの版で変わる。導入時に各ツールの公式ドキュメントで確認する。
+
+**併用ルール**(既定値。プロジェクトに合わせて変更してよい):
+
+- 書込範囲はエージェント間で重複させない。同じファイルを複数エージェントで同時に編集しない
+- 品質ゲートの判定と `output/` の成果物の確定は Claude Code の skill で行う。他エージェントの結果を取り込むときは出典(エージェント名)を明記する
+- Claude Code 以外には `.claude/` のフック・deny ルールが効かない。書込を許すエージェントがあるなら、禁止事項(シークレット・`--no-verify`・`--force` 付きの push)を CI や git フックでも強制する
+- 他エージェントの API キーや課金設定はそのツール側で管理し、リポジトリにコミットしない(constitution ⑦)
+- 他エージェント用の指示ファイル(`GEMINI.md`・`.github/copilot-instructions.md` 等)を作るなら `AGENTS.md` を参照するだけにし、規則を複製しない
