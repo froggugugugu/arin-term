@@ -16,7 +16,7 @@
 
 | 項目 | 内容 |
 | ---- | ---- |
-| 最終更新 | 2026-11-14(T1 完了。T3・T4 に着手) |
+| 最終更新 | 2026-11-14(T1・T3・T4 完了。次は T2、T5、T6) |
 | ブランチ | `feat/m0-skeleton`(`docs/prd-multi-terminal` から分岐) |
 | 最後のコミット | `9de71c4 chore: project-config の技術スタックとコマンドを Tauri 向けに更新`(本ファイルと PLAN は未コミット) |
 | 起動コマンド | 未実装。T7 の完了後は `npm run dev` |
@@ -34,8 +34,8 @@
 | -- | ---- | ---------------------------- | ------ |
 | T1 | 設計書 §4 を React 前提に直し、版を ADR-003 に固定 | 設計書 §4 に `main.ts` が残っていない。ADR-003 に react、react-dom、zustand、Vite の React プラグイン、型定義 2 つの正確な版がある。本人が差分を了承した | 🟡 作業は完了(2026-11-14)。本人の差分了承だけ未 |
 | T2 | ADR-002・004・005・006 を起票 | `output/design/` に 4 つの ADR があり、`ADR_INDEX.md` に載っている | ❌ |
-| T3 | Rust のワークスペースの骨格 | `cargo build`・`cargo test`・`cargo clippy -D warnings`・`cargo fmt --check` がワークスペース全体で通る | ❌ |
-| T4 | 画面の骨格(React、Vite、プロジェクト参照、Vitest) | `tsc -b`・`vitest run`・`vite build` が通る。`src/logic` から `src/ui` を import すると `tsc -b` が失敗する | ❌ |
+| T3 | Rust のワークスペースの骨格 | `cargo build`・`cargo test`・`cargo clippy -D warnings`・`cargo fmt --check` がワークスペース全体で通る | ✅ 2026-11-14(テスト 1 件合格) |
+| T4 | 画面の骨格(React、Vite、プロジェクト参照、Vitest) | `tsc -b`・`vitest run`・`vite build` が通る。`src/logic` から `src/ui` を import すると `tsc -b` が失敗する | ✅ 2026-11-14(Vitest 1 件合格。境界は `.tsx` で TS6142、`.ts` で TS6307 になり失敗することを確認) |
 | T5 | Tauri のアプリ本体と空ウィンドウ | ワークスペースのビルドとテストが通る。Bundle ID が `com.froggugugugu.arin`、最低 OS が 15.0、対象が arm64 | ❌ |
 | T6 | 境界検査スクリプト | `node --test scripts/` が通る。違反を仕込んだ見本で検査が失敗する | ❌ |
 | T7 | 検証コマンドの npm スクリプト | `npm run build`・`npm test`・`npm run lint`・`npm run app` が終了コード 0。`.app` ができる | ❌ |

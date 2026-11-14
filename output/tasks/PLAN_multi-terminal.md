@@ -88,13 +88,13 @@
   - 並行: 可(コードを触らない。`ADR_INDEX.md` は T1 が作ったものに行を足すだけ)
   - 先に書くテスト: なし
   - 検証: `ls output/design/ADR_00{2,4,5,6}_*.md` が 4 件。`/adr` で作る
-- [ ] T3 — Rust のワークスペースと 2 つのクレートの骨格を作る(変更ファイル: Cargo.toml, Cargo.lock, rust-toolchain.toml, .gitignore, crates/arin-core/Cargo.toml, crates/arin-core/src/lib.rs, crates/arin-platform/Cargo.toml, crates/arin-platform/src/lib.rs | 依存: T1)
+- [x] T3 — Rust のワークスペースと 2 つのクレートの骨格を作る(変更ファイル: Cargo.toml, Cargo.lock, rust-toolchain.toml, .gitignore, crates/arin-core/Cargo.toml, crates/arin-core/src/lib.rs, crates/arin-platform/Cargo.toml, crates/arin-platform/src/lib.rs | 依存: T1)
   - 対応: 設計書 §3.1・§3.2・§4。`arin-core` は `#![forbid(unsafe_code)]`、依存は `serde`・`serde_json`・`thiserror`(と T1 で認めたもの)。Rust は 1.98.1 に固定し、`clippy`・`rustfmt`・`llvm-tools-preview` を入れる。リリースのプロファイルに `panic = "abort"` を書かない(NFR-006)
   - `.gitignore` に `node_modules/`、`target/`、`dist/` を足す(T4 のぶんもここでまとめて足す。同じファイルを 2 つのタスクで触らないため)
   - 並行: 可(T4 とファイルが重ならない)
   - 先に書くテスト: `arin-core` に 1 件(クレートが読み込めることを確かめるだけの最小のテスト)。テストの土台が動くことの確認
   - 検証: `cargo build --workspace --locked && cargo test --workspace --locked && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo fmt --check`
-- [ ] T4 — 画面の骨格(React、Vite、TypeScript のプロジェクト参照、Vitest)を作る(変更ファイル: package.json, package-lock.json, index.html, vite.config.ts, tsconfig.json, src/tsconfig.json, src/logic/tsconfig.json, src/main.tsx, src/ui/shell/AppShell.tsx, src/logic/index.ts, src/logic/index.test.ts | 依存: T1)
+- [x] T4 — 画面の骨格(React、Vite、TypeScript のプロジェクト参照、Vitest)を作る(変更ファイル: package.json, package-lock.json, index.html, vite.config.ts, tsconfig.json, src/tsconfig.json, src/logic/tsconfig.json, src/main.tsx, src/ui/shell/AppShell.tsx, src/logic/index.ts, src/logic/index.test.ts | 依存: T1)
   - 対応: 設計書 §3.3(`src/logic` の独立をプロジェクト参照で強制)、§13.1 の「M0 で入れるもの」。開発用依存(`@tauri-apps/cli`、`vite`、`vitest`、`@vitest/coverage-v8`、`typescript`、`@playwright/test`、React 関係)と `@tauri-apps/api` をここでまとめて入れる(あとのタスクが `package.json` を触らずに済むようにする)。版は T1 の ADR-003 と設計書 §2 のとおりに正確に指定する
   - 並行: 可(T3 とファイルが重ならない)
   - 先に書くテスト: `src/logic/index.test.ts`(最小の 1 件)。加えて、`src/logic` から `src/ui` を import した一時ファイルで `tsc -b` が失敗することを手で 1 回確かめ、結果を PROGRESS に書く(一時ファイルは残さない)
