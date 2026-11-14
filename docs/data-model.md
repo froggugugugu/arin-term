@@ -1,44 +1,31 @@
 # データモデル
 
-> **これはテンプレートです。** セットアップ直後は空の状態です。
-> 以下のいずれかの方法で内容が生成されます:
-> - `/implementing-features` スキルでスキーマ実装時に自動生成
-> - PJMチームのPhase 4で自動生成
->
-> **生成方法**: AIがコードベースのZodスキーマ定義から自動生成する。
-> `project-config.md` セクション5（データ永続化）を参照し、永続化方針との整合性を保つ。
-> スキーマ変更時は実装と同期してAIが更新する。
-
 ## スキーマ配置
 
-<!-- 例: src/shared/types/ -->
-<!-- 例: フォームバリデーションは src/infrastructure/validation/schemas.ts -->
+- Rust の型が正本(`crates/arin-core/src/`)。画面とやり取りする型は ts-rs で `src/ipc/generated/` に生成し、コミットする
+- 永続化するスキーマ(`state.json`・設定ファイル)は未実装。M2・M6 で追加
 
 ## スキーマ詳細
 
-<!-- AIがコードベースのZodスキーマ定義から自動生成・展開する -->
+### AppSnapshot(`crates/arin-core/src/workspace/snapshot.rs`)
 
-### [スキーマ名]
-
-<!-- 以下のフォーマットで各スキーマを記述 -->
+Rust から画面へ渡す状態の写し。画面は届いたもので丸ごと置き換える。JSON は camelCase。
 
 | フィールド | 型 | 備考 |
 | ---------- | -- | ---- |
+| `schemaVersion` | `u32` / `number` | `SNAPSHOT_SCHEMA_VERSION`(現在 1)。項目の意味を変える・消すときに上げる |
+| `appVersion` | `String` / `string` | アプリの版(`src-tauri` が package_info から渡す) |
 
-派生型: <!-- Create, Update 等 -->
+### AppPaths(`crates/arin-core/src/paths/app_paths.rs`)
 
-## フォームバリデーション
+状態フォルダの置き場所。画面には渡さない(TS の型なし)。
 
-<!-- フォームバリデーションスキーマの一覧 -->
-
-| スキーマ | 対象 | 主なルール |
-| -------- | ---- | ---------- |
+| フィールド | 型 | 備考 |
+| ---------- | -- | ---- |
+| `state_dir` | `PathBuf` | 既定 `<home>/Library/Application Support/Arin` |
+| `overridden` | `bool` | `ARIN_STATE_DIR` による差し替えかどうか |
 
 ## 重要なバリデーションルール
 
-<!-- AIがコードベースから検出したバリデーションルールを記載。
-     ビジネスロジック上の制約（上限値、一意性、範囲制限等）を明記する -->
-
-## ユーティリティ関数
-
-<!-- データ変換・計算に使用するユーティリティ関数を記載 -->
+- `AppPaths::resolve`: 差し替え指定が相対パスなら `RelativeOverride`。空文字列は指定なし扱い。差し替えが無くホームが無い・空なら `HomeUnknown`、相対なら `RelativeHome`
+- スモークの印(状態フォルダ直下の `smoke-ready`)は、`ARIN_SMOKE` が厳密に `1` かつ状態フォルダが差し替えられているときだけ書く

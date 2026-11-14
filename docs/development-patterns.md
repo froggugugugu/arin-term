@@ -1,136 +1,41 @@
 # 開発パターン集
 
-> **これはテンプレートです。** セットアップ直後は空の状態です。
-> 以下のいずれかの方法で内容が生成されます:
-> - `/implementing-features` スキルで新パターン発見時に自動追記
-> - `/performance` `/refactoring` スキル実行時に自動追記
-> - PJMチームのPhase 4以降で自動生成
->
-> **生成方法**: `project-config.md` セクション2, 11 を基にAIが初期生成する。
-> 新しいパターンや落とし穴の発見時にAI・人間が協調メンテナンスする。
-
-プロジェクト固有のコード規約・落とし穴・アンチパターンをまとめる。
-汎用的な知識はここには含めない。
-ルート定義・ストア一覧・ディレクトリ構成・スキーマ定義は `docs/project.md`, `docs/architecture.md`, `docs/data-model.md` を参照。
+プロジェクト固有のコード規約・落とし穴だけをまとめる。構成・スキーマは `docs/architecture.md`、`docs/data-model.md` を参照。
 
 ---
 
-## 1. 状態管理
+## 1. 境界の規則(`npm run lint` が検査)
 
-<!-- project-config.md セクション2「状態管理」の技術に基づき、
-     セレクタ、永続化、マイグレーション等のパターンを記述 -->
+- `@tauri-apps/*` を import できるのは `src/ipc/` だけ。`src/ui/` は `src/ipc/` を import しない(操作は `src/state` 経由)
+- `arin-core` は `std::fs`・`std::process`・`std::net` を使わない。依存は serde・serde_json・thiserror・ts-rs だけ。入出力は `arin-platform` に置く
+- 環境変数を読むのは `src-tauri/src/launch.rs` だけ。`arin-core` は値を引数で受け取る
+- xterm.js の要素は React の管理の外に置く(ADR-003)。M1 で実装するときに守る
 
-### 1.1 セレクタの注意点
+## 2. 状態管理
 
-<!-- 状態管理ライブラリ固有のアンチパターン -->
+- zustand は `zustand/vanilla` の生成関数で作り、`main.tsx` から props で渡す。モジュールの読み込み時にストアを作らない
+- `AppSnapshot` は画面で書き換えず、届いたもので丸ごと置き換える
 
-### 1.2 永続化パターン
+## 3. 型の生成
 
-<!-- 永続化の方式と注意点 -->
+- Rust の型(`AppSnapshot` など)を変えたら `npm run gen:types` で `src/ipc/generated/` を再生成する。生成物は手で編集しない。古いままだと `cargo test` が失敗する
 
-### 1.3 マイグレーション
+## 4. 依存の版
 
-<!-- データマイグレーションのパターン -->
+- 版は正確に固定する(npm は `^` なし、Cargo は `=`)。新しく選ぶ版は公開から 2 週間未満のものを避ける(ADR-003)
 
----
+## 5. テスト
 
-## 2. UIフレームワーク固有
+- 状態フォルダは `ARIN_STATE_DIR`(絶対パス)で差し替える。テストとスモークは本物の `~/Library/Application Support/Arin/` を読み書きしない。`ARIN_SMOKE=1` は差し替え時だけ有効
+- `src-tauri/tests/` は `harness = false`(macOS ではメニューの部品をメインスレッドでしか作れず、標準ハーネスの別スレッドでは panic する)。テストを足すときは `src-tauri/Cargo.toml` に `[[test]]` を足す
+- `npm run e2e` は実アプリではなく Vite の画面を WebKit で開き、Rust との通信は `e2e/fixtures/tauriMock.ts` が差し替える。製品のソースに差し込み口は置かない。1420 番を使うので `npm run dev` を動かしたままだと失敗する
 
-<!-- project-config.md セクション2「その他」の技術に基づき、
-     フレームワーク固有の注意点を記述 -->
-
----
-
-## 3. 数値精度
-
-<!-- プロジェクトで扱う数値の丸め・精度に関するルール -->
-
----
-
-## 4. データモデル変更時の規約
-
-### スキーマ追加
-
-<!-- 後方互換のための規約 -->
-
-### マイグレーション
-
-<!-- データマイグレーション時の規約 -->
-
-### スキーマ設計パターン
-
-<!-- Create / Update 派生型等のパターン -->
-
----
-
-## 5. UI 規約
-
-### ダークモード
-
-```typescript
-// OK: セマンティックカラー（自動対応）
-className="text-foreground bg-background border-border"
-
-// OK: ダークモード対応ユーティリティ
-className="bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-
-// NG: ハードコードされた色値
-style={{ backgroundColor: '#f0f0f0' }}
-```
-
-### コンポーネント設計
-
-- **Presentational**: props のみに依存、ストアを直接参照しない
-- **Container**: ストア/hooks を使用、pages ディレクトリまたは feature のトップに配置
-
-### 条件付きスタイル
-
-<!-- プロジェクトで使用するスタイル合成ヘルパーを記載 -->
-
----
-
-## 6. E2E テストパターン
-
-### テストデータ注入
-
-<!-- project-config.md セクション11 に基づき、テストデータの注入方法を記述 -->
-
-### UIコンポーネント操作ヘルパー
-
-<!-- フレームワーク固有のUIコンポーネント操作パターン -->
-
----
-
-## 7. デザインシステム
-
-### 7.1 参照するデザインシステム
-
-<!-- project-config.md セクション7 から展開 -->
-
-| リソース | URL | 用途 |
-| -------- | --- | ---- |
-
-### 7.2 カラートークン
-
-<!-- プロジェクトで使用するCSSカラートークンを記載 -->
-
-### 7.3 スペーシングスケール
-
-<!-- 使用するスペーシングスケールを記載 -->
-
-### 7.4 コンポーネント追加手順
-
-<!-- UIコンポーネントライブラリの追加手順 -->
-
-### 7.5 アイコン使用規約
-
-<!-- アイコンライブラリの使用方法 -->
-
----
-
-## 8. 過去の問題事例
-
-<!-- project-config.md セクション11 から展開。開発中に発見した問題を追記 -->
+## 6. 過去の問題事例
 
 | 問題 | 原因 | 対策 |
 | ---- | ---- | ---- |
+| `node --test scripts/` が失敗 | Node 24 はディレクトリをモジュールとして読もうとする | `node --test "scripts/*.test.mjs"`(`npm test` に含む) |
+| `rm -rf` が止められる | `.claude/settings.json` の deny に `Bash(rm -rf *)` がある | `npm ci` は自分で `node_modules` を消すので不要 |
+| `Cargo.lock` に `reqwest` が載る | Lock は全 OS の依存を載せる。Tauri は Android・iOS でだけ使う | 境界検査は `tauri → reqwest` の 1 辺だけを理由付きで除外。Tauri を上げたら `cargo tree -i reqwest --target aarch64-apple-darwin` で再確認 |
+| 型検査用の一時ファイルから `.d.ts` が `src/` に出てコミットされた | 型検査失敗時にも出力していた | `tsconfig` に `noEmitOnError: true`(src・src/logic・e2e) |
+| 素の `cargo build` のバイナリは最低 OS が 11.0 になる | 最低 OS 15.0(`tauri.conf.json` の `minimumSystemVersion`)は `tauri build` が渡す | 配布物は必ず `npm run app` で作る(`otool -l` の `minos` で確認できる) |

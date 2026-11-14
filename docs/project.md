@@ -1,52 +1,49 @@
 # プロジェクト情報
 
-> **これはテンプレートです。** セットアップ直後は空の状態です。
-> 以下のいずれかの方法で内容が生成されます:
-> - `/architecture` スキル実行時に自動生成
-> - `/implementing-features` スキル実行時に自動更新
-> - PJMチームのPhase 2以降で自動生成
->
-> **生成方法**: `project-config.md` のセクション1〜3, 5, 7, 11〜12 を基にAIが生成・メンテナンスする。
-> ルーティング・ストア一覧はAIがコードベースから自動生成する。
-> 人間が直接編集しても良いが、`project-config.md` との整合性を保つこと。
-
 ## 概要
 
-<!-- project-config.md セクション1 から展開 -->
+macOS 向けのライト・マルチターミナル「Arin」(Tauri 2、arm64、最低 OS 15.0)。現在は M0(骨格)のみ実装済みで、空ウィンドウ・状態の写しの取得・起動スモークまで。
+プロジェクト管理・ファイルツリー・ターミナル・設定ファイルは未実装(M1 以降)。設計は `output/design/ARCH_multi-terminal.md`、進捗は `output/tasks/PROGRESS.md`。
 
 ## コマンド
 
-<!-- project-config.md セクション3 から展開 -->
+正本は `package.json` の scripts。
 
 ```bash
-# 以下は project-config.md から転記
+npm run dev            # Tauri の開発起動(Vite は 1420 番)
+npm run dev:web        # Vite の開発サーバーだけ
+npm run build          # tsc -b && vite build && cargo build --workspace
+npm test               # vitest + cargo test + node --test "scripts/*.test.mjs"
+npm run lint           # tsc -b + clippy -D warnings + cargo fmt --check + 境界検査
+npm run test:coverage  # 行 80% を src/logic と arin-core に課す(testreport/coverage/)
+npm run gen:types      # Rust の型から src/ipc/generated/ を再生成
+npm run e2e            # Playwright(WebKit、Vite の画面に対して)
+npm run app            # 配布用 .app(tauri build --target aarch64-apple-darwin)
+npm run smoke          # .app を一時の状態フォルダで起動し準備完了を確認(先に npm run app)
 ```
 
 ## 技術スタック
 
-<!-- project-config.md セクション2 から展開 -->
-
 | カテゴリ | 技術 |
 | -------- | ---- |
+| アプリ基盤 | Tauri 2.12.5(Rust 1.98.1、edition 2024) |
+| 画面 | React 19.3.1、zustand 5.0.16(vanilla ストア)、Vite 8.3.5、TypeScript 6.0.3 |
+| 型の生成 | ts-rs 12.0.1(Rust → `src/ipc/generated/`) |
+| テスト | Vitest 5.0.5、cargo test、node --test、Playwright 1.64.1(WebKit)、cargo-llvm-cov |
+| 実行環境 | Node 24 以上 |
 
 ## ルーティング
 
-<!-- AIがコードベースから自動生成 -->
-
-| パス | ページ | 機能 |
-| ---- | ------ | ---- |
+なし(単一ウィンドウ。ルート部品は `AppShell`)。
 
 ## ストア一覧
 
-<!-- AIがコードベースから自動生成 -->
-
 | ストア | 責務 |
 | ------ | ---- |
+| `appStore`(`src/state/appStore.ts`) | Rust から届いた `AppSnapshot` を丸ごと置き換えて持つ。起動失敗の原因も持つ |
 
 ## 制約事項
 
-<!-- project-config.md セクション1, 5, 11, 12 から展開 -->
-
-- パスエイリアス: <!-- project-config.md セクション4.2 -->
-- E2Eテスト: <!-- project-config.md セクション8 -->
-- Git Hooks: <!-- project-config.md セクション9 -->
+- パスエイリアス: なし(相対 import)
+- E2E テスト: `npm run e2e`。CI(`.github/workflows/ci.yml`、macos-26)は lint・test・build・e2e を実行
+- Git Hooks: なし
