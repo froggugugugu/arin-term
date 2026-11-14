@@ -68,10 +68,11 @@ flowchart LR
 
 | 項目           | 値                                   |
 | -------------- | ------------------------------------ |
-| プロジェクト名 | <!-- プロジェクト名を記入 -->        |
-| 概要           | <!-- プロジェクトの概要を記入 -->    |
+| プロジェクト名 | Arin（アリン。リポジトリ名 arin-term） |
+| 概要           | 「プロジェクトのフォルダツリー」と「そのプロジェクトのターミナル」だけを、1 ウィンドウで複数プロジェクト分持てる macOS ネイティブアプリ。エディタは持たない。利用者は本人のみ。要求の正本は `input/requirements/REQ_001_multi-terminal.md` |
 | 対応言語       | ja                                   |
-| Node.js要件    | <!-- 例: 20以上 -->                  |
+| 対応環境       | macOS 15 以降 / Apple Silicon（仮定。REQ_001 §11 Q2） |
+| Node.js要件    | なし（Node.js は使用しない）         |
 
 ---
 
@@ -81,42 +82,36 @@ flowchart LR
 
 | カテゴリ         | 技術                                          |
 | ---------------- | --------------------------------------------- |
-| フレームワーク   | <!-- 例: React 19, TypeScript 5.x, Vite 7 --> |
-| スタイリング     | <!-- 例: Tailwind CSS 4, shadcn/ui -->         |
-| 状態管理         | <!-- 例: Zustand 5 -->                         |
-| バリデーション   | <!-- 例: Zod 3.x -->                           |
-| ルーティング     | <!-- 例: React Router DOM 7 -->                |
-| アイコン         | <!-- 例: lucide-react -->                      |
-| コード品質       | <!-- 例: Biome 2.x / ESLint 9 -->              |
-| 依存方向チェック | <!-- 例: dependency-cruiser 17 / なし -->       |
-| Git Hooks        | <!-- 例: husky 9, lint-staged 16 / なし -->     |
-| テスト           | <!-- 例: Vitest 4, Playwright 1.x -->          |
+| フレームワーク   | Swift 6、SwiftUI + AppKit（macOS ネイティブ。Electron / Tauri は不採用） |
+| ビルド           | Swift Package Manager。ロジックは GUI 非依存の SPM ターゲットに分離し、アプリターゲットは薄く保つ |
+| ターミナルエンジン | **未確定（ADR-001 で決定）**。第一候補 SwiftTerm、代替 libghostty。`TerminalEngine` プロトコルの裏に隠して差し替え可能にする |
+| スタイリング     | SwiftUI 標準（システムのライト／ダークに追従） |
+| 状態管理         | Swift Observation（`@Observable`）。永続化は JSON ファイル |
+| バリデーション   | なし                                           |
+| ルーティング     | なし（単一ウィンドウ）                         |
+| アイコン         | SF Symbols                                     |
+| コード品質       | SwiftLint、swift-format                        |
+| 依存方向チェック | SPM のターゲット依存で強制（UI → ロジック の一方向） |
+| Git Hooks        | なし                                           |
+| テスト           | Swift Testing または XCTest（単体・結合）。XCUITest はスモークのみ |
+| 配布             | Developer ID 署名 + Hardened Runtime + notarytool + staple。App Sandbox は無効。Mac App Store 非対応 |
+
+> 上記は REQ_001 §8 の推奨案に基づく初期値。確定は `/architecture` の設計ゲートで行い、ADR に残す。
 
 ---
 
 ## 3. コマンド <!-- 必須 -->
 
-<!-- プロジェクトの開発・テスト・ビルドコマンドを記入 -->
-<!-- `<pm>` をプロジェクトのパッケージマネージャーに置き換えること -->
-
-**パッケージマネージャー参考:**
-
-| ツール | 実行コマンド | インストール | 備考 |
-| --- | --- | --- | --- |
-| npm | `npm run` | `npm install` | Node.js 標準 |
-| yarn | `yarn` | `yarn` | yarn は `run` 省略可 |
-| pnpm | `pnpm run` | `pnpm install` | ディスク効率が高い |
-| bun | `bun run` | `bun install` | 高速な代替ランタイム |
+本プロジェクトは Node.js を使わない。コマンドは Makefile に集約する（M0 で用意する。現時点では未実装）。
 
 ```bash
-<pm> run dev              # 開発サーバー
-<pm> run build            # 本番ビルド
-<pm> run lint             # リント
-<pm> run test             # テスト
-<pm> run test:run         # テスト一回実行
-<pm> run test:coverage    # カバレッジ付きテスト
-# <pm> run e2e            # E2Eテスト（使用する場合）
-# <pm> run depcruise      # 依存方向チェック（使用する場合）
+make build            # ビルド（swift build）
+make test             # 単体・結合テスト（swift test）
+make test-coverage    # カバレッジ付きテスト（出力先 testreport/coverage/）
+make lint             # SwiftLint + swift-format のチェック
+make app              # .app バンドルを生成
+make run              # .app を起動（人間が体感確認するとき）
+# make notarize       # 署名・公証。人間のみ実行（秘密情報を扱うため AI は実行しない）
 ```
 
 ---
@@ -279,9 +274,9 @@ src/  # または app/（Next.js App Router）
 
 | 項目                 | 値         |
 | -------------------- | ---------- |
-| テストカバレッジ目標 | <!-- 例: 80% --> |
-| TDD                  | <!-- yes / no --> |
-| 品質ゲート           | <!-- yes / no --> |
+| テストカバレッジ目標 | 80%（ロジック層の SPM ターゲットが対象。GUI 層は対象外）※仮定。PRD ゲートで確認 |
+| TDD                  | yes |
+| 品質ゲート           | yes |
 | ツール出力先         | `testreport/` |
 | サマリー出力先       | `output/reports/` |
 
