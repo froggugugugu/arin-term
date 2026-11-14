@@ -83,7 +83,7 @@
 
 #### Phase 2(並行可能。Phase 1 完了後)
 
-- [ ] T2 — 設計ゲートで確定した判断を ADR-002・004・005・006 に起こす(変更ファイル: output/design/ADR_002_logic-placement.md, output/design/ADR_004_pty.md, output/design/ADR_005_settings-format.md, output/design/ADR_006_test-structure.md, output/design/ADR_INDEX.md | 依存: T1)
+- [x] T2 — 設計ゲートで確定した判断を ADR-002・004・005・006 に起こす(変更ファイル: output/design/ADR_002_logic-placement.md, output/design/ADR_004_pty.md, output/design/ADR_005_settings-format.md, output/design/ADR_006_test-structure.md, output/design/ADR_INDEX.md | 依存: T1)
   - 対応: 設計書 §14 の ADR の候補(`ARCH_multi-terminal.md:939-949`)、PRD §7 C6
   - 並行: 可(コードを触らない。`ADR_INDEX.md` は T1 が作ったものに行を足すだけ)
   - 先に書くテスト: なし
@@ -102,12 +102,12 @@
 
 #### Phase 3(並行可能。Phase 2 完了後)
 
-- [ ] T5 — Tauri のアプリ本体(`src-tauri`)を作り、空ウィンドウを出す(変更ファイル: Cargo.toml, Cargo.lock, src-tauri/Cargo.toml, src-tauri/build.rs, src-tauri/tauri.conf.json, src-tauri/capabilities/default.json, src-tauri/icons/, src-tauri/src/main.rs, src-tauri/src/lib.rs | 依存: T3, T4)
+- [x] T5 — Tauri のアプリ本体(`src-tauri`)を作り、空ウィンドウを出す(変更ファイル: Cargo.toml, Cargo.lock, src-tauri/Cargo.toml, src-tauri/build.rs, src-tauri/tauri.conf.json, src-tauri/capabilities/default.json, src-tauri/icons/, src-tauri/src/main.rs, src-tauri/src/lib.rs | 依存: T3, T4)
   - 対応: NFR-007(最低 OS 15.0、arm64 だけ)、NFR-008(CSP の `connect-src`、通信できるプラグインを入れない)、設計書 §1.3 #6(`backgroundThrottling` を `disabled`。効くかどうかは M1 で確かめる)、§12(`withGlobalTauri` は false)。Bundle ID は `com.froggugugugu.arin`、製品名は `Arin`。Tauri は 2.12 系で正確な版を指定する
   - 並行: 可(T6 とファイルが重ならない)
   - 先に書くテスト: `src-tauri/tests/` に、アプリの組み立てが失敗しないことを確かめる 1 件(Tauri の模擬ランタイムを使う。Tauri 2.12 系で使えるかは未検証。使えなければ `lib.rs` の組み立て関数の単体テストに替え、その旨を PROGRESS に書く)
   - 検証: `cargo build --workspace --locked && cargo test --workspace --locked && npx tauri build --debug --no-bundle`(最後のコマンドのオプションは未検証。通らなければ `npx tauri build` に替える)
-- [ ] T6 — 境界検査スクリプトとその単体テストを書く(変更ファイル: scripts/check-boundaries.mjs, scripts/check-boundaries.test.mjs, scripts/fixtures/ | 依存: T3, T4)
+- [x] T6 — 境界検査スクリプトとその単体テストを書く(変更ファイル: scripts/check-boundaries.mjs, scripts/check-boundaries.test.mjs, scripts/fixtures/ | 依存: T3, T4)
   - 対応: 設計書 §3.3 の検査(`ARCH_multi-terminal.md:244-254`)、NFR-008。検査する項目: `arin-core` の依存に禁止クレートが無い。`arin-core` のソースに `std::fs`・`std::process`・`std::net` が無い。`@xterm/*` は `src/terminal/xterm` だけ。`@tauri-apps/api` は `src/ipc` だけ。`src/ui` が `src/ipc` と `src/terminal/xterm` を import しない。`src/terminal/xterm` が `src/ipc` を import しない。HTTP クライアントのクレートが組み込まれていない。画面のソースに `fetch(`・`XMLHttpRequest`・`WebSocket`・`EventSource`・`sendBeacon` が無い。`innerHTML`・`outerHTML`・`insertAdjacentHTML`・`document.write`(と T1 で決めたら `dangerouslySetInnerHTML`)が無い。CSP に `connect-src` の制限がある
   - 並行: 可(T5 とファイルが重ならない。CSP の検査は `src-tauri/tauri.conf.json` を読むだけなので、ファイルが無いあいだは「未作成」として失敗させ、T5 の完了後に通ることを T7 で確かめる)
   - 先に書くテスト: `scripts/check-boundaries.test.mjs`。違反を仕込んだ見本(`scripts/fixtures/`)ごとに「失敗する」こと、違反の無い見本で「通る」ことを `node --test` で確かめる
@@ -115,7 +115,7 @@
 
 #### Phase 4(逐次。Phase 3 完了後)
 
-- [ ] T7 — 検証コマンドを npm スクリプトにまとめる(変更ファイル: package.json | 依存: T5, T6)
+- [x] T7 — 検証コマンドを npm スクリプトにまとめる(変更ファイル: package.json | 依存: T5, T6)
   - 対応: PRD §7「ワンコマンド検証」(ビルド・テスト・lint・アプリ生成)、設計書 §13.1 の表のとおりに `build`、`test`、`lint`、`app`、`dev`、`test:coverage`、`e2e`、`smoke`、`perf` を登録する。`dist:mac` は M5(T51)で足す
   - `test:coverage`、`e2e`、`smoke`、`perf` は名前と中身を登録するだけで、動くようになるのは T9〜T11 と T24。それまでは実行すると失敗する(通ったふりをする仮の中身を置かない)
   - 並行: 不可(以降のタスクの検証の入口になる)

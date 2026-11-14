@@ -16,10 +16,10 @@
 
 | 項目 | 内容 |
 | ---- | ---- |
-| 最終更新 | 2026-11-14(T1・T3・T4 完了。次は T2、T5、T6) |
+| 最終更新 | 2026-11-14(T1〜T7 完了。次は T8、T9) |
 | ブランチ | `feat/m0-skeleton`(`docs/prd-multi-terminal` から分岐) |
 | 最後のコミット | `9de71c4 chore: project-config の技術スタックとコマンドを Tauri 向けに更新`(本ファイルと PLAN は未コミット) |
-| 起動コマンド | 未実装。T7 の完了後は `npm run dev` |
+| 起動コマンド | `npm run dev`(開発用)。`.app` は `npm run app` で `target/aarch64-apple-darwin/release/bundle/macos/Arin.app` にできる |
 | スモークテスト | 未実装。T10 の完了後は `npm run app && npm run smoke` → 期待: 終了コード 0 |
 | 既知の壊れている箇所 | なし(ソースコードがまだ無い) |
 | 待ち | T1 の差分(設計書 §3・§4・§9〜§12 と ADR-003)を本人が読んで了承する。PLAN は承認済みで、#1〜#4 は推奨案で確定 |
@@ -33,12 +33,12 @@
 | ID | 機能 | 受け入れ条件(確認できる粒度) | passes |
 | -- | ---- | ---------------------------- | ------ |
 | T1 | 設計書 §4 を React 前提に直し、版を ADR-003 に固定 | 設計書 §4 に `main.ts` が残っていない。ADR-003 に react、react-dom、zustand、Vite の React プラグイン、型定義 2 つの正確な版がある。本人が差分を了承した | 🟡 作業は完了(2026-11-14)。本人の差分了承だけ未 |
-| T2 | ADR-002・004・005・006 を起票 | `output/design/` に 4 つの ADR があり、`ADR_INDEX.md` に載っている | ❌ |
+| T2 | ADR-002・004・005・006 を起票 | `output/design/` に 4 つの ADR があり、`ADR_INDEX.md` に載っている | ✅ 2026-11-14(ADR 4 本と索引) |
 | T3 | Rust のワークスペースの骨格 | `cargo build`・`cargo test`・`cargo clippy -D warnings`・`cargo fmt --check` がワークスペース全体で通る | ✅ 2026-11-14(テスト 1 件合格) |
 | T4 | 画面の骨格(React、Vite、プロジェクト参照、Vitest) | `tsc -b`・`vitest run`・`vite build` が通る。`src/logic` から `src/ui` を import すると `tsc -b` が失敗する | ✅ 2026-11-14(Vitest 1 件合格。境界は `.tsx` で TS6142、`.ts` で TS6307 になり失敗することを確認) |
-| T5 | Tauri のアプリ本体と空ウィンドウ | ワークスペースのビルドとテストが通る。Bundle ID が `com.froggugugugu.arin`、最低 OS が 15.0、対象が arm64 | ❌ |
-| T6 | 境界検査スクリプト | `node --test scripts/` が通る。違反を仕込んだ見本で検査が失敗する | ❌ |
-| T7 | 検証コマンドの npm スクリプト | `npm run build`・`npm test`・`npm run lint`・`npm run app` が終了コード 0。`.app` ができる | ❌ |
+| T5 | Tauri のアプリ本体と空ウィンドウ | ワークスペースのビルドとテストが通る。Bundle ID が `com.froggugugugu.arin`、最低 OS が 15.0、対象が arm64 | ✅ 2026-11-14(模擬ランタイムのテスト 1 件合格。空ウィンドウの目視は未実施で T13 で行う) |
+| T6 | 境界検査スクリプト | `node --test scripts/` が通る。違反を仕込んだ見本で検査が失敗する | ✅ 2026-11-14(`node --test "scripts/*.test.mjs"` で 32 件合格。`node --test scripts/` は Node 24 で動かないため glob に変更) |
+| T7 | 検証コマンドの npm スクリプト | `npm run build`・`npm test`・`npm run lint`・`npm run app` が終了コード 0。`.app` ができる | ✅ 2026-11-14(`npm run build`・`npm test`・`npm run lint`・`npm run app` が終了コード 0。`.app` を生成。整形違反で lint が失敗することを確認) |
 | T8 | 型の生成と通信の包みの最小 | 画面が Rust から状態の写しを取得できる。生成した型を作り直しても差分が出ない | ❌ |
 | T9 | カバレッジ付きテスト | `npm run test:coverage` が通り、`testreport/coverage/` に Rust と TypeScript の結果がある | ❌ |
 | T10 | 実アプリの起動スモーク | `npm run smoke` が、一時の状態フォルダで `.app` を起動し、準備完了を確かめて終了コード 0 で終わる。本物の `~/Library/Application Support/Arin/` を作らない | ❌ |
