@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.froggugugugu.arin",
   "build": {
-    "beforeDevCommand": "npx vite",
+    "beforeDevCommand": "npm run dev:web",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npx vite build",
+    "beforeBuildCommand": "npm run build:web",
     "frontendDist": "../dist"
   },
   "app": {

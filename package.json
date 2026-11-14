@@ -6,7 +6,19 @@
   "engines": {
     "node": ">=24"
   },
-  "scripts": {},
+  "scripts": {
+    "build": "npm run build:web && cargo build --workspace --locked",
+    "build:web": "tsc -b && vite build",
+    "test": "vitest run && cargo test --workspace --locked && node --test \"scripts/*.test.mjs\"",
+    "test:coverage": "node scripts/coverage.mjs",
+    "lint": "tsc -b && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo fmt --check && node scripts/check-boundaries.mjs",
+    "app": "tauri build --target aarch64-apple-darwin",
+    "dev": "tauri dev",
+    "dev:web": "vite",
+    "e2e": "playwright test",
+    "smoke": "node scripts/smoke.mjs",
+    "perf": "node scripts/perf/run.mjs"
+  },
   "dependencies": {
     "@tauri-apps/api": "2.12.4",
     "react": "19.3.1",
