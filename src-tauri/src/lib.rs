@@ -2,12 +2,13 @@
 //!
 //! ここでは部品を生成して渡すことだけを行い、規則を書かない。
 //! 置き場所と起動の通知先を管理状態に登録し、起動時に `Workspace` とセッション管理を作って登録し、
-//! コマンドを登録して tauri.conf.json のウィンドウを 1 枚出す。
+//! コマンドとメニューバー(`menu.rs`)を登録して tauri.conf.json のウィンドウを 1 枚出す。
 
 mod commands;
 pub mod diagnostics;
 pub mod launch;
 pub mod lifecycle;
+pub mod menu;
 pub mod sessions;
 pub mod verify_log;
 
@@ -52,6 +53,7 @@ pub fn builder_with_pty<R: Runtime>(
         .manage(launch.paths().clone())
         .manage(ready)
         .manage(first_output)
+        .menu(menu::build)
         .setup(move |app| {
             let workspace = Workspace::new(
                 app.package_info().version.to_string(),

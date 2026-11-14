@@ -16,6 +16,7 @@ import { startApp, type StartAppResult } from "./state/startApp";
 import { TerminalManager } from "./terminal/TerminalManager";
 import { XtermEngine } from "./terminal/xterm/XtermEngine";
 import { AppShell } from "./ui/shell/AppShell";
+import { installClipboardRouting } from "./ui/terminals/clipboardRouting";
 
 /**
  * 画面を組み立てて起動する。通信の包みは引数で受け取る。
@@ -30,6 +31,8 @@ export function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartAppResu
   });
   const store = createAppStore();
   const terminals = new TerminalManager(new XtermEngine(), ipc, { reportError: reporter.report });
+  // ⌘C・⌘V(メニューの「編集」から来る copy・paste のイベント)を、フォーカス位置で振り分ける。
+  installClipboardRouting(document, terminals);
   return startApp({
     ipc,
     store,

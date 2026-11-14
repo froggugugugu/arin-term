@@ -473,3 +473,98 @@ describe("TerminalManager(境界値)", () => {
     expect(logged).toEqual(["ターミナル t1 に接続できなかった: 失敗"]);
   });
 });
+
+/** 画面のイベントの clipboardData の偽物(DataTransfer の text/plain だけ)。 */
+function fakeClipboard(initial: Record<string, string> = {}) {
+  const items = new Map(Object.entries(initial));
+  return {
+    items,
+    getData: (format: string) => items.get(format) ?? "",
+    setData: (format: string, data: string) => {
+      items.set(format, data);
+    },
+  };
+}
+
+describe("TerminalManager(コピー・ペーストの振り分け。FR-043、設計書 §9.1)", () => {
+  it("フォーカスのあるターミナルに選択があれば、コピーで選択の文字列を text/plain に書き、処理したと返す", () => {
+    const { engine, manager } = setup();
+    manager.getOrCreate("t1");
+    manager.getOrCreate("t2");
+    const [first, second] = engine.created;
+    if (!first || !second) throw new Error("サーフェスが作られていない");
+    first.selection = "選ばれていない";
+    second.focused = true;
+    second.selection = "hello 日本語";
+    const clipboard = fakeClipboard();
+
+    expect(manager.handleClipboard("copy", clipboard)).toBe(true);
+    expect(clipboard.items.get("text/plain")).toBe("hello 日本語");
+  });
+
+  it("フォーカスのあるターミナルに選択が無ければ、コピーは何もせず、処理しなかったと返す", () => {
+    const { engine, manager } = setup();
+    manager.getOrCreate("t1");
+    const surface = engine.created[0];
+    if (!surface) throw new Error("サーフェスが作られていない");
+    surface.focused = true;
+    const clipboard = fakeClipboard({ "text/plain": "前の中身" });
+
+    expect(manager.handleClipboard("copy", clipboard)).toBe(false);
+    expect(clipboard.items.get("text/plain")).toBe("前の中身");
+  });
+
+  it("ペーストはフォーカスのあるターミナルに text/plain を貼り付け、write_terminal に届く", async () => {
+    const { engine, fake, manager } = setup();
+    await manager.connect("t1");
+    await manager.connect("t2");
+    const [first, second] = engine.created;
+    if (!first || !second) throw new Error("サーフェスが作られていない");
+    second.focused = true;
+
+    expect(manager.handleClipboard("paste", fakeClipboard({ "text/plain": "echo hi" }))).toBe(true);
+    await flush();
+
+    expect(first.pasted).toEqual([]);
+    expect(second.pasted).toEqual(["echo hi"]);
+    expect(fake.calls.filter((c) => c.command === "write_terminal")).toEqual([
+      { command: "write_terminal", args: { terminalId: "t2", data: "echo hi" } },
+    ]);
+  });
+
+  it("ペーストする文字列が無い(画像だけなど)ときは、貼り付けないが、処理したと返す(既定の貼り付けもさせない)", () => {
+    const { engine, manager } = setup();
+    manager.getOrCreate("t1");
+    const surface = engine.created[0];
+    if (!surface) throw new Error("サーフェスが作られていない");
+    surface.focused = true;
+
+    expect(manager.handleClipboard("paste", fakeClipboard({ "image/png": "..." }))).toBe(true);
+    expect(surface.pasted).toEqual([]);
+  });
+
+  it("どのターミナルにもフォーカスが無ければ、コピーもペーストも処理しない", () => {
+    const { engine, manager } = setup();
+    manager.getOrCreate("t1");
+    const surface = engine.created[0];
+    if (!surface) throw new Error("サーフェスが作られていない");
+    surface.selection = "選択はあるがフォーカスが無い";
+    const clipboard = fakeClipboard({ "text/plain": "x" });
+
+    expect(manager.handleClipboard("copy", clipboard)).toBe(false);
+    expect(manager.handleClipboard("paste", clipboard)).toBe(false);
+    expect(clipboard.items.get("text/plain")).toBe("x");
+    expect(surface.pasted).toEqual([]);
+  });
+
+  it("破棄したターミナルは振り分けの対象にならない", () => {
+    const { engine, manager } = setup();
+    manager.getOrCreate("t1");
+    const surface = engine.created[0];
+    if (!surface) throw new Error("サーフェスが作られていない");
+    surface.focused = true;
+    manager.dispose("t1");
+
+    expect(manager.handleClipboard("paste", fakeClipboard({ "text/plain": "x" }))).toBe(false);
+  });
+});

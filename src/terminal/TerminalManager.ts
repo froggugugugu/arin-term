@@ -5,13 +5,23 @@
 // - 出力: チャネル → surface.write → 取り込みが済んだ量を ack_terminal_output で返す(流量制御)
 // - 入力: surface.onInput → write_terminal。寸法: surface.onResize → resize_terminal
 // - 置き場所(TerminalHost)への要素の付け外しもここで行い、React には要素を管理させない(ADR-003)
+// - コピー・ペースト: 画面のイベント → handleClipboard → フォーカスのあるサーフェスの選択の取得・貼り付け(§9.1)
 //
 // エンジンと通信は外から受け取る。本物は src/terminal/xterm/ と src/ipc/tauri.ts、
 // テストでは src/test/fakeTerminalEngine.ts と src/test/fakeIpc.ts を渡す。
 
 import type { ArinIpc, OutputSubscription } from "../ipc/client";
 import { describeError } from "../logic/describeError";
+import { type ClipboardFocus, type ClipboardKind, routeClipboard } from "../logic/keys/clipboard";
 import type { TerminalEngine, TerminalId, TerminalSize, TerminalSurface } from "./engine";
+
+/** 画面のコピー・ペーストのイベントの clipboardData のうち、使う部分(DataTransfer はこの形を満たす)。 */
+export interface ClipboardText {
+  getData(format: string): string;
+  setData(format: string, data: string): void;
+}
+
+const TEXT_FORMAT = "text/plain";
 
 /** ターミナルが使う Rust の操作(ArinIpc の一部)。 */
 export type TerminalBackend = Pick<
@@ -139,6 +149,40 @@ export class TerminalManager {
       },
     );
     return entry.connecting;
+  }
+
+  /**
+   * 画面のコピー・ペーストのイベントを、フォーカスのあるターミナルへ振り分ける(設計書 §9.1、FR-043)。
+   * - コピー: 選択があれば、その文字列を text/plain に書く
+   * - ペースト: text/plain をそのターミナルに貼り付ける(PTY への入力になる)。文字列が無ければ貼り付けない
+   *
+   * 処理したら true を返す。呼び出し側はイベントの既定の動作と、xterm.js 自身の受け取りを止める。
+   * false のとき(フォーカスがターミナルに無い、選択の無いコピー)は何もしていないので、既定の動作に任せる。
+   */
+  handleClipboard(kind: ClipboardKind, data: ClipboardText): boolean {
+    const surface = this.#focusedSurface();
+    const selection = surface?.getSelection() ?? "";
+    const focus: ClipboardFocus =
+      surface === undefined ? { kind: "other" } : { kind: "terminal", hasSelection: selection !== "" };
+    switch (routeClipboard(kind, focus)) {
+      case "copy-selection":
+        data.setData(TEXT_FORMAT, selection);
+        return true;
+      case "paste": {
+        const text = data.getData(TEXT_FORMAT);
+        if (text !== "") surface?.paste(text);
+        return true;
+      }
+      case "none":
+        return false;
+    }
+  }
+
+  #focusedSurface(): TerminalSurface | undefined {
+    for (const entry of this.#entries.values()) {
+      if (entry.surface.hasFocus()) return entry.surface;
+    }
+    return undefined;
   }
 
   /**

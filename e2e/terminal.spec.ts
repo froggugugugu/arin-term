@@ -212,3 +212,100 @@ test("起動の失敗の写しで開くと、最初から terminal-status に理
   await openTerminal(page, { kind: "failed", message: "PTY を開けなかった" });
   await expect(page.getByTestId("terminal-status")).toHaveText("シェルを起動できなかった: PTY を開けなかった");
 });
+
+// コピー・ペースト(T20。FR-043、設計書 §9.1)。
+//
+// 実アプリでは ⌘C・⌘V がメニューの「編集」の項目を通って画面の copy・paste のイベントになる。
+// この画面のテストにはメニューが無く、利用者の本物のクリップボードにも触れたくないので、
+// フォーカスのある要素へ ClipboardEvent を、中身を持つ DataTransfer を付けて発火する(メニューが発火するのと同じ形)。
+// ⌘ のキーと本物のクリップボード(ペーストボード)を通す確認は、実機(T25 の手順書)で行う。
+
+interface ClipboardResult {
+  /** イベントのあとの DataTransfer の text/plain。 */
+  text: string;
+  /** 既定の動作が止められたか(画面が処理したか)。 */
+  prevented: boolean;
+  /** イベントを受けた要素の class(フォーカスの確認用)。 */
+  target: string;
+}
+
+/** フォーカスのある要素へ copy・paste のイベントを発火する。paste では text を中身にする。 */
+async function fireClipboard(page: Page, type: "copy" | "paste", text = ""): Promise<ClipboardResult> {
+  return page.evaluate(
+    ([type, text]) => {
+      const data = new DataTransfer();
+      if (text !== "") data.setData("text/plain", text);
+      const event = new ClipboardEvent(type, { clipboardData: data, bubbles: true, cancelable: true });
+      const target = document.activeElement ?? document.body;
+      target.dispatchEvent(event);
+      return { text: data.getData("text/plain"), prevented: event.defaultPrevented, target: target.className };
+    },
+    [type, text] as const,
+  );
+}
+
+/** 入力として送られた文字列をつなげたもの。 */
+async function writtenInput(page: Page): Promise<string> {
+  return (await readCallArgs(page, "write_terminal")).map((w) => w.data).join("");
+}
+
+test("出力を選択してコピーし、ペーストすると write_terminal に届く", async ({ page }) => {
+  const { channelId } = await openTerminal(page);
+  await sendAndWait(page, channelId, ["hello world\r\n", "$ "]);
+  await expect(screenRows(page).nth(0)).toHaveText("hello world");
+
+  // 1 行目の先頭の語をダブルクリックで選ぶ(xterm.js が語を選択し、入力の要素にフォーカスを移す)。
+  const box = await screenRows(page).nth(0).boundingBox();
+  if (box === null) throw new Error("1 行目の大きさが取れない");
+  await page.mouse.dblclick(box.x + 4, box.y + box.height / 2);
+  await expect(page.locator(".xterm-helper-textarea")).toBeFocused();
+  await expect(page.getByTestId("terminal-host").locator(".xterm-selection > div").first()).toBeVisible();
+
+  const copied = await fireClipboard(page, "copy");
+  expect(copied).toEqual({ text: "hello", prevented: true, target: "xterm-helper-textarea" });
+
+  const pasted = await fireClipboard(page, "paste", copied.text);
+  expect(pasted.prevented).toBe(true);
+  await expect.poll(() => writtenInput(page)).toBe("hello");
+  // 貼り付けは 1 回だけ(画面の振り分けと xterm.js 自身の受け取りの二重にならない)。
+  expect(await readCallArgs(page, "write_terminal")).toHaveLength(1);
+});
+
+test("選択が無いときのコピーは何もしない(既定の動作に任せ、中身を書かない)", async ({ page }) => {
+  await openTerminal(page);
+  await page.getByTestId("terminal-host").locator(".xterm-screen").click();
+  await expect(page.locator(".xterm-helper-textarea")).toBeFocused();
+
+  const copied = await fireClipboard(page, "copy");
+
+  expect(copied).toEqual({ text: "", prevented: false, target: "xterm-helper-textarea" });
+});
+
+test("ブラケットペーストのモードでは、貼り付けを印で囲み、改行を CR にして送る", async ({ page }) => {
+  const { channelId } = await openTerminal(page);
+  // シェルや TUI がブラケットペーストのモード(DECSET 2004)を有効にした状態。
+  await sendAndWait(page, channelId, ["\x1b[?2004h$ "]);
+  await page.getByTestId("terminal-host").locator(".xterm-screen").click();
+  await expect(page.locator(".xterm-helper-textarea")).toBeFocused();
+
+  await fireClipboard(page, "paste", "echo 1\necho 2");
+
+  await expect.poll(() => writtenInput(page)).toBe("\x1b[200~echo 1\recho 2\x1b[201~");
+});
+
+test("ターミナルにフォーカスが無いときのペーストは、ターミナルに届かない", async ({ page }) => {
+  const { channelId } = await openTerminal(page);
+  await sendAndWait(page, channelId, ["$ "]);
+  await page.getByTestId("terminal-host").locator(".xterm-screen").click();
+  await expect(page.locator(".xterm-helper-textarea")).toBeFocused();
+  await page.locator(".xterm-helper-textarea").blur();
+  await expect(page.locator(".xterm-helper-textarea")).not.toBeFocused();
+
+  const pasted = await fireClipboard(page, "paste", "should not arrive");
+
+  expect(pasted.prevented).toBe(false);
+  // 届かないことの確認: 続けてフォーカスを戻して打った文字だけが届く。
+  await page.getByTestId("terminal-host").locator(".xterm-screen").click();
+  await page.keyboard.type("z");
+  await expect.poll(() => writtenInput(page)).toBe("z");
+});

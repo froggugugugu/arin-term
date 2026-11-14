@@ -58,3 +58,8 @@ name = "session_pty"
 [[test]]
 name = "app_terminal_marker"
 harness = false
+
+# メニューバーの組み立て(「編集」のコピーとペースト)。理由は app_builder と同じ。
+[[test]]
+name = "app_menu"
+harness = false

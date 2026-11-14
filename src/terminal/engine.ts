@@ -29,6 +29,15 @@ export interface TerminalSurface {
   fit(): void;
   /** いまの行・桁数。 */
   size(): TerminalSize;
+  /** 選択している文字列。選択が無ければ空文字列。 */
+  getSelection(): string;
+  /**
+   * 文字列を貼り付ける。PTY への入力として onInput の受け取り手に届く。
+   * 改行を CR にそろえ、ブラケットペーストのモードならその印で囲む(xterm.js の paste)。
+   */
+  paste(text: string): void;
+  /** 入力のフォーカスがこのサーフェスの中にあるか(コピー・ペーストの振り分けに使う。設計書 §9.1)。 */
+  hasFocus(): boolean;
   /** 資源を手放す。2 回目以降は何もしない。 */
   dispose(): void;
 }

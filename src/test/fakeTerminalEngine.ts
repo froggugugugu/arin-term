@@ -15,6 +15,12 @@ export interface FakeSurface extends TerminalSurface {
   current: TerminalSize;
   /** 次の fit で変わる先の行・桁数。変われば寸法の受け取り手へ流す(xterm.js の onResize と同じ)。 */
   fitTo: TerminalSize | null;
+  /** getSelection が返す選択の文字列(既定は空 = 選択なし)。 */
+  selection: string;
+  /** hasFocus が返す値(既定は false)。 */
+  focused: boolean;
+  /** paste に渡された順の文字列。 */
+  readonly pasted: string[];
   /** 登録された入力の受け取り手へ、キー入力を流す。 */
   emitInput(data: string): void;
   /** 登録された寸法の受け取り手へ、寸法の変更を流す。 */
@@ -47,6 +53,9 @@ export function createFakeTerminalEngine(): FakeTerminalEngine {
         disposeCount: 0,
         current: { rows: 24, cols: 80 },
         fitTo: null,
+        selection: "",
+        focused: false,
+        pasted: [],
         write(data) {
           surface.written.push(data);
           return Promise.resolve(surface.disposeCount > 0 ? 0 : data.byteLength);
@@ -67,6 +76,17 @@ export function createFakeTerminalEngine(): FakeTerminalEngine {
         },
         size() {
           return surface.current;
+        },
+        getSelection() {
+          return surface.selection;
+        },
+        paste(text) {
+          // xterm.js の paste と同じく、貼り付けた文字列は入力の受け取り手へ流れる(改行の変換と囲みは xterm.js の仕事なので真似ない)。
+          surface.pasted.push(text);
+          surface.emitInput(text);
+        },
+        hasFocus() {
+          return surface.focused;
         },
         dispose() {
           surface.disposeCount += 1;

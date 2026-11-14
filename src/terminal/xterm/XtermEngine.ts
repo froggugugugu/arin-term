@@ -9,6 +9,7 @@ import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { Terminal } from "@xterm/xterm";
 
+import { terminalKeyOwner } from "../../logic/keys/clipboard";
 import type { TerminalEngine, TerminalId, TerminalSize, TerminalSurface } from "../engine";
 
 /** スクロールバックの行数(FR-043、PRD C-09 で確定)。 */
@@ -65,6 +66,10 @@ class XtermSurface implements TerminalSurface {
     this.#terminal.loadAddon(this.#fitAddon);
     loadUnicodeAddon(this.#terminal, unicode);
     loadRenderer(this.#terminal, renderer);
+    // ⌘C・⌘V は xterm.js に処理させず、取り消しもしない。WKWebView はキーを画面に渡したあと、
+    // 取り消されていなければメニューの「編集」の項目へ回し、それが画面のコピー・ペーストのイベントになる(設計書 §9.1)。
+    // ほかのキー(Ctrl の組み合わせ、Option)は xterm.js の既定のまま。
+    this.#terminal.attachCustomKeyEventHandler((event) => terminalKeyOwner(event) === "terminal");
     this.#terminal.open(this.element);
   }
 
@@ -97,6 +102,22 @@ class XtermSurface implements TerminalSurface {
 
   size(): TerminalSize {
     return { rows: this.#terminal.rows, cols: this.#terminal.cols };
+  }
+
+  getSelection(): string {
+    if (this.#disposed) return "";
+    return this.#terminal.getSelection();
+  }
+
+  paste(text: string): void {
+    if (this.#disposed) return;
+    // 改行の CR へのそろえと、ブラケットペーストのモード(DECSET 2004)のときの囲みは xterm.js が行う。
+    this.#terminal.paste(text);
+  }
+
+  hasFocus(): boolean {
+    const active = this.element.ownerDocument.activeElement;
+    return !this.#disposed && active !== null && this.element.contains(active);
   }
 
   dispose(): void {
