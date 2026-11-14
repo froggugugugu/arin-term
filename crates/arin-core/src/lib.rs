@@ -6,6 +6,8 @@
 #![forbid(unsafe_code)]
 
 pub mod paths;
+pub mod ports;
+pub mod terminal;
 pub mod workspace;
 
 /// このクレートの版。
