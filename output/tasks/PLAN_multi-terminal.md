@@ -71,7 +71,7 @@
 
 #### Phase 1(逐次。最初に 1 つだけ)
 
-- [ ] T1 — 設計書 §4 を React 前提に直し、画面側の依存の版を決めて ADR-003 に残す(変更ファイル: output/design/ARCH_multi-terminal.md, output/design/ADR_003_ui-framework.md, output/design/ADR_INDEX.md | 依存: なし)
+- [x] T1 — 設計書 §4 を React 前提に直し、画面側の依存の版を決めて ADR-003 に残す(変更ファイル: output/design/ARCH_multi-terminal.md, output/design/ADR_003_ui-framework.md, output/design/ADR_INDEX.md | 依存: なし)
   - 対応: 設計書の冒頭が「M0 の着手時に React 前提へ直す」とした点(`ARCH_multi-terminal.md:11`)、版の固定(同 147 行)、PRD §7 C6
   - 直す内容: `src/main.ts` → `src/main.tsx`。`src/ui/` の部品を `.tsx` に。`src/state/` を zustand のストアに。`tsconfig` の分け方(`src/logic` は DOM と JSX なし、それ以外は JSX あり)。Vite の React プラグイン。React の部品を Vitest で単体テストするか(しないなら Playwright だけで見る)
   - 決める版: `react`、`react-dom`、`zustand`、`@vitejs/plugin-react`、`@types/react`、`@types/react-dom`。`npm view <名前> version` で調べ、正確な版を ADR-003 に書く。TypeScript 6.0 系との組み合わせで型が通るかは T4 で確かめる(未検証)

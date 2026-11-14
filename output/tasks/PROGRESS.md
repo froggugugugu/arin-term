@@ -16,13 +16,13 @@
 
 | 項目 | 内容 |
 | ---- | ---- |
-| 最終更新 | 2026-11-14(`/plan` のセッション。タスク分解だけ。実装は未着手) |
-| ブランチ | `docs/prd-multi-terminal` |
+| 最終更新 | 2026-11-14(T1 完了。T3・T4 に着手) |
+| ブランチ | `feat/m0-skeleton`(`docs/prd-multi-terminal` から分岐) |
 | 最後のコミット | `9de71c4 chore: project-config の技術スタックとコマンドを Tauri 向けに更新`(本ファイルと PLAN は未コミット) |
 | 起動コマンド | 未実装。T7 の完了後は `npm run dev` |
 | スモークテスト | 未実装。T10 の完了後は `npm run app && npm run smoke` → 期待: 終了コード 0 |
 | 既知の壊れている箇所 | なし(ソースコードがまだ無い) |
-| 待ち | PLAN の承認(タスク分解ゲート)。PLAN の【要確認】#1〜#4 の回答 |
+| 待ち | T1 の差分(設計書 §3・§4・§9〜§12 と ADR-003)を本人が読んで了承する。PLAN は承認済みで、#1〜#4 は推奨案で確定 |
 
 ---
 
@@ -32,7 +32,7 @@
 
 | ID | 機能 | 受け入れ条件(確認できる粒度) | passes |
 | -- | ---- | ---------------------------- | ------ |
-| T1 | 設計書 §4 を React 前提に直し、版を ADR-003 に固定 | 設計書 §4 に `main.ts` が残っていない。ADR-003 に react、react-dom、zustand、Vite の React プラグイン、型定義 2 つの正確な版がある。本人が差分を了承した | ❌ |
+| T1 | 設計書 §4 を React 前提に直し、版を ADR-003 に固定 | 設計書 §4 に `main.ts` が残っていない。ADR-003 に react、react-dom、zustand、Vite の React プラグイン、型定義 2 つの正確な版がある。本人が差分を了承した | 🟡 作業は完了(2026-11-14)。本人の差分了承だけ未 |
 | T2 | ADR-002・004・005・006 を起票 | `output/design/` に 4 つの ADR があり、`ADR_INDEX.md` に載っている | ❌ |
 | T3 | Rust のワークスペースの骨格 | `cargo build`・`cargo test`・`cargo clippy -D warnings`・`cargo fmt --check` がワークスペース全体で通る | ❌ |
 | T4 | 画面の骨格(React、Vite、プロジェクト参照、Vitest) | `tsc -b`・`vitest run`・`vite build` が通る。`src/logic` から `src/ui` を import すると `tsc -b` が失敗する | ❌ |

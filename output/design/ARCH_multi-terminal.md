@@ -8,7 +8,7 @@
 **この文書の読み方**
 
 - 実装技術は Tauri(Rust + TypeScript)で確定している(PRD §7 C3)。それ以外の技術選定(画面のフレームワーク、PTY のクレート、設定ファイルの形式、テストの方式、ロジック層の置き場所など)は、2026-11-14 の設計ゲートで本人が選んだ。結果は §15.1。
-- 本文は §15.1 の推奨案を採った場合の姿で書いた。**#2(画面のフレームワーク)だけは推奨と違う React + zustand が選ばれた。** §2・§6・§8・§9 の該当箇所は書き換えたが、§4 のディレクトリ構成のファイル名や部品の分け方は「フレームワークなし」前提のままの箇所がある。M0 の着手時に React 前提へ直す。
+- 本文は §15.1 の推奨案を採った場合の姿で書いた。**#2(画面のフレームワーク)だけは推奨と違う React + zustand が選ばれた。** 本文は React 前提に直してある(§2・§6・§7・§9 は設計ゲートの時点で、§3・§4・§9〜§12 は M0 の T1 で直した)。依存の正確な版と部品のテスト方針は ADR-003。
 - 将来の要望として、画面をリッチにすることと簡易 Markdown エディタ(mdslide 程度)が挙がっている。React を選んだ理由はこれ。ただし**エディタは現状、非ゴール N1(テキストエディタ)と N7(ファイルの中身に触れる機能)に当たるため、本設計の対象外**。入れるには要求メモの非ゴールの変更(人間ゲート)と PRD の改版が要る。
 - 「確認済み」は今回この Mac で実際に動かすかソースを読んで確かめたこと(§1.4)。「未検証」は確かめていないこと。未検証の点は §2.2(M1 で確かめる)と §15.3(それ以降に確かめる)に集めた。
 - 【要確認】はユーザーの判断が要る箇所、【仮定】は本書が置いた前提。どちらも §15 に集約した。
@@ -144,7 +144,7 @@ flowchart TD
 | アプリの土台 | Tauri | 2.12 系 | 確定(PRD §7 C3)。tadcap と同じ系列。3.0 は alpha のため使わない |
 | 言語(Rust 側) | Rust | 1.98.1(`rust-toolchain.toml` で固定) | 確定。版を固定して CI と手元を揃える |
 | 言語(画面側) | TypeScript | 6.0 系 | 推奨・踏襲。7.0 系はプロジェクト参照の動作を確かめていない |
-| 画面のフレームワーク | React + zustand | 版は M0 で固定 | 確定(§15.1 #2。推奨の「なし」ではなく本人が選択)。追加の依存は react、react-dom、zustand、Vite の React プラグイン |
+| 画面のフレームワーク | React + zustand | `react` 19.3.1、`react-dom` 19.3.1、`zustand` 5.0.16、`@vitejs/plugin-react` 6.1.2、`@types/react` 19.3.0、`@types/react-dom` 19.3.0 | 確定(§15.1 #2。推奨の「なし」ではなく本人が選択)。版の根拠は ADR-003 |
 | ビルド(画面側) | Vite | 8 系 | 推奨・踏襲 |
 | パッケージ管理 | npm | 11 系 | 推奨・踏襲 |
 | ターミナルエンジン | xterm.js(`@xterm/xterm`) | 6.0.0 に固定 | 第一候補(PRD §7)。M1 の Go/No-Go で最終判断し ADR-001 に残す |
@@ -213,7 +213,7 @@ No-Go のときは、原因に応じて描画方式の変更か実装技術の�
 | -------- | ---------- | ---- | -------------- |
 | App(Rust) | `src-tauri`(クレート `arin`) | エントリーポイント。実装を生成して `Workspace` に渡す。コマンド(画面からの操作を受けて Core を呼ぶ薄い関数)、イベントの送信、メニューバー、終了の制御 | `arin-core`、`arin-platform`、`tauri`、Tauri のプラグイン |
 | Platform(Rust) | `crates/arin-platform` | Core のポートの実装(ファイル操作、監視、PTY、ブックマーク、状態・設定ファイル、ペーストボード、Finder 連携、通知、git の HEAD 読み取り、プロセス調査) | `arin-core`、`libc`、`objc2` 系、`notify`、PTY のクレート |
-| Core(Rust) | `crates/arin-core` | ドメインモデル、状態(ストア)、規則、ポート定義、ストアをまたぐ操作 | `serde`、`serde_json`、`thiserror` のみ |
+| Core(Rust) | `crates/arin-core` | ドメインモデル、状態(ストア)、規則、ポート定義、ストアをまたぐ操作 | `serde`、`serde_json`、`thiserror`、`ts-rs` のみ(`ts-rs` は型の生成だけに使い、入出力をしない。T1 で追加) |
 | UI(TS) | `src/ui` | DOM の部品。状態を読み、操作を呼ぶ | `src/state`、`src/logic`、`src/terminal`(抽象のみ) |
 | State(TS) | `src/state` | Rust の状態の写し、表示だけの状態、操作(`src/ipc` を呼ぶ) | `src/logic`、`src/ipc` |
 | Terminal(TS) | `src/terminal` | `TerminalEngine` / `TerminalSurface` の抽象と、ID とサーフェスの対応。出力チャネルと入力・寸法のコマンドをサーフェスにつなぐ | `src/ipc` |
@@ -246,10 +246,10 @@ No-Go のときは、原因に応じて描画方式の変更か実装技術の�
 | Rust のクレート間の依存 | `Cargo.toml` の依存宣言。宣言していないクレートは使えない | `npm run build` が失敗する |
 | `arin-core` の依存の中身 | `cargo tree -p arin-core` の結果に禁止クレートが無いことを検査する | `npm run lint`(`scripts/check-boundaries.mjs`) |
 | `arin-core` の入出力の禁止 | `crates/arin-core/src` に `std::fs` `std::process` `std::net` が無いことを同じスクリプトで検査する | `npm run lint` |
-| `src/logic` の独立 | TypeScript のプロジェクト参照。`src/logic/tsconfig.json` は DOM の型を読み込まず、他のプロジェクトを参照しない(§1.4 #17 で確認済み) | `tsc -b` がエラーになる |
+| `src/logic` の独立 | TypeScript のプロジェクト参照。`src/logic/tsconfig.json` は DOM の型と JSX を読み込まず、他のプロジェクトを参照しない(DOM の型については §1.4 #17 で確認済み)。React を使えるのは `src/tsconfig.json` の側だけ | `tsc -b` がエラーになる |
 | `@xterm/*` と `@tauri-apps/api` の隔離、`src/ui` からの直接 import | import 文を調べるスクリプト | `npm run lint` |
 | 外部通信の不在(NFR-008) | Rust: `cargo tree -i` で HTTP クライアントのクレートが組み込まれていないこと、ソースに `std::net` が無いこと。画面: CSP の `connect-src`、ソースに `fetch(` `XMLHttpRequest` `WebSocket` `EventSource` `sendBeacon` が無いこと | `npm run lint` |
-| 画面への文字列の差し込み | `innerHTML` `outerHTML` `insertAdjacentHTML` `document.write` が無いこと(§12) | `npm run lint` |
+| 画面への文字列の差し込み | `innerHTML` `outerHTML` `insertAdjacentHTML` `document.write` と React の `dangerouslySetInnerHTML` が無いこと(§12) | `npm run lint` |
 
 検査スクリプトの単体テストは `node --test` で書く(tadcap の `scripts/*.test.mjs` と同じやり方)。
 
@@ -276,22 +276,23 @@ arin-term/
 ├── Cargo.lock                        # Rust の依存の固定(コミットする)
 ├── rust-toolchain.toml               # Rust の版の固定
 ├── index.html                        # 画面の入口
-├── vite.config.ts                    # Vite と Vitest の設定
-├── tsconfig.json                     # プロジェクト参照の束ね(logic と app)
+├── vite.config.ts                    # Vite(React プラグイン)と Vitest の設定
+├── tsconfig.json                     # プロジェクト参照の束ね(src/logic と src)
 ├── playwright.config.ts              # 画面の自動テストの設定
 ├── src/                              # 画面(TypeScript)
-│   ├── main.ts                       # エントリーポイントと組み立て
-│   ├── logic/                        # 画面の純粋ロジック(DOM を使わない。独立した tsconfig)
+│   ├── main.tsx                      # エントリーポイントと組み立て(React のルートを作る)
+│   ├── tsconfig.json                 # logic 以外の画面のコード用(DOM と JSX あり。logic を参照する)
+│   ├── logic/                        # 画面の純粋ロジック(DOM も React も使わない。独立した tsconfig.json を持つ)
 │   │   ├── tree/                     # 行の並び、差分の適用、更新の保留、目印、選択、絞り込み
 │   │   ├── dnd/                      # ドラッグの状態(開始のしきい値、ドロップ先の判定)
 │   │   ├── keys/                     # ショートカットの表と、フォーカス位置による振り分け
 │   │   └── menu/                     # コンテキストメニュー項目の組み立て
 │   ├── ipc/                          # Rust との通信の型付きの包み(@tauri-apps/api を使う唯一の場所)
 │   │   └── generated/                # Rust の型から生成した TypeScript の型(手で編集しない)
-│   ├── state/                        # Rust の状態の写し、表示だけの状態、操作
+│   ├── state/                        # zustand のストア(Rust の状態の写し、表示だけの状態)と操作
 │   ├── terminal/                     # TerminalEngine / TerminalSurface の抽象、ID とサーフェスの対応
 │   │   └── xterm/                    # xterm.js の実装(@xterm/* を使う唯一の場所。差し替え単位)
-│   ├── ui/                           # DOM の部品
+│   ├── ui/                           # React の部品(.tsx)
 │   │   ├── shell/                    # ウィンドウ内の分割、ペイン境界、表示状態の切替
 │   │   ├── projects/                 # カード一覧
 │   │   ├── tree/                     # ツリー(仮想スクロール、インライン編集)
@@ -749,8 +750,9 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 
 設計の決まり:
 
-- Presentational: 値とコールバックだけを受け取って DOM を作る部品(`ProjectCard`、`TabBar`、`TreeRow` など)。ストアと `actions` を参照しない
-- Container: ストアを購読して部品に値を渡し、`actions` を呼ぶ(`ProjectCardList`、`FileTreeView`、`TerminalArea`)
+- Presentational: props(値とコールバック)だけを受け取る React の関数コンポーネント(`ProjectCard`、`TabBar`、`TreeRow` など)。ストアと `actions` を参照しない
+- Container: zustand のフックでストアを読んで部品に値を渡し、`actions` を呼ぶ(`ProjectCardList`、`FileTreeView`、`TerminalArea`)
+- xterm.js の要素は React の管理の外に置く。`TerminalHost` は置き場所の要素だけを描き、エンジンの要素の付け外しは `TerminalManager` が行う(再描画でターミナルが作り直されないようにするため)
 - コンテキストメニューの項目と有効・無効は `src/logic/menu` が決める(例: ルートを選択中は名称変更・切り取り・ゴミ箱が無効。FR-035)。UI は結果を映すだけ。Rust 側も同じ操作を拒否する
 - ⌘C・⌘V・⌘X は、画面のコピー・ペーストのイベントを入口にし、フォーカス位置(ツリーかターミナルか)で振り分ける(C-04)。受け口の確認は §15.3 #7
 - ツリーでコピーした項目は、ファイルの URL としてペーストボードに書く(Finder と互換。FR-027)
@@ -782,7 +784,7 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 | 種別 | ツール | 対象 | 配置 |
 | ---- | ------ | ---- | ---- |
 | 単体(Rust) | `cargo test` | `arin-core` 全体。パス整形とシェルエスケープ、除外判定、状態の読み書き・復元・破損回復、アテンションの走査と判定、タイルのグリッドとページ、色の割当、ファイル操作の手順(偽のポート)、設定の検証 | `crates/arin-core/src/**`(同じファイル内)と `crates/arin-core/tests/` |
-| 単体(TypeScript) | Vitest | `src/logic` 全体。ツリーの差分適用と保留、目印、選択、ドラッグの状態、キーの振り分け、メニュー項目。`src/ipc` の包み | 対象の隣に `*.test.ts` |
+| 単体(TypeScript) | Vitest | `src/logic` 全体。ツリーの差分適用と保留、目印、選択、ドラッグの状態、キーの振り分け、メニュー項目。`src/ipc` の包み。`src/state` の zustand のストア(React なしで動かす) | 対象の隣に `*.test.ts` |
 | ファイル操作 | `cargo test` | 新規作成・名称変更・移動・コピー・ゴミ箱・名前衝突・取り消し(FR-025〜030、032)。実ファイルシステムで行う | `crates/arin-platform/tests/` |
 | 同時操作 | `cargo test` | 操作の途中で外部から削除・追加する状況(FR-036)。画面側の保留(FR-037)は Vitest | `crates/arin-platform/tests/`、`src/logic/tree/` |
 | 結合(監視) | `cargo test` | 一時ディレクトリでの変更検知(FR-014)、ルートの改名への追従(FR-007) | `crates/arin-platform/tests/` |
@@ -797,6 +799,7 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 
 - TDD(`project-config.md` §6)。受け入れ基準をテストケースに落とす(PRD §8)
 - カバレッジ目標は 80%(C-15)。対象の切り方は §15.1 #8
+- React の部品(`src/ui`)の単体テストは書かない。部品の振る舞いは Playwright で見る。部品に判定を書かず、`src/logic` とストアに寄せる。テスト用の DOM とライブラリ(jsdom、Testing Library)を足さないため(PRD §7 C6。ADR-003)
 - ファイルを触るテストは、補助が作る一時ディレクトリの中だけで行う。補助は、渡された経路がシステムの一時領域の下にあることを検査してから使う(PRD §8「実プロジェクトのファイルに触れない」)
 - ゴミ箱のテストは、テスト自身がゴミ箱へ入れた項目だけを後片付けする。ユーザーのゴミ箱の他の項目には触れない
 - 時間に依存するロジック(目印の消滅、保存のまとめ)は時計を注入し、偽の時計で進める
@@ -839,17 +842,17 @@ Rust 側のエントリーポイントは `src-tauri/src/main.rs`。組み立て
 | 7 | `SessionRegistry`、見回り、ルートの調査、`PersistenceScheduler` の開始 | — |
 | 8 | ウィンドウの表示、終了イベントの監視 | — |
 
-画面側のエントリーポイントは `src/main.ts`。
+画面側のエントリーポイントは `src/main.tsx`。
 
 | 順 | 生成するもの | 渡す先 |
 | -- | ------------ | ------ |
 | 1 | 通信の包み(`src/ipc`) | 2、3 |
 | 2 | ストア(`appStore`、`treeStore`、`uiStore`)と `actions`。状態の写しを取得し、更新のイベントを購読する | 4 |
 | 3 | エンジン(`XtermEngine`)と `TerminalManager` | 4 |
-| 4 | `AppShell` の取り付け(ストア、`actions`、`TerminalManager` を受け取る) | — |
+| 4 | React のルートを作り、`AppShell` を描く(ストア、`actions`、`TerminalManager` を props で受け取る) | — |
 | 5 | Rust へ準備完了を通知し、写しにあるターミナルを接続する | — |
 
-- 画面側は、ストアとエンジンを `main.ts` で生成して引数で渡す。グローバル変数とシングルトンを使わない(テストで差し替えられなくなるため)
+- 画面側は、ストアとエンジンを `main.tsx` で生成して props で渡す。zustand のストアも、モジュールの読み込み時に作る形ではなく、生成関数で作る。グローバル変数とシングルトンを使わない(テストで差し替えられなくなるため)
 - 終了時は、Rust が終了の要求を一度止め、動作中のプロセスがあれば画面に確認を出させる(FR-063)。確定したら状態を即時保存し、PTY を閉じて終了する
 
 ---
@@ -860,7 +863,7 @@ Rust 側のエントリーポイントは `src-tauri/src/main.rs`。組み立て
 
 | 観点 | 設計 |
 | ---- | ---- |
-| XSS 対策 | ファイル名、プロジェクト名、ブランチ名、OSC の本文は信頼しない文字列として扱い、テキストとして差し込む。`innerHTML` などを使わず、検査スクリプトで禁止する(§3.3)。外部のページやスクリプトを読み込まない。CSP は tadcap と同じ厳しさを基本にし、xterm.js のために緩める範囲は M1 で決めて ADR-001 に残す。`withGlobalTauri` は false |
+| XSS 対策 | ファイル名、プロジェクト名、ブランチ名、OSC の本文は信頼しない文字列として扱い、テキストとして差し込む。`innerHTML` などと React の `dangerouslySetInnerHTML` を使わず、検査スクリプトで禁止する(§3.3)。外部のページやスクリプトを読み込まない。CSP は tadcap と同じ厳しさを基本にし、xterm.js のために緩める範囲は M1 で決めて ADR-001 に残す。`withGlobalTauri` は false |
 | 画面に許す操作 | Tauri のファイル操作・シェル実行・HTTP のプラグインを入れない。画面が呼べるのは本アプリのコマンドだけ。コマンドはプロジェクト ID と相対パスを受け取り、Rust 側で範囲を検査する。起動するシェルと環境変数は Rust 側で決め、画面からは指定できない |
 | シェルへの注入 | ターミナルへ挿入するパスは必ず `ShellEscaper` を通す。改行などの制御文字を含むファイル名でもコマンドが実行されない形にする。Enter は送らない(FR-016) |
 | エスケープシーケンス | クリップボードを操作する OSC 52 は無効にする【仮定】§15.2 #9。OSC 9/777 の本文は切り詰めて表示する。URL は ⌘クリックのときだけ、`http` と `https` に限って既定ブラウザで開く(FR-047) |
@@ -933,7 +936,7 @@ Xcode は要らない(§1.4 #3)。
 | `docs/data-model.md` | `state.json` と設定ファイルのスキーマ。実装と同期して更新する |
 | `docs/development-patterns.md` | コード規約・落とし穴 |
 | `docs/release-notarization.md` | 署名と公証の手順書(M5 で作る。tadcap の同名文書を下敷きにする) |
-| `project-config.md` §2・§3・§11 | 技術スタック・コマンド・既知の落とし穴(AI が更新できる節)。Swift 前提の記述が残っており、設計ゲートの後に更新が要る |
+| `project-config.md` §2・§3・§11 | 技術スタック・コマンド・既知の落とし穴(AI が更新できる節)。§2・§3 は 2026-11-14 に Tauri 向けへ更新済み |
 | `testreport/` | テストとカバレッジの生データ、AC の合否一覧 |
 
 ADR の候補(設計ゲートの回答を受けて `/adr` で起こす):
@@ -942,7 +945,7 @@ ADR の候補(設計ゲートの回答を受けて `/adr` で起こす):
 | --- | ---- | -------------- |
 | ADR-001 | ターミナルエンジンと描画方式、アドオン、CSP(M1 の Go/No-Go の結果を追記) | — |
 | ADR-002 | ロジック層の置き場所と依存方向の強制方法 | #1、#10 |
-| ADR-003 | 画面のフレームワーク | #2 |
+| ADR-003 | 画面のフレームワーク(作成済み。`ADR_003_ui-framework.md`) | #2 |
 | ADR-004 | PTY のクレートと出力の流し方 | #3 |
 | ADR-005 | 設定ファイルの形式 | #4 |
 | ADR-006 | テストの構成と画面の自動テストの方式 | #5、#6、#7、#8 |
@@ -1016,7 +1019,7 @@ ADR の候補(設計ゲートの回答を受けて `/adr` で起こす):
 | FR-022(git 状態の表示。Could) | `GitInfoPort` に状態の取得を足す。取得方法(git コマンドの読み取り実行か、ファイルの解析か)は着手時に決める。git 操作はしない(N7) |
 | FR-023(cwd への追従。Could) | `AttentionScanner` と同じ走査に OSC 7 を足し、`Workspace` にツリーの追従を足す |
 | FR-050(タブ構成と cwd の復元。Could) | `state.json` の `projects[]` に `tabs[]` を足す(キーの追加なので版は上げない) |
-| エンジンの差し替え | `TerminalEngine` を満たす実装を `src/terminal/` の下に足し、`main.ts` の 1 行を替える |
+| エンジンの差し替え | `TerminalEngine` を満たす実装を `src/terminal/` の下に足し、`main.tsx` の 1 行を替える |
 | PTY のクレートの差し替え | `PtyPort` の実装を `arin-platform/src/pty/` で替える |
 | 実アプリの自動操作(§15.1 #6 の B) | テスト用のビルドだけに機能フラグでプラグインを足す。リリースビルドに入っていないことを検査する |
 | 画面の再読み込み後の表示の復元 | Rust 側に直近の出力を一定量だけ保持し、再接続時に流し直す。開発時に画面を再読み込みするとスクロールバックが消える点の改善になる |
