@@ -34,6 +34,15 @@ describe("appStore", () => {
     expect(seen).toEqual([snapshot]);
   });
 
+  it("作った直後は起動の失敗を持たず、記録すると原因が残る", () => {
+    const store = createAppStore();
+    expect(store.getState().startupError).toBeNull();
+
+    store.getState().reportStartupError("状態の写しを取得できなかった: x");
+
+    expect(store.getState().startupError).toBe("状態の写しを取得できなかった: x");
+  });
+
   it("生成関数ごとに別のストアになる", () => {
     const a = createAppStore();
     const b = createAppStore();

@@ -1,0 +1,133 @@
+//! 起動時の設定を環境変数から読む(設計書 §11 の 1)。
+//!
+//! 環境変数を読むのは `from_env` だけにして薄くする。読んだ値の解釈は `from_inputs` に引数で渡し、
+//! 置き場所の規則そのものは `arin_core::paths::AppPaths` が持つ。テストは `from_inputs` を直接呼び、環境変数を書き換えない。
+
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
+
+use arin_core::paths::{AppPaths, AppPathsError};
+
+/// 状態フォルダの差し替え。絶対パスを指定する。空文字列は指定なしと同じ。
+///
+/// テストと起動スモークが、本物の `~/Library/Application Support/Arin/` を読まない・書かないために使う(設計書 §10.2)。
+pub const ENV_STATE_DIR: &str = "ARIN_STATE_DIR";
+
+/// 起動スモークの印を有効にする。値が `1` のときだけ有効。
+///
+/// `ENV_STATE_DIR` で状態フォルダを差し替えているときだけ効く(本物の状態フォルダには印を書かない)。
+pub const ENV_SMOKE: &str = "ARIN_SMOKE";
+
+/// 組み立てに渡す起動時の設定。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchConfig {
+    paths: AppPaths,
+    ready_marker: Option<PathBuf>,
+}
+
+impl LaunchConfig {
+    /// 読んだ値から設定を作る。
+    ///
+    /// # Errors
+    ///
+    /// 状態フォルダを決められないとき(`AppPaths::resolve` の失敗)。
+    pub fn from_inputs(
+        home: Option<&Path>,
+        state_dir_override: Option<&OsStr>,
+        smoke: Option<&OsStr>,
+    ) -> Result<Self, AppPathsError> {
+        let paths = AppPaths::resolve(home, state_dir_override)?;
+        let smoke_requested = smoke.is_some_and(|v| v == "1");
+        let ready_marker = paths.smoke_ready_marker(smoke_requested);
+        Ok(Self {
+            paths,
+            ready_marker,
+        })
+    }
+
+    /// 環境変数とホームディレクトリを読んで設定を作る。
+    ///
+    /// # Errors
+    ///
+    /// 状態フォルダを決められないとき。
+    pub fn from_env() -> Result<Self, AppPathsError> {
+        let home = std::env::home_dir();
+        let state_dir = std::env::var_os(ENV_STATE_DIR);
+        let smoke = std::env::var_os(ENV_SMOKE);
+        Self::from_inputs(home.as_deref(), state_dir.as_deref(), smoke.as_deref())
+    }
+
+    /// 状態の置き場所。
+    #[must_use]
+    pub fn paths(&self) -> &AppPaths {
+        &self.paths
+    }
+
+    /// 起動スモークの印の場所。スモークが有効でなければ `None`。
+    #[must_use]
+    pub fn ready_marker(&self) -> Option<&Path> {
+        self.ready_marker.as_deref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const HOME: &str = "/Users/someone";
+
+    fn config(state_dir: Option<&str>, smoke: Option<&str>) -> LaunchConfig {
+        LaunchConfig::from_inputs(
+            Some(Path::new(HOME)),
+            state_dir.map(OsStr::new),
+            smoke.map(OsStr::new),
+        )
+        .expect("設定を作れるはず")
+    }
+
+    #[test]
+    fn 環境変数が何も無ければ既定の置き場所で印を書かない() {
+        let c = config(None, None);
+
+        assert_eq!(
+            c.paths().state_dir(),
+            Path::new("/Users/someone/Library/Application Support/Arin")
+        );
+        assert_eq!(c.ready_marker(), None);
+    }
+
+    #[test]
+    fn 差し替えとスモークの指定があれば印を差し替えた状態フォルダに置く() {
+        let c = config(Some("/tmp/arin-x"), Some("1"));
+
+        assert_eq!(c.ready_marker(), Some(Path::new("/tmp/arin-x/smoke-ready")));
+    }
+
+    #[test]
+    fn スモークの値が_1_以外なら印を書かない() {
+        for value in ["", "0", "true", "yes", " 1"] {
+            assert_eq!(
+                config(Some("/tmp/arin-x"), Some(value)).ready_marker(),
+                None,
+                "ARIN_SMOKE={value:?} で印が有効になった"
+            );
+        }
+    }
+
+    #[test]
+    fn 差し替えが無ければスモークの指定があっても印を書かない() {
+        assert_eq!(config(None, Some("1")).ready_marker(), None);
+    }
+
+    #[test]
+    fn 差し替えが相対パスなら失敗する() {
+        let err = LaunchConfig::from_inputs(
+            Some(Path::new(HOME)),
+            Some(OsStr::new("rel")),
+            Some(OsStr::new("1")),
+        )
+        .unwrap_err();
+
+        assert_eq!(err, AppPathsError::RelativeOverride(PathBuf::from("rel")));
+    }
+}

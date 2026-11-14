@@ -6,6 +6,8 @@
 //! macOS ではメニューの部品をメインスレッドでしか作れないため、標準のテストハーネスを使わず
 //! (Cargo.toml で `harness = false`)、この `main` をメインスレッドで実行する。
 
+mod support;
+
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -13,7 +15,8 @@ use tauri::test::MockRuntime;
 use tauri::{Manager, RunEvent};
 
 fn アプリを組み立てて起動するとメインのウィンドウができる() {
-    let app = arin_lib::builder::<MockRuntime>()
+    let state_dir = support::TempDir::new("builder");
+    let app = arin_lib::builder::<MockRuntime>(support::launch_in(&state_dir, false))
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| panic!("組み立てに失敗した: {e}"));
 

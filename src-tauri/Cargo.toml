@@ -37,3 +37,8 @@ harness = false
 [[test]]
 name = "app_commands"
 harness = false
+
+# スモークの印を有効にして組み立てたときの準備完了の通知。設定ごとに模擬のアプリを 1 つにするため分ける。
+[[test]]
+name = "app_ready_marker"
+harness = false

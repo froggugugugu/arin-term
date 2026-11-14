@@ -5,6 +5,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod paths;
 pub mod workspace;
 
 /// このクレートの版。
