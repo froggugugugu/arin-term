@@ -18,5 +18,16 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
+    // カバレッジは `npm run test:coverage`(scripts/coverage.mjs)が有効にする。
+    // ここでは計測の範囲と出力だけを決める。80% の判定は src/logic だけにかけるので、
+    // 判定はスクリプト側で json-summary を読んで行う(ここに thresholds は置かない)。
+    coverage: {
+      provider: "v8",
+      // テストに触れられていないファイルも 0% として数えるため、include を明示する。
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/**/*.test.ts", "src/**/*.d.ts", "src/ipc/generated/**"],
+      reporter: ["text-summary", "html", "json-summary", "lcov"],
+      reportsDirectory: "testreport/coverage/ts",
+    },
   },
 });
