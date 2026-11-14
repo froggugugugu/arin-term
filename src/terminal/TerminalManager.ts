@@ -3,7 +3,11 @@
 // - 1 つの ID に 1 つのサーフェスを持ち続ける。非表示のあいだも破棄しない(設計書 §1.3 #4)。
 //   破棄するのは呼び出し側が dispose を呼んだときだけ
 // - 出力: チャネル → surface.write → 取り込みが済んだ量を ack_terminal_output で返す(流量制御)
-// - 入力: surface.onInput → write_terminal。寸法: surface.onResize → resize_terminal
+// - 入力: surface.onInput → write_terminal。寸法: surface.onResize → resize_terminal。
+//   どちらもターミナルごとに直列に送る(前の送信の応答を待ってから次を送る)。Rust はコマンドごとに別のスレッドで動き、
+//   PTY のロックは来た順を保証しないので、並行に送ると "a"→"b" が "ba" で届きうる。送信中に来た入力は連結し、
+//   寸法は最新だけを次の 1 回で送る(src/logic/serialSender.ts)。入力と寸法のあいだの順序は保たない
+// - シェルが終わった(写しの状態が exited / failed)ターミナルには入力も寸法も送らない(setStatus で伝える)
 // - 置き場所(TerminalHost)への要素の付け外しもここで行い、React には要素を管理させない(ADR-003)
 // - コピー・ペースト: 画面のイベント → handleClipboard → フォーカスのあるサーフェスの選択の取得・貼り付け(§9.1)
 //
@@ -13,6 +17,8 @@
 import type { ArinIpc, OutputSubscription } from "../ipc/client";
 import { describeError } from "../logic/describeError";
 import { type ClipboardFocus, type ClipboardKind, routeClipboard } from "../logic/keys/clipboard";
+import { concatWithLimit, createSerialSender, INPUT_QUEUE_LIMIT, latest, type SerialSender } from "../logic/serialSender";
+import type { TerminalStatus } from "../ipc/generated/TerminalStatus";
 import type { RendererKind, TerminalEngine, TerminalId, TerminalSize, TerminalSurface } from "./engine";
 
 /** 画面のコピー・ペーストのイベントの clipboardData のうち、使う部分(DataTransfer はこの形を満たす)。 */
@@ -50,8 +56,10 @@ interface Entry {
   subscription: OutputSubscription | null;
   /** 接続中の connect が返す Promise(二重の接続で同じものを返す)。 */
   connecting: Promise<void> | null;
-  /** 接続の応答を待つあいだの入力。 */
-  pendingInput: string[];
+  /** 入力の送信。接続の応答を待つあいだと送信中に来た入力を、上限(INPUT_QUEUE_LIMIT)まで連結して溜める。 */
+  readonly input: SerialSender<string>;
+  /** 寸法の送信。送信中に来たら最新だけを残す。 */
+  readonly resize: SerialSender<TerminalSize>;
   /** 最後に Rust へ伝えた寸法。 */
   sentSize: TerminalSize | null;
   /** いま要素を入れている置き場所。 */
@@ -66,6 +74,8 @@ export class TerminalManager {
   readonly #backend: TerminalBackend;
   readonly #reportError: (message: string) => void;
   readonly #entries = new Map<TerminalId, Entry>();
+  /** 写しで伝えられた状態の種類(サーフェスを作る前に伝えられたものも持つ)。 */
+  readonly #statuses = new Map<TerminalId, TerminalStatus["kind"]>();
 
   constructor(engine: TerminalEngine, backend: TerminalBackend, options: TerminalManagerOptions = {}) {
     this.#engine = engine;
@@ -142,6 +152,20 @@ export class TerminalManager {
   }
 
   /**
+   * 写しにあるターミナルの状態を伝える(main.tsx が写しの更新ごとに呼ぶ)。
+   * exited / failed のあいだは入力と寸法を送らず、送信待ちの入力も捨てる(終わったシェルへの書き込みは失敗し、
+   * キーを押すたびに失敗を報告して報告の上限を使い切ってしまうため)。
+   * failed は次の接続で起動をやり直せる(Rust の仕様)ので、connect を始めたら解く。サーフェスが無くても覚えておく。
+   */
+  setStatus(id: TerminalId, status: TerminalStatus): void {
+    this.#statuses.set(id, status.kind);
+    if (!this.#stopped(id)) return;
+    const entry = this.#entries.get(id);
+    entry?.input.clear();
+    entry?.resize.clear();
+  }
+
+  /**
    * いまの行・桁で出力のチャネルをつなぐ。接続中・接続済みなら何もしない(同じ Promise を返す)。
    * 失敗は報告し、次に呼べば試し直す。この Promise は失敗しない。
    */
@@ -151,6 +175,8 @@ export class TerminalManager {
     if (entry.connecting !== null) return entry.connecting;
 
     const size = entry.surface.size();
+    // 起動の失敗のあとの接続は、Rust がもう一度起動を試す。
+    if (this.#statuses.get(id) === "failed") this.#statuses.delete(id);
     entry.state = "connecting";
     const subscription = this.#backend.connectTerminal(id, size.rows, size.cols, (data) =>
       this.#onOutput(entry, data),
@@ -162,7 +188,7 @@ export class TerminalManager {
         entry.connecting = null;
         if (entry.disposed) return;
         entry.state = "connected";
-        for (const data of entry.pendingInput.splice(0)) this.#send(entry, data);
+        entry.input.setReady(true);
         const now = entry.surface.size();
         if (entry.sentSize === null || !sameSize(entry.sentSize, now)) this.#resize(entry, now);
       },
@@ -170,7 +196,7 @@ export class TerminalManager {
         entry.connecting = null;
         entry.subscription = null;
         entry.sentSize = null;
-        entry.pendingInput = [];
+        entry.input.clear();
         if (entry.disposed) return;
         entry.state = "idle";
         this.#reportError(`ターミナル ${id} に接続できなかった: ${describeError(cause)}`);
@@ -222,7 +248,8 @@ export class TerminalManager {
     if (!entry) return false;
     this.#entries.delete(id);
     entry.disposed = true;
-    entry.pendingInput = [];
+    entry.input.close();
+    entry.resize.close();
     entry.subscription?.close();
     entry.subscription = null;
     entry.slot?.removeChild(entry.surface.element);
@@ -235,22 +262,35 @@ export class TerminalManager {
     const existing = this.#entries.get(id);
     if (existing) return existing;
     const surface = this.#engine.createSurface(id);
+    const report = this.#reportError;
     const entry: Entry = {
       id,
       surface,
       state: "idle",
       subscription: null,
       connecting: null,
-      pendingInput: [],
+      // 接続の応答までは溜める(ready: false)。
+      input: createSerialSender<string>({
+        send: (data) => this.#backend.writeTerminal(id, data),
+        merge: concatWithLimit(INPUT_QUEUE_LIMIT, () => {
+          report(`ターミナル ${id} の送信待ちの入力が上限(${INPUT_QUEUE_LIMIT} 文字)を超えたので、超えた分を捨てた`);
+        }),
+        onError: (cause) => report(`ターミナル ${id} への入力を送れなかった: ${describeError(cause)}`),
+        ready: false,
+      }),
+      resize: createSerialSender<TerminalSize>({
+        send: (size) => this.#backend.resizeTerminal(id, size.rows, size.cols),
+        merge: latest,
+        onError: (cause) => report(`ターミナル ${id} の寸法を変えられなかった: ${describeError(cause)}`),
+      }),
       sentSize: null,
       slot: null,
       disposed: false,
     };
     surface.onInput((data) => {
-      if (entry.disposed) return;
-      if (entry.state === "connected") this.#send(entry, data);
-      else if (entry.state === "connecting") entry.pendingInput.push(data);
+      if (entry.disposed || this.#stopped(id)) return;
       // 接続していない(接続の失敗のあとなど)ときの入力は送り先が無いので捨てる。
+      if (entry.state !== "idle") entry.input.push(data);
     });
     surface.onResize((cols, rows) => {
       // 接続を待つあいだの変更は、接続のあとにまとめて送る。
@@ -276,16 +316,15 @@ export class TerminalManager {
     );
   }
 
-  #send(entry: Entry, data: string): void {
-    this.#backend.writeTerminal(entry.id, data).catch((cause: unknown) => {
-      this.#reportError(`ターミナル ${entry.id} への入力を送れなかった: ${describeError(cause)}`);
-    });
+  /** シェルが終わっている(写しの状態が exited / failed)か。 */
+  #stopped(id: TerminalId): boolean {
+    const kind = this.#statuses.get(id);
+    return kind === "exited" || kind === "failed";
   }
 
   #resize(entry: Entry, size: TerminalSize): void {
+    if (this.#stopped(entry.id)) return;
     entry.sentSize = size;
-    this.#backend.resizeTerminal(entry.id, size.rows, size.cols).catch((cause: unknown) => {
-      this.#reportError(`ターミナル ${entry.id} の寸法を変えられなかった: ${describeError(cause)}`);
-    });
+    entry.resize.push(size);
   }
 }

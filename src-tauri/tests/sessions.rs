@@ -10,7 +10,7 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -66,6 +66,11 @@ struct Control {
     sizes: Mutex<Vec<PtySize>>,
     killed: AtomicBool,
     exit: Mutex<Option<ChildExit>>,
+    /// `true` のあいだ、書き込みは PTY のロックを持ったまま止まる(シェルが入力を読まない状態)。
+    hold_writes: Mutex<bool>,
+    release: Condvar,
+    /// 止まっている書き込みの数。
+    held: AtomicUsize,
 }
 
 impl Control {
@@ -81,7 +86,16 @@ impl Control {
             sizes: Mutex::new(Vec::new()),
             killed: AtomicBool::new(false),
             exit: Mutex::new(None),
+            hold_writes: Mutex::new(false),
+            release: Condvar::new(),
+            held: AtomicUsize::new(0),
         })
+    }
+
+    /// 書き込みを止めるか。止めるのをやめたら、止まっている書き込みを再開させる。
+    fn set_hold_writes(&self, hold: bool) {
+        *lock(&self.hold_writes) = hold;
+        self.release.notify_all();
     }
 
     fn feed(&self, data: &[u8]) {
@@ -184,6 +198,19 @@ struct FakeSession(Arc<Control>);
 
 impl PtySession for FakeSession {
     fn write(&mut self, data: &[u8]) -> Result<(), PtyError> {
+        let mut hold = lock(&self.0.hold_writes);
+        if *hold {
+            self.0.held.fetch_add(1, Ordering::SeqCst);
+            while *hold {
+                hold = self
+                    .0
+                    .release
+                    .wait(hold)
+                    .unwrap_or_else(PoisonError::into_inner);
+            }
+            self.0.held.fetch_sub(1, Ordering::SeqCst);
+        }
+        drop(hold);
         if self.0.killed.load(Ordering::SeqCst) {
             return Err(PtyError::Write("終了済み".to_owned()));
         }
@@ -1107,4 +1134,76 @@ fn _9_枚のうち_1_枚の起動に失敗しても_残りの_8_枚は起動し�
         assert_eq!(f.status(i), TerminalStatus::Running);
         f.assert_io(i, "1 枚が起動に失敗したあと");
     }
+}
+
+// ---------------------------------------------------------------------------
+// 書き込みが止まっているあいだの再接続(S-1)
+// ---------------------------------------------------------------------------
+
+/// 別のスレッドで `f` を行い、`WAIT` までに戻れば結果を返す。戻らなければ `None`(スレッドは置いていく)。
+fn within_wait<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    rx.recv_timeout(WAIT).ok()
+}
+
+#[test]
+fn 書き込みが止まっていても再接続は戻り_ほかの接続も止まらない() {
+    let f = GridFixture::new(&[]);
+    for result in f.connect_all() {
+        result.expect("接続できなかった");
+    }
+    let stuck = f.ids[0].clone();
+    f.controls[0].set_hold_writes(true);
+    let writer = {
+        let registry = f.registry.clone();
+        let id = stuck.clone();
+        thread::spawn(move || registry.write(&id, b"paste"))
+    };
+    assert!(
+        wait_until(|| f.controls[0].held.load(Ordering::SeqCst) == 1),
+        "書き込みが止まらなかった"
+    );
+
+    // 画面の再読み込み: 止まっているターミナルの再接続と、ほかのターミナルの再接続。
+    let reattach = {
+        let registry = f.registry.clone();
+        let id = stuck.clone();
+        let sink = CollectSink::new();
+        within_wait(move || registry.connect(&id, 30, 90, sink as Arc<dyn OutputSink>))
+    };
+    assert!(
+        matches!(reattach, Some(Ok(()))),
+        "止まっているターミナルの再接続が戻らないか失敗した: {reattach:?}"
+    );
+    let other = {
+        let registry = f.registry.clone();
+        let id = f.ids[1].clone();
+        let sink = CollectSink::new();
+        within_wait(move || registry.connect(&id, 30, 90, sink as Arc<dyn OutputSink>))
+    };
+    assert!(
+        matches!(other, Some(Ok(()))),
+        "ほかのターミナルの再接続が止まった: {other:?}"
+    );
+    assert_eq!(
+        lock(&f.controls[1].sizes).last(),
+        Some(&PtySize { rows: 30, cols: 90 }),
+        "ほかのターミナルには寸法が伝わる"
+    );
+
+    // 書き込みが再開すれば、止まっていたターミナルにも次の寸法の変更が届く。
+    f.controls[0].set_hold_writes(false);
+    writer
+        .join()
+        .unwrap()
+        .expect("止まっていた書き込みが失敗した");
+    assert_eq!(lock(&f.controls[0].written).as_slice(), b"paste");
+    f.registry.resize(&stuck, 30, 90).unwrap();
+    assert_eq!(
+        lock(&f.controls[0].sizes).last(),
+        Some(&PtySize { rows: 30, cols: 90 })
+    );
 }

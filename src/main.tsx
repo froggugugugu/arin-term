@@ -14,6 +14,7 @@ import { createAppStore } from "./state/appStore";
 import { installErrorReporter } from "./state/errorReporter";
 import { createWithLaunchOptions } from "./state/launchOptions";
 import { startApp, type StartAppResult } from "./state/startApp";
+import { forwardTerminalStatuses } from "./state/terminalStatus";
 import { TerminalManager } from "./terminal/TerminalManager";
 import { XtermEngine } from "./terminal/xterm/XtermEngine";
 import { AppShell } from "./ui/shell/AppShell";
@@ -39,6 +40,8 @@ export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartA
     verifyGrid: options.verifyGrid,
   }));
   const terminals = new TerminalManager(engine, ipc, { reportError: reporter.report });
+  // 終わったシェル(写しの状態が exited / failed)には入力と寸法を送らない。
+  forwardTerminalStatuses(store, (id, status) => terminals.setStatus(id, status));
   // ⌘C・⌘V(メニューの「編集」から来る copy・paste のイベント)を、フォーカス位置で振り分ける。
   installClipboardRouting(document, terminals);
   return startApp({

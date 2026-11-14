@@ -262,7 +262,15 @@ impl SessionRegistry {
                     .session(id)
                     .ok_or_else(|| TerminalError::NotStarted(id.clone()))?;
                 session.output.replace_sink(sink);
-                if let Some(pty) = lock(&session.pty).as_mut() {
+                // 接続の直列化のロックを持ったまま PTY のロックを待たない。書き込みが止まったまま
+                // (シェルが入力を読まない)PTY のロックを持っていると、ほかの全ターミナルの接続まで止まるため。
+                // 取れなければ寸法の変更は諦め、画面が次に送る `resize_terminal` に任せる。
+                let mut pty = match session.pty.try_lock() {
+                    Ok(pty) => pty,
+                    Err(TryLockError::Poisoned(p)) => p.into_inner(),
+                    Err(TryLockError::WouldBlock) => return Ok(()),
+                };
+                if let Some(pty) = pty.as_mut() {
                     pty.resize(size)?;
                 }
                 Ok(())
@@ -341,6 +349,11 @@ impl SessionRegistry {
     }
 
     /// 入力をそのまま PTY に書き込む。シェルが入力を読まないと待つことがある。メインスレッドから呼ばない。
+    ///
+    /// 順序の前提: 同じターミナルへの書き込みを並行に呼ぶと、PTY のロック(`std::sync::Mutex`。来た順を保証しない)を
+    /// 取った順に書くので、呼んだ順とは限らない。画面(`src/terminal/TerminalManager.ts`)はターミナルごとに、
+    /// 前の `write_terminal` の応答(この関数が全部を書き終えて戻ったあと)を待ってから次を送るので、来た順に書かれる。
+    /// 寸法(`resize`)も同じく画面が直列に送る。そのため書き込み専用のスレッドは置かない。
     ///
     /// # Errors
     ///

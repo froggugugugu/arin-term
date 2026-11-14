@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createIpc } from "../ipc/client";
+import { INPUT_QUEUE_LIMIT } from "../logic/serialSender";
 import { type GridView, SHOW_ALL, showOnly, visibilityChanges } from "../logic/verifyGrid";
 import { createFakeIpc, type FakeHandlers } from "../test/fakeIpc";
 import { createFakeTerminalEngine } from "../test/fakeTerminalEngine";
@@ -251,7 +252,7 @@ describe("TerminalManager(入出力)", () => {
     ]);
   });
 
-  it("接続の応答を待つあいだの入力は、接続のあとに順に送る", async () => {
+  it("接続の応答を待つあいだの入力は、接続のあとに順に連結して 1 回で送る", async () => {
     let finish: (() => void) | undefined;
     const { engine, fake, manager } = setup({
       connect_terminal: () =>
@@ -269,10 +270,7 @@ describe("TerminalManager(入出力)", () => {
     await connecting;
     await flush();
 
-    expect(fake.calls.slice(1).map((c) => c.args)).toEqual([
-      { terminalId: "t1", data: "a" },
-      { terminalId: "t1", data: "b" },
-    ]);
+    expect(fake.calls.slice(1).map((c) => c.args)).toEqual([{ terminalId: "t1", data: "ab" }]);
   });
 
   it("寸法の変更が resize_terminal に届く", async () => {
@@ -472,6 +470,260 @@ describe("TerminalManager(境界値)", () => {
     }
 
     expect(logged).toEqual(["ターミナル t1 に接続できなかった: 失敗"]);
+  });
+});
+
+/** 解決を遅らせられる偽の応答。呼ばれるたびに保留の Promise を返し、テストが古い順に成功・失敗させる。 */
+function deferred() {
+  const waiting: { resolve: () => void; reject: (cause: unknown) => void }[] = [];
+  const handler = () =>
+    new Promise<null>((resolve, reject) => waiting.push({ resolve: () => resolve(null), reject }));
+  const settle = async (outcome: "ok" | { fail: unknown } = "ok") => {
+    const next = waiting.shift();
+    if (next === undefined) throw new Error("応答待ちのものが無い");
+    if (outcome === "ok") next.resolve();
+    else next.reject(outcome.fail);
+    await flush();
+  };
+  return { handler, settle, pending: () => waiting.length };
+}
+
+const writes = (fake: ReturnType<typeof createFakeIpc>) =>
+  fake.calls.filter((c) => c.command === "write_terminal").map((c) => (c.args as { data: string }).data);
+const resizes = (fake: ReturnType<typeof createFakeIpc>) =>
+  fake.calls
+    .filter((c) => c.command === "resize_terminal")
+    .map((c) => {
+      const a = c.args as { rows: number; cols: number };
+      return [a.rows, a.cols];
+    });
+
+describe("TerminalManager(入力・寸法の送信の直列化。M-1)", () => {
+  it("前の write_terminal が終わるまで次を送らず、送信中に来た入力は連結して次の 1 回で送る(順序を保つ)", async () => {
+    const write = deferred();
+    const { engine, fake, manager } = setup({ write_terminal: write.handler });
+    await manager.connect("t1");
+    const surface = engine.created[0];
+    if (surface === undefined) throw new Error("サーフェスが無い");
+
+    surface.emitInput("a");
+    surface.emitInput("b");
+    surface.emitInput("c");
+    await flush();
+    expect(writes(fake)).toEqual(["a"]);
+
+    await write.settle();
+    expect(writes(fake)).toEqual(["a", "bc"]);
+    surface.emitInput("d");
+    await flush();
+    expect(writes(fake)).toEqual(["a", "bc"]);
+
+    await write.settle();
+    await write.settle();
+    expect(writes(fake)).toEqual(["a", "bc", "d"]);
+  });
+
+  it("書き込みが失敗したら報告し、待っていた入力を次に送る", async () => {
+    const write = deferred();
+    const { engine, fake, errors, manager } = setup({ write_terminal: write.handler });
+    await manager.connect("t1");
+    const surface = engine.created[0];
+    if (surface === undefined) throw new Error("サーフェスが無い");
+
+    surface.emitInput("a");
+    surface.emitInput("b");
+    await flush();
+    await write.settle({ fail: "書けなかった" });
+
+    expect(errors).toEqual(["ターミナル t1 への入力を送れなかった: 書けなかった"]);
+    expect(writes(fake)).toEqual(["a", "b"]);
+  });
+
+  it("寸法は送信中に変わったら、最新の 1 つだけを次に送る", async () => {
+    const resize = deferred();
+    const { engine, fake, manager } = setup({ resize_terminal: resize.handler });
+    await manager.connect("t1");
+    const surface = engine.created[0];
+    if (surface === undefined) throw new Error("サーフェスが無い");
+
+    surface.emitResize(80, 24);
+    surface.emitResize(90, 30);
+    surface.emitResize(100, 40);
+    await flush();
+    expect(resizes(fake)).toEqual([[24, 80]]);
+
+    await resize.settle();
+    await resize.settle();
+    expect(resizes(fake)).toEqual([
+      [24, 80],
+      [40, 100],
+    ]);
+  });
+
+  it("寸法の送信が失敗しても、次の寸法は送る", async () => {
+    const resize = deferred();
+    const { engine, fake, errors, manager } = setup({ resize_terminal: resize.handler });
+    await manager.connect("t1");
+    const surface = engine.created[0];
+    if (surface === undefined) throw new Error("サーフェスが無い");
+
+    surface.emitResize(80, 24);
+    surface.emitResize(90, 30);
+    await flush();
+    await resize.settle({ fail: "変えられなかった" });
+
+    expect(errors).toEqual(["ターミナル t1 の寸法を変えられなかった: 変えられなかった"]);
+    expect(resizes(fake)).toEqual([
+      [24, 80],
+      [30, 90],
+    ]);
+  });
+
+  it("送信中に破棄したら、応答のあとも待っていた入力と寸法を送らない", async () => {
+    const write = deferred();
+    const resize = deferred();
+    const { engine, fake, manager } = setup({ write_terminal: write.handler, resize_terminal: resize.handler });
+    await manager.connect("t1");
+    const surface = engine.created[0];
+    if (surface === undefined) throw new Error("サーフェスが無い");
+
+    surface.emitInput("a");
+    surface.emitInput("b");
+    surface.emitResize(80, 24);
+    surface.emitResize(90, 30);
+    await flush();
+    manager.dispose("t1");
+    await write.settle();
+    await resize.settle();
+
+    expect(writes(fake)).toEqual(["a"]);
+    expect(resizes(fake)).toEqual([[24, 80]]);
+  });
+});
+
+describe("TerminalManager(シェルの終了のあとは送らない。S-3)", () => {
+  it("終了の状態を伝えたあとの入力と寸法は送らず、報告もしない", async () => {
+    const { engine, fake, errors, manager } = setup({
+      write_terminal: () => {
+        throw "シェルは終了している";
+      },
+    });
+    await manager.connect("t1");
+    const surface = engine.created[0];
+    if (surface === undefined) throw new Error("サーフェスが無い");
+
+    manager.setStatus("t1", { kind: "exited", code: 0, signal: null });
+    for (let i = 0; i < 60; i++) surface.emitInput("x");
+    surface.emitResize(100, 40);
+    await flush();
+
+    expect(commands(fake)).toEqual(["connect_terminal"]);
+    expect(errors).toEqual([]);
+  });
+
+  it("終了を伝えた時点で送信待ちだった入力も捨てる", async () => {
+    const write = deferred();
+    const { engine, fake, manager } = setup({ write_terminal: write.handler });
+    await manager.connect("t1");
+    const surface = engine.created[0];
+    if (surface === undefined) throw new Error("サーフェスが無い");
+
+    surface.emitInput("a");
+    surface.emitInput("b");
+    await flush();
+    manager.setStatus("t1", { kind: "exited", code: null, signal: "SIGHUP" });
+    await write.settle();
+
+    expect(writes(fake)).toEqual(["a"]);
+  });
+
+  it("サーフェスを作る前に伝えた終了も、作ったあとの入力に効く", async () => {
+    const { engine, fake, manager } = setup();
+    manager.setStatus("t1", { kind: "exited", code: 1, signal: null });
+    await manager.connect("t1");
+
+    engine.created[0]?.emitInput("x");
+    await flush();
+
+    expect(writes(fake)).toEqual([]);
+  });
+
+  it("起動の失敗のあとでも、次の接続(起動のやり直し)が成功すれば入力を送る", async () => {
+    let fail = true;
+    const { engine, fake, manager } = setup({
+      connect_terminal: () => {
+        if (fail) throw "シェルを起動できなかった";
+        return null;
+      },
+    });
+    await manager.connect("t1");
+    manager.setStatus("t1", { kind: "failed", message: "シェルを起動できなかった" });
+
+    fail = false;
+    await manager.connect("t1");
+    engine.created[0]?.emitInput("ls\r");
+    await flush();
+
+    expect(commands(fake)).toEqual(["connect_terminal", "connect_terminal", "write_terminal"]);
+    expect(writes(fake)).toEqual(["ls\r"]);
+  });
+
+  it("実行中・起動前の状態は入力を止めない", async () => {
+    const { engine, fake, manager } = setup();
+    await manager.connect("t1");
+    manager.setStatus("t1", { kind: "running" });
+    manager.setStatus("t1", { kind: "notStarted" });
+
+    engine.created[0]?.emitInput("a");
+    await flush();
+
+    expect(writes(fake)).toEqual(["a"]);
+  });
+});
+
+describe("TerminalManager(送信待ちの入力の上限。C-1)", () => {
+  it("接続を待つあいだの入力は上限までに留め、超えたら 1 回だけ報告する", async () => {
+    let finish: (() => void) | undefined;
+    const { engine, fake, errors, manager } = setup({
+      connect_terminal: () =>
+        new Promise<null>((resolve) => {
+          finish = () => resolve(null);
+        }),
+    });
+    const connecting = manager.connect("t1");
+    const surface = engine.created[0];
+    if (surface === undefined) throw new Error("サーフェスが無い");
+    const chunk = "x".repeat(INPUT_QUEUE_LIMIT / 2);
+
+    surface.emitInput(chunk);
+    surface.emitInput(chunk);
+    surface.emitInput("over");
+    surface.emitInput("more");
+    finish?.();
+    await connecting;
+    await flush();
+
+    expect(writes(fake).map((d) => d.length)).toEqual([INPUT_QUEUE_LIMIT]);
+    expect(errors).toEqual([
+      `ターミナル t1 の送信待ちの入力が上限(${INPUT_QUEUE_LIMIT} 文字)を超えたので、超えた分を捨てた`,
+    ]);
+  });
+
+  it("送信中に溜まる入力にも同じ上限を掛ける。送信中でなければ大きな貼り付けもそのまま送る", async () => {
+    const write = deferred();
+    const { engine, fake, errors, manager } = setup({ write_terminal: write.handler });
+    await manager.connect("t1");
+    const surface = engine.created[0];
+    if (surface === undefined) throw new Error("サーフェスが無い");
+    const big = "y".repeat(INPUT_QUEUE_LIMIT + 10);
+
+    surface.emitInput(big);
+    surface.emitInput(big);
+    await flush();
+    await write.settle();
+
+    expect(writes(fake).map((d) => d.length)).toEqual([INPUT_QUEUE_LIMIT + 10, INPUT_QUEUE_LIMIT]);
+    expect(errors).toHaveLength(1);
   });
 });
 

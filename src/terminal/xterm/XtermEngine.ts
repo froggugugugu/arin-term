@@ -79,7 +79,13 @@ class XtermSurface implements TerminalSurface {
     this.element.style.height = "100%";
 
     // `unicode` の API が proposed 扱いのため allowProposedApi が要る。
-    this.#terminal = new Terminal({ scrollback: SCROLLBACK_LINES, allowProposedApi: true });
+    this.#terminal = new Terminal({
+      scrollback: SCROLLBACK_LINES,
+      allowProposedApi: true,
+      // TUI がマウスを取っているあいだも、Option を押しながらのドラッグで文字を選択できるようにする
+      // (macOS では既定だと選択を強制する手段が無く、コピーができない)。
+      macOptionClickForcesSelection: true,
+    });
     this.#terminal.loadAddon(this.#fitAddon);
     loadUnicodeAddon(this.#terminal, unicode);
     // ⌘C・⌘V は xterm.js に処理させず、取り消しもしない。WKWebView はキーを画面に渡したあと、
