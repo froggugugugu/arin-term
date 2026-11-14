@@ -9,7 +9,8 @@
 //!   シェルが終わったかを確かめ、終わったら状態に反映して知らせる
 //!
 //! 規則(未処理の量の計算、止める・再開の判定、まとめの量、ターミナルの状態)は `arin-core` が持ち、ここは
-//! スレッドとロックだけを扱う。ロックの順序は「接続の直列化 → Workspace → セッションの一覧」で、
+//! スレッドとロックだけを扱う。検証用の記録(`verify_log`。開発ビルドだけ)を渡したときだけ、読み取りスレッドが
+//! OSC 52 を走査し、流量制御の状態と処理済みの通知を集計する(T23)。ロックの順序は「接続の直列化 → Workspace → セッションの一覧」で、
 //! PTY の操作(起動・書き込み・寸法・終了)と送り先への送信のあいだは Workspace と一覧のロックを持たない。
 
 use std::collections::HashMap;
@@ -24,9 +25,11 @@ use std::time::{Duration, Instant};
 use arin_core::ports::{PtyError, PtyPort, PtySession, SpawnedPty};
 use arin_core::terminal::{
     FlowControl, OUTPUT_BATCH_MAX_BYTES, OUTPUT_BATCH_WINDOW_MS, OUTPUT_HIGH_WATER,
-    OUTPUT_LOW_WATER, OutputBatch, TerminalError, TerminalId, validate_size,
+    OUTPUT_LOW_WATER, OscScanner, OutputBatch, TerminalError, TerminalId, validate_size,
 };
 use arin_core::workspace::{AppSnapshot, ConnectPlan, Workspace};
+
+use crate::verify_log::{FlowRecorder, VerifyConfig, VerifyRecord};
 
 /// PTY の出力の送り先(本物は Tauri のチャネル。`commands/terminal.rs`)。
 pub trait OutputSink: Send + Sync {
@@ -144,6 +147,8 @@ struct Inner {
     sessions: Mutex<HashMap<TerminalId, Arc<Session>>>,
     /// 接続を 1 つずつ行う(同じターミナルを二重に起動しない)。入力・寸法・通知はこれを取らない。
     connect_serial: Mutex<()>,
+    /// 検証用の記録。`None` なら走査も集計もしない(リリースビルド)。
+    verify: Option<VerifyConfig>,
 }
 
 /// 起動した PTY 1 組。
@@ -158,12 +163,16 @@ struct OutputState {
     state: Mutex<OutputInner>,
     /// 読み取りの再開と、終了の処理を読み取りスレッドへ知らせる。
     wake: Condvar,
+    /// 検証用の記録(`Inner::verify` の写し)。
+    verify: Option<VerifyConfig>,
 }
 
 struct OutputInner {
     flow: FlowControl,
     sink: Arc<dyn OutputSink>,
     closed: bool,
+    /// 検証用の集計。`verify` があるときだけ持つ。
+    recorder: Option<FlowRecorder>,
 }
 
 /// 毒されたロックも取る(1 本のスレッドの異常で全体を止めない。NFR-006)。
@@ -172,7 +181,7 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl SessionRegistry {
-    /// 状態の正本 `workspace` と PTY のポートからセッション管理を作る。
+    /// 状態の正本 `workspace` と PTY のポートからセッション管理を作る。検証用の記録はしない。
     #[must_use]
     pub fn new(
         workspace: Workspace,
@@ -180,6 +189,19 @@ impl SessionRegistry {
         probe: ShellProbe,
         listener: SnapshotListener,
         config: SessionConfig,
+    ) -> Self {
+        Self::with_verify(workspace, pty, probe, listener, config, None)
+    }
+
+    /// `new` に検証用の記録(`verify`)を足して作る。`None` なら `new` と同じ。
+    #[must_use]
+    pub fn with_verify(
+        workspace: Workspace,
+        pty: Arc<dyn PtyPort>,
+        probe: ShellProbe,
+        listener: SnapshotListener,
+        config: SessionConfig,
+        verify: Option<VerifyConfig>,
     ) -> Self {
         Self {
             inner: Arc::new(Inner {
@@ -191,6 +213,7 @@ impl SessionRegistry {
                 config,
                 sessions: Mutex::new(HashMap::new()),
                 connect_serial: Mutex::new(()),
+                verify,
             }),
         }
     }
@@ -270,8 +293,13 @@ impl SessionRegistry {
                 flow: FlowControl::new(inner.config.high_water, inner.config.low_water),
                 sink,
                 closed: false,
+                recorder: inner
+                    .verify
+                    .as_ref()
+                    .map(|v| FlowRecorder::new(id.clone(), (v.clock)())),
             }),
             wake: Condvar::new(),
+            verify: inner.verify.clone(),
         });
         let session = Arc::new(Session {
             pty: Arc::new(Mutex::new(Some(session))),
@@ -285,9 +313,10 @@ impl SessionRegistry {
         let reader = {
             let state = Arc::clone(&state);
             let buffer = inner.config.read_buffer;
+            let id = id.clone();
             thread::Builder::new()
                 .name(format!("arin-pty-read-{id}"))
-                .spawn(move || read_loop(output, &state, &tx, buffer))
+                .spawn(move || read_loop(output, &state, &tx, buffer, &id))
         };
         let pump = reader.and_then(|_| {
             let pump = Pump {
@@ -425,11 +454,24 @@ impl OutputState {
     }
 
     fn on_read(&self, n: usize) {
-        lock(&self.state).flow.on_read(n);
+        let mut guard = lock(&self.state);
+        let state = &mut *guard;
+        state.flow.on_read(n);
+        if let Some(recorder) = state.recorder.as_mut() {
+            recorder.on_read(n, state.flow.unacked(), state.flow.is_paused());
+        }
     }
 
     fn ack(&self, bytes: u64) {
-        if lock(&self.state).flow.on_acked(bytes) {
+        let now = self.verify.as_ref().map(|v| (v.clock)());
+        let mut guard = lock(&self.state);
+        let state = &mut *guard;
+        let resumed = state.flow.on_acked(bytes);
+        if let (Some(recorder), Some(now)) = (state.recorder.as_mut(), now) {
+            recorder.on_ack(bytes, now, state.flow.unacked(), state.flow.is_paused());
+        }
+        drop(guard);
+        if resumed {
             self.wake.notify_all();
         }
     }
@@ -438,8 +480,31 @@ impl OutputState {
         let mut state = lock(&self.state);
         state.sink = sink;
         state.flow.reset();
+        if let Some(recorder) = state.recorder.as_mut() {
+            recorder.on_reset();
+        }
         drop(state);
         self.wake.notify_all();
+    }
+
+    /// 検証用の記録: 間隔に達していれば、まとめを記録の口へ渡す。記録の口へ渡すあいだはロックを持たない。
+    fn tick_verify(&self) {
+        let Some(verify) = &self.verify else {
+            return;
+        };
+        let now = (verify.clock)();
+        let summary = {
+            let mut guard = lock(&self.state);
+            let state = &mut *guard;
+            let (unacked, paused) = (state.flow.unacked(), state.flow.is_paused());
+            state
+                .recorder
+                .as_mut()
+                .and_then(|r| r.tick(now, verify.interval, unacked, paused))
+        };
+        if let Some(summary) = summary {
+            verify.sink.record(VerifyRecord::Flow(summary));
+        }
     }
 
     fn close(&self) {
@@ -468,13 +533,23 @@ fn read_loop(
     state: &OutputState,
     tx: &Sender<Vec<u8>>,
     buffer: usize,
+    id: &TerminalId,
 ) {
     let mut buf = vec![0u8; buffer.max(1)];
+    // 検証用の記録があるときだけ OSC 52 を走査する。走査器はこのスレッドだけが持つ(ロックを取らない)。
+    let mut clipboard = state.verify.as_ref().map(|v| ClipboardCounter {
+        scanner: OscScanner::new(),
+        total: 0,
+        verify: v.clone(),
+    });
     while state.wait_until_readable() {
         match output.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => {
                 state.on_read(n);
+                if let Some(counter) = clipboard.as_mut() {
+                    counter.scan(id, &buf[..n]);
+                }
                 if tx.send(buf[..n].to_vec()).is_err() {
                     break;
                 }
@@ -482,6 +557,28 @@ fn read_loop(
             Err(e) if e.kind() == ErrorKind::Interrupted => {}
             Err(_) => break,
         }
+    }
+}
+
+/// 検証用の記録: OSC 52 の回数を数えて記録の口へ渡す。本文は渡さない。
+struct ClipboardCounter {
+    scanner: OscScanner,
+    total: u64,
+    verify: VerifyConfig,
+}
+
+impl ClipboardCounter {
+    fn scan(&mut self, id: &TerminalId, data: &[u8]) {
+        let seen = self.scanner.count_clipboard(data);
+        if seen == 0 {
+            return;
+        }
+        self.total = self.total.saturating_add(seen);
+        self.verify.sink.record(VerifyRecord::Clipboard {
+            terminal: id.clone(),
+            seen,
+            total: self.total,
+        });
     }
 }
 
@@ -512,6 +609,8 @@ impl Pump {
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => ended = true,
             }
+            // 出力が無くても見回りの間隔で起きるので、止まったままのときもまとめを出せる。
+            self.output.tick_verify();
             if !exited && (ended || last_poll.elapsed() >= config.exit_poll) {
                 exited = self.check_exit();
                 last_poll = Instant::now();

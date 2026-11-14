@@ -8,7 +8,7 @@
 
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
@@ -18,6 +18,7 @@ use arin_core::ports::{ChildExit, PtyError, PtyPort, PtySession, PtySize, Spawne
 use arin_core::terminal::{ShellLaunchSpec, TerminalError, TerminalId, TerminalStatus};
 use arin_core::workspace::{AppSnapshot, Workspace};
 use arin_lib::sessions::{OutputSink, SessionConfig, SessionError, SessionRegistry, ShellDefaults};
+use arin_lib::verify_log::{FlowSummary, VerifyConfig, VerifyRecord, VerifySink};
 
 const WAIT: Duration = Duration::from_secs(10);
 const QUIET: Duration = Duration::from_millis(100);
@@ -258,13 +259,17 @@ impl Fixture {
     }
 
     fn with_config(mode: OutputMode, config: SessionConfig) -> Self {
+        Self::with_verify(mode, config, None)
+    }
+
+    fn with_verify(mode: OutputMode, config: SessionConfig, verify: Option<VerifyConfig>) -> Self {
         let control = Control::new(mode);
         let snapshots = Arc::new(Mutex::new(Vec::new()));
         let probes = Arc::new(AtomicUsize::new(0));
         let seen = Arc::clone(&snapshots);
         let probe_count = Arc::clone(&probes);
         let workspace = Workspace::new("0.0.0-test", PathBuf::from(HOME), [("HOME", HOME)]);
-        let registry = SessionRegistry::new(
+        let registry = SessionRegistry::with_verify(
             workspace,
             Arc::new(FakePty(Arc::clone(&control))),
             Arc::new(move || {
@@ -276,6 +281,7 @@ impl Fixture {
             }),
             Arc::new(move |snapshot| lock(&seen).push(snapshot)),
             config,
+            verify,
         );
         let id = registry.snapshot().terminals[0].id.clone();
         Self {
@@ -721,4 +727,185 @@ fn 失敗の文言に原因が載る() {
             .to_string()
             .contains("broken pipe")
     );
+}
+
+// ---------------------------------------------------------------------------
+// 検証用の記録(T23。設計書 §2.2「ウィンドウが隠れたとき」「クリップボードの制御シーケンス」「流量制御」)
+// ---------------------------------------------------------------------------
+
+/// 記録の口の偽物。届いた記録を順に持つ。
+#[derive(Default)]
+struct CollectRecords(Mutex<Vec<VerifyRecord>>);
+
+impl CollectRecords {
+    fn clipboard_totals(&self) -> Vec<u64> {
+        lock(&self.0)
+            .iter()
+            .filter_map(|r| match r {
+                VerifyRecord::Clipboard { total, .. } => Some(*total),
+                VerifyRecord::Flow(_) => None,
+            })
+            .collect()
+    }
+
+    fn flows(&self) -> Vec<FlowSummary> {
+        lock(&self.0)
+            .iter()
+            .filter_map(|r| match r {
+                VerifyRecord::Flow(s) => Some(s.clone()),
+                VerifyRecord::Clipboard { .. } => None,
+            })
+            .collect()
+    }
+
+    fn lines(&self) -> Vec<String> {
+        lock(&self.0).iter().map(VerifyRecord::line).collect()
+    }
+}
+
+impl VerifySink for CollectRecords {
+    fn record(&self, record: VerifyRecord) {
+        lock(&self.0).push(record);
+    }
+}
+
+/// 差し替えの時計。テストが進めた分だけ進む。
+struct FakeClock {
+    base: Instant,
+    offset_ms: AtomicU64,
+}
+
+impl FakeClock {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            base: Instant::now(),
+            offset_ms: AtomicU64::new(0),
+        })
+    }
+
+    fn advance(&self, ms: u64) {
+        self.offset_ms.fetch_add(ms, Ordering::SeqCst);
+    }
+}
+
+const INTERVAL: Duration = Duration::from_secs(5);
+
+fn verify_fixture(mode: OutputMode) -> (Fixture, Arc<CollectRecords>, Arc<FakeClock>) {
+    let records = Arc::new(CollectRecords::default());
+    let clock = FakeClock::new();
+    let now = Arc::clone(&clock);
+    let verify = VerifyConfig {
+        sink: Arc::clone(&records) as Arc<dyn VerifySink>,
+        clock: Arc::new(move || {
+            now.base + Duration::from_millis(now.offset_ms.load(Ordering::SeqCst))
+        }),
+        interval: INTERVAL,
+    };
+    let f = Fixture::with_verify(mode, test_config(), Some(verify));
+    (f, records, clock)
+}
+
+#[test]
+fn 出力に_osc_52_が現れた回数が記録の口に届き_本文は載らない() {
+    let (f, records, _clock) = verify_fixture(OutputMode::Scripted);
+    let sink = CollectSink::new();
+    f.connect(&sink);
+
+    // 1 つ目は読み取りの切れ目をまたぐ。OSC 9 は数えない。
+    let chunks: [&[u8]; 3] = [
+        b"a\x1b]5",
+        b"2;c;c2VjcmV0\x07\x1b]9;done\x07",
+        b"\x1b]52;c;c2VjcmV0\x1b\\",
+    ];
+    f.control.feed(chunks[0]);
+    assert!(sink.wait_total(chunks[0].len()));
+    f.control.feed(chunks[1]);
+    f.control.feed(chunks[2]);
+
+    assert!(
+        wait_until(|| records.clipboard_totals() == vec![1, 2]),
+        "回数が届かなかった: {:?}",
+        records.clipboard_totals()
+    );
+    // 出力はそのまま画面へ届く(走査は出力を変えない)。
+    assert!(sink.wait_total(chunks.iter().map(|c| c.len()).sum()));
+    assert_eq!(sink.bytes(), chunks.concat());
+    for line in records.lines() {
+        assert!(line.starts_with("[arin:verify] osc52 "), "{line}");
+        assert!(!line.contains("c2VjcmV0"), "本文が載った: {line}");
+    }
+}
+
+#[test]
+fn 処理済みの通知を一定の間隔でまとめて記録する() {
+    let (f, records, clock) = verify_fixture(OutputMode::Scripted);
+    let sink = CollectSink::new();
+    f.connect(&sink);
+    f.control.feed(&[b'x'; 1000]);
+    assert!(sink.wait_total(1000));
+
+    f.registry.ack(&f.id, 100).unwrap();
+    clock.advance(30);
+    f.registry.ack(&f.id, 200).unwrap();
+    clock.advance(50);
+    f.registry.ack(&f.id, 300).unwrap();
+    // 間隔に達するまではまとめを出さない。
+    assert!(records.flows().is_empty());
+
+    clock.advance(INTERVAL.as_millis() as u64);
+    assert!(
+        wait_until(|| !records.flows().is_empty()),
+        "まとめが届かなかった"
+    );
+    let summary = records.flows()[0].clone();
+    assert_eq!(summary.terminal, f.id);
+    assert_eq!(summary.acks, 3);
+    assert_eq!(summary.ack_bytes, 600);
+    assert_eq!(summary.max_ack_gap_ms, Some(50));
+    assert_eq!(summary.read_bytes, 1000);
+    assert_eq!(summary.max_unacked, 1000);
+    assert_eq!(summary.unacked, 400);
+    assert!(!summary.paused);
+    assert_eq!(summary.pauses, 0);
+    assert!(summary.window_ms >= INTERVAL.as_millis() as u64);
+
+    // 次の間隔は数え直す。通知も出力も無く止まってもいなければ出さない。
+    let before = records.flows().len();
+    f.registry.ack(&f.id, 50).unwrap();
+    clock.advance(INTERVAL.as_millis() as u64);
+    assert!(wait_until(|| records.flows().len() > before));
+    let next = records.flows()[before].clone();
+    assert_eq!(next.acks, 1);
+    assert_eq!(next.ack_bytes, 50);
+    assert_eq!(next.read_bytes, 0);
+    assert_eq!(next.max_unacked, 400);
+    assert_eq!(next.unacked, 350);
+}
+
+#[test]
+fn 未処理の量の最大値と読み取りを止めた回数を記録する() {
+    let (f, records, clock) = verify_fixture(OutputMode::Endless(4096));
+    let config = test_config();
+    f.connect(&CollectSink::new());
+    assert!(wait_until(|| f
+        .registry
+        .backlog(&f.id)
+        .is_some_and(|b| b.paused)));
+
+    // 画面が通知を返さないまま(ウィンドウが隠れて止まった場合)でも、止まっていることが記録に出る。
+    clock.advance(INTERVAL.as_millis() as u64);
+    assert!(
+        wait_until(|| !records.flows().is_empty()),
+        "まとめが届かなかった"
+    );
+    let summary = records.flows()[0].clone();
+    assert_eq!(summary.acks, 0);
+    assert_eq!(summary.last_ack_ago_ms, None);
+    assert!(summary.paused);
+    assert_eq!(summary.pauses, 1);
+    assert!(summary.max_unacked > config.high_water);
+    // 上限で頭打ちになる(メモリが増え続けない)。
+    assert!(summary.max_unacked <= config.high_water + config.read_buffer as u64);
+    assert_eq!(summary.peak_unacked, summary.max_unacked);
+    assert_eq!(summary.unacked, summary.max_unacked);
 }

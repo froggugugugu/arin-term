@@ -9,6 +9,7 @@ pub mod diagnostics;
 pub mod launch;
 pub mod lifecycle;
 pub mod sessions;
+pub mod verify_log;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -62,12 +63,14 @@ pub fn builder_with_pty<R: Runtime>(
                 // 画面がまだ無いときなどは送れない。写しは画面が取得のコマンドでも取れるので捨ててよい。
                 let _ = handle.emit(SNAPSHOT_EVENT, snapshot);
             });
-            app.manage(SessionRegistry::new(
+            // 検証用の記録は開発ビルドだけ(リリースビルドでは `None`。T23)。
+            app.manage(SessionRegistry::with_verify(
                 workspace,
                 pty,
                 probe,
                 listener,
                 SessionConfig::default(),
+                verify_log::default_verify(),
             ));
             Ok(())
         })
