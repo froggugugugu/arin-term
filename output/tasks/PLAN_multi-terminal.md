@@ -217,7 +217,7 @@ M1 は検証専用(PRD §7)。対象は単一プロジェクト・単一タブ�
   - 並行: 可
   - 先に書くテスト(このタスク自体がテスト): 偽のチャネルから流した文字が画面に出る。キー入力が偽のコマンドに届く。ウィンドウの大きさを変えると行・桁数の通知が届く。10,000 行を超えて流したあと 10,000 行までさかのぼれる
   - 検証: `npm run e2e`
-- [ ] T20 — コピー・ペーストとキー入力の受け口を作る(変更ファイル: src/terminal/engine.ts, src/terminal/xterm/, src/ui/terminals/TerminalHost.tsx, src/logic/keys/, src-tauri/src/menu.rs, src-tauri/src/lib.rs | 依存: T18)
+- [x] T20 — コピー・ペーストとキー入力の受け口を作る(変更ファイル: src/terminal/engine.ts, src/terminal/xterm/, src/ui/terminals/TerminalHost.tsx, src/logic/keys/, src-tauri/src/menu.rs, src-tauri/src/lib.rs | 依存: T18)
   - 対応: FR-043(コピー・ペースト)、設計書 §2.2「キー入力」「コピーとペースト」。⌘C・⌘V は画面のコピー・ペーストのイベントで受ける案(設計書 §9.1)で作る。メニューバーは「編集」の最小だけ
   - ⌘ のショートカットと画面内のキー処理のどちらが先に受け取るか、Option と Ctrl の扱い、貼り付けの許可を求める吹き出しが出ないかは、実機でしか分からない。T26 で人間が見る
   - 並行: 可(T19・T23・T24 とファイルが重ならない。T21 とは `src/terminal/xterm/` が重なるので逐次)
@@ -229,7 +229,7 @@ M1 は検証専用(PRD §7)。対象は単一プロジェクト・単一タブ�
   - 並行: 可
   - 先に書くテスト: OSC 52 の検出(`ESC ] 52 ;` の列を見つける。チャンクの切れ目をまたいでも見つける。OSC 9 や 777 を数えない)を `arin-core` の単体テストで。この走査は M4・M6 のアテンションの走査器の土台にする
   - 検証: `npm test && npm run lint`
-- [ ] T24 — 性能の計測スクリプトを作る(記録だけ)(変更ファイル: scripts/perf/, crates/arin-platform/tests/perf_pty.rs | 依存: T18)
+- [x] T24 — 性能の計測スクリプトを作る(記録だけ)(変更ファイル: scripts/perf/, crates/arin-platform/tests/perf_pty.rs | 依存: T18)
   - 対応: NFR-004(`cat` で 10 万行)、NFR-009 の簡易確認、設計書 §2.2「流量制御」。出力先は `testreport/perf/`。合否にしない
   - 自動で測れるのは Rust 側(PTY から送り先までの所要時間、未処理の量が上限で頭打ちになること)と、起動中のアプリのメモリ(`footprint`)。画面の反応は人間が見る
   - 並行: 可
