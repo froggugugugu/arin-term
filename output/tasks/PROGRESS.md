@@ -16,7 +16,7 @@
 
 | 項目 | 内容 |
 | ---- | ---- |
-| 最終更新 | 2026-11-14(T1〜T7 完了。次は T8、T9) |
+| 最終更新 | 2026-11-15(T1〜T9 完了。T10 作業中。次は T11) |
 | ブランチ | `feat/m0-skeleton`(`docs/prd-multi-terminal` から分岐) |
 | 最後のコミット | `9de71c4 chore: project-config の技術スタックとコマンドを Tauri 向けに更新`(本ファイルと PLAN は未コミット) |
 | 起動コマンド | `npm run dev`(開発用)。`.app` は `npm run app` で `target/aarch64-apple-darwin/release/bundle/macos/Arin.app` にできる |
@@ -39,8 +39,8 @@
 | T5 | Tauri のアプリ本体と空ウィンドウ | ワークスペースのビルドとテストが通る。Bundle ID が `com.froggugugugu.arin`、最低 OS が 15.0、対象が arm64 | ✅ 2026-11-14(模擬ランタイムのテスト 1 件合格。空ウィンドウの目視は未実施で T13 で行う) |
 | T6 | 境界検査スクリプト | `node --test scripts/` が通る。違反を仕込んだ見本で検査が失敗する | ✅ 2026-11-14(`node --test "scripts/*.test.mjs"` で 32 件合格。`node --test scripts/` は Node 24 で動かないため glob に変更) |
 | T7 | 検証コマンドの npm スクリプト | `npm run build`・`npm test`・`npm run lint`・`npm run app` が終了コード 0。`.app` ができる | ✅ 2026-11-14(`npm run build`・`npm test`・`npm run lint`・`npm run app` が終了コード 0。`.app` を生成。整形違反で lint が失敗することを確認) |
-| T8 | 型の生成と通信の包みの最小 | 画面が Rust から状態の写しを取得できる。生成した型を作り直しても差分が出ない | ❌ |
-| T9 | カバレッジ付きテスト | `npm run test:coverage` が通り、`testreport/coverage/` に Rust と TypeScript の結果がある | ❌ |
+| T8 | 型の生成と通信の包みの最小 | 画面が Rust から状態の写しを取得できる。生成した型を作り直しても差分が出ない | ✅ 2026-11-14(`ts-rs` 12.0.1。Vitest 8 件、Rust 8 件合格。再生成は `npm run gen:types`) |
+| T9 | カバレッジ付きテスト | `npm run test:coverage` が通り、`testreport/coverage/` に Rust と TypeScript の結果がある | ✅ 2026-11-14(`cargo-llvm-cov` 0.9.1。行 80% を `src/logic` と `arin-core` のそれぞれに課す。現状はどちらも 100%) |
 | T10 | 実アプリの起動スモーク | `npm run smoke` が、一時の状態フォルダで `.app` を起動し、準備完了を確かめて終了コード 0 で終わる。本物の `~/Library/Application Support/Arin/` を作らない | ❌ |
 | T11 | Playwright の骨格 | `npm run e2e` で、画面が開き `AppShell` が表示され、偽の Rust 側に準備完了が 1 回届く | ❌ |
 | T12 | CI | `.github/workflows/ci.yml` が lint・test・build・e2e を実行する | ❌ |

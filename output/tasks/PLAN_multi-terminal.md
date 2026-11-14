@@ -124,13 +124,13 @@
 
 #### Phase 5(並行可能。Phase 4 完了後)
 
-- [ ] T8 — Rust と TypeScript の型合わせ(`ts-rs`)と、通信の包みの最小を作る(変更ファイル: crates/arin-core/Cargo.toml, crates/arin-core/src/workspace/, src-tauri/src/commands/app.rs, src-tauri/src/lib.rs, src/ipc/, src/ipc/generated/, src/state/appStore.ts, src/test/fakeIpc.ts, Cargo.lock | 依存: T7)
+- [x] T8 — Rust と TypeScript の型合わせ(`ts-rs`)と、通信の包みの最小を作る(変更ファイル: crates/arin-core/Cargo.toml, crates/arin-core/src/workspace/, src-tauri/src/commands/app.rs, src-tauri/src/lib.rs, src/ipc/, src/ipc/generated/, src/state/appStore.ts, src/test/fakeIpc.ts, Cargo.lock | 依存: T7)
   - 対応: 設計書 §15.1 #7(`ts-rs` で生成)、§5.2(状態の写し `AppSnapshot`、準備完了の通知、写しの取得)。`AppSnapshot` は中身が空に近い最小の形でよい
   - 型の置き場所は T1 の決定に従う(§リスク #1)
   - 並行: 可(T9 とファイルが重ならない)
   - 先に書くテスト: Rust は「写しの取得コマンドが `AppSnapshot` を返す」(`src-tauri/tests/`)。TypeScript は「`src/ipc` の包みが偽の通信に正しい名前と引数で届く」「`appStore` が届いた写しで丸ごと置き換わる」(Vitest)。生成した型が最新であること(生成し直して差分が出ない)を確かめるテストも足す
   - 検証: `npm test && npm run lint && npm run build`
-- [ ] T9 — カバレッジ付きテストを用意する(変更ファイル: vite.config.ts, scripts/coverage.mjs | 依存: T7)
+- [x] T9 — カバレッジ付きテストを用意する(変更ファイル: vite.config.ts, scripts/coverage.mjs | 依存: T7)
   - 対応: C-15、設計書 §15.1 #8(80% を `arin-core` と `src/logic` のそれぞれで見る)。出力先は `testreport/coverage/`
   - `cargo-llvm-cov` の導入(`cargo install cargo-llvm-cov`)は手元の環境に道具を足すので、実行前に本人に伝える。この Mac には入っていない(`ARCH_multi-terminal.md:117`)
   - 並行: 可(T8 とファイルが重ならない)
