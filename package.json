@@ -11,6 +11,7 @@
     "build:web": "tsc -b && vite build",
     "test": "vitest run && cargo test --workspace --locked && node --test \"scripts/*.test.mjs\"",
     "test:coverage": "node scripts/coverage.mjs",
+    "gen:types": "ARIN_UPDATE_GENERATED=1 cargo test -p arin-core --locked --test generated_types",
     "lint": "tsc -b && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo fmt --check && node scripts/check-boundaries.mjs",
     "app": "tauri build --target aarch64-apple-darwin",
     "dev": "tauri dev",

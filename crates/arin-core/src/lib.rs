@@ -5,6 +5,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod workspace;
+
 /// このクレートの版。
 #[must_use]
 pub fn version() -> &'static str {

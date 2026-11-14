@@ -11,3 +11,5 @@ publish.workspace = true
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+# 型の生成だけに使う。ファイルへの書き出しはテスト(tests/generated_types.rs)から行い、製品コードは入出力をしない。
+ts-rs = { workspace = true }

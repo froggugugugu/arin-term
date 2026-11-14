@@ -32,3 +32,8 @@ tauri = { workspace = true, features = ["test"] }
 [[test]]
 name = "app_builder"
 harness = false
+
+# コマンドを模擬ランタイムで画面から呼ぶテスト。理由は app_builder と同じ。
+[[test]]
+name = "app_commands"
+harness = false

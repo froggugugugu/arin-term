@@ -14,6 +14,9 @@ arin-platform = { path = "crates/arin-platform" }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
 thiserror = "=2.0.21"
+# Rust の型から TypeScript の型を生成する(ADR-006)。12.0.1 は 2026-01-31 公開。
+# 既定の機能は serde の属性(rename_all など)を読む serde-compat だけ。日付やフォーマッタなどの機能は入れない。
+ts-rs = { version = "=12.0.1", default-features = false, features = ["serde-compat"] }
 # Tauri の本体とビルド補助。npm 側の @tauri-apps/cli・@tauri-apps/api 2.12.4 と同じ系列。
 # 機能は既定のまま。ネットワークに出られるプラグイン(HTTP、updater、shell など)は入れない(NFR-008)。
 tauri = { version = "=2.12.5" }
