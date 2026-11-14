@@ -1,4 +1,4 @@
 {
   "files": [],
-  "references": [{ "path": "./src/logic" }, { "path": "./src" }]
+  "references": [{ "path": "./src/logic" }, { "path": "./src" }, { "path": "./e2e" }]
 }
