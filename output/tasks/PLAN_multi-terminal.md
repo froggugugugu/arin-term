@@ -187,7 +187,7 @@ M1 は検証専用(PRD §7)。対象は単一プロジェクト・単一タブ�
 
 #### Phase 10(逐次。T14 完了後)
 
-- [ ] T15 — PTY の実装(`portable-pty`)と実 PTY の結合テストを書く(変更ファイル: Cargo.lock, crates/arin-platform/Cargo.toml, crates/arin-platform/src/pty/, crates/arin-platform/src/lib.rs, crates/arin-platform/tests/pty.rs | 依存: T14)
+- [x] T15 — PTY の実装(`portable-pty`)と実 PTY の結合テストを書く(変更ファイル: Cargo.lock, crates/arin-platform/Cargo.toml, crates/arin-platform/src/pty/, crates/arin-platform/src/lib.rs, crates/arin-platform/tests/pty.rs | 依存: T14)
   - 対応: FR-039、FR-040、FR-043(寸法の変更)、NFR-006。`portable-pty` は 0.9.0 に固定。シェルはユーザー情報に登録された既定のシェルを使う(環境変数 `SHELL` だけに頼らない)
   - 並行: 不可(T16 とは並行できる)
   - 先に書くテスト(実 PTY。直列で実行し、待ち時間に上限を付ける): ログインシェルとして起動する(`argv[0]` が `-zsh` の形)。cwd が指定のフォルダ。`PATH` が、同じ最小の環境から `zsh -l` で得た値と同じ(AC-M02 の自動テスト版。`which claude` は T26 で人間が見る)。行・桁数の変更がシェルに届く。2 枚起動して 1 枚を終了させても、もう 1 枚が入出力を続ける(NFR-006)
@@ -195,7 +195,7 @@ M1 は検証専用(PRD §7)。対象は単一プロジェクト・単一タブ�
 
 #### Phase 11(逐次。T15 完了後)
 
-- [ ] T17 — セッション管理(読み取りスレッド、出力のまとめ、流量制御)とターミナルのコマンドを書く(変更ファイル: crates/arin-core/src/terminal/, crates/arin-core/src/workspace/, src-tauri/src/sessions.rs, src-tauri/src/commands/terminal.rs, src-tauri/src/lib.rs, src-tauri/tests/ | 依存: T15)
+- [x] T17 — セッション管理(読み取りスレッド、出力のまとめ、流量制御)とターミナルのコマンドを書く(変更ファイル: crates/arin-core/src/terminal/, crates/arin-core/src/workspace/, src-tauri/src/sessions.rs, src-tauri/src/commands/terminal.rs, src-tauri/src/lib.rs, src-tauri/tests/ | 依存: T15)
   - 対応: FR-043、NFR-004、NFR-006。設計書 §1.3 #2・#3、§7.1「ターミナルの入出力」。コマンドは 接続(出力チャネルを渡す)・入力の書き込み・処理済みの量の通知・寸法の変更。PTY は最初の接続のときに起動する。流量制御のしきい値は仮の値を置き、T26 の結果で決める
   - 並行: 不可
   - 先に書くテスト(偽の `PtyPort` と偽の送り先): 出力が順序どおりに届く。未処理の量が上限を超えたら読み取りが止まり、処理済みの通知で再開する。接続の前の出力を取りこぼさない。コマンドが `Workspace` を呼び、状態の写しにターミナルが 1 枚載る
