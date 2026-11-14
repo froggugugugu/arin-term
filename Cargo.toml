@@ -21,6 +21,8 @@ ts-rs = { version = "=12.0.1", default-features = false, features = ["serde-comp
 # 機能は既定のまま。ネットワークに出られるプラグイン(HTTP、updater、shell など)は入れない(NFR-008)。
 tauri = { version = "=2.12.5" }
 tauri-build = { version = "=2.7.4" }
+# PTY を開いてシェルを起動する(ADR-004)。使うのは arin-platform/src/pty/ だけ。0.9.0 は 2025-02 公開。
+portable-pty = "=0.9.0"
 
 # リリースのプロファイルに panic = "abort" を書かない。
 # 1 本のスレッドの異常でアプリ全体を落とさないため(NFR-006)。

@@ -82,7 +82,8 @@ pub trait PtySession: Send {
     /// 変えられなかったとき(`PtyError::Resize`)。
     fn resize(&mut self, size: PtySize) -> Result<(), PtyError>;
 
-    /// シェルを終了させる。終わるのは待たない(終わったかは `try_wait` で見る)。
+    /// シェルを終了させる。終わるまで短い時間(実装では最大でおよそ 200 ミリ秒)待つことがある。
+    /// 終わったかは `try_wait` で見る。既に終わっていれば何もしない。
     ///
     /// # Errors
     ///

@@ -8,3 +8,4 @@ publish.workspace = true
 
 [dependencies]
 arin-core = { workspace = true }
+portable-pty = { workspace = true }
