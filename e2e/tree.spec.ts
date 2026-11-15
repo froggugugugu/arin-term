@@ -417,8 +417,13 @@ test.describe("仮想スクロール(NFR-005、ADR-007 の (c))", () => {
       el.scrollTop += 37;
     });
     await expect(row(page, "big/file-005001.txt")).toBeVisible();
-    const tops = await rows(page).evaluateAll((elements) => elements.map((el) => el.getBoundingClientRect().top));
-    for (let i = 1; i < tops.length; i++) expect(Math.round((tops[i] ?? 0) - (tops[i - 1] ?? 0))).toBe(22);
+    // スクロールの直後は、窓の描き直しが済む前の並びが一瞬見えることがあるので、落ち着いた並びを待って確かめる。
+    const gaps = () =>
+      rows(page).evaluateAll((elements) => {
+        const tops = elements.map((el) => el.getBoundingClientRect().top);
+        return [...new Set(tops.slice(1).map((t, i) => Math.round(t - (tops[i] ?? 0))))];
+      });
+    await expect.poll(gaps).toEqual([22]);
   });
 });
 
