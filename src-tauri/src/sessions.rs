@@ -29,6 +29,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError, TryLockE
 use std::thread;
 use std::time::{Duration, Instant};
 
+use arin_core::layout::tiles::DisplayMode;
 use arin_core::persistence::codec::PersistedState;
 use arin_core::ports::{Foreground, PtyError, PtyPort, PtySession, SpawnedPty};
 use arin_core::project::{ProjectColor, ProjectError, ProjectId, RootReference};
@@ -725,6 +726,69 @@ impl SessionRegistry {
         if changed {
             self.notify();
         }
+    }
+
+    /// 右ペインの表示モードを変える(FR-048。計画書 T47b)。変わったときだけ写しを送り `true` を返す
+    /// (写しを送ると保存が予約され、状態ファイルの `ui.displayMode` が書かれる)。タブ表示にすると拡大は解ける。
+    pub fn set_display_mode(&self, mode: DisplayMode) -> bool {
+        let changed = lock(&self.inner.workspace).set_display_mode(mode);
+        if changed {
+            self.notify();
+        }
+        changed
+    }
+
+    /// 表示モードをもう一方にする(メニューバーの「表示」の切替。T47c が使う)。必ず変わるので写しを送り `true` を返す。
+    pub fn toggle_display_mode(&self) -> bool {
+        let changed = lock(&self.inner.workspace).toggle_display_mode();
+        if changed {
+            self.notify();
+        }
+        changed
+    }
+
+    /// タイルにフォーカスする(FR-053、AC-M15)。そのタブのプロジェクトを選び、そのタブを表示中にする。
+    /// 選択か表示中のタブが変わったときだけ写しを送り `true` を返す(プロジェクトが替わればツリーの監視は写しで張り替わる)。
+    ///
+    /// # Errors
+    ///
+    /// その ID のタブが無いとき、持ち主のプロジェクトが無いタブのとき。何も変えず、写しも送らない。
+    pub fn focus_terminal(&self, id: &TerminalId) -> Result<bool, SessionError> {
+        let changed = lock(&self.inner.workspace).focus_terminal(id)?;
+        if changed {
+            self.notify();
+        }
+        Ok(changed)
+    }
+
+    /// 次のページへ送り、その先頭のタイルにフォーカスする(FR-052)。送れたときだけ写しを送り `true` を返す。
+    /// タブ表示・拡大中・最後のページでは何もしない。
+    pub fn next_tile_page(&self) -> bool {
+        let changed = lock(&self.inner.workspace).next_page();
+        if changed {
+            self.notify();
+        }
+        changed
+    }
+
+    /// 前のページへ送り、その先頭のタイルにフォーカスする(FR-052)。送れたときだけ写しを送り `true` を返す。
+    /// タブ表示・拡大中・最初のページでは何もしない。
+    pub fn previous_tile_page(&self) -> bool {
+        let changed = lock(&self.inner.workspace).previous_page();
+        if changed {
+            self.notify();
+        }
+        changed
+    }
+
+    /// フォーカス中のタイルを拡大する、または拡大を解く(FR-054)。変わったときだけ写しを送り `true` を返す。
+    /// タブ表示のとき・フォーカス中のタイルが無いときは何もしない。
+    pub fn toggle_tile_maximize(&self) -> bool {
+        let changed = lock(&self.inner.workspace).toggle_maximize();
+        if changed {
+            self.notify();
+        }
+        changed
     }
 
     /// Workspace から外したタブのセッションを一覧から外し、写しを送ってから終わらせる(待つのはロックの外)。

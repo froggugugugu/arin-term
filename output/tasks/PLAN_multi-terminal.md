@@ -1232,7 +1232,7 @@ T46〜T50 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 30a(並行可能。T47a・T48b 完了後)
 
-- [ ] T47b — 表示のコマンド(変更ファイル: src-tauri/src/commands/layout.rs, src-tauri/src/sessions.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/display_commands.rs, src-tauri/tests/app_persistence.rs, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T46c, T47a, T48b)
+- [x] T47b — 表示のコマンド(変更ファイル: src-tauri/src/commands/layout.rs, src-tauri/src/sessions.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/display_commands.rs, src-tauri/tests/app_persistence.rs, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T46c, T47a, T48b)
   - 対応: FR-048・FR-052〜054 のコマンド、FR-002・FR-053(ツリーの監視の張り替え)、設計書 §5.2「表示」の案、ADR-011、前提 (a)(c)
   - コマンド: `set_display_mode`(モード)、`focus_terminal`(ターミナル ID)、`next_tile_page`・`previous_tile_page`、`toggle_tile_maximize`。`SessionRegistry` に同名の口を足し、変わったら写しを送る(保存はモードが変わったときだけ予約される。写しの中身から保存の内容を作る既存の作りのまま)
   - 監視: タイルのクリックでプロジェクトが替わると `tree_watch.rs` が写しで張り替える(作りは変えない)。同じプロジェクトの中を移るだけなら張り替えないことを確かめる

@@ -124,3 +124,9 @@ harness = false
 [[test]]
 name = "desktop_commands"
 harness = false
+
+# 表示のコマンド(表示モードの切替・タイルへのフォーカス・ページ送り・拡大。T47b)。状態フォルダに 2 プロジェクトの state.json を置き、
+# 監視は偽物にして、写しの送り・状態ファイルの表示モード・ツリーの監視の張り替えを模擬のアプリで確かめる。理由は app_builder と同じ。
+[[test]]
+name = "display_commands"
+harness = false

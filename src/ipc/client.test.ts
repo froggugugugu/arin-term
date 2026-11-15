@@ -469,6 +469,56 @@ describe("ペインの寸法", () => {
   });
 });
 
+describe("表示のコマンド", () => {
+  it("表示モードの切替は_set_display_mode_に_mode_で届く", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.setDisplayMode("tiles")).resolves.toBeUndefined();
+    await expect(ipc.setDisplayMode("tabs")).resolves.toBeUndefined();
+
+    expect(fake.calls).toEqual([
+      { command: "set_display_mode", args: { mode: "tiles" } },
+      { command: "set_display_mode", args: { mode: "tabs" } },
+    ]);
+  });
+
+  it("タイルへのフォーカスは_focus_terminal_に_camelCase_の引数で届く", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.focusTerminal("t2")).resolves.toBeUndefined();
+
+    expect(fake.calls).toEqual([{ command: "focus_terminal", args: { terminalId: "t2" } }]);
+  });
+
+  it("ページ送りと拡大は引数なしで届く", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.nextTilePage()).resolves.toBeUndefined();
+    await expect(ipc.previousTilePage()).resolves.toBeUndefined();
+    await expect(ipc.toggleTileMaximize()).resolves.toBeUndefined();
+
+    expect(fake.calls).toEqual([
+      { command: "next_tile_page", args: undefined },
+      { command: "previous_tile_page", args: undefined },
+      { command: "toggle_tile_maximize", args: undefined },
+    ]);
+  });
+
+  it("知らないターミナルへのフォーカスの失敗はそのまま返す", async () => {
+    const fake = createFakeIpc({
+      focus_terminal: () => {
+        throw "ターミナル terminal-x が見つからない";
+      },
+    });
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.focusTerminal("terminal-x")).rejects.toBe("ターミナル terminal-x が見つからない");
+  });
+});
+
 describe("connectTerminal", () => {
   it("接続の応答(寸法を反映したか)を connected で返す", async () => {
     const fake = createFakeIpc({ connect_terminal: () => ({ sizeApplied: false }) });

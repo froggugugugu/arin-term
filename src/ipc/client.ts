@@ -6,6 +6,7 @@ import type { AppSnapshot } from "./generated/AppSnapshot";
 import type { ConflictResolution } from "./generated/ConflictResolution";
 import type { ConnectOutcome } from "./generated/ConnectOutcome";
 import type { DirListing } from "./generated/DirListing";
+import type { DisplayMode } from "./generated/DisplayMode";
 import type { FileOpOutcome } from "./generated/FileOpOutcome";
 import type { LaunchOptions } from "./generated/LaunchOptions";
 import type { MenuCommand } from "./generated/MenuCommand";
@@ -58,6 +59,12 @@ export interface CommandMap {
   copy_project_path: { args: { projectId: ProjectId }; result: null };
   set_pane_sizes: { args: { sidebarWidth: number; cardAreaHeight: number }; result: null };
   set_sidebar_collapsed: { args: { collapsed: boolean }; result: null };
+  /** 右ペインの表示(T47b)。結果は写しの display で届く。状態が変わったときだけ写しが送られる。 */
+  set_display_mode: { args: { mode: DisplayMode }; result: null };
+  focus_terminal: { args: { terminalId: TerminalId }; result: null };
+  next_tile_page: { args: undefined; result: null };
+  previous_tile_page: { args: undefined; result: null };
+  toggle_tile_maximize: { args: undefined; result: null };
   /** path はルート基準の相対パス(ルートは空の文字列)。絶対パス・`..` は Rust が拒否する。 */
   list_directory: { args: { projectId: ProjectId; path: RelPath }; result: DirListing };
   set_show_hidden: { args: { projectId: ProjectId; showHidden: boolean }; result: null };
@@ -233,6 +240,23 @@ export interface ArinIpc {
   setPaneSizes(sidebarWidth: number, cardAreaHeight: number): Promise<void>;
   /** 左ペインを折りたたむ・戻す。幅は Rust が覚えている。 */
   setSidebarCollapsed(collapsed: boolean): Promise<void>;
+  /*
+   * 右ペインの表示(FR-048・FR-052〜054)。グリッド・ページ・フォーカス・拡大の規則は Rust が持ち、結果は写しの display で届く。
+   * 状態が変わらない呼び出し(同じモード、端のページ送り、タブ表示でのページ送りと拡大)では写しは送られない。
+   */
+  /** 表示モード(tabs / tiles)を変える。変わったら保存が予約される(ui.displayMode)。タブ表示にすると拡大は解ける。 */
+  setDisplayMode(mode: DisplayMode): Promise<void>;
+  /**
+   * タイルにフォーカスする(タイルのクリック)。そのタブのプロジェクトが選ばれ、そのタブが表示中になる(ツリーも切り替わる)。
+   * 知らない ID・持ち主の無いタブは失敗する。
+   */
+  focusTerminal(id: TerminalId): Promise<void>;
+  /** 次のページへ送り、その先頭のタイルにフォーカスする。タブ表示・拡大中・最後のページでは何もしない。 */
+  nextTilePage(): Promise<void>;
+  /** 前のページへ送り、その先頭のタイルにフォーカスする。タブ表示・拡大中・最初のページでは何もしない。 */
+  previousTilePage(): Promise<void>;
+  /** フォーカス中のタイルを拡大する、または拡大を解く。タブ表示では何もしない。 */
+  toggleTileMaximize(): Promise<void>;
   /**
    * フォルダの中身を問い合わせる(ツリーの展開)。path はルート基準の相対パスで、ルートは空の文字列。
    * Rust が除外(隠しファイル表示が OFF のとき)と並び順を当てて返す。プロジェクトやフォルダが見つからなければ notFound、
@@ -403,6 +427,11 @@ export function createIpc(transport: IpcTransport): ArinIpc {
     setPaneSizes: (sidebarWidth, cardAreaHeight) =>
       done(invoke("set_pane_sizes", { sidebarWidth, cardAreaHeight })),
     setSidebarCollapsed: (collapsed) => done(invoke("set_sidebar_collapsed", { collapsed })),
+    setDisplayMode: (mode) => done(invoke("set_display_mode", { mode })),
+    focusTerminal: (terminalId) => done(invoke("focus_terminal", { terminalId })),
+    nextTilePage: () => done(invoke("next_tile_page", undefined)),
+    previousTilePage: () => done(invoke("previous_tile_page", undefined)),
+    toggleTileMaximize: () => done(invoke("toggle_tile_maximize", undefined)),
     listDirectory: (projectId, path) => invoke("list_directory", { projectId, path }),
     setShowHidden: (projectId, showHidden) => done(invoke("set_show_hidden", { projectId, showHidden })),
     onTreeChanged: (listener) => transport.listen("tree-changed", listener),

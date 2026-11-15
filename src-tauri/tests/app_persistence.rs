@@ -1,4 +1,5 @@
-//! 起動時の状態ファイルの読み込み、保存、退避の知らせ(計画書 T33a、FR-004・FR-056、決定 (d))を、
+//! 起動時の状態ファイルの読み込み、保存、退避の知らせ(計画書 T33a、FR-004・FR-056、決定 (d))と、
+//! 表示モードの保存と再起動での復元(計画書 T47b、FR-048)を、
 //! Tauri の模擬ランタイムと一時の状態フォルダで確かめる。
 //!
 //! 状態ファイル・ブックマーク・ルートの調査は本物(`arin-platform`)を使い、すべて一時フォルダの中で行う。
@@ -16,6 +17,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use arin_core::layout::tiles::DisplayMode;
 use arin_core::persistence::codec::{LoadOutcome, decode};
 use arin_core::ports::clock::Clock;
 use arin_core::ports::state_file::{StateFileError, StateFilePort, StateFileRead};
@@ -26,7 +28,8 @@ use arin_lib::launch::LaunchConfig;
 use arin_lib::persistence::PersistencePorts;
 use arin_lib::sessions::{SessionRegistry, ShellDefaults};
 use arin_platform::storage::FsStateFile;
-use tauri::test::MockRuntime;
+use tauri::ipc::InvokeBody;
+use tauri::test::{MockRuntime, get_ipc_response};
 use tauri::{AppHandle, Manager, RunEvent};
 
 /// 書かれるのを待つ上限。
@@ -430,8 +433,57 @@ fn 検証画面では読まず書かない() {
     );
 }
 
+/// 表示モードの保存と復元(FR-048 の AC。計画書 T47b)。1 回目の起動で `set_display_mode` のコマンドでタイル表示にして終え、
+/// 2 回目の起動がタイル表示で開くことを確かめる。ページと拡大中は保存しない(2 回目は拡大していない)。
+fn 再起動すると前の表示モードで開く() {
+    let fx = Fixture::new("persist-display-mode");
+    fx.write_project_state();
+    run_app(fx.launch(), fx.frozen_ports(), |handle| {
+        assert_eq!(snapshot(handle).display.mode, DisplayMode::Tabs);
+        let window = handle
+            .get_webview_window("main")
+            .expect("設定にあるウィンドウ main が作られなかった");
+        get_ipc_response(
+            &window,
+            support::request_with(
+                handle,
+                "set_display_mode",
+                InvokeBody::Json(serde_json::json!({ "mode": "tiles" })),
+            ),
+        )
+        .unwrap_or_else(|e| panic!("set_display_mode が失敗した: {e}"));
+        get_ipc_response(
+            &window,
+            support::request_with(
+                handle,
+                "toggle_tile_maximize",
+                InvokeBody::Json(serde_json::json!({})),
+            ),
+        )
+        .unwrap_or_else(|e| panic!("toggle_tile_maximize が失敗した: {e}"));
+        let s = snapshot(handle);
+        assert_eq!(s.display.mode, DisplayMode::Tiles);
+        assert!(s.display.maximized);
+    });
+    let text = fs::read_to_string(fx.state_file()).expect("状態ファイルを読めなかった");
+    let saved: serde_json::Value = serde_json::from_str(&text).expect("状態ファイルが JSON でない");
+    assert_eq!(saved["ui"]["displayMode"], "tiles", "{text}");
+
+    run_app(fx.launch(), fx.frozen_ports(), |handle| {
+        let s = snapshot(handle);
+        assert_eq!(s.projects.len(), 1, "{s:?}");
+        assert_eq!(
+            s.display.mode,
+            DisplayMode::Tiles,
+            "前の表示モードで開かない"
+        );
+        assert!(!s.display.maximized, "拡大中まで戻った");
+        assert_eq!(s.display.page, 0);
+    });
+}
+
 fn main() {
-    let tests: [(&str, fn()); 8] = [
+    let tests: [(&str, fn()); 9] = [
         (
             "状態ファイルが無ければ空で始まる",
             状態ファイルが無ければ空で始まる,
@@ -455,6 +507,10 @@ fn main() {
             ウィンドウが前面でなくなったら待たずに書かれる,
         ),
         ("検証画面では読まず書かない", 検証画面では読まず書かない),
+        (
+            "再起動すると前の表示モードで開く",
+            再起動すると前の表示モードで開く,
+        ),
     ];
     for (name, test) in tests {
         test();
