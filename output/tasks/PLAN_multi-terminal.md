@@ -1330,7 +1330,7 @@ T46〜T50 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 31d(逐次。人間ゲート)
 
-- [ ] T50a — M4 の合否一覧と人間の確認(変更ファイル: output/reports/test/M4_acceptance.md, output/tasks/PROGRESS.md, output/design/ADR_011_tile-view.md | 依存: T49d)
+- [x] T50a — M4 の合否一覧と人間の確認(変更ファイル: output/reports/test/M4_acceptance.md, output/tasks/PROGRESS.md, output/design/ADR_011_tile-view.md | 依存: T49d)
   - AI がやること: `npm run build && npm test && npm run lint && npm run test:coverage && npm run e2e && npm run app && npm run smoke && node scripts/smoke.mjs --tiles && npm run perf` を通し、下の対応表に沿って AC の合否一覧を `output/reports/test/M4_acceptance.md` と `testreport/` に出す。NFR-009 の記録(T49b)を載せる(合否にしない)。人間に渡す確かめ方(9 プロジェクトの `state.json` の置き方、`ARIN_RENDERER=webgl`・`ARIN_UNICODE=graphemes` での起動の仕方)を書く。fresh context の `/code-review` と `verifier` を 1 回ずつ回す
   - **人間がやること**(`npm run app` で作った `.app` を Finder から開く): (1) **9 枚同時表示の体感**: 9 枚で Claude Code などを動かし、いくつかで `yes` などの大量の出力を流しながら、ページ送り・タイルのクリック・入力が我慢できる速さか(NFR-009。M4 の人間ゲート)。(2) **描画方式と全角幅の方式**: 既定(DOM、`unicode11`)と `ARIN_RENDERER=webgl`・`ARIN_UNICODE=graphemes` で同じことをして比べ、T49b の案を採るか選ぶ(ADR-001)。(3) タイル表示とタブ表示の切替(ボタンと ⇧⌘G)、再起動後に同じ表示で開く(FR-048)。(4) ページ送り(前後のボタンと ⌥⌘← ⌥⌘→)、10 枚で `1/2`(FR-052)。(5) 別のプロジェクトのタイルのクリックでカードとツリーが替わる(AC-M15)、カードを選ぶとそのページへ移る。(6) タイトルバーのダブルクリックと ⇧⌘↩ での拡大と戻し(FR-054)。(7) 隠れたタイル・別のページのタイルで `printf '\a'` を実行すると印が付き、表示すると消える(FR-055)。Claude Code の入力待ちで印が付くか(参考。§15.3 #12 は M6)。(8) ツリーからタイルへのドラッグと ⌘↩ の挿入の宛先(フォーカス中のタイル。別のプロジェクトのタイルへは絶対パス)。(9) タイルのタイトルバー・ページ表示・切替のボタン・印の見た目(ライトとダーク、すりガラスの上。デザインの方針)。(10) M4 で足した 4 つのキーが US と JIS の配列で効き、ターミナルに渡らない(【仮定】9。合わなければ表の既定のキーを替える)
   - 完了条件: AC の合否一覧ができ、本人が (1)〜(10) を確かめ、(2) で描画方式と全角幅の方式を選んだ
