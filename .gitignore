@@ -11,3 +11,6 @@ testreport/
 node_modules/
 target/
 dist/
+
+# テスト実行ツールが作る一時の出力
+.vitest/
