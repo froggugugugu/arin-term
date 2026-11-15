@@ -148,6 +148,31 @@ describe("表の引き方", () => {
     expect(shortcutLabel([], "tree.trash")).toBeNull();
   });
 
+  it("既定の表に表示の_4_行がある", () => {
+    const view = DEFAULT_SHORTCUT_TABLE.filter((binding) => binding.command.startsWith("view."));
+    expect(view).toEqual([
+      { command: "view.toggle-display-mode", accelerator: "Cmd+Shift+G", receiver: "menu-item" },
+      { command: "view.previous-page", accelerator: "Cmd+Alt+ArrowLeft", receiver: "menu-item" },
+      { command: "view.next-page", accelerator: "Cmd+Alt+ArrowRight", receiver: "menu-item" },
+      { command: "view.toggle-maximize", accelerator: "Cmd+Shift+Enter", receiver: "menu-item" },
+    ]);
+    // 表の最後の 4 行(Rust の表と同じ順)
+    expect(DEFAULT_SHORTCUT_TABLE.slice(-4)).toEqual(view);
+    expect(DEFAULT_SHORTCUT_TABLE).toHaveLength(22);
+    // ツールチップに出すキーの表示(T47f が表から引く)
+    expect(shortcutLabel(DEFAULT_SHORTCUT_TABLE, "view.toggle-display-mode")).toBe("⇧⌘G");
+    expect(shortcutLabel(DEFAULT_SHORTCUT_TABLE, "view.previous-page")).toBe("⌥⌘←");
+    expect(shortcutLabel(DEFAULT_SHORTCUT_TABLE, "view.next-page")).toBe("⌥⌘→");
+    expect(shortcutLabel(DEFAULT_SHORTCUT_TABLE, "view.toggle-maximize")).toBe("⇧⌘↩");
+    // ⌥ を含むページ送りは物理的な位置で一致する
+    const previous = parseAccelerator("Cmd+Alt+ArrowLeft");
+    if (previous === null) throw new Error("読めない");
+    expect(previous).toEqual({ meta: true, shift: false, alt: true, ctrl: false, key: "ArrowLeft" });
+    expect(
+      matchesAccelerator(previous, chord("ArrowLeft", { metaKey: true, altKey: true, code: "ArrowLeft" })),
+    ).toBe(true);
+  });
+
   it("見本の表はすべての行が読める", () => {
     for (const binding of DEFAULT_SHORTCUT_TABLE) {
       expect(parseAccelerator(binding.accelerator), binding.command).not.toBeNull();

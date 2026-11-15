@@ -113,6 +113,27 @@ describe("terminalKeyOwner(M3 の表)", () => {
     expect(owner(chord("®", { metaKey: true, altKey: true, code: "KeyR" }))).toBe("terminal");
   });
 
+  it("表示の操作のキーはターミナルに渡さない", () => {
+    // ⇧⌘G(⇧ で key が大文字になる)・⌥⌘←・⌥⌘→・⇧⌘↩。表の受け口がメニューの項目なので、直書きせずに拾う
+    expect(owner(chord("G", { metaKey: true, shiftKey: true }))).toBe("app");
+    expect(owner(chord("g", { metaKey: true, shiftKey: true }))).toBe("app");
+    expect(owner(chord("ArrowLeft", { metaKey: true, altKey: true, code: "ArrowLeft" }))).toBe("app");
+    expect(owner(chord("ArrowRight", { metaKey: true, altKey: true, code: "ArrowRight" }))).toBe("app");
+    expect(owner(chord("Enter", { metaKey: true, shiftKey: true }))).toBe("app");
+    // 修飾キーが 1 つ違うものはターミナルに任せる(⌘↩ はツリーのパスの挿入で、ターミナルでは使わない)
+    expect(owner(chord("g", { metaKey: true }))).toBe("terminal");
+    expect(owner(chord("ArrowLeft", { metaKey: true, code: "ArrowLeft" }))).toBe("terminal");
+    expect(owner(chord("ArrowLeft", { altKey: true, code: "ArrowLeft" }))).toBe("terminal");
+    expect(owner(chord("ArrowRight", { metaKey: true, code: "ArrowRight" }))).toBe("terminal");
+    expect(owner(chord("Enter", { shiftKey: true }))).toBe("terminal");
+    // 表の行を外すとターミナルに任せる(キーは表から拾っている)
+    const withoutView = DEFAULT_SHORTCUT_TABLE.filter((binding) => !binding.command.startsWith("view."));
+    expect(ownerFromTable(withoutView, chord("Enter", { metaKey: true, shiftKey: true }))).toBe("terminal");
+    expect(
+      ownerFromTable(withoutView, chord("ArrowLeft", { metaKey: true, altKey: true, code: "ArrowLeft" })),
+    ).toBe("terminal");
+  });
+
   it("表が空ならすべてターミナルに任せる", () => {
     expect(ownerFromTable([], chord("c", { metaKey: true }))).toBe("terminal");
   });

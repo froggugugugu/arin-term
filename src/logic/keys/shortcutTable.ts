@@ -7,7 +7,7 @@
 //
 // キーの文字列は Tauri(muda)のアクセラレータの書式(`Cmd+Shift+N`)。修飾キーの順は問わない。
 
-/** コマンドの ID。文字列は M2 の `menu.rs` の ID と、M3 で足すもの(計画 T38d)。 */
+/** コマンドの ID。文字列は M2 の `menu.rs` の ID と、M3 で足すもの(計画 T38d)と、M4 の表示の操作(計画 T47a)。 */
 export type ShortcutCommandId =
   | "terminal.new-tab"
   | "terminal.close-tab"
@@ -26,7 +26,11 @@ export type ShortcutCommandId =
   | "tree.rename"
   | "tree.trash"
   | "tree.new-file"
-  | "tree.new-folder";
+  | "tree.new-folder"
+  | "view.toggle-display-mode"
+  | "view.previous-page"
+  | "view.next-page"
+  | "view.toggle-maximize";
 
 /**
  * キーの受け口(計画【仮定】21)。

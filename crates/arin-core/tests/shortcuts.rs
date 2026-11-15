@@ -14,7 +14,8 @@ fn chord(s: &str) -> KeyChord {
 /// 既定の表の期待値(コマンドの ID の文字列・キー・受け口。表の順)。
 ///
 /// キーは PRD §6.4 と M2 のメニュー(`src-tauri/src/menu.rs`)のとおり。受け口は【仮定】21。
-const EXPECTED_DEFAULTS: [(&str, &str, ShortcutReceiver); 18] = [
+/// 最後の 4 行は M4 の表示の操作(計画書 M4 の前提 (f)・【仮定】9、ADR-011 の 6。T47a)。
+const EXPECTED_DEFAULTS: [(&str, &str, ShortcutReceiver); 22] = [
     ("terminal.new-tab", "Cmd+T", MenuItem),
     ("terminal.close-tab", "Cmd+W", MenuItem),
     ("terminal.previous-tab", "Cmd+Shift+[", MenuItem),
@@ -33,6 +34,34 @@ const EXPECTED_DEFAULTS: [(&str, &str, ShortcutReceiver); 18] = [
     ("tree.trash", "Cmd+Backspace", Screen),
     ("tree.new-file", "Cmd+N", Screen),
     ("tree.new-folder", "Cmd+Shift+N", Screen),
+    ("view.toggle-display-mode", "Cmd+Shift+G", MenuItem),
+    ("view.previous-page", "Cmd+Alt+ArrowLeft", MenuItem),
+    ("view.next-page", "Cmd+Alt+ArrowRight", MenuItem),
+    ("view.toggle-maximize", "Cmd+Shift+Enter", MenuItem),
+];
+
+/// 表示の 4 行(コマンドの ID・ID の文字列・既定のキー・受け口)。
+const VIEW_ROWS: [(ShortcutCommandId, &str, &str); 4] = [
+    (
+        ShortcutCommandId::ViewToggleDisplayMode,
+        "view.toggle-display-mode",
+        "Cmd+Shift+G",
+    ),
+    (
+        ShortcutCommandId::ViewPreviousPage,
+        "view.previous-page",
+        "Cmd+Alt+ArrowLeft",
+    ),
+    (
+        ShortcutCommandId::ViewNextPage,
+        "view.next-page",
+        "Cmd+Alt+ArrowRight",
+    ),
+    (
+        ShortcutCommandId::ViewToggleMaximize,
+        "view.toggle-maximize",
+        "Cmd+Shift+Enter",
+    ),
 ];
 
 // ---- 既定の表 ----
@@ -129,6 +158,53 @@ fn id_の文字列は_m2_のメニューの_id_と同じ() {
 }
 
 #[test]
+fn 表示の_4_行の既定のキーと受け口() {
+    // ⇧⌘G・⌥⌘←・⌥⌘→・⇧⌘↩。受け口はどれもメニューの項目(メニューバーの「表示」は T47c で足す)。
+    let table = ShortcutTable::default_table();
+    for (id, _, key) in VIEW_ROWS {
+        let binding = table.get(id);
+        assert_eq!(binding.accelerator(), chord(key), "{id}");
+        assert_eq!(binding.accelerator().to_string(), key, "{id}");
+        assert_eq!(binding.receiver(), MenuItem, "{id}");
+    }
+    // 表の最後の 4 行がこの順で並ぶ(ID の順)。
+    let tail: Vec<ShortcutCommandId> = table.bindings()[table.bindings().len() - 4..]
+        .iter()
+        .map(ShortcutBinding::command)
+        .collect();
+    assert_eq!(tail, VIEW_ROWS.map(|(id, _, _)| id));
+    // ⇧ や ⌥ の無い似たキーとは別のキー(⇧⌘↩ は ⌘↩ のパスの挿入と重ならない。ADR-011 の 6)。
+    assert_ne!(
+        table
+            .get(ShortcutCommandId::ViewToggleMaximize)
+            .accelerator(),
+        table.get(ShortcutCommandId::TreeInsertPath).accelerator()
+    );
+    assert_ne!(chord("Cmd+Shift+G"), chord("Cmd+G"));
+    assert_ne!(chord("Cmd+Alt+ArrowLeft"), chord("Cmd+ArrowLeft"));
+}
+
+#[test]
+fn 表示の_4_行の_id_の文字列() {
+    for (id, text, _) in VIEW_ROWS {
+        assert_eq!(id.as_str(), text);
+        assert_eq!(id.to_string(), text);
+        assert_eq!(ShortcutCommandId::from_id(text), Some(id));
+        assert_eq!(
+            serde_json::to_value(id).expect("ID を JSON にできなかった"),
+            serde_json::Value::String(text.to_owned())
+        );
+        assert_eq!(
+            serde_json::from_value::<ShortcutCommandId>(serde_json::Value::String(text.to_owned()))
+                .expect("ID を JSON から読めなかった"),
+            id
+        );
+        assert!(ShortcutCommandId::ALL.contains(&id), "{id} が ALL に無い");
+    }
+    assert_eq!(ShortcutCommandId::ALL.len(), 22);
+}
+
+#[test]
 fn 受け口ごとに行を引ける() {
     let table = ShortcutTable::default_table();
     let ids = |receiver| -> Vec<&str> {
@@ -146,7 +222,11 @@ fn 受け口ごとに行を引ける() {
             "terminal.previous-tab",
             "terminal.next-tab",
             "edit.select-all",
-            "app.quit"
+            "app.quit",
+            "view.toggle-display-mode",
+            "view.previous-page",
+            "view.next-page",
+            "view.toggle-maximize"
         ]
     );
     assert_eq!(ids(EditItem), ["edit.copy", "edit.cut", "edit.paste"]);
@@ -185,6 +265,9 @@ fn キーの文字列を修飾キーとキーに分けて読める() {
         ("Ctrl+Tab", "Tab"),
         ("Cmd+Space", "Space"),
         ("Cmd+ArrowUp", "ArrowUp"),
+        ("Cmd+Alt+ArrowLeft", "ArrowLeft"),
+        ("Cmd+Alt+ArrowRight", "ArrowRight"),
+        ("Cmd+Shift+Enter", "Enter"),
         ("Cmd+\\", "\\"),
         ("Cmd+`", "`"),
     ] {
@@ -409,7 +492,7 @@ fn 受け口を_1_行で替えられる() {
 
     let table = ShortcutTable::from_bindings(bindings).expect("作れない");
     assert_eq!(table.get(ShortcutCommandId::TreeTrash).receiver(), MenuItem);
-    assert_eq!(table.by_receiver(MenuItem).count(), 7);
+    assert_eq!(table.by_receiver(MenuItem).count(), 11);
 }
 
 #[test]

@@ -52,9 +52,9 @@ M4 ではタイル表示(全プロジェクトの全ターミナルを自動グ�
 
 | コマンドの ID | 既定のキー | 受け口 | 理由 |
 | ------------- | ---------- | ------ | ---- |
-| `view.toggle-display-mode` | `Cmd+Shift+Backslash`(⇧⌘\) | メニューの項目 | Safari の「すべてのタブを表示」と同じキー |
-| `view.previous-page` | `Cmd+Alt+Left`(⌥⌘←) | メニューの項目 | 矢印のキーは ⌥ で文字が変わらない。⌘⇧[・⌘⇧] はタブの前後で使っている |
-| `view.next-page` | `Cmd+Alt+Right`(⌥⌘→) | メニューの項目 | 同上 |
+| `view.toggle-display-mode` | `Cmd+Shift+G`(⇧⌘G) | メニューの項目 | Safari の「すべてのタブを表示」と同じキー |
+| `view.previous-page` | `Cmd+Alt+ArrowLeft`(⌥⌘←) | メニューの項目 | 矢印のキーは ⌥ で文字が変わらない。⌘⇧[・⌘⇧] はタブの前後で使っている |
+| `view.next-page` | `Cmd+Alt+ArrowRight`(⌥⌘→) | メニューの項目 | 同上 |
 | `view.toggle-maximize` | `Cmd+Shift+Enter`(⇧⌘↩) | メニューの項目 | iTerm2 のペインの拡大と同じキー。⌘↩(パスの挿入)と重ならない |
 
 - 受け口はメニューの項目(OS が WKWebView より先に受ける。§15.3 #7)。`on_menu_event` がタブの操作と同じく `SessionRegistry` を呼ぶ。部品とメニューにキーの文字列を書かない(ボタンのツールチップのキーも、画面が受け取った表から引く)

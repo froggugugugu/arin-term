@@ -76,11 +76,23 @@ pub enum ShortcutCommandId {
     /// ツリー: 新規フォルダ。
     #[serde(rename = "tree.new-folder")]
     TreeNewFolder,
+    /// 表示: タイル表示とタブ表示を切り替える(M4。計画書 M4 の前提 (f))。
+    #[serde(rename = "view.toggle-display-mode")]
+    ViewToggleDisplayMode,
+    /// 表示: タイル表示の前のページ。
+    #[serde(rename = "view.previous-page")]
+    ViewPreviousPage,
+    /// 表示: タイル表示の次のページ。
+    #[serde(rename = "view.next-page")]
+    ViewNextPage,
+    /// 表示: タイルを拡大する・元に戻す。
+    #[serde(rename = "view.toggle-maximize")]
+    ViewToggleMaximize,
 }
 
 impl ShortcutCommandId {
     /// すべてのコマンドの ID(表の順)。
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 22] = [
         Self::TerminalNewTab,
         Self::TerminalCloseTab,
         Self::TerminalPreviousTab,
@@ -99,6 +111,10 @@ impl ShortcutCommandId {
         Self::TreeTrash,
         Self::TreeNewFile,
         Self::TreeNewFolder,
+        Self::ViewToggleDisplayMode,
+        Self::ViewPreviousPage,
+        Self::ViewNextPage,
+        Self::ViewToggleMaximize,
     ];
 
     /// ID の文字列(JSON・メニューの項目の ID・設定ファイルで使う)。
@@ -123,6 +139,10 @@ impl ShortcutCommandId {
             Self::TreeTrash => "tree.trash",
             Self::TreeNewFile => "tree.new-file",
             Self::TreeNewFolder => "tree.new-folder",
+            Self::ViewToggleDisplayMode => "view.toggle-display-mode",
+            Self::ViewPreviousPage => "view.previous-page",
+            Self::ViewNextPage => "view.next-page",
+            Self::ViewToggleMaximize => "view.toggle-maximize",
         }
     }
 
@@ -225,7 +245,7 @@ pub enum ShortcutTableProblem {
 pub struct ShortcutTable(Vec<ShortcutBinding>);
 
 impl ShortcutTable {
-    /// 既定の表(PRD §6.4 と M2 のメニューのキー。受け口は【仮定】21)。
+    /// 既定の表(PRD §6.4 と M2 のメニューのキー。受け口は【仮定】21。表示の 4 行は M4 の【仮定】9・ADR-011 の 6)。
     ///
     /// # Panics
     ///
@@ -235,7 +255,7 @@ impl ShortcutTable {
         use ShortcutCommandId as C;
         use ShortcutReceiver::{EditItem, MenuItem, Screen};
 
-        let rows: [(C, &str, ShortcutReceiver); 18] = [
+        let rows: [(C, &str, ShortcutReceiver); 22] = [
             (C::TerminalNewTab, "Cmd+T", MenuItem),
             (C::TerminalCloseTab, "Cmd+W", MenuItem),
             (C::TerminalPreviousTab, "Cmd+Shift+[", MenuItem),
@@ -254,6 +274,10 @@ impl ShortcutTable {
             (C::TreeTrash, "Cmd+Backspace", Screen),
             (C::TreeNewFile, "Cmd+N", Screen),
             (C::TreeNewFolder, "Cmd+Shift+N", Screen),
+            (C::ViewToggleDisplayMode, "Cmd+Shift+G", MenuItem),
+            (C::ViewPreviousPage, "Cmd+Alt+ArrowLeft", MenuItem),
+            (C::ViewNextPage, "Cmd+Alt+ArrowRight", MenuItem),
+            (C::ViewToggleMaximize, "Cmd+Shift+Enter", MenuItem),
         ];
         let bindings = rows
             .into_iter()

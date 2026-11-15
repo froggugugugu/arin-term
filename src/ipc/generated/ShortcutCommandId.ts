@@ -6,4 +6,4 @@
  * 文字列は M2 のメニューの項目の ID(`menu.rs`。`on_menu_event` に届く)をそのまま使い、M3 の分を足す。
  * 設定ファイル(M4.5)でもこの文字列でコマンドを指す。
  */
-export type ShortcutCommandId = "terminal.new-tab" | "terminal.close-tab" | "terminal.previous-tab" | "terminal.next-tab" | "edit.select-all" | "app.quit" | "edit.copy" | "edit.cut" | "edit.paste" | "tree.open" | "tree.reveal-in-finder" | "tree.insert-path" | "tree.copy-relative-path" | "tree.copy-absolute-path" | "tree.rename" | "tree.trash" | "tree.new-file" | "tree.new-folder";
+export type ShortcutCommandId = "terminal.new-tab" | "terminal.close-tab" | "terminal.previous-tab" | "terminal.next-tab" | "edit.select-all" | "app.quit" | "edit.copy" | "edit.cut" | "edit.paste" | "tree.open" | "tree.reveal-in-finder" | "tree.insert-path" | "tree.copy-relative-path" | "tree.copy-absolute-path" | "tree.rename" | "tree.trash" | "tree.new-file" | "tree.new-folder" | "view.toggle-display-mode" | "view.previous-page" | "view.next-page" | "view.toggle-maximize";

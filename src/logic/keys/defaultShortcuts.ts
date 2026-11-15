@@ -30,4 +30,8 @@ export const DEFAULT_SHORTCUT_TABLE: ShortcutTable = [
   { command: "tree.trash", accelerator: "Cmd+Backspace", receiver: "screen" },
   { command: "tree.new-file", accelerator: "Cmd+N", receiver: "screen" },
   { command: "tree.new-folder", accelerator: "Cmd+Shift+N", receiver: "screen" },
+  { command: "view.toggle-display-mode", accelerator: "Cmd+Shift+G", receiver: "menu-item" },
+  { command: "view.previous-page", accelerator: "Cmd+Alt+ArrowLeft", receiver: "menu-item" },
+  { command: "view.next-page", accelerator: "Cmd+Alt+ArrowRight", receiver: "menu-item" },
+  { command: "view.toggle-maximize", accelerator: "Cmd+Shift+Enter", receiver: "menu-item" },
 ];

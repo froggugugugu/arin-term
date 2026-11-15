@@ -282,6 +282,11 @@ fn メニューの項目のアクセラレータが表の既定のキーと同�
             ("tree.trash", None),
             ("tree.new-file", None),
             ("tree.new-folder", None),
+            // M4 の表示の 4 行(T47a)。受け口がメニューの項目なのでアクセラレータを持つ(メニューに載せるのは T47c)。
+            ("view.toggle-display-mode", Some("Cmd+Shift+G".to_owned())),
+            ("view.previous-page", Some("Cmd+Alt+ArrowLeft".to_owned())),
+            ("view.next-page", Some("Cmd+Alt+ArrowRight".to_owned())),
+            ("view.toggle-maximize", Some("Cmd+Shift+Enter".to_owned())),
         ]
     );
     for binding in table.by_receiver(ShortcutReceiver::MenuItem) {
@@ -334,9 +339,17 @@ fn 受け口がメニューの項目のものだけがメニューに載る() {
     let app = build_app(support::launch_in(&state_dir, false));
 
     // 既定の表: 自前の項目はちょうど受け口がメニューの項目の行。画面で受けるツリーのキーは載らない(【仮定】21)。
+    // 表示の 4 行(T47a)はまだ置き場所(「表示」の見出し)が無いので載らない。T47c で「表示」を足したら、この除外を外す。
+    let not_yet_in_menu = [
+        C::ViewToggleDisplayMode,
+        C::ViewPreviousPage,
+        C::ViewNextPage,
+        C::ViewToggleMaximize,
+    ];
     let menu = app.menu().expect("アプリにメニューが付いていない");
     let expected: BTreeSet<String> = ShortcutTable::default_table()
         .by_receiver(ShortcutReceiver::MenuItem)
+        .filter(|b| !not_yet_in_menu.contains(&b.command()))
         .map(|b| b.command().as_str().to_owned())
         .collect();
     assert_eq!(own_ids(&menu), expected);

@@ -1081,8 +1081,8 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
 7. 拡大中にカードを選ぶ・⌘⇧[ などでタブを替えると、拡大したまま、そのタブを出す(拡大中は「タブ表示と同じ形」なので)。表示モードをタブに切り替えると、拡大中は解ける
 8. タイルのダブルクリックで拡大するのは、タイルのタイトルバーのダブルクリック(ターミナルの本文のダブルクリックは xterm.js の単語の選択に使われるため)。元に戻すのは、拡大中のタイトル帯の元に戻すボタン、同じショートカット、同じタイトル帯のダブルクリック
 9. M4 で表に足すキー(PRD に無いので仮の値。本人が T50a で実機で確かめ、M4.5 で設定ファイルから変えられる):
-   - `view.toggle-display-mode`(タイル表示とタブ表示の切替): `Cmd+Shift+Backslash`(⇧⌘\。Safari の「すべてのタブを表示」と同じキー)
-   - `view.previous-page`・`view.next-page`(前・次のページ): `Cmd+Alt+Left`・`Cmd+Alt+Right`(⌥⌘←・⌥⌘→)
+   - `view.toggle-display-mode`(タイル表示とタブ表示の切替): `Cmd+Shift+G`(⇧⌘G。Safari の「すべてのタブを表示」と同じキー)
+   - `view.previous-page`・`view.next-page`(前・次のページ): `Cmd+Alt+ArrowLeft`・`Cmd+Alt+ArrowRight`(⌥⌘←・⌥⌘→)
    - `view.toggle-maximize`(タイルの拡大・元に戻す): `Cmd+Shift+Enter`(⇧⌘↩。iTerm2 のペインの拡大と同じキー)
    - タブ表示では、ページ送りと拡大の項目は何もしない(メニューの項目は無効にせず並べる。開くたびに状態を問い合わせないため。M3 の【仮定】8 と同じ考え方)
 10. メニューバーの「表示」の項目の文言は固定: 「タイル表示とタブ表示を切り替える」「前のページ」「次のページ」「タイルを拡大/元に戻す」。置き場所は「編集」の右(macOS の並び)
@@ -1213,9 +1213,9 @@ T46〜T50 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 可(T47a とファイルが重ならない。生成物は触らない)
   - 先に書くテスト: `表示モードを書いて読むと同じモードに戻る`、`display_mode_が無い状態ファイルはタブ表示で始まる`(M3 までの `state.json` を読める)、`知らない値はタブ表示にし退避しない`、`タブ表示のときも_display_mode_を書く`【仮定】、`ページと拡大中は保存する内容に入らない`、`タイル表示で保存して復元するとタイル表示の_1_ページ目でフォーカス中のタイルのページを出す`
   - 検証: `cargo test -p arin-core --test persistence_codec --test workspace_display`
-- [ ] T47a — ショートカットの表に表示の 4 行を足す(変更ファイル: crates/arin-core/src/shortcuts/table.rs, crates/arin-core/tests/shortcuts.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/logic/keys/keyOwner.test.ts, src/logic/keys/shortcutTable.test.ts | 依存: T46b)
+- [x] T47a — ショートカットの表に表示の 4 行を足す(変更ファイル: crates/arin-core/src/shortcuts/table.rs, crates/arin-core/tests/shortcuts.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/logic/keys/keyOwner.test.ts, src/logic/keys/shortcutTable.test.ts | 依存: T46b)
   - 対応: FR-048・FR-052・FR-054(ショートカット)、【要件の追加】(表に行を足す)、前提 (f)、【仮定】9
-  - 足す行(受け口はどれも「メニューの項目」): `view.toggle-display-mode` = `Cmd+Shift+Backslash`、`view.previous-page` = `Cmd+Alt+Left`、`view.next-page` = `Cmd+Alt+Right`、`view.toggle-maximize` = `Cmd+Shift+Enter`。`ShortcutCommandId::ALL` は 22 行になる。生成物(`ShortcutCommandId.ts`・`defaultShortcuts.json`)を作り直す
+  - 足す行(受け口はどれも「メニューの項目」): `view.toggle-display-mode` = `Cmd+Shift+G`、`view.previous-page` = `Cmd+Alt+ArrowLeft`、`view.next-page` = `Cmd+Alt+ArrowRight`、`view.toggle-maximize` = `Cmd+Shift+Enter`。`ShortcutCommandId::ALL` は 22 行になる。生成物(`ShortcutCommandId.ts`・`defaultShortcuts.json`)を作り直す
   - 画面: `terminalKeyOwner` は受け口がメニューの項目のキーを表から集めて `app` にする作り(T41b)なので、コードは変えずに新しい 4 つのキーがターミナルに渡らなくなることをテストで確かめる
   - 並行: 可(T46c とファイルが重ならない。生成物を触るのは Phase 29c ではこのタスクだけ)
   - 先に書くテスト: 既存の `すべてのコマンドの_id_が既定のキーを持つ`・`同じフォーカスで受けるキーに重なりが無い` が 22 行で通る、`表示の_4_行の既定のキーと受け口`(表で)、`表示の_4_行の_id_の文字列`、`表の_json_の形`(生成物が最新)。Vitest: `表示の操作のキーはターミナルに渡さない`(`keyOwner.test.ts`)、`既定の表に表示の_4_行がある`(`shortcutTable.test.ts`)
@@ -1331,7 +1331,7 @@ T46〜T50 は親として残し、作業は子タスクで行う。親は子が�
 
 - [ ] T50a — M4 の合否一覧と人間の確認(変更ファイル: output/reports/test/M4_acceptance.md, output/tasks/PROGRESS.md, output/design/ADR_011_tile-view.md | 依存: T49d)
   - AI がやること: `npm run build && npm test && npm run lint && npm run test:coverage && npm run e2e && npm run app && npm run smoke && node scripts/smoke.mjs --tiles && npm run perf` を通し、下の対応表に沿って AC の合否一覧を `output/reports/test/M4_acceptance.md` と `testreport/` に出す。NFR-009 の記録(T49b)を載せる(合否にしない)。人間に渡す確かめ方(9 プロジェクトの `state.json` の置き方、`ARIN_RENDERER=webgl`・`ARIN_UNICODE=graphemes` での起動の仕方)を書く。fresh context の `/code-review` と `verifier` を 1 回ずつ回す
-  - **人間がやること**(`npm run app` で作った `.app` を Finder から開く): (1) **9 枚同時表示の体感**: 9 枚で Claude Code などを動かし、いくつかで `yes` などの大量の出力を流しながら、ページ送り・タイルのクリック・入力が我慢できる速さか(NFR-009。M4 の人間ゲート)。(2) **描画方式と全角幅の方式**: 既定(DOM、`unicode11`)と `ARIN_RENDERER=webgl`・`ARIN_UNICODE=graphemes` で同じことをして比べ、T49b の案を採るか選ぶ(ADR-001)。(3) タイル表示とタブ表示の切替(ボタンと ⇧⌘\)、再起動後に同じ表示で開く(FR-048)。(4) ページ送り(前後のボタンと ⌥⌘← ⌥⌘→)、10 枚で `1/2`(FR-052)。(5) 別のプロジェクトのタイルのクリックでカードとツリーが替わる(AC-M15)、カードを選ぶとそのページへ移る。(6) タイトルバーのダブルクリックと ⇧⌘↩ での拡大と戻し(FR-054)。(7) 隠れたタイル・別のページのタイルで `printf '\a'` を実行すると印が付き、表示すると消える(FR-055)。Claude Code の入力待ちで印が付くか(参考。§15.3 #12 は M6)。(8) ツリーからタイルへのドラッグと ⌘↩ の挿入の宛先(フォーカス中のタイル。別のプロジェクトのタイルへは絶対パス)。(9) タイルのタイトルバー・ページ表示・切替のボタン・印の見た目(ライトとダーク、すりガラスの上。デザインの方針)。(10) M4 で足した 4 つのキーが US と JIS の配列で効き、ターミナルに渡らない(【仮定】9。合わなければ表の既定のキーを替える)
+  - **人間がやること**(`npm run app` で作った `.app` を Finder から開く): (1) **9 枚同時表示の体感**: 9 枚で Claude Code などを動かし、いくつかで `yes` などの大量の出力を流しながら、ページ送り・タイルのクリック・入力が我慢できる速さか(NFR-009。M4 の人間ゲート)。(2) **描画方式と全角幅の方式**: 既定(DOM、`unicode11`)と `ARIN_RENDERER=webgl`・`ARIN_UNICODE=graphemes` で同じことをして比べ、T49b の案を採るか選ぶ(ADR-001)。(3) タイル表示とタブ表示の切替(ボタンと ⇧⌘G)、再起動後に同じ表示で開く(FR-048)。(4) ページ送り(前後のボタンと ⌥⌘← ⌥⌘→)、10 枚で `1/2`(FR-052)。(5) 別のプロジェクトのタイルのクリックでカードとツリーが替わる(AC-M15)、カードを選ぶとそのページへ移る。(6) タイトルバーのダブルクリックと ⇧⌘↩ での拡大と戻し(FR-054)。(7) 隠れたタイル・別のページのタイルで `printf '\a'` を実行すると印が付き、表示すると消える(FR-055)。Claude Code の入力待ちで印が付くか(参考。§15.3 #12 は M6)。(8) ツリーからタイルへのドラッグと ⌘↩ の挿入の宛先(フォーカス中のタイル。別のプロジェクトのタイルへは絶対パス)。(9) タイルのタイトルバー・ページ表示・切替のボタン・印の見た目(ライトとダーク、すりガラスの上。デザインの方針)。(10) M4 で足した 4 つのキーが US と JIS の配列で効き、ターミナルに渡らない(【仮定】9。合わなければ表の既定のキーを替える)
   - 完了条件: AC の合否一覧ができ、本人が (1)〜(10) を確かめ、(2) で描画方式と全角幅の方式を選んだ
 
 #### Phase 31e(逐次。T50a 完了後)
@@ -1666,7 +1666,7 @@ T54 ──→ T55 ──→ T56 / T57 / T58 / T59 / T60 / T61 ──→ T62(人�
 | 11 | M3 のドッグフーディングのあいだは取り消し(FR-032)が無い(PRD §11) | 中 | PRD のとおり。移動は確認ダイアログ、削除はゴミ箱で守る |
 | 12 | `cargo install cargo-llvm-cov`(T9)と `npx playwright install webkit`(T11)は、手元の環境に道具を入れる | 低 | 実行前に本人に伝える |
 | 13 | PRD §9 の依存では M4 は M2 に、M5 は M0 にだけ依存する。本計画は指示どおり M0→M6 の一列で並べた | 参考 | M3 のドッグフーディングの 1 週間のあいだに M4 や M5 を進める並べ替えは、依存の上ではできる。採るかは本人が決める |
-| 14 | M4 で足すショートカット(⇧⌘\・⌥⌘←・⌥⌘→・⇧⌘↩)とページ送り・拡大の振る舞いは PRD に無い | 【仮定】 | M4 の【仮定】3〜9。本人が T50a で確かめる。キーは表の 1 行の変更で替えられ、M4.5 で設定ファイルからも変えられる |
+| 14 | M4 で足すショートカット(⇧⌘G・⌥⌘←・⌥⌘→・⇧⌘↩)とページ送り・拡大の振る舞いは PRD に無い | 【仮定】 | M4 の【仮定】3〜9。本人が T50a で確かめる。キーは表の 1 行の変更で替えられ、M4.5 で設定ファイルからも変えられる |
 | 15 | WebGL 描画で 9 枚を同時に出すと、WebView のコンテキストの数の上限に近づく(ADR-001) | 中 | 隠したページは `setVisible(false)` でコンテキストを手放す(T47d)。T49b でコンテキストの数を記録し、本人が T50a で比べてから方式を決める |
 | 16 | タイル表示では写しを送る回数が増える(フォーカス・ページ・アテンション)。写しに通し番号が無く、順が入れ替わると表示が前に戻りうる(M2 の残りの問題) | 低 | T48c は印が立ったときだけ送る。症状が T49a・T50a で出たら通し番号を足すタスクを起こす |
 | 17 | 9 枚の検証画面は `src-tauri/tests/` の多くの結合テストの足場になっている | 中 | 撤去を画面(T49c)と Rust(T49d)に分け、T49d で足場を「一時フォルダのプロジェクト」に置き換える。テストの数が減らないことを前後で比べる |
