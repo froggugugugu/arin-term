@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 
 use arin_core::fileops::{ConflictResolution, FileOpOutcome, NewEntryKind};
 use arin_core::launch_options::LaunchOptions;
+use arin_core::layout::tiles::{DisplayMode, TileGrid};
 use arin_core::paths::{PathKind, RelPath};
 use arin_core::project::ProjectColor;
 use arin_core::shortcuts::table::ShortcutTable;
@@ -52,6 +53,9 @@ fn collect_generated(cfg: &Config) -> BTreeMap<PathBuf, String> {
     collector.visit::<NewEntryKind>();
     // ショートカットの表(計画書 T38d)。行・コマンドの ID・受け口もたどって生成する。
     collector.visit::<ShortcutTable>();
+    // タイル表示の表示モードとグリッド(計画書 T46a)。
+    collector.visit::<DisplayMode>();
+    collector.visit::<TileGrid>();
     collector.files
 }
 

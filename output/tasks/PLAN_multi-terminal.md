@@ -1182,7 +1182,7 @@ T46〜T50 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 29a(並行可能。M3 完了後)
 
-- [ ] T46a — タイルのグリッドとページの規則、表示モードの型(`arin-core/layout`)(変更ファイル: crates/arin-core/src/layout/mod.rs, crates/arin-core/src/layout/tiles.rs, crates/arin-core/tests/layout_tiles.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/ | 依存: T45)
+- [x] T46a — タイルのグリッドとページの規則、表示モードの型(`arin-core/layout`)(変更ファイル: crates/arin-core/src/layout/mod.rs, crates/arin-core/src/layout/tiles.rs, crates/arin-core/tests/layout_tiles.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/ | 依存: T45)
   - 対応: FR-051(グリッド)、FR-052(1 ページ最大 9 枚)、FR-048(表示モードの型)、C-10・C-11・C-23、設計書 §5.1 の `DisplayMode`・`TileLayout`、§15.2 #4、ADR-011、【仮定】2・3
   - 置くもの: `DisplayMode`(`tabs` / `tiles`。ts-rs で生成。JSON は `"tabs"`・`"tiles"`)。`TileGrid { cols, rows }`(列×行)。純粋な関数: 枚数 → グリッド、総数 → ページ数(0 枚は 0)、ページ番号 → 並びの範囲、n 番目のページ、範囲外のページ番号の丸め。入出力・時計を持たない
   - 並行: 可(T48a とファイルが重ならない。生成物を触るのは Phase 29a ではこのタスクだけ)
