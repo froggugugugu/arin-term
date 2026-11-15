@@ -13,8 +13,9 @@
 // - メニューの「すべてを選択」: menu-command イベント → handleMenuCommand → フォーカスのあるサーフェスの全選択
 // - バイト列の入力: surface.onBinary → write_terminal_bytes。文字列の入力と同じ直列の列に入れる(順序を保つ)
 // - 写しとの同期(M2): retain で写しから消えたターミナルを破棄する(タブを閉じた・シェルが終わってタブが閉じた。
-//   状態は exited を経ずに消えることがある)。present で表示中の 1 枚と、隠して取り込みだけ続けるターミナルを伝える
-//   (FR-042)。隠したまま作ったサーフェスは、最後に表示していたターミナルの寸法で接続する(設計書 §2.2)
+//   状態は exited を経ずに消えることがある)。present で見えるターミナルの並び(タブ表示は 1 枚、タイル表示は
+//   表示中のページのタイル。M4 の T47d)と、隠して取り込みだけ続けるターミナルを伝える(FR-042・FR-052、NFR-009)。
+//   隠したまま作ったサーフェスは、最後に表示していたターミナルの寸法で接続する(設計書 §2.2、M4 の【仮定】17)
 //
 // エンジンと通信は外から受け取る。本物は src/terminal/xterm/ と src/ipc/tauri.ts、
 // テストでは src/test/fakeTerminalEngine.ts と src/test/fakeIpc.ts を渡す。
@@ -95,8 +96,8 @@ export class TerminalManager {
   readonly #entries = new Map<TerminalId, Entry>();
   /** 写しで伝えられた状態の種類(サーフェスを作る前に伝えられたものも持つ)。 */
   readonly #statuses = new Map<TerminalId, TerminalStatus["kind"]>();
-  /** present で伝えられた表示中のターミナル。present を使わない(検証画面)なら null のまま。 */
-  #shown: TerminalId | null = null;
+  /** present で伝えられた表示中のターミナルの並び。present を使わない(検証画面)なら空のまま。 */
+  #shown = new Set<TerminalId>();
   /** 最後に表示していたターミナルの寸法。隠したまま作るサーフェスをこの寸法で始める。 */
   #lastShownSize: TerminalSize | null = null;
 
@@ -187,28 +188,42 @@ export class TerminalManager {
     for (const id of [...this.#statuses.keys()]) {
       if (!keep.has(id)) this.#statuses.delete(id);
     }
-    if (this.#shown !== null && !keep.has(this.#shown)) this.#shown = null;
+    for (const id of [...this.#shown]) {
+      if (!keep.has(id)) this.#shown.delete(id);
+    }
   }
 
   /**
-   * 表示中のターミナル(選択中のプロジェクトの表示中のタブ。無ければ null)と、隠したまま出力を取り込み続ける
-   * ターミナルを伝える(FR-042。main.tsx が写しの更新ごとに呼ぶ。検証画面では呼ばない)。
-   * - 表示中: 隠していれば表示に戻す。置き場所に入れるのと接続は TerminalHost(attach)が行う
-   * - 隠すもの: 表示していれば隠す。サーフェスが無ければ隠したまま作り、接続する(1 回だけ試す)。
-   *   接続の寸法は最後に表示していたターミナルの寸法。表示中のターミナルがまだ寸法を決めていなければ、
-   *   決まるまで接続を待たせる。表示中が無く寸法も分からなければ、エンジンの既定の寸法で接続する
+   * 見えるターミナルの並び(0〜9 枚。タブ表示と拡大中は 1 枚、タイル表示は表示中のページのタイル)と、
+   * 隠したまま出力を取り込み続けるターミナルを伝える(FR-042・FR-052、NFR-009。写しの更新ごとに
+   * src/state/terminalSync.ts が呼ぶ。検証画面では呼ばない)。並びが前と同じなら何もしない。
+   * - 先に隠すものを隠してから、見えるものを表示に戻す(WebGL のコンテキストを先に返し、ページ送りで
+   *   同時に持つ数が上限を超えないようにする。超えると古いものが失われ、描画が DOM に戻ってしまう)
+   * - 隠すもの: 表示していれば隠す(描画の資源を手放す。出力の取り込みと処理済みの通知は続け、接続は切らない)。
+   *   サーフェスが無ければ隠したまま作り、接続する(1 回だけ試す)。接続の寸法は最後に表示していたターミナル
+   *   (タイル表示ならタイル)の寸法。表示中のターミナルがまだ寸法を決めていなければ、決まるまで接続を待たせる。
+   *   表示中が無く寸法も分からなければ、エンジンの既定の寸法で接続する
+   * - 見えるもの: 隠していれば表示に戻す。置き場所に入れるのと寸法の合わせ直しは TerminalHost(attach と fit)が行い、
+   *   行・桁が変わったものだけ寸法を送る(ターミナルごとの直列の送信。送信中に変わったら最新だけを次に送る)。
+   *   まだサーフェスが無ければ作らない(TerminalHost の attach が表示のまま作り、その置き場所の寸法で接続する)
+   *
+   * 置き場所の部品への約束: 隠したターミナルの置き場所は DOM から外す(表示に戻すときの寸法合わせは、
+   * 新しい置き場所に入れたときに行う。隠したままの置き場所に残すと、大きさ 0 の置き場所で寸法を測りうる)。
    */
-  present(shown: TerminalId | null, background: readonly TerminalId[]): void {
-    this.#shown = shown;
-    if (shown !== null) {
-      const entry = this.#entries.get(shown);
-      if (entry !== undefined && !entry.visible) this.setVisible(shown, true);
-    }
+  present(shown: readonly TerminalId[], background: readonly TerminalId[]): void {
+    this.#shown = new Set(shown);
     for (const id of background) {
-      if (id === shown) continue;
+      if (this.#shown.has(id)) continue;
       const entry = this.#entries.get(id) ?? this.#entry(id, { visible: false });
       if (entry.visible) this.setVisible(id, false);
-      if (entry.autoConnected) continue;
+    }
+    for (const id of this.#shown) {
+      const entry = this.#entries.get(id);
+      if (entry !== undefined && !entry.visible) this.setVisible(id, true);
+    }
+    for (const id of background) {
+      const entry = this.#entries.get(id);
+      if (this.#shown.has(id) || entry === undefined || entry.autoConnected) continue;
       entry.autoConnected = true;
       void this.connect(id);
     }
@@ -254,7 +269,7 @@ export class TerminalManager {
 
     if (!entry.visible) {
       // 隠したまま接続する: 表示中のターミナルの寸法で始める。まだ分からなければ分かるまで待たせる。
-      if (this.#shown !== null && this.#lastShownSize === null) {
+      if (this.#shown.size > 0 && this.#lastShownSize === null) {
         entry.wantsConnect = true;
         return Promise.resolve();
       }

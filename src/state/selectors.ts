@@ -33,16 +33,40 @@ export function shownTerminal(snapshot: AppSnapshot | null): TerminalTabSnapshot
   return snapshot.terminals.find((t) => t.id === activeId) ?? null;
 }
 
-/** 表示中の 1 枚と、隠して出力の取り込みだけを続けるターミナル(全プロジェクトの残り。写しの順)。 */
+/**
+ * 画面に見えるターミナルの並び(0〜9 枚。NFR-009、ADR-011。Rust の `Workspace::visible_terminals` と同じ規則)。
+ * - タブ表示: 選択中のプロジェクトの表示中のタブ(0〜1 枚)
+ * - タイル表示: 写しの `display.tileIds`(表示中のページのタイル。並びの順。グリッドとページは Rust が計算したもの)
+ * - 拡大中: フォーカス中の 1 枚(`display.focusedTerminalId`)
+ * 写しのターミナルの一覧に無い ID は入れない。写しが無ければ空。
+ */
+export function visibleTerminalIds(snapshot: AppSnapshot | null): TerminalId[] {
+  if (snapshot === null) return [];
+  const { display } = snapshot;
+  if (display.mode === "tabs") {
+    const shown = shownTerminal(snapshot);
+    return shown === null ? [] : [shown.id];
+  }
+  const known = new Set(snapshot.terminals.map((t) => t.id));
+  const ids = display.maximized
+    ? display.focusedTerminalId === null
+      ? []
+      : [display.focusedTerminalId]
+    : display.tileIds;
+  return ids.filter((id) => known.has(id));
+}
+
+/** 見えるターミナルの並びと、隠して出力の取り込みだけを続けるターミナル(残りの全部。写しの順)。 */
 export interface Presentation {
-  readonly shown: TerminalId | null;
+  readonly shown: readonly TerminalId[];
   readonly background: readonly TerminalId[];
 }
 
-/** 写しから、表示中のターミナルと隠すターミナルを決める(FR-042)。 */
+/** 写しから、見えるターミナルの並びと隠すターミナルを決める(FR-042、FR-052、NFR-009)。 */
 export function presentation(snapshot: AppSnapshot | null): Presentation {
-  const shown = shownTerminal(snapshot)?.id ?? null;
-  const background = (snapshot?.terminals ?? []).map((t) => t.id).filter((id) => id !== shown);
+  const shown = visibleTerminalIds(snapshot);
+  const visible = new Set(shown);
+  const background = (snapshot?.terminals ?? []).map((t) => t.id).filter((id) => !visible.has(id));
   return { shown, background };
 }
 

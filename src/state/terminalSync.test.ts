@@ -11,7 +11,7 @@ function recorder() {
   const target: TerminalSyncTarget = {
     setStatus: (id, status) => seen.push(`status ${id} ${status.kind}`),
     retain: (ids) => seen.push(`retain ${[...ids].join(",")}`),
-    present: (shown, background) => seen.push(`present ${shown ?? "-"} [${background.join(",")}]`),
+    present: (shown, background) => seen.push(`present [${shown.join(",")}] [${background.join(",")}]`),
   };
   return { seen, target };
 }
@@ -62,11 +62,11 @@ describe("syncTerminals(写しをターミナルの管理へ伝える)", () => {
       "status a1 running",
       "status b1 running",
       "retain a1,b1",
-      "present a1 [b1]",
+      "present [a1] [b1]",
       "status a1 running",
       "status b1 running",
       "retain a1,b1",
-      "present b1 [a1]",
+      "present [b1] [a1]",
     ]);
   });
 
@@ -93,7 +93,7 @@ describe("syncTerminals(写しをターミナルの管理へ伝える)", () => {
       }),
     );
 
-    expect(seen).toEqual(["retain ", "present - []"]);
+    expect(seen).toEqual(["retain ", "present [] []"]);
   });
 
   it("検証画面では表示中と隠すものを伝えない(9 枚とも検証画面が表示を決める)", () => {
@@ -104,6 +104,46 @@ describe("syncTerminals(写しをターミナルの管理へ伝える)", () => {
     store.getState().replaceSnapshot(sampleSnapshot({ terminals: [sampleTerminal("terminal-1", running)] }));
 
     expect(seen).toEqual(["status terminal-1 running", "retain terminal-1"]);
+  });
+
+  it("タイル表示では表示中のページのタイルを並びで伝え、ページが替わると新しいページの並びを伝える", () => {
+    const store = createAppStore();
+    const { seen, target } = recorder();
+    const tiles = (page: number, tileIds: string[]) => {
+      const base = twoProjects("A");
+      return {
+        ...base,
+        display: {
+          ...base.display,
+          mode: "tiles" as const,
+          page,
+          pageCount: 2,
+          grid: { cols: 1, rows: 1 },
+          tileIds,
+          focusedTerminalId: tileIds[0] ?? null,
+        },
+      };
+    };
+    syncTerminals(store, target, { verifyGrid: false });
+
+    store.getState().replaceSnapshot(tiles(0, ["a1"]));
+    store.getState().replaceSnapshot(tiles(1, ["b1"]));
+
+    expect(seen.filter((line) => line.startsWith("present"))).toEqual(["present [a1] [b1]", "present [b1] [a1]"]);
+  });
+
+  it("タイル表示で全部が見えるときは、隠すものを空で伝える", () => {
+    const store = createAppStore();
+    const { seen, target } = recorder();
+    const base = twoProjects("A");
+    syncTerminals(store, target, { verifyGrid: false });
+
+    store.getState().replaceSnapshot({
+      ...base,
+      display: { ...base.display, mode: "tiles", pageCount: 1, grid: { cols: 2, rows: 1 }, tileIds: ["a1", "b1"] },
+    });
+
+    expect(seen.at(-1)).toBe("present [a1,b1] []");
   });
 
   it("写しがまだ無ければ何も伝えない", () => {

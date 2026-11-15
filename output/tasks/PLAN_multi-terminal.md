@@ -1239,7 +1239,7 @@ T46〜T50 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 可(T47d とファイルが重ならない)
   - 先に書くテスト(模擬ランタイム。`harness = false` の `[[test]]` を足す): `表示モードの切替で写しが変わり状態ファイルに保存される`、`再起動すると前の表示モードで開く`(FR-048 の AC。`app_persistence.rs`)、`タイルへのフォーカスで写しの選択が替わりツリーの監視が新しいルートに張り替わる`(AC-M15 の Rust 側。偽の監視のポート)、`同じプロジェクトのタイルの間を移っても監視を張り替えない`、`ページ送りと拡大のコマンドで写しの表示が変わる`、`知らないターミナルへのフォーカスは失敗を返し何も変えない`。Vitest: 新しいコマンドの包みが正しい名前と引数で届く
   - 検証: `cargo test -p arin --test display_commands --test app_persistence --test tree_watch && npx vitest run src/ipc/client.test.ts`
-- [ ] T47d — 画面: 表示中のターミナルの並び(複数枚の表示と隠す)(変更ファイル: src/terminal/TerminalManager.ts, src/terminal/TerminalManager.test.ts, src/state/terminalSync.ts, src/state/terminalSync.test.ts, src/state/selectors.ts, src/state/selectors.test.ts, src/test/fakeIpc.ts | 依存: T48b)
+- [x] T47d — 画面: 表示中のターミナルの並び(複数枚の表示と隠す)(変更ファイル: src/terminal/TerminalManager.ts, src/terminal/TerminalManager.test.ts, src/state/terminalSync.ts, src/state/terminalSync.test.ts, src/state/selectors.ts, src/state/selectors.test.ts, src/test/fakeIpc.ts | 依存: T48b)
   - 対応: NFR-009(表示中のページだけを描く)、FR-052(表示していないページのプロセスと出力が続く)、FR-042(隠したものの取り込み)、設計書 §1.3 #4、§7.3、前提 (e)、【仮定】17
   - 変えるもの: `presentation`(写し → 表示中の並びと隠すもの。タブ表示と拡大中は 1 枚、タイル表示は写しの `display` の表示中のページのタイル)。`TerminalManager.present(shown[], background)`: 表示中の並びをすべて表示に戻し、ほかを `setVisible(false)`(描画の資源を手放す。WebGL のときはコンテキストを返す)。置き場所への出し入れは `TerminalHost` の `attach` のまま。`terminalSync.ts` を並びで伝える形に替える(検証画面の分岐は T49c まで残す)
   - 並行: 可(T47b とファイルが重ならない)

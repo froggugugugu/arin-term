@@ -4,7 +4,9 @@
 // いまの写しと、写しが届くたびに、次の順で伝える。
 // 1. 全ターミナルの状態(終わったシェルへ入力と寸法を送らないため)
 // 2. 写しにあるターミナルの一覧(無くなったもの=タブを閉じた・シェルが終わってタブが閉じたものを破棄するため)
-// 3. 表示中の 1 枚と、隠して出力の取り込みだけを続けるもの(FR-042。検証画面では伝えない。9 枚の表示は検証画面が決める)
+// 3. 見えるターミナルの並び(タブ表示と拡大中は 0〜1 枚、タイル表示は表示中のページのタイル)と、
+//    隠して出力の取り込みだけを続けるもの(FR-042・FR-052、NFR-009。selectors.ts の presentation。
+//    検証画面では伝えない。9 枚の表示は検証画面が決める)
 
 import type { TerminalId } from "../ipc/generated/TerminalId";
 import type { TerminalStatus } from "../ipc/generated/TerminalStatus";
@@ -16,7 +18,7 @@ import type { AppSnapshot } from "../ipc/generated/AppSnapshot";
 export interface TerminalSyncTarget {
   setStatus(id: TerminalId, status: TerminalStatus): void;
   retain(ids: Iterable<TerminalId>): void;
-  present(shown: TerminalId | null, background: readonly TerminalId[]): void;
+  present(shown: readonly TerminalId[], background: readonly TerminalId[]): void;
 }
 
 export interface TerminalSyncOptions {

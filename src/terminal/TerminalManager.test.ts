@@ -1029,12 +1029,12 @@ describe("TerminalManager(写しとの同期。T34b、FR-042)", () => {
 
   it("プロジェクトを切り替えてもサーフェスを破棄しない。前の表示中は隠し、出力は取り込み続ける", async () => {
     const { engine, fake, manager } = setup();
-    manager.present("a", []);
+    manager.present(["a"], []);
     manager.attach("a", fakeSlot().slot);
     await flush();
 
     // B に切り替えた写し: B が表示中、A は隠して取り込みだけ。
-    manager.present("b", ["a"]);
+    manager.present(["b"], ["a"]);
     manager.attach("b", fakeSlot().slot);
     await flush();
     fake.channels[0]?.send(new Uint8Array([7]).buffer);
@@ -1049,7 +1049,7 @@ describe("TerminalManager(写しとの同期。T34b、FR-042)", () => {
     ]);
 
     // A に戻す: 同じサーフェスを表示に戻す。
-    manager.present("a", ["b"]);
+    manager.present(["a"], ["b"]);
     expect(engine.created.filter((s) => s.id === "a")).toHaveLength(1);
     expect(a?.visible).toBe(true);
     expect(engine.created.find((s) => s.id === "b")?.visible).toBe(false);
@@ -1058,7 +1058,7 @@ describe("TerminalManager(写しとの同期。T34b、FR-042)", () => {
   it("隠したまま作ったサーフェスは表示中の寸法で接続する(表示中の接続を待ってからつなぐ)", async () => {
     const { engine, fake, manager } = setup();
     // 起動時: A を表示、B・C は隠したまま。A はまだ置き場所に入っていない。
-    manager.present("a", ["b", "c"]);
+    manager.present(["a"], ["b", "c"]);
     await flush();
     expect(commands(fake)).toEqual([]);
 
@@ -1089,7 +1089,7 @@ describe("TerminalManager(写しとの同期。T34b、FR-042)", () => {
     manager.getOrCreate("a");
     const surfaceA = fakeSurface(engine, "a");
     surfaceA.fitTo = { rows: 30, cols: 100 };
-    manager.present("a", []);
+    manager.present(["a"], []);
     manager.attach("a", fakeSlot().slot);
     await flush();
     surfaceA.fitTo = { rows: 40, cols: 120 };
@@ -1097,7 +1097,7 @@ describe("TerminalManager(写しとの同期。T34b、FR-042)", () => {
     await flush();
 
     // 別のプロジェクトのタブ(写しで新しく届いた)を隠したまま作る。
-    manager.present("a", ["z"]);
+    manager.present(["a"], ["z"]);
     await flush();
 
     const z = fake.calls
@@ -1110,7 +1110,7 @@ describe("TerminalManager(写しとの同期。T34b、FR-042)", () => {
   it("表示中が無ければエンジンの既定の寸法で接続する", async () => {
     const { engine, fake, manager } = setup();
 
-    manager.present(null, ["b"]);
+    manager.present([], ["b"]);
     await flush();
 
     expect(fake.calls.map((c) => c.args)).toEqual([
@@ -1127,9 +1127,9 @@ describe("TerminalManager(写しとの同期。T34b、FR-042)", () => {
       },
     });
 
-    manager.present(null, ["b"]);
+    manager.present([], ["b"]);
     await flush();
-    manager.present(null, ["b"]);
+    manager.present([], ["b"]);
     await flush();
 
     expect(commands(fake)).toEqual(["connect_terminal"]);
@@ -1138,11 +1138,11 @@ describe("TerminalManager(写しとの同期。T34b、FR-042)", () => {
 
   it("待たせていた隠したターミナルが表示中になったら、その置き場所の寸法で接続する", async () => {
     const { engine, fake, manager } = setup();
-    manager.present("a", ["b"]);
+    manager.present(["a"], ["b"]);
     await flush();
 
     // A を置き場所に入れる前に B へ切り替わった。
-    manager.present("b", ["a"]);
+    manager.present(["b"], ["a"]);
     manager.getOrCreate("b");
     fakeSurface(engine, "b").fitTo = { rows: 33, cols: 99 };
     manager.attach("b", fakeSlot().slot);
@@ -1159,7 +1159,7 @@ describe("TerminalManager(写しとの同期。T34b、FR-042)", () => {
 
   it("接続を待たせているうちに写しから消えたターミナルは、破棄して接続しない", async () => {
     const { engine, fake, manager } = setup();
-    manager.present("a", ["b"]);
+    manager.present(["a"], ["b"]);
     manager.retain(["a"]);
     manager.attach("a", fakeSlot().slot);
     await flush();
@@ -1167,6 +1167,251 @@ describe("TerminalManager(写しとの同期。T34b、FR-042)", () => {
     expect(fakeSurface(engine, "b").disposeCount).toBe(1);
     expect(manager.get("b")).toBeUndefined();
     expect(fake.calls.map((c) => (c.args as { terminalId: string }).terminalId)).toEqual(["a"]);
+  });
+});
+
+describe("TerminalManager(表示中のターミナルの並び。T47d、NFR-009、FR-052)", () => {
+  const TILES = Array.from({ length: 9 }, (_, i) => `t${i + 1}`);
+  const NEXT = ["t10", "t11"];
+
+  /** 置き場所に入れた、表示中のタイル(ID ごとの寸法で合わせる)。 */
+  async function showTiles(
+    ctx: ReturnType<typeof setup>,
+    ids: readonly string[],
+    background: readonly string[],
+    size: { rows: number; cols: number },
+  ) {
+    ctx.manager.present(ids, background);
+    for (const id of ids) {
+      ctx.manager.getOrCreate(id);
+      fakeSurface(ctx.engine, id).fitTo = size;
+      ctx.manager.attach(id, fakeSlot().slot);
+    }
+    await flush();
+  }
+
+  const connectsOf = (fake: ReturnType<typeof createFakeIpc>) =>
+    fake.calls
+      .filter((c) => c.command === "connect_terminal")
+      .map((c) => c.args as { terminalId: string; rows: number; cols: number })
+      .map((c) => [c.terminalId, c.rows, c.cols]);
+  const resizesOf = (fake: ReturnType<typeof createFakeIpc>) =>
+    fake.calls
+      .filter((c) => c.command === "resize_terminal")
+      .map((c) => c.args as { terminalId: string; rows: number; cols: number })
+      .map((c) => [c.terminalId, c.rows, c.cols]);
+
+  it("タブ表示では表示中のタブ_1_枚だけを表示にする", async () => {
+    const ctx = setup();
+    await showTiles(ctx, ["a"], ["b", "c"], { rows: 40, cols: 120 });
+
+    expect(fakeSurface(ctx.engine, "a").visible).toBe(true);
+    expect(fakeSurface(ctx.engine, "b").visible).toBe(false);
+    expect(fakeSurface(ctx.engine, "c").visible).toBe(false);
+  });
+
+  it("タイル表示では表示中のページのタイルを表示にしほかを隠す", async () => {
+    const ctx = setup();
+    await showTiles(ctx, TILES, NEXT, { rows: 20, cols: 60 });
+
+    for (const id of TILES) expect(fakeSurface(ctx.engine, id).visible, id).toBe(true);
+    for (const id of NEXT) expect(fakeSurface(ctx.engine, id).visible, id).toBe(false);
+    // 9 枚とも自分の置き場所の寸法で 1 回ずつ接続し、隠した 2 枚は最後に表示していたタイルの寸法で接続する
+    // (隠した 2 枚は最初のタイルの寸法が決まった直後につなぐので、順は問わない)。
+    expect(connectsOf(ctx.fake)).toHaveLength(11);
+    expect(connectsOf(ctx.fake)).toEqual(
+      expect.arrayContaining([...TILES.map((id) => [id, 20, 60]), ...NEXT.map((id) => [id, 20, 60])]),
+    );
+  });
+
+  it("ページが替わると前のページのタイルを隠し新しいページのタイルを表示に戻す", async () => {
+    const ctx = setup();
+    await showTiles(ctx, TILES, NEXT, { rows: 20, cols: 60 });
+    // 表示の切り替えの順を、全サーフェスを通して記録する。
+    const order: string[] = [];
+    for (const surface of ctx.engine.created) {
+      const original = surface.setVisible.bind(surface);
+      surface.setVisible = (visible) => {
+        order.push(`${surface.id}:${visible ? "表示" : "隠す"}`);
+        original(visible);
+      };
+    }
+
+    // 2 ページ目(2 枚。1 枚のタイルが大きくなる)。
+    ctx.manager.present(NEXT, TILES);
+    for (const id of NEXT) {
+      fakeSurface(ctx.engine, id).fitTo = { rows: 40, cols: 60 };
+      ctx.manager.attach(id, fakeSlot().slot);
+    }
+    await flush();
+
+    for (const id of TILES) expect(fakeSurface(ctx.engine, id).visible, id).toBe(false);
+    for (const id of NEXT) expect(fakeSurface(ctx.engine, id).visible, id).toBe(true);
+    // 先に隠してから表示に戻す(WebGL のコンテキストを先に返し、同時に持つ数が上限を超えないように)。
+    expect(order).toEqual([...TILES.map((id) => `${id}:隠す`), ...NEXT.map((id) => `${id}:表示`)]);
+    // 表示に戻したタイルは置き場所に合わせ直し、行・桁が変わったものだけ寸法を送る。隠したタイルには送らない。
+    expect(resizesOf(ctx.fake)).toEqual(NEXT.map((id) => [id, 40, 60]));
+    // 接続は作り直さない。
+    expect(connectsOf(ctx.fake)).toHaveLength(11);
+    expect(ctx.fake.channels.every((c) => !c.closed)).toBe(true);
+  });
+
+  it("隠したターミナルにも出力が届き処理済みを返し続ける", async () => {
+    const ctx = setup();
+    await showTiles(ctx, TILES, NEXT, { rows: 20, cols: 60 });
+    ctx.manager.present(NEXT, TILES);
+
+    const channelOf = (id: string) => {
+      const index = ctx.fake.calls
+        .filter((c) => c.command === "connect_terminal")
+        .findIndex((c) => (c.args as { terminalId: string }).terminalId === id);
+      return ctx.fake.channels[index];
+    };
+    for (const id of [...TILES, ...NEXT]) channelOf(id)?.send(new TextEncoder().encode(`out-${id}`).buffer);
+    await flush();
+
+    for (const id of [...TILES, ...NEXT]) {
+      expect(new TextDecoder().decode(fakeSurface(ctx.engine, id).written[0]), id).toBe(`out-${id}`);
+    }
+    expect(
+      ctx.fake.calls.filter((c) => c.command === "ack_terminal_output").map((c) => c.args),
+    ).toEqual([...TILES, ...NEXT].map((id) => ({ terminalId: id, bytes: `out-${id}`.length })));
+  });
+
+  it("隠すと描画の資源を手放す", async () => {
+    const ctx = setup();
+    await showTiles(ctx, TILES, [], { rows: 20, cols: 60 });
+
+    ctx.manager.present(["t1"], TILES.slice(1));
+
+    expect(fakeSurface(ctx.engine, "t1").visibleCalls).toEqual([]);
+    for (const id of TILES.slice(1)) expect(fakeSurface(ctx.engine, id).visibleCalls, id).toEqual([false]);
+  });
+
+  it("拡大中は拡大したタイル_1_枚だけを表示にする", async () => {
+    const ctx = setup();
+    await showTiles(ctx, TILES, [], { rows: 20, cols: 60 });
+
+    // t5 を拡大: t5 だけが表示中のまま、大きな置き場所へ移る。
+    ctx.manager.present(["t5"], TILES.filter((id) => id !== "t5"));
+    fakeSurface(ctx.engine, "t5").fitTo = { rows: 60, cols: 180 };
+    ctx.manager.attach("t5", fakeSlot().slot);
+    await flush();
+
+    for (const id of TILES) expect(fakeSurface(ctx.engine, id).visible, id).toBe(id === "t5");
+    expect(resizesOf(ctx.fake)).toEqual([["t5", 60, 180]]);
+
+    // 元に戻す: 9 枚がタイルの置き場所に戻り、拡大していた 1 枚もタイルの寸法に戻す。
+    ctx.manager.present(TILES, []);
+    for (const id of TILES) {
+      fakeSurface(ctx.engine, id).fitTo = { rows: 20, cols: 60 };
+      ctx.manager.attach(id, fakeSlot().slot);
+    }
+    await flush();
+
+    for (const id of TILES) expect(fakeSurface(ctx.engine, id).visible, id).toBe(true);
+    // 寸法が変わったのは拡大していた 1 枚だけ(ほかの 8 枚は隠す前と同じ寸法)。
+    expect(resizesOf(ctx.fake)).toEqual([
+      ["t5", 60, 180],
+      ["t5", 20, 60],
+    ]);
+  });
+
+  it("隠したまま作るターミナルは最後に表示していたタイルの寸法で接続する", async () => {
+    const ctx = setup();
+    await showTiles(ctx, ["t1", "t2"], [], { rows: 30, cols: 50 });
+    // ウィンドウの大きさを変えた: タイルの寸法が変わる。
+    for (const id of ["t1", "t2"]) {
+      fakeSurface(ctx.engine, id).fitTo = { rows: 25, cols: 45 };
+      ctx.manager.fit(id);
+    }
+    await flush();
+
+    // 別のページに新しいタブが写しで届いた(隠したまま作る)。
+    ctx.manager.present(["t1", "t2"], ["t3"]);
+    await flush();
+
+    expect(connectsOf(ctx.fake).find(([id]) => id === "t3")).toEqual(["t3", 25, 45]);
+    expect(fakeSurface(ctx.engine, "t3").visible).toBe(false);
+
+    // 表示したら、その置き場所に合わせ直す(タイルの大きさが違えば寸法を送る)。
+    ctx.manager.present(["t3"], ["t1", "t2"]);
+    fakeSurface(ctx.engine, "t3").fitTo = { rows: 50, cols: 90 };
+    ctx.manager.attach("t3", fakeSlot().slot);
+    await flush();
+    expect(resizesOf(ctx.fake).filter(([id]) => id === "t3")).toEqual([["t3", 50, 90]]);
+  });
+
+  it("表示中の並びが同じなら何もしない", async () => {
+    const ctx = setup();
+    await showTiles(ctx, TILES, NEXT, { rows: 20, cols: 60 });
+    const before = {
+      calls: ctx.fake.calls.length,
+      visibleCalls: ctx.engine.created.map((s) => s.visibleCalls.length),
+      fitCount: ctx.engine.created.map((s) => s.fitCount),
+    };
+
+    ctx.manager.present(TILES, NEXT);
+    ctx.manager.present([...TILES], [...NEXT]);
+    await flush();
+
+    expect(ctx.fake.calls.length).toBe(before.calls);
+    expect(ctx.engine.created.map((s) => s.visibleCalls.length)).toEqual(before.visibleCalls);
+    expect(ctx.engine.created.map((s) => s.fitCount)).toEqual(before.fitCount);
+  });
+
+  it("タブ表示とタイル表示を行き来しても寸法の送信は重ならず最後の寸法が残る", async () => {
+    const resize = deferred();
+    const ctx = setup({ resize_terminal: resize.handler });
+    // タブ表示: a が大きな置き場所。b は隠したまま。
+    await showTiles(ctx, ["a"], ["b"], { rows: 40, cols: 120 });
+
+    // タイル表示(2 枚): a・b がタイルの置き場所へ。
+    ctx.manager.present(["a", "b"], []);
+    for (const id of ["a", "b"]) {
+      fakeSurface(ctx.engine, id).fitTo = { rows: 40, cols: 60 };
+      ctx.manager.attach(id, fakeSlot().slot);
+    }
+    // 送信中に、タブ表示へ戻す(a はまた大きな置き場所。b は隠す)。続けてもう一度タイル表示にする。
+    ctx.manager.present(["a"], ["b"]);
+    fakeSurface(ctx.engine, "a").fitTo = { rows: 40, cols: 120 };
+    ctx.manager.attach("a", fakeSlot().slot);
+    ctx.manager.present(["a", "b"], []);
+    fakeSurface(ctx.engine, "a").fitTo = { rows: 40, cols: 60 };
+    ctx.manager.attach("a", fakeSlot().slot);
+    await flush();
+    // ターミナルごとに 1 本目の応答を待っているあいだは、次を送らない(a の 40×120 と 40×60 は溜めて最新だけを残す)。
+    expect(resizesOf(ctx.fake)).toEqual([
+      ["a", 40, 60],
+      ["b", 40, 60],
+    ]);
+
+    await resize.settle();
+    await resize.settle();
+    await resize.settle();
+    await flush();
+
+    // a は送信中に 120→60 と変わったので、途中の 40×120 は送らず、最新の 40×60 を 1 回だけ追って送る
+    // (Rust に最後に届くのはいまの寸法)。b は 1 回だけ。
+    expect(resizesOf(ctx.fake)).toEqual([
+      ["a", 40, 60],
+      ["b", 40, 60],
+      ["a", 40, 60],
+    ]);
+    expect(resize.pending()).toBe(0);
+    expect(fakeSurface(ctx.engine, "a").size()).toEqual({ rows: 40, cols: 60 });
+  });
+
+  it("写しから消えた表示中のタイルは表示中の並びからも外れる(残りの隠したものの接続を待たせない)", async () => {
+    const ctx = setup();
+    ctx.manager.present(["x"], []);
+    ctx.manager.retain([]);
+
+    // 表示中の並びが空になったので、隠したまま作るものはエンジンの既定の寸法ですぐ接続する。
+    ctx.manager.present([], ["y"]);
+    await flush();
+
+    expect(connectsOf(ctx.fake)).toEqual([["y", 24, 80]]);
   });
 });
 

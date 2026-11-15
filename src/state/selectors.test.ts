@@ -14,6 +14,7 @@ import {
   shownTerminal,
   treeMenuContext,
   treeSelectionKind,
+  visibleTerminalIds,
 } from "./selectors";
 
 const project = (id: string, terminalIds: string[], activeTerminalId: string | null): ProjectCardSnapshot => ({
@@ -67,12 +68,75 @@ describe("写しから表示用の値を取り出す関数", () => {
   });
 
   it("presentation は表示中の 1 枚と、隠して取り込みだけ続ける残りの全部(全プロジェクト)", () => {
-    expect(presentation(snapshot)).toEqual({ shown: "a2", background: ["a1", "b1"] });
+    expect(presentation(snapshot)).toEqual({ shown: ["a2"], background: ["a1", "b1"] });
     expect(presentation({ ...snapshot, selectedProjectId: "C" })).toEqual({
-      shown: null,
+      shown: [],
       background: ["a1", "a2", "b1"],
     });
-    expect(presentation(null)).toEqual({ shown: null, background: [] });
+    expect(presentation(null)).toEqual({ shown: [], background: [] });
+  });
+});
+
+describe("見えるターミナルの並び(T47d。Rust の Workspace::visible_terminals と同じ規則)", () => {
+  // 4 枚(A: a1・a2、B: b1・b2)。a2 にフォーカス(=選択中の A の表示中のタブ)。
+  const four = sampleSnapshot({
+    projects: [project("A", ["a1", "a2"], "a2"), project("B", ["b1", "b2"], "b1")],
+    selectedProjectId: "A",
+    terminals: [
+      sampleTerminal("a1", running, { projectId: "A" }),
+      sampleTerminal("a2", running, { projectId: "A" }),
+      sampleTerminal("b1", running, { projectId: "B" }),
+      sampleTerminal("b2", running, { projectId: "B" }),
+    ],
+  });
+  const display = (overrides: Partial<typeof four.display>) => ({
+    ...four,
+    display: {
+      ...four.display,
+      pageCount: 1,
+      grid: { cols: 2, rows: 2 },
+      tileIds: ["a1", "a2", "b1", "b2"],
+      focusedTerminalId: "a2",
+      ...overrides,
+    },
+  });
+
+  it("タブ表示では表示中のタブ_1_枚だけ(タブ表示ではタイルの並びを使わない)", () => {
+    expect(visibleTerminalIds(display({ mode: "tabs" }))).toEqual(["a2"]);
+    expect(visibleTerminalIds({ ...display({ mode: "tabs" }), selectedProjectId: null })).toEqual([]);
+    expect(visibleTerminalIds(null)).toEqual([]);
+  });
+
+  it("タイル表示では表示中のページのタイル(並びの順)", () => {
+    const tiles = display({ mode: "tiles" });
+
+    expect(visibleTerminalIds(tiles)).toEqual(["a1", "a2", "b1", "b2"]);
+    expect(presentation(tiles)).toEqual({ shown: ["a1", "a2", "b1", "b2"], background: [] });
+  });
+
+  it("タイル表示のページが替わると、そのページのタイルが見え、ほかは隠すものになる", () => {
+    // 2 ページ目に b1・b2 だけがある形(グリッドとページは Rust が計算したものをそのまま使う)。
+    const page2 = display({ mode: "tiles", page: 1, pageCount: 2, grid: { cols: 2, rows: 1 }, tileIds: ["b1", "b2"] });
+
+    expect(presentation(page2)).toEqual({ shown: ["b1", "b2"], background: ["a1", "a2"] });
+  });
+
+  it("拡大中はフォーカス中の_1_枚だけ(タイルの並びは使わない)", () => {
+    const maximized = display({ mode: "tiles", maximized: true, focusedTerminalId: "b2" });
+
+    expect(presentation(maximized)).toEqual({ shown: ["b2"], background: ["a1", "a2", "b1"] });
+    expect(visibleTerminalIds(display({ mode: "tiles", maximized: true, focusedTerminalId: null }))).toEqual([]);
+  });
+
+  it("写しのターミナルの一覧に無い_id_は見える並びに入れない", () => {
+    expect(visibleTerminalIds(display({ mode: "tiles", tileIds: ["a1", "gone", "b1"] }))).toEqual(["a1", "b1"]);
+    expect(visibleTerminalIds(display({ mode: "tiles", maximized: true, focusedTerminalId: "gone" }))).toEqual([]);
+  });
+
+  it("0_枚のタイル表示では何も見えない", () => {
+    const empty = sampleSnapshot({ display: { ...sampleSnapshot().display, mode: "tiles" } });
+
+    expect(presentation(empty)).toEqual({ shown: [], background: [] });
   });
 });
 
