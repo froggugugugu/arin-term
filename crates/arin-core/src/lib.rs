@@ -8,6 +8,7 @@
 pub mod launch_options;
 pub mod paths;
 pub mod ports;
+pub mod project;
 pub mod terminal;
 pub mod workspace;
 
