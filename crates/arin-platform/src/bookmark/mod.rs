@@ -10,6 +10,7 @@
 //! どのスレッドからでも呼べる(中で autoreleasepool を張る)。
 
 mod native;
+mod port;
 
 use std::path::{Path, PathBuf};
 
@@ -17,6 +18,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 
 pub use native::{create_bookmark, resolve_bookmark};
+pub use port::MacBookmarks;
 
 /// ブックマークの作成・解決・文字列からの復元の失敗。
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
