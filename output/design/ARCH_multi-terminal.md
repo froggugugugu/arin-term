@@ -70,7 +70,7 @@ flowchart TD
 ┌─ Arin.app ──────────────────────────────────────────────────────────────┐
 │ メインプロセス(Rust)                                                   │
 │  ├─ Workspace(状態の正本。Mutex で保護)… arin-core                    │
-│  ├─ ターミナルごと: PTY + 読み取りスレッド + アテンション走査           │
+│  ├─ ターミナルごと: PTY + 読み取り・まとめのスレッド + アテンション走査 │
 │  ├─ ファイル監視(選択中プロジェクトのルートに FSEvents)               │
 │  ├─ 見回り(1 秒間隔): 前面プロセスの調査、ルートフォルダの現在位置     │
 │  └─ 状態ファイルの書き込み(0.5 秒まとめ)                              │
@@ -91,7 +91,7 @@ flowchart TD
 | # | 判断事項 | 提案内容 | 理由 |
 | - | -------- | -------- | ---- |
 | 1 | ロジック層の置き場所 | 状態と規則は Rust の `arin-core`。画面にどう並べるかの計算(ツリーの行、ドラッグ、キーの振り分け)だけ TypeScript の `src/logic`。振り分けの基準は §3.4 | ファイルを書き換える判定を画面から迂回できない。ウィンドウが隠れていても動く。依存方向をクレート境界で強制できる。別案は §15.1 #1 |
-| 2 | PTY の持ち方 | Rust 側でターミナル 1 枚につき PTY 1 組と読み取りスレッド 1 本を持つ。PTY は画面が最初に接続したときに起動する | 接続前の出力を取りこぼさない。1 枚の異常が他へ波及しない(NFR-006) |
+| 2 | PTY の持ち方 | Rust 側でターミナル 1 枚につき PTY 1 組とスレッド 2 本(PTY の読み取りと、まとめて送る処理)を持つ。PTY は画面が最初に接続したときに起動する | 接続前の出力を取りこぼさない。1 枚の異常が他へ波及しない(NFR-006) |
 | 3 | 出力の流し方 | Tauri のチャネルで生バイトを画面へ送る。Rust 側で短い時間ぶんをまとめ、画面が処理し終えた量を返すまで読み取りを止める(流量制御) | NFR-004・009。ローカルのソケットを開かずに済む(NFR-008) |
 | 4 | ターミナルの保持 | 1 ターミナル=xterm.js のインスタンス 1 個。非表示のあいだも破棄せず、置き場所の要素を画面から隠すだけにする | FR-042・052(非表示側の継続)と NFR-009(表示中だけ描画)を同じ仕組みで満たす。スクロールバックは xterm.js が持つ |
 | 5 | アテンションの検出 | PTY の生出力を `arin-core` の走査器で調べ、BEL と OSC 9/777 を拾う | エンジンに依存しない(C4)。ウィンドウが隠れていても検出でき、macOS 通知を出せる。PRD §8 の単体テスト項目に当たる |
@@ -147,9 +147,9 @@ flowchart TD
 | 画面のフレームワーク | React + zustand | `react` 19.3.1、`react-dom` 19.3.1、`zustand` 5.0.16、`@vitejs/plugin-react` 6.1.2、`@types/react` 19.3.0、`@types/react-dom` 19.3.0 | 確定(§15.1 #2。推奨の「なし」ではなく本人が選択)。版の根拠は ADR-003 |
 | ビルド(画面側) | Vite | 8 系 | 推奨・踏襲 |
 | パッケージ管理 | npm | 11 系 | 推奨・踏襲 |
-| ターミナルエンジン | xterm.js(`@xterm/xterm`) | 6.0.0 に固定 | 第一候補(PRD §7)。M1 の Go/No-Go で最終判断し ADR-001 に残す |
-| ターミナルの描画方式 | DOM / WebGL(`@xterm/addon-webgl`) | 0.19.0 | 未決。M1 で両方を測って決める(§2.2) |
-| xterm.js のアドオン | `addon-fit`(寸法合わせ)、`addon-unicode11` か `addon-unicode-graphemes`(全角幅・絵文字)、`addon-search`(FR-047)、`addon-web-links`(FR-047) | 6.0.0 と同時期の版 | 推奨。入れるものを ADR-001 に列挙する |
+| ターミナルエンジン | xterm.js(`@xterm/xterm`) | 6.0.0 に固定 | 確定(M1 の Go/No-Go で Go。2026-11-15。ADR-001) |
+| ターミナルの描画方式 | DOM / WebGL(`@xterm/addon-webgl`) | 0.19.0 | 確定: DOM を既定にする。WebGL は起動時の指定(`ARIN_RENDERER=webgl`)で切り替えられるまま、複数枚の表示を実測する M4 まで残す(ADR-001) |
+| xterm.js のアドオン | `addon-fit`(寸法合わせ)0.11.0、`addon-unicode11` 0.9.0(全角幅・絵文字。既定)、`addon-unicode-graphemes` 0.4.0(`ARIN_UNICODE=graphemes` で切替。M4 まで残す)、`addon-search`(FR-047)、`addon-web-links`(FR-047) | 左に記載。search と web-links は入れるときに選ぶ | fit と全角幅は確定(ADR-001)。search と web-links は FR-047 を作るとき(M6 の T61)に入れる |
 | PTY | `portable-pty` / `pty-process` / 自前実装 | 0.9.0 | 確定(§15.1 #3)。`portable-pty` |
 | ファイル監視 | FSEvents。`notify` クレート経由 | 8.2 系 | FSEvents は確定(PRD §7 C7)。クレートは推奨 |
 | macOS の API 呼び出し | `objc2`、`objc2-foundation`、`objc2-app-kit`、`libc` | 0.6 / 0.3 / 0.3 / 0.2 | 推奨・踏襲。Tauri が既に使っているクレートで、新しい供給元が増えない |
@@ -186,6 +186,8 @@ PTY は `arin-core` の `PtyPort` 越しに使うので、クレートを替え�
 
 xterm.js を WKWebView で動かしたときの挙動は、すべて未検証。M1 を検証専用にする(PRD §7)。判定は人間が行う。
 
+結果(2026-11-15): 本人が **Go** と判断した。描画方式は DOM、全角幅は `unicode11` を既定にし、WebGL と `graphemes` は起動時の指定で切り替えられるまま M4 まで残す。項目ごとの確認の範囲と未確認の項目は ADR-001(`ADR_001_terminal-engine.md`)。
+
 | 分類 | 確かめること |
 | ---- | ------------ |
 | TUI の表示(FR-041) | truecolor、代替スクリーン、マウス、ブラケットペースト、全角幅、絵文字を Claude Code と Codex で確認する |
@@ -197,7 +199,7 @@ xterm.js を WKWebView で動かしたときの挙動は、すべて未検証。
 | キー入力 | ⌘ のショートカットと画面内のキー処理のどちらが先に受け取るか。Option キーの扱い。Ctrl の組み合わせ |
 | コピーとペースト | ⌘C・⌘V で、貼り付けの許可を求める吹き出しが出ないこと |
 | 流量制御 | 画面が処理し終えた量を返す方式で、大量出力のあいだもメモリが増え続けないこと。しきい値を決める |
-| CSP | xterm.js は実行時にスタイルの要素を作る。tadcap と同じ厳しさの CSP(`style-src 'self'`)では動かない見込みで、どこまで緩めるかを決める(§12) |
+| CSP | xterm.js は実行時にスタイルの要素を作る。tadcap と同じ厳しさの CSP(`style-src 'self'`)では動かない見込みで、どこまで緩めるかを決める(§12)。**決定**: `csp`・`devCsp` に `style-src-elem 'self' 'unsafe-inline'` と `style-src-attr 'unsafe-inline'` を足す。`style-src 'self'` は残し、`script-src` は変えない(xterm.js 6.0.0 が実行時に `<style>` 要素を作り、truecolor の文字に style 属性を書くため。ADR-001 に記録) |
 | スクロールバック | 10,000 行の設定で動くこと(FR-043) |
 | クリップボードの制御シーケンス | Claude Code と Codex のコピー機能が OSC 52 を必要とするか(§15.2 #9) |
 
@@ -334,8 +336,8 @@ arin-term/
 │       ├── lib.rs                    # 組み立て(ポート実装 → Workspace → Tauri)
 │       ├── commands/                 # 画面からの操作を受ける薄い関数(機能ごとに 1 ファイル)
 │       ├── events.rs                 # 画面へ送るイベント
-│       ├── sessions.rs               # ターミナルごとの読み取りスレッドとチャネルの管理
-│       ├── menu.rs                   # メニューバー
+│       ├── sessions.rs               # ターミナルごとの読み取り・まとめのスレッドとチャネルの管理
+│       ├── menu.rs                   # メニューバー(Tauri の既定を「Arin」と「編集」だけに置き換える)
 │       └── lifecycle.rs              # 起動、終了の確認、見回りの開始
 ├── e2e/                              # Playwright のテスト
 │   ├── fixtures/                     # 偽の Rust 側(通信の差し替え)、テストデータ
@@ -368,7 +370,7 @@ arin-term/
 | `arin-core/ports` | OS 入出力の抽象 | `FileSystemPort`、`WatcherPort`、`PtyPort`、`BookmarkPort`、`RootLocatorPort`、`StateFilePort`、`SettingsFilePort`、`PasteboardPort`、`DesktopPort`、`NotificationPort`、`GitInfoPort`、`ProcessProbePort`、`Clock` | — |
 | `arin-platform` | 上のポートの実装 | `LocalFileSystem`、`FsEventsWatcher`、`NativePty`、`BookmarkResolver`、`OpenDirLocator`、`StateFileStore`、`SettingsFileStore`、`SystemPasteboard`、`DesktopActions`、`UserNotifier`、`GitHeadReader`、`ForegroundProcessProbe` | — |
 | `src-tauri/commands` | 画面からの操作を `Workspace` に渡す | 機能ごとのコマンド関数 | — |
-| `src-tauri/sessions` | ターミナルごとの読み取りスレッド、出力のまとめ、流量制御、チャネルの付け替え | `SessionRegistry`、`OutputPump` | `TerminalStore`(イベントの反映先) |
+| `src-tauri/sessions` | ターミナルごとの読み取りスレッドとまとめのスレッド、出力のまとめ、流量制御、チャネルの付け替え | `SessionRegistry`、`Pump` | `TerminalStore`(イベントの反映先) |
 | `src/logic/tree` | ツリーの行の並び、遅延読み込みの管理、差分の適用、更新の保留、目印、選択、絞り込み | `TreeModel`、`applyDirListing`、`UpdateGate`、`RecentMarks`、`Selection` | — |
 | `src/logic/dnd` | ドラッグの開始判定とドロップ先の判定 | `DragMachine`、`resolveDropTarget` | — |
 | `src/logic/keys` | ショートカットの表と、フォーカス位置による振り分け | `keymap`、`resolveCommand` | — |
@@ -385,28 +387,32 @@ arin-term/
 | `src/ui/menu` | コンテキストメニューの表示 | `ContextMenu` | `uiStore` |
 | `src/ui/design` | プロジェクト色の実際の色値(ライト・ダーク)、余白と文字サイズ | `tokens.css`、`palette.ts` | — |
 
-`TerminalEngine` の形(提案。名前は実装時に確定):
+`TerminalEngine` の形(M1 の実装。正本は `src/terminal/engine.ts`):
 
 ```typescript
 // src/terminal/engine.ts(@xterm/* を import しない)
 export interface TerminalEngine {
-  createSurface(id: TerminalId, appearance: TerminalAppearance): TerminalSurface;
+  createSurface(id: TerminalId): TerminalSurface;
 }
 
 export interface TerminalSurface {
   readonly element: HTMLElement;              // UI はこの要素を置き場所に入れるだけ
   write(data: Uint8Array): Promise<number>;   // 取り込みが済んだバイト数を返す(流量制御に使う)
-  onInput(listener: (data: string) => void): void;   // キー入力 → PTY
+  onInput(listener: (data: string) => void): void;   // キー入力・貼り付け → PTY
   onResize(listener: (cols: number, rows: number) => void): void;
-  onFocus(listener: () => void): void;
   fit(): void;                                // 置き場所の大きさに合わせる(FR-043・051)
   setVisible(visible: boolean): void;         // 表示中だけ描画の資源を持つ(NFR-009)
-  apply(appearance: TerminalAppearance): void; // フォント・配色・スクロールバック(FR-043・049)
+  renderer(): RendererKind;                   // いまの描画方式(dom / webgl)
+  onRendererChange(listener: (renderer: RendererKind) => void): () => void;
+  size(): TerminalSize;                       // いまの行・桁数
   getSelection(): string;
   paste(text: string): void;
-  showFind(): void;                           // スクロールバック内検索(FR-047)
+  hasFocus(): boolean;                        // コピー・ペーストの振り分けに使う(§9.1)
+  focus(): void;
   dispose(): void;
 }
+// 後で足す操作(M1 では未実装): 見た目の指定と適用(フォント・配色・スクロールバック。FR-043・049)は M6 の T56、
+// スクロールバック内検索(FR-047)は M6 の T61 で足す
 ```
 
 ### 5.2 モジュール間連携
@@ -626,10 +632,11 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 
 1. 読み取りスレッドが PTY から読む
 2. `AttentionScanner` が生バイトを走査する
-3. 短い時間ぶん(数ミリ秒、または一定のバイト数)をまとめ、チャネルで画面へ送る
+3. まとめのスレッドが、短い時間ぶん(数ミリ秒、または一定のバイト数)をまとめ、チャネルで画面へ送る(読み取りは出力が来るまで待つので、時間で区切って送るには別のスレッドが要る)
 4. 画面は xterm.js に書き込み、取り込みが済んだ量を Rust に返す
 5. 未処理の量が上限を超えたら、Rust は PTY の読み取りを止める。子プロセスは書き込みで待たされる。下限まで減ったら再開する
 6. キー入力は xterm.js → 入力のコマンド → PTY。寸法は、置き場所の大きさから行・桁を計算して PTY に伝える
+7. 入力と寸法の送信は、画面側でターミナルごとに直列にする(前の送信の応答を待ってから次を送る。待つあいだの入力は連結し、寸法は最新だけ送る。`src/logic/serialSender.ts`)
 
 **外部でのファイル変更(FR-014、FR-037、FR-038)**
 
@@ -679,7 +686,8 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 | 処理 | 実行場所 |
 | ---- | -------- |
 | `Workspace` の読み書き | コマンドを受けたスレッドが Mutex を取って行う。入出力のあいだは Mutex を持たない |
-| PTY の読み取りと走査 | ターミナルごとの専用スレッド |
+| PTY の読み取りと走査 | ターミナルごとの読み取りスレッド |
+| 出力のまとめと送信、シェルの終了の確認 | ターミナルごとのまとめのスレッド |
 | フォルダの読み込み、ファイル操作 | コマンドの非同期タスク(メインスレッドを塞がない) |
 | FSEvents のコールバック | 監視用のスレッド。除外の判定までここで行う |
 | 見回り(前面プロセス、ルートの位置) | 専用スレッド。1 秒間隔 |
@@ -708,7 +716,7 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 | NFR-001(メモリ) | スクロールバックは 10,000 行が既定。画面は React を使う(§15.1 #2。フレームワークなしよりメモリは増えるが、数値は目安)。計測は Arin 本体と WebKit の補助プロセスの合計を記録する【仮定】§15.2 #11 |
 | NFR-002(起動) | ウィンドウを先に出し、シェルの起動とツリーの読み込みは後から行う |
 | NFR-003(アイドル CPU) | 定期処理は見回り(1 秒間隔。システムコール数回)だけ。FSEvents は選択中の 1 プロジェクトだけ |
-| NFR-004(大量出力) | 出力のまとめ送りと流量制御(§7.1)。描画方式は M1 で選ぶ |
+| NFR-004(大量出力) | 出力のまとめ送りと流量制御(§7.1)。描画方式は M1 で DOM を既定にした(WebGL は M4 の実測まで切替を残す。ADR-001) |
 | NFR-005(大きなツリー) | フォルダは展開時に読む。読み込みはメインスレッドの外。画面は見えている行だけを描く(仮想スクロール) |
 | NFR-009(タイル 9 枚) | 表示中ページの要素だけを画面に出す。他ページは出力の取り込みだけ(§1.3 #4)。M1 で簡易確認、M4 で体感判定 |
 
@@ -741,7 +749,7 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 
 | 部位 | 実装 | 理由 |
 | ---- | ---- | ---- |
-| メニューバー、フォルダ選択ダイアログ | macOS 標準(Tauri のメニューと `tauri-plugin-dialog`) | macOS のアプリとして必要。選んだパスが画面を経由しない |
+| メニューバー、フォルダ選択ダイアログ | macOS 標準(Tauri のメニューと `tauri-plugin-dialog`)。メニューバーは Tauri の既定を使わず、`menu.rs` で「Arin」と「編集」だけに置き換える(M1) | macOS のアプリとして必要。選んだパスが画面を経由しない。既定のメニューの ⌘W などは M2 のタブ操作(FR-044)とぶつかる |
 | ウィンドウ内の分割とペイン境界 | 画面内(CSS とマウスのイベント) | 最小寸法、折りたたみ、境界位置の読み書きを `LayoutStore` 経由で `state.json` に持つ(FR-009) |
 | ツリー | 画面内。見えている行だけを描く仮想スクロール(自作するか React 用のライブラリを使うかは M3 の着手時に決め、足すなら ADR に残す) | 大きなフォルダでも行数に比例して重くならない(NFR-005) |
 | ターミナル | エンジンの要素を `TerminalHost` に入れる | 1 ターミナル 1 要素。表示先が変わるときは要素を付け替える |
@@ -754,7 +762,7 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 - Container: zustand のフックでストアを読んで部品に値を渡し、`actions` を呼ぶ(`ProjectCardList`、`FileTreeView`、`TerminalArea`)
 - xterm.js の要素は React の管理の外に置く。`TerminalHost` は置き場所の要素だけを描き、エンジンの要素の付け外しは `TerminalManager` が行う(再描画でターミナルが作り直されないようにするため)
 - コンテキストメニューの項目と有効・無効は `src/logic/menu` が決める(例: ルートを選択中は名称変更・切り取り・ゴミ箱が無効。FR-035)。UI は結果を映すだけ。Rust 側も同じ操作を拒否する
-- ⌘C・⌘V・⌘X は、画面のコピー・ペーストのイベントを入口にし、フォーカス位置(ツリーかターミナルか)で振り分ける(C-04)。受け口の確認は §15.3 #7
+- ⌘C・⌘V・⌘X は、画面のコピー・ペーストのイベントを入口にし、フォーカス位置(ツリーかターミナルか)で振り分ける(C-04)。⌘C・⌘V は「編集」メニューの項目を経由して画面の `copy`・`paste` イベントになる(M1 で実装)。受け口の確認は §15.3 #7
 - ツリーでコピーした項目は、ファイルの URL としてペーストボードに書く(Finder と互換。FR-027)
 - 切り取りはアプリ内の状態で表す。ペースト時にペーストボードが切り取り時から変わっていなければ移動、変わっていればコピーにする(Finder に「切り取り」の概念が無いため)
 
@@ -863,7 +871,7 @@ Rust 側のエントリーポイントは `src-tauri/src/main.rs`。組み立て
 
 | 観点 | 設計 |
 | ---- | ---- |
-| XSS 対策 | ファイル名、プロジェクト名、ブランチ名、OSC の本文は信頼しない文字列として扱い、テキストとして差し込む。`innerHTML` などと React の `dangerouslySetInnerHTML` を使わず、検査スクリプトで禁止する(§3.3)。外部のページやスクリプトを読み込まない。CSP は tadcap と同じ厳しさを基本にし、xterm.js のために緩める範囲は M1 で決めて ADR-001 に残す。`withGlobalTauri` は false |
+| XSS 対策 | ファイル名、プロジェクト名、ブランチ名、OSC の本文は信頼しない文字列として扱い、テキストとして差し込む。`innerHTML` などと React の `dangerouslySetInnerHTML` を使わず、検査スクリプトで禁止する(§3.3)。外部のページやスクリプトを読み込まない。CSP は tadcap と同じ厳しさを基本にし、xterm.js のためにスタイルだけを緩める: `style-src-elem 'self' 'unsafe-inline'` と `style-src-attr 'unsafe-inline'` を足し、`style-src 'self'` は残し、`script-src` は緩めない(`csp`・`devCsp` とも。xterm.js 6.0.0 が実行時に `<style>` 要素を作り、truecolor の文字に style 属性を書くため。M1 で決定し ADR-001 に記録)。`withGlobalTauri` は false |
 | 画面に許す操作 | Tauri のファイル操作・シェル実行・HTTP のプラグインを入れない。画面が呼べるのは本アプリのコマンドだけ。コマンドはプロジェクト ID と相対パスを受け取り、Rust 側で範囲を検査する。起動するシェルと環境変数は Rust 側で決め、画面からは指定できない |
 | シェルへの注入 | ターミナルへ挿入するパスは必ず `ShellEscaper` を通す。改行などの制御文字を含むファイル名でもコマンドが実行されない形にする。Enter は送らない(FR-016) |
 | エスケープシーケンス | クリップボードを操作する OSC 52 は無効にする【仮定】§15.2 #9。OSC 9/777 の本文は切り詰めて表示する。URL は ⌘クリックのときだけ、`http` と `https` に限って既定ブラウザで開く(FR-047) |
@@ -943,7 +951,7 @@ ADR の候補(設計ゲートの回答を受けて `/adr` で起こす):
 
 | ADR | 主題 | 対応する §15.1 |
 | --- | ---- | -------------- |
-| ADR-001 | ターミナルエンジンと描画方式、アドオン、CSP(M1 の Go/No-Go の結果を追記) | — |
+| ADR-001 | ターミナルエンジンと描画方式、アドオン、CSP(作成済み。`ADR_001_terminal-engine.md`。M1 の Go/No-Go は Go、DOM と `unicode11` を既定にした) | — |
 | ADR-002 | ロジック層の置き場所と依存方向の強制方法 | #1、#10 |
 | ADR-003 | 画面のフレームワーク(作成済み。`ADR_003_ui-framework.md`) | #2 |
 | ADR-004 | PTY のクレートと出力の流し方 | #3 |
@@ -986,7 +994,7 @@ ADR の候補(設計ゲートの回答を受けて `/adr` で起こす):
 | 6 | 別プロジェクトのターミナルへのパスのドロップ(タイル表示で起こる) | **A【仮定】**: ドロップ先のターミナルが同じプロジェクトなら相対パス、違うプロジェクトなら絶対パスを挿入する / B: 常にルート基準の相対パス | `Workspace`(FR-016) |
 | 7 | ゴミ箱に入れられたルートフォルダ(FR-007) | **A【仮定】**: 「見つからない」として扱う / B: ゴミ箱の中を指したまま表示を続ける | `RootLocatorPort`、カードの表示 |
 | 8 | フォルダを指すシンボリックリンク | **A【仮定】**: 展開しない項目として表示する(ルートの外を操作させないため)/ B: 展開する | `FileSystemPort`、`PathScopeGuard` |
-| 9 | クリップボードを操作する制御シーケンス(OSC 52) | **A【仮定】**: 無効にする(対応するアドオンを入れない)/ B: 書き込みだけ許す。M1 で Claude Code と Codex が必要とするかを確かめ、必要なら B に変える | §12、xterm.js のアドオン |
+| 9 | クリップボードを操作する制御シーケンス(OSC 52) | **A【仮定】**: 無効にする(対応するアドオンを入れない)/ B: 書き込みだけ許す。M1 では必要とする場面を確かめておらず、A のままにした(ADR-001)。必要になったら B に変える | §12、xterm.js のアドオン |
 | 10 | アプリが背面にあるときのアテンション | **A【仮定】**: PRD の文言どおり、画面上で表示中のターミナルのベルはアテンションにしない(アプリが背面でも同じ)/ B: アプリが背面のときは、表示中のターミナルでもアテンションと通知を出す | `AttentionPolicy`(FR-045) |
 | 11 | メモリの計測範囲(NFR-001) | **A【仮定】**: Arin 本体と WebKit の補助プロセスの合計を記録する(シェルとその子は除く)/ B: Arin 本体だけ | `scripts/perf/`。数値は目安 |
 | 12 | アイコン | **A【仮定】**: 自作の少数の SVG(依存を足さない)/ B: アイコンのライブラリを入れる | `src/ui/design`、`project-config.md` §2 の「アイコン」 |
@@ -995,13 +1003,13 @@ ADR の候補(設計ゲートの回答を受けて `/adr` で起こす):
 
 | # | 項目 | 選択肢 | 影響範囲 |
 | - | ---- | ------ | -------- |
-| 1 | xterm.js を WKWebView で使えるか | §2.2 の表を M1 で確かめる | M1 の Go/No-Go。実装技術そのもの |
+| 1 | xterm.js を WKWebView で使えるか | **決定(2026-11-15): Go。** 描画方式は DOM、全角幅は `unicode11` を既定にし、WebGL と `graphemes` は起動時の指定で切り替えられるまま M4 まで残す。§2.2 の未確認の項目は ADR-001 | M1 の Go/No-Go。実装技術そのもの。描画方式の最終判断は M4(複数枚の表示の実測) |
 | 2 | エンタイトルメント | A: 何も付けない(tadcap と同じ。最小)/ B: ターミナル内の CLI のために Apple Events などを付ける | M5。Claude Code や Codex が `osascript` などを使う場面で差が出る |
 | 3 | Finder の「戻す」の成立(FR-028 の AC) | M3 の最初に実機で確かめる。順に試す: 標準 API の `trashItemAtURL`(権限不要。「戻す」が出ない環境がある)→ `NSWorkspace` の `recycleURLs` → Finder に頼む(「戻す」が出るが、権限の確認が出る。B のエンタイトルメントが要る) | M3。`FileSystemPort` の実装だけに閉じる。取り消し(FR-032)は、ゴミ箱内の移動先が分かる方式のほうが作りやすい |
 | 4 | アプリ内のドラッグの実装 | M3 の最初に、マウスのイベントによる自前実装で FR-016 と FR-029 が成り立つことを確かめる。あわせて §1.4 #8(HTML 標準のドロップが届かない)を実機で確認する | M3。`src/logic/dnd`、`src/ui/tree` |
 | 5 | Finder と他アプリへのドラッグ(FR-031) | A: ウィンドウの外へ出たときに macOS のドラッグへ切り替える / B: ツリーのドラッグをすべて macOS のドラッグで始め、アプリ内へのドロップも同じ経路で受ける。どちらも `tauri-plugin-drag` か `objc2-app-kit` の直接呼び出しで実装する。未検証 | M6 |
 | 6 | Finder からの ⌘ドロップ=移動(FR-031)と、対象をルート配下に限る(FR-035)の関係 | A: 外からの移動は例外として許す / B: 外からはコピーだけにする | M6。A は登録外のファイルを動かすことになる。ドロップ時の修飾キーは Rust 側で取得する(§1.4 #8、#19) |
-| 7 | ショートカットの受け口 | メニューバーの項目と画面内のキー処理のどちらで受けるかを M2 で確かめる。⌘C・⌘V・⌘X は画面のコピー・ペーストのイベントで受ける案(§9.1) | M2。FR-006、FR-044、C-04 |
+| 7 | ショートカットの受け口 | メニューバーの項目と画面内のキー処理のどちらで受けるかを M2 で確かめる。⌘C・⌘V・⌘X は画面のコピー・ペーストのイベントで受ける案(§9.1。⌘C・⌘V は M1 で「編集」メニュー経由として実装済み) | M2。FR-006、FR-044、C-04 |
 | 8 | Quick Look(FR-018) | A: 標準のパネル(`QLPreviewPanel`)を `objc2-quick-look-ui` で出す / B: `qlmanage -p` を別プロセスで起動する(簡単だが、閉じ方などの挙動が Finder と違う) | M6。未検証 |
 | 9 | macOS 通知(FR-045) | A: `tauri-plugin-notification` / B: `UNUserNotificationCenter` を直接呼ぶ | M6。署名済みの `.app` での表示と許可の出方を実機で確かめる |
 | 10 | ファイル名の絞り込みの範囲(FR-021) | A: プロジェクト全体(名前の索引を Rust 側で作る)/ B: 読込済みのフォルダだけ | M6。A は 10 万ファイル規模で索引の時間がかかる |

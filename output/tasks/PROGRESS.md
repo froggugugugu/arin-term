@@ -16,13 +16,13 @@
 
 | 項目 | 内容 |
 | ---- | ---- |
-| 最終更新 | 2026-11-15(M1 の実装 T14〜T25 が完了。本人の Go/No-Go(T26)待ち) |
+| 最終更新 | 2026-11-15(M1 は本人が Go と判定。T27 で ADR-001 を書いて M1 を締めた。次は T28) |
 | ブランチ | `feat/m1-terminal`(`feat/m0-skeleton` から分岐)。`feat/m0-skeleton` は push 済みで、pull request #1(main 向け)が開いている |
 | 最後のコミット | `git log --oneline -1` で確認する(本ファイルに書くと古くなるため) |
 | 起動コマンド | `npm run dev`(開発用)。`.app` は `npm run app` で `target/aarch64-apple-darwin/release/bundle/macos/Arin.app` にできる |
 | スモークテスト | `npm run app && npm run smoke` → 期待: 終了コード 0、「スモーク成功」の表示。WebGL は `node scripts/smoke.mjs --env=ARIN_RENDERER=webgl`、9 枚は `--env=ARIN_VERIFY_GRID=1` |
 | 既知の壊れている箇所 | なし。`scripts/smoke.test.mjs` の一時フォルダの数を数える検査は、ほかのテストを同時に動かすと落ちることがある(単独では通る) |
-| 待ち | **本人の Go/No-Go(T26)**: `output/tasks/M1_GO-NO-GO_CHECKLIST.md` に沿って実機で確かめ、4 章の判定を書く。あわせて M0 の残り: pull request #1 のマージの判断、T1 の差分(コミット `b938d3d`)の了承 |
+| 待ち | push と pull request(`feat/m1-terminal` は未 push。本人に確認してから)。M0 の残り: pull request #1 のマージの判断、T1 の差分(コミット `b938d3d`)の了承 |
 
 ---
 
@@ -62,8 +62,8 @@
 | T23 | 検証用の記録(開発ビルドだけ) | OSC 52 の出現回数、処理済みの通知の時刻、未処理の量の最大値が標準エラーに出る。リリースビルドでは出ない | ✅ 2026-11-15(走査器 17 件、記録 8 件、偽 PTY 3 件が合格。リリースビルドのバイナリに記録の文字列が無いことを確認) |
 | T24 | 性能の計測スクリプト(記録だけ) | `npm run perf` が `testreport/perf/` に結果を書き、数値で失敗しない | ✅ 2026-11-15(`npm run perf` が終了コード 0。結果は `testreport/perf/latest.md`) |
 | T25 | Go/No-Go の確認手順書 | `output/tasks/M1_GO-NO-GO_CHECKLIST.md` に設計書 §2.2 の 12 項目がすべて載っている | ✅ 2026-11-15(`output/tasks/M1_GO-NO-GO_CHECKLIST.md`。設計書 §2.2 の 12 項目が 2.1〜2.12 に載っている) |
-| T26 | M1 の Go/No-Go(人間ゲート) | 本人が Claude Code と Codex を動かして 12 項目の結果を書き、Go / No-Go を決めた | ❌ |
-| T27 | ADR-001 と M1 の締め、M2 以降の再計画 | ADR-001 にエンジン、描画方式、アドオン、CSP、OSC 52、Go/No-Go の結論がある。FR-039〜041・043 の合否一覧がある | ❌ |
+| T26 | M1 の Go/No-Go(人間ゲート) | 本人が Claude Code と Codex を動かして 12 項目の結果を書き、Go / No-Go を決めた | 🟡 2026-11-15(本人が既定の構成で Claude Code を動かして **Go**。12 項目の記入と Codex は無い。未確認の範囲は ADR-001 と `output/reports/test/M1_acceptance.md`) |
+| T27 | ADR-001 と M1 の締め、M2 以降の再計画 | ADR-001 にエンジン、描画方式、アドオン、CSP、OSC 52、Go/No-Go の結論がある。FR-039〜041・043 の合否一覧がある | ✅ 2026-11-15(`output/design/ADR_001_terminal-engine.md`、`output/reports/test/M1_acceptance.md`。M2 の再分解は T28 で行う) |
 
 ### M2 マルチプロジェクト(粗い。T28 で分解し直して行を追加する)
 
@@ -133,14 +133,21 @@
 
 ## 3. 次にやること(優先順)
 
-1. **本人の Go/No-Go(T26)**: `output/tasks/M1_GO-NO-GO_CHECKLIST.md`。AI は合否を判定しない。手順の補助と、記録・計測の整理だけを行う
-2. Go のとき T27: ADR-001 を書く(エンジン、描画方式、アドオン、CSP、Go/No-Go の結果)。決まらなかった方の描画方式とアドオン、起動時の指定(`ARIN_RENDERER`・`ARIN_UNICODE`)、描画方式の表示(`RendererLabel`)を外す。しきい値を確定する。設計書を実装に合わせて直す(§1.3 #2 のスレッドの本数、§5.1 の `TerminalSurface` の操作、CSP、メニュー)。M2 以降を `/plan` で分解し直す
-3. No-Go のとき: T28 以降を止め、本人が描画方式の変更か実装技術の見直しを判断する
-4. pull request: M1 のブランチ `feat/m1-terminal` は push していない。push と pull request の作成は本人に確認してから行う
+1. **T28(M2 の着手時の確認と再分解)**: (a) React のフック向けの lint、(b) ショートカットの受け口、(c) Rust から macOS のブックマークを作って解決できるかの確認、(d) `state.json` が読めないときの振る舞い、(e) T29〜T36 の再分解。M1 で見送った項目(下のセッションログ)も M2 のタスクに入れる
+2. M4(T49)までに: 描画方式(DOM / WebGL)と全角幅の方式を複数枚で実測して決め、起動時の指定(`ARIN_RENDERER`・`ARIN_UNICODE`・`ARIN_VERIFY_GRID`)と `RendererLabel` を外すか設定に移す(ADR-001)
+3. pull request: `feat/m1-terminal` は push していない。push と pull request の作成は本人に確認してから行う
+4. 未確認のまま残っている実機の項目(ADR-001「確かめた範囲」): 見つかった問題はその時点で不具合として扱う
 
 ---
 
 ## 4. セッションログ(新しいものを上に)
+
+### 2026-11-15 — M1 の Go と締め(T26・T27)
+
+- **本人の判定**: Go。配布版を既定の構成(DOM 描画、`unicode11`)で起動して Claude Code を動かし、「良さそうだ」「そのまま進めて」。判定の決め手は「日本語入力と Claude Code の体感が普段のターミナルと比べて我慢できる範囲」か。複数枚は「トレードオフ次第で枚数上限をへらすことはできる」
+- **AI の受け取り方(解釈)**: 明示の無い項目(描画方式、全角幅、OSC 52、しきい値、Option、CSP)は、本人が試した既定の構成のままとした。手順書 4 章の表は本人が記入していないので、4.1 に発言を記録した
+- **計画からの変更**: T27 は「使わない描画方式とアドオン、起動時の指定を外す」としていたが、本人が比べていないので外さず、M4(T49)まで残す。理由は ADR-001
+- **やったこと**: ADR-001、ADR の索引、合否一覧(`output/reports/test/M1_acceptance.md`)、設計書の修正(スレッドの本数、`TerminalSurface` の操作、CSP、メニュー、入力の直列送信、M1 の結果)
 
 ### 2026-11-15 — M1(ターミナル 1 枚)の実装セッション
 

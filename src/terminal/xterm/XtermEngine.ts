@@ -1,6 +1,6 @@
 // xterm.js による TerminalEngine の実装(設計書 §5.1 の XtermEngine / XtermSurface)。
 // @xterm/* を import してよいのはこのフォルダだけ。Rust との通信(src/ipc)は知らない(設計書 §3.2)。
-// 描画は DOM(xterm.js の既定)か WebGL(@xterm/addon-webgl)。どちらにするかは起動時の指定(M1 の検証用。T27 で固定)。
+// 描画は DOM(xterm.js の既定)か WebGL(@xterm/addon-webgl)。どちらにするかは起動時の指定(検証用。既定は DOM。M4 で決める。ADR-001)。
 // 切り替えの判断は ../rendererControl.ts、ここは WebGL のアドオンの付け外しだけを行う。
 
 import "@xterm/xterm/css/xterm.css";

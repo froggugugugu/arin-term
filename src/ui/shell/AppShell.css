@@ -30,7 +30,7 @@ body,
   font-size: 12px;
 }
 
-/* 描画方式の表示(M1 の検証用。T27 で外す)。 */
+/* 描画方式の表示(検証用。M4 で外す。ADR-001)。 */
 .app-shell__renderer {
   opacity: 0.6;
 }

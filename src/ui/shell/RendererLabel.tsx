@@ -11,7 +11,7 @@ interface RendererLabelProps {
 /**
  * いまどちらの描画方式(dom / webgl)で描いているかを小さく出す(T21)。
  * サーフェスが無ければ購読のときに作る(写しにあるターミナルにだけ使う)。
- * WebGL を指定したのに DOM に戻って動いていたことに、比べる人が気づけるようにするための M1 の検証用の表示。T27 で外す。
+ * WebGL を指定したのに DOM に戻って動いていたことに、比べる人が気づけるようにするための 検証用の表示。M4 で外す(ADR-001)。
  */
 export function RendererLabel({ terminals, terminalId }: RendererLabelProps) {
   const subscribe = useCallback(

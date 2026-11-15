@@ -2,7 +2,7 @@
 
 ## 概要
 
-macOS 向けのライト・マルチターミナル「Arin」(Tauri 2、arm64、最低 OS 15.0)。M0(骨格)と M1(ターミナル 1 枚。ログインシェル・PTY・xterm.js・コピー/ペースト)の実装が済み、M1 は本人の Go/No-Go 待ち。
+macOS 向けのライト・マルチターミナル「Arin」(Tauri 2、arm64、最低 OS 15.0)。M0(骨格)と M1(ターミナル 1 枚。ログインシェル・PTY・xterm.js・コピー/ペースト)の実装が済み、M1 は本人が Go と判定した(`output/design/ADR_001_terminal-engine.md`)。
 プロジェクト管理・タブ・ファイルツリー・設定ファイルは未実装(M2 以降)。設計は `output/design/ARCH_multi-terminal.md`、進捗は `output/tasks/PROGRESS.md`。
 
 ## コマンド
@@ -25,7 +25,7 @@ npm run smoke          # .app を一時の状態フォルダで起動し準備�
 npm run perf           # 性能の計測(記録だけで失敗しない。結果は testreport/perf/。先に npm run app)
 ```
 
-起動時の指定(M1 の検証用。リリースビルドでも有効、T27・M4 で外す): `ARIN_RENDERER`(`dom`/`webgl`)、`ARIN_UNICODE`(`unicode11`/`graphemes`)、`ARIN_VERIFY_GRID`(`1` で 9 枚の検証画面)。不正な値は既定に戻し標準エラーに `[arin:launch]` で出す。
+起動時の指定(検証用。リリースビルドでも有効。既定は DOM 描画と `unicode11`。M4 で外すか設定に移す): `ARIN_RENDERER`(`dom`/`webgl`)、`ARIN_UNICODE`(`unicode11`/`graphemes`)、`ARIN_VERIFY_GRID`(`1` で 9 枚の検証画面)。不正な値は既定に戻し標準エラーに `[arin:launch]` で出す。
 
 ## 技術スタック
 

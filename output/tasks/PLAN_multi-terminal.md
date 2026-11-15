@@ -265,7 +265,7 @@ M1 は検証専用(PRD §7)。対象は単一プロジェクト・単一タブ�
 
 #### Phase 17(逐次。人間ゲート)
 
-- [ ] T26 — **M1 の Go/No-Go(人間が判定する)**(変更ファイル: output/tasks/M1_GO-NO-GO_CHECKLIST.md | 依存: T25)
+- [x] T26 — **M1 の Go/No-Go(人間が判定する)**(結果: Go。2026-11-15。ADR-001)(変更ファイル: output/tasks/M1_GO-NO-GO_CHECKLIST.md | 依存: T25)
   - **人間がやること**: T25 の手順書に沿って、Claude Code と Codex を実際に動かし、結果を書き込む。Go / No-Go を決める。描画方式(DOM / WebGL)、全角幅のアドオン、OSC 52 を許すか(設計書 §15.2 #9)、流量制御のしきい値を決める
   - AI がやること: 手順の補助と、記録(T23)と計測(T24)の結果の整理だけ。合否は判定しない
   - No-Go のとき: 原因に応じて、描画方式の変更か実装技術の見直し(Swift ネイティブへ戻すことを含む)を本人が判断する(PRD §7)。T28 以降は止める
@@ -273,7 +273,7 @@ M1 は検証専用(PRD §7)。対象は単一プロジェクト・単一タブ�
 
 #### Phase 18(逐次。T26 完了後)
 
-- [ ] T27 — ADR-001 を書き、M1 を締め、M2 以降を計画し直す(変更ファイル: output/design/ADR_001_terminal-engine.md, output/design/ADR_INDEX.md, output/tasks/PLAN_multi-terminal.md, output/tasks/PROGRESS.md, docs/project.md, docs/architecture.md, project-config.md | 依存: T26)
+- [x] T27 — ADR-001 を書き、M1 を締め、M2 以降を計画し直す(描画方式と全角幅の切り替えは外さず M4 まで残した。M2 の再分解は T28)(変更ファイル: output/design/ADR_001_terminal-engine.md, output/design/ADR_INDEX.md, output/tasks/PLAN_multi-terminal.md, output/tasks/PROGRESS.md, docs/project.md, docs/architecture.md, project-config.md | 依存: T26)
   - 対応: 設計書 §14(ADR-001: エンジンと描画方式、アドオン、CSP、Go/No-Go の結果)。FR-039〜041、043 の AC の合否一覧を `testreport/` に出す。Go/No-Go の結論は ADR-001 にも書く(`testreport/` は Git の管理外のため)
   - T26 の決定を実装に反映する小さな変更(使わない描画方式のアドオンを外す、しきい値の確定、OSC 52)は、このタスクで必要なぶんを新しいタスクとして起こす
   - M2 以降(T28〜)を、結果に合わせて `/plan` で分解し直す

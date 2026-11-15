@@ -8,7 +8,7 @@ import type { UnicodeWidth } from "../ipc/generated/UnicodeWidth";
 
 /**
  * 描画方式(`dom` / `webgl`)と全角幅の方式(`unicode11` / `graphemes`)。型は Rust の起動時の指定
- * (`arin_core::launch_options`)から生成したもの。M1 の Go/No-Go(T26)で比べて決め、T27 で固定する。
+ * (`arin_core::launch_options`)から生成したもの。既定は DOM と unicode11(ADR-001)。複数枚で実測する M4 で決める。
  */
 export type { RendererKind, TerminalId, UnicodeWidth };
 

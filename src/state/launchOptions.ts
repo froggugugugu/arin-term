@@ -1,6 +1,6 @@
 // 起動時の指定(描画方式と全角幅の方式、9 枚の検証画面)を取得してから、ターミナルのエンジンを作る(T21)。main.tsx から呼ぶ。
 //
-// M1 の検証用。人間が DOM と WebGL、unicode11 と graphemes を実機で比べる(T26)ためのもので、T27 で固定して外す。
+// 検証用。人間が DOM と WebGL、unicode11 と graphemes を実機で比べるためのもので、M4 で決めて外す(ADR-001)。
 // 9 枚の検証画面(ARIN_VERIFY_GRID。T22)も M1 の検証用で、M4 の T49 で外す。
 // 指定は Rust が環境変数(ARIN_RENDERER・ARIN_UNICODE・ARIN_VERIFY_GRID)から読み、get_launch_options で 1 回だけ渡す。
 // 取得に失敗しても起動は止めない。既定(dom・unicode11)で作り、診断に報告する(起動スモークが失敗として気づける)。

@@ -32,7 +32,7 @@ export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartA
     report: (message) => ipc.reportFrontendError(message),
   });
   const store = createAppStore();
-  // 描画方式と全角幅の方式は起動時の指定で選ぶ(M1 の検証用。T27 で決まった方式に固定して外す)。
+  // 描画方式と全角幅の方式は起動時の指定で選ぶ(検証用。既定は DOM と unicode11。M4 で決めて外す。ADR-001)。
   // 指定を取ってからエンジンを作る。取れなければ既定で作り、報告する。WebGL を作れなかったときの報告も同じ口へ流す。
   const { engine, verifyGrid } = await createWithLaunchOptions(ipc, reporter.report, (options) => ({
     engine: new XtermEngine({ renderer: options.renderer, unicode: options.unicode, reportError: reporter.report }),
