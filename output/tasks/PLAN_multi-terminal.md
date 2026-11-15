@@ -804,7 +804,7 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 25b(並行可能。T38a 完了後)
 
-- [ ] T38b — パスの整形とシェルエスケープ(`arin-core/paths`)(変更ファイル: crates/arin-core/src/paths/format.rs, crates/arin-core/src/paths/shell.rs, crates/arin-core/tests/path_format.rs, crates/arin-core/tests/shell_escape.rs | 依存: T38a)
+- [x] T38b — パスの整形とシェルエスケープ(`arin-core/paths`)(変更ファイル: crates/arin-core/src/paths/format.rs, crates/arin-core/src/paths/shell.rs, crates/arin-core/tests/path_format.rs, crates/arin-core/tests/shell_escape.rs | 依存: T38a)
   - 対応: FR-015、FR-016、FR-024(挿入)、設計書 §5.1 の `PathFormatter`・`ShellEscaper`、§7.1「パスをターミナルへ」、§12「シェルへの注入」、§15.2 #6、【仮定】16・17
   - 置くもの: 相対パスの文字列(先頭に `./` を付けない。フォルダの末尾に `/` を付けない)、絶対パス(ルートと相対パスをつなぐ)、挿入の文字列(同じプロジェクトなら相対・違うプロジェクトなら絶対、エスケープして末尾に半角スペース 1 つ。Enter を含めない)
   - 安全: 挿入の文字列に改行(`\n`・`\r`)のバイトが入らないことをテストで保証する
