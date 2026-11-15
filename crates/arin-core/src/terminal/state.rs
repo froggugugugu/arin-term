@@ -1,6 +1,6 @@
 //! ターミナルの ID・状態・失敗と、寸法の検証(設計書 §5.1、§6.1 の `TerminalStore`)。
 //!
-//! M1 は単一プロジェクト・単一タブ。タブの並び・表示中のタブ・アテンションなどは M2 以降で足す。
+//! タブの並びと表示中のタブは `store.rs`(`TerminalStore`)。アテンションなどは M6 で足す。
 
 use std::fmt;
 
@@ -76,8 +76,8 @@ pub enum TerminalError {
     /// その ID のターミナルが無い。
     #[error("ターミナル {0} が見つからない")]
     NotFound(TerminalId),
-    /// 寸法が 0 を含む。
-    #[error("ターミナルの寸法 {rows} 行 × {cols} 桁は使えない(行と桁は 1 以上にする)")]
+    /// 寸法が 0 を含む、または上限(`MAX_ROWS`・`MAX_COLS`)を超える。
+    #[error("ターミナルの寸法 {rows} 行 × {cols} 桁は使えない(行は 1〜1000、桁は 1〜2000 にする)")]
     InvalidSize {
         /// 受け取った行数。
         rows: u16,
@@ -95,13 +95,18 @@ pub enum TerminalError {
     Launch(#[from] ShellLaunchError),
 }
 
-/// 画面から受け取った寸法を検証し、PTY の寸法にする。行と桁は 1 以上。
+/// 行数の上限(計画書 M2 の【仮定】11)。
+pub const MAX_ROWS: u16 = 1_000;
+/// 桁数の上限(計画書 M2 の【仮定】11)。
+pub const MAX_COLS: u16 = 2_000;
+
+/// 画面から受け取った寸法を検証し、PTY の寸法にする。行は 1〜`MAX_ROWS`、桁は 1〜`MAX_COLS`。
 ///
 /// # Errors
 ///
-/// 行か桁が 0 のとき(`TerminalError::InvalidSize`)。
+/// 行か桁が 0 のとき、上限を超えるとき(`TerminalError::InvalidSize`)。
 pub fn validate_size(rows: u16, cols: u16) -> Result<PtySize, TerminalError> {
-    if rows == 0 || cols == 0 {
+    if !(1..=MAX_ROWS).contains(&rows) || !(1..=MAX_COLS).contains(&cols) {
         return Err(TerminalError::InvalidSize { rows, cols });
     }
     Ok(PtySize { rows, cols })
