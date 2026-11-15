@@ -16,7 +16,7 @@
 
 | 項目 | 内容 |
 | ---- | ---- |
-| 最終更新 | 2026-11-15(M3 の実装と AI の分の検証が完了。最後の検証のうち `npm run perf`・検証画面のスモーク・E2E の 2〜3 回目は、メモリ不足で中断して未実行。次は本人の完了確認=T36 と T45) |
+| 最終更新 | 2026-11-15(M3 の実装と AI の分の検証が完了。全検証が終了コード 0。次は本人の完了確認=T36 と T45。並行して M4 に着手) |
 | ブランチ | `feat/m3-tree`(`feat/m2-projects` から分岐。`feat/m2-projects` は `feat/m1-terminal` から分岐。どれも push していない)。`feat/m0-skeleton` は push 済みで、pull request #1(main 向け)が開いている |
 | 最後のコミット | `git log --oneline -1` で確認する(本ファイルに書くと古くなるため) |
 | 起動コマンド | `npm run dev`(開発用)。`.app` は `npm run app` で `target/aarch64-apple-darwin/release/bundle/macos/Arin.app` にできる |
@@ -133,7 +133,7 @@
 
 ## 3. 次にやること(優先順)
 
-1. **T36(M2)と T45(M3)の本人の確認**。結果を受けて不具合を直す。先に、中断した検証(`npm run perf`、`node scripts/smoke.mjs --env=ARIN_VERIFY_GRID=1`、`npm run e2e` をあと 2 回)を取り直す(重いので、本人に確かめてから)。そのあと **M4(T46 から。着手時に再分解)**、**M4.5(ショートカットの設定。T63〜T66)**。`M2_acceptance.md` と `M3_acceptance.md` の「判断が要る点・残っている問題」を直すかも決める
+1. **T36(M2)と T45(M3)の本人の確認**。結果を受けて不具合を直す。中断した検証(`npm run perf`、検証画面のスモーク、E2E の 2〜3 回目)は、本人の了承のあと 1 つずつ取り直して、すべて終了コード 0。次は **M4(T46 から。着手時に再分解)**、**M4.5(ショートカットの設定。T63〜T66)**。`M2_acceptance.md` と `M3_acceptance.md` の「判断が要る点・残っている問題」を直すかも決める
 2. M4(T49)までに: 描画方式(DOM / WebGL)と全角幅の方式を複数枚で実測して決め、起動時の指定(`ARIN_RENDERER`・`ARIN_UNICODE`・`ARIN_VERIFY_GRID`)と `RendererLabel` を外すか設定に移す(ADR-001)
 3. pull request: `feat/m1-terminal` は push していない。push と pull request の作成は本人に確認してから行う
 4. 未確認のまま残っている実機の項目(ADR-001「確かめた範囲」): 見つかった問題はその時点で不具合として扱う
