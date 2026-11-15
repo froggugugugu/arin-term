@@ -36,7 +36,10 @@ libc = "=0.2.191"
 # Tauri がすでに同じ版・同じ feature で使っているので、Cargo.lock に新しいクレートは増えない。
 # フォルダ選択のダイアログ(NSOpenPanel。FR-001・FR-007)の feature も、Tauri(wry)がすでに同じものを有効にしている(ADR-009)。
 # tauri-plugin-dialog は tauri-plugin-fs を外せない依存に持つので使わない(設計書 §12)。
-objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSPasteboard", "NSOpenPanel", "NSSavePanel", "NSPanel", "NSWindow", "NSResponder", "NSApplication"] }
+# M3(T40d): Finder で表示・既定のアプリで開く(NSWorkspace。FR-018)と、ファイルの URL のペーストボード
+# (NSPasteboardItem。FR-027)の feature を足した。どちらも Tauri は有効にしていないが、版は同じで、
+# 新しいクレートは増えない(NSWorkspace が objc2-foundation の feature を推移的に足すだけ。ADR-007 の追記)。
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSPasteboard", "NSPasteboardItem", "NSOpenPanel", "NSSavePanel", "NSPanel", "NSWindow", "NSResponder", "NSApplication", "NSWorkspace"] }
 # ツリーのファイル監視(FSEvents。FR-014、PRD C7、ADR-007)。使うのは arin-platform/src/watch/ だけ。
 # 8.2.1 は 2026-10-25 公開(8.2.2 は 2026-11-08 公開で 2 週間未満のため避けた)。CC0-1.0。
 # 既定の feature は macos_fsevent だけ。kqueue・crossbeam-channel などは入れない。

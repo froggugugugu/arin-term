@@ -873,7 +873,7 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 26b(逐次。T40b 完了後。Phase 25c と同時に進めてよい)
 
-- [ ] T40d — Finder で表示、既定のアプリで開く、ファイルのペーストボード(`arin-platform/desktop`)(変更ファイル: Cargo.toml, Cargo.lock, crates/arin-platform/Cargo.toml, crates/arin-platform/src/desktop/mod.rs, crates/arin-platform/src/desktop/workspace.rs, crates/arin-platform/src/desktop/file_pasteboard.rs, crates/arin-platform/tests/desktop.rs, output/design/ADR_007_finder-integration.md | 依存: T38a, T40b)
+- [x] T40d — Finder で表示、既定のアプリで開く、ファイルのペーストボード(`arin-platform/desktop`)(変更ファイル: Cargo.toml, Cargo.lock, crates/arin-platform/Cargo.toml, crates/arin-platform/src/desktop/mod.rs, crates/arin-platform/src/desktop/workspace.rs, crates/arin-platform/src/desktop/file_pasteboard.rs, crates/arin-platform/tests/desktop.rs, output/design/ADR_007_finder-integration.md | 依存: T38a, T40b)
   - 対応: FR-018(Finder で表示、開く)、FR-027(Finder と互換のコピー・ペースト)、設計書 §1.4 #19、§5.4、§9.1(ツリーでコピーした項目はファイルの URL としてペーストボードに書く)
   - 使うクレート: `objc2-app-kit` =0.3.2(版は変えない)の `NSWorkspace`(`activateFileViewerSelectingURLs`・`openURL`)と `NSPasteboard` のファイルの URL。足す feature を Tauri がすでに有効にしているか `cargo tree -e features -i objc2-app-kit --target aarch64-apple-darwin` で確かめ、ADR-007 の追記に書く
   - 安全: テストはユーザーのクリップボード(一般のペーストボード)に触れず、名前付きのペーストボードを使って終わったら解放する(M2 の T31c と同じ)。Finder と既定のアプリを実際に開く確認は自動テストにしない(T45 の人間)

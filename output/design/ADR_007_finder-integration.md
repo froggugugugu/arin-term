@@ -133,4 +133,11 @@ Playwright の WebKit は macOS 標準の WKWebView とは別のビルドで、T
   - 通信: `cargo tree -i reqwest --target aarch64-apple-darwin` は「nothing to print」(空)。`node scripts/check-boundaries.mjs` の http-client-crate は OK。ビルド時のコード生成(build.rs・proc-macro)は増えていない
   - 作り方: `notify` の FSEvents は待ち時間 0・ファイル単位のイベント(`kFSEventStreamCreateFlagFileEvents | NoDefer`)で張るので、`arin-platform/src/watch/fsevents.rs` の束ねるスレッドで 0.2 秒まとめて受け口へ渡す。届くパスは変わった項目そのものの実パス(`/var/...` で張っても `/private/var/...` で届く)
   - FSEvents を `objc2-core-services` で直接呼ぶ案は採らなかった(どちらでも `objc2-core-services` は増える。`notify` で増えて組み込まれるのは 2 個だけで、止める処理(run loop の停止と join)を自前で書かずに済む)
-- T40c・T40d: 足した feature と、Tauri がすでに有効にしていたか: 未記入
+- T40d(2026-11-15):
+  - feature: `objc2-app-kit` =0.3.2 に `NSWorkspace`(Finder で表示・既定のアプリで開く)と `NSPasteboardItem`(ペーストボードの項目ごとの読み取り)を足した。版は変えていない。`objc2-foundation` の宣言は変えていない(`NSWorkspace` が `NSAppleEventDescriptor`・`NSFileManager` などの feature を推移的に有効にする)
+  - Tauri がすでに有効にしていたか: どちらも**有効にしていなかった**(`cargo tree -e features -i objc2-app-kit --target aarch64-apple-darwin` に `NSWorkspace`・`NSPasteboardItem` が無い。`NSPasteboard` はある)。`objc2-foundation` の `NSAppleEventDescriptor`・`NSFileManager` も新しく有効になった
+  - `Cargo.lock` は変わらない(クレートは増えない)。`cargo tree -i reqwest --target aarch64-apple-darwin` は「nothing to print」(空)。`node scripts/check-boundaries.mjs` は違反なし
+  - 作り方: `arin-platform/src/desktop/workspace.rs`(`MacDesktop`。`activateFileViewerSelectingURLs:`・`openURL:`)、`desktop/file_pasteboard.rs`(`MacFilePasteboard`。`writeObjects:` に `NSURL` を 1 つずつ、読むときは項目ごとの `public.file-url`)。どちらもメインスレッドを求めない
+  - 落とし穴: `NSURL::fileURLWithPath` は名前を NFD に変える(`ダ` → `タ` + 濁点)。そのままペーストボードに書くと、貼り付け先で名前の違うファイルができる。URL はパスのバイト列を百分率符号化して `URLWithString` で作る(フォルダは Finder と同じく末尾に `/`)
+  - 無いパスと相対パスは OS に渡す前に失敗にする。`activateFileViewerSelectingURLs:` は戻り値が無く、Finder が受け付けなかったことを知れない
+- T40c: 足した feature と、Tauri がすでに有効にしていたか: 未記入
