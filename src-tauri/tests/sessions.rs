@@ -691,7 +691,7 @@ fn 接続の前の入力と寸法の変更は断り_処理済みの通知は受�
 }
 
 #[test]
-fn 存在しない_id_はどのコマンドでも見つからないと返す() {
+fn 存在しない_id_は処理済みの通知を除くどのコマンドでも見つからないと返す() {
     let f = Fixture::new(OutputMode::Scripted);
     let id = TerminalId::new("terminal-999");
     let not_found = Err(SessionError::Terminal(TerminalError::NotFound(id.clone())));
@@ -705,7 +705,8 @@ fn 存在しない_id_はどのコマンドでも見つからないと返す() {
     assert_eq!(f.registry.close_terminal(&id), not_found);
     assert_eq!(f.registry.select_terminal(&id), not_found);
     assert_eq!(f.registry.write(&id, b"x"), not_found);
-    assert_eq!(f.registry.ack(&id, 1), not_found);
+    // 処理済みの通知だけは、閉じたタブへ遅れて届くのが普通なので、失敗にしない。
+    assert_eq!(f.registry.ack(&id, 1), Ok(()));
     assert_eq!(f.registry.resize(&id, 24, 80), not_found);
     assert_eq!(f.control.spawn_count(), 0);
 }

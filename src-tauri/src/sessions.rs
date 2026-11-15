@@ -445,12 +445,13 @@ impl SessionRegistry {
 
     /// 画面が `bytes` バイトを取り込んだ。下限まで減ったら読み取りを再開する。
     /// 起動前・終了後は何もしない。未処理の量を超える通知は 0 に留める。
+    /// ID が無いときも何もしない: シェルが終わる・タブを閉じると、最後の出力を画面が取り込み終える前に
+    /// タブが一覧から消えるので、遅れて届く通知は普通に起きる(失敗として画面に返すと、診断に毎回出てしまう)。
     ///
     /// # Errors
     ///
-    /// ID が無いとき。
+    /// いまは失敗しない(コマンドの形をほかとそろえるため `Result` のまま)。
     pub fn ack(&self, id: &TerminalId, bytes: u64) -> Result<(), SessionError> {
-        lock(&self.inner.workspace).check_exists(id)?;
         if let Some(session) = self.session(id) {
             session.output.ack(bytes);
         }
