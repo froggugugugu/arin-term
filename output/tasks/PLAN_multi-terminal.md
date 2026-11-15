@@ -1053,29 +1053,342 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
 | 応答しないネットワークのボリュームで、終了時に見回りのスレッドを待って止まる恐れ | 扱わない | 監視(T40b)も同じ恐れがある。M3 ではネットワークのボリュームを確かめない。ドッグフーディングで出たら不具合として扱う |
 | それ以外(Dock の終了、書き込みが止まったタブ、ゾンビ、読み取りスレッド、使われない型) | 扱わない | ツリーに関わらない。M6(T55)の再分解で扱いを決める |
 
-### M4 タイル表示(粗い分解。T46 の着手時に分解し直す)
+### M4 タイル表示(T46 の着手時に 1 セッション粒度に分解し直した。2026-11-15)
 
-完了条件: FR-048、051〜055、FR-060・061 のタイル部分の AC 合格と、9 枚同時表示の体感の判定(人間)。
+完了条件: FR-048、051〜055、FR-060・061 のタイル部分の AC 合格と、9 枚同時表示の体感の判定(人間)(対応表は節の末尾)。
 
-#### Phase 29(並行可能。M3 完了後)
+#### M4 の前提
+
+設計の決定は ADR-011(`output/design/ADR_011_tile-view.md`。Proposed)にまとめた。【仮定】として扱い、異論があれば T50a までに直す。
+
+- (a) **表示の状態の持ち主は Rust**(設計書 §3.4「タイルのグリッドとページ、タイルとカードの連動」は `arin-core`)。`Workspace` が表示モード(タブ/タイル)・表示中のページ・拡大中か(真偽)を持ち、グリッドの寸法・ページ数・表示中のページのタイルの並びを計算して写しの `display` に載せる。画面は写しを映すだけ(グリッドの規則を TypeScript に書かない)。アテンションの判定(設計書 §7.1「アテンション」の 2。タイル表示=表示中ページ)も同じ情報を使う
+- (b) **保存するのは表示モードだけ**(`state.json` の `ui.displayMode`。設計書 §6.2)。ページと拡大中は保存しない(設計書 §6.1 の `PaneSizes` の行)。再起動するとタイル表示の 1 ページ目(フォーカスのあるタイルのページ)で開く
+- (c) **フォーカス中のタイル=選択中のプロジェクトの表示中のタブ**。タイルをクリックすると、そのタイルのプロジェクトが選択され、そのタブが表示中になる(FR-053。新しいコマンド `focus_terminal`)。タイル表示では「フォーカス中のタイルは必ず表示中のページにある」を保つ(ページはフォーカスに付いていく)。この形にすると、M3 の「パスをターミナルに挿入」の宛先(選択中のプロジェクトの表示中のタブ。M3 の【仮定】16)が、そのままフォーカス中のタイルになる(M3 の再分解の申し送り)
+- (d) **拡大**(FR-054)は表示モードをタイルのまま「拡大中」を真にすること。拡大中の右ペインはタブ表示と同じ形(フォーカス中のタイルのプロジェクトのタブバーと、そのターミナル 1 枚)に、元に戻すボタンを足したもの。同じ操作(ショートカット、または元に戻すボタン)でタイル表示に戻る
+- (e) **DOM の持ち方**: M2 の仕組み(xterm.js の要素は React の外。`TerminalHost` が置き場所を描き、`TerminalManager.attach` が要素を置き場所の間で移す。隠すものは `setVisible(false)` で描画の資源を手放し、出力の取り込みは続ける)をそのまま使う。`TerminalManager.present` の「表示中の 1 枚」を「表示中の並び」に広げる。表示中のページのタイルだけを置き場所に入れ、ほかのページは隠す(NFR-009、設計書 §1.3 #4)
+- (f) **ショートカット**(【要件の追加(本人。2026-11-15)】の決まり): M4 で足すキーは、ショートカットの表(`crates/arin-core/src/shortcuts/table.rs`)に 4 行を足して入れる(T47a)。受け口はどれも「メニューの項目」。メニューバーに「表示」を足し(T47c)、項目のアクセラレータは表から作る。部品・メニューにキーの文字列を直書きしない(ボタンのツールチップのキーの表示も、画面が受け取った表から引く)
+- (g) **アテンションの前倒し**(T48。§リスク #3 は 2026-11-14 に本人が A で確定と書かれているが、親タスクの行は【要確認】のままなので、本節では【仮定】として扱う): BEL 単独と OSC 9・OSC 777 の走査器、表示中かの判定、ターミナルごとのアテンションの印(写し)を M4 で作る。M4 の画面が出すのはタイルのタイトルの印と、ページ表示の印だけ(FR-055)。カードの印・タブのバッジ・macOS 通知は M6(T57)に残す
+- (h) **検証用の指定の片付け**(ADR-001): 9 枚の検証画面(`ARIN_VERIFY_GRID`、`VerificationGrid`)は T49c・T49d で撤去する。描画方式(`ARIN_RENDERER`)・全角幅の方式(`ARIN_UNICODE`)・`RendererLabel` は、T49b で複数枚を実測して案を ADR-001 に書き、本人が T50a で体感を比べてから、T50b で外す【仮定】(体感を比べる前に外すと、本人が実機で比べられないため)
+
+本計画が置いた【仮定】(M4 の分。ADR-011 にも書いた):
+
+1. タイルの並びは写しの `terminals[]` の順(プロジェクトの並び順 → タブの順。FR-051・C-10)。見つからないプロジェクトに残っているタブ(C-06)もタイルに並べる
+2. 最終ページのグリッドは、そのページの枚数で決める(10 枚なら 2 ページ目は 1×1。設計書 §15.2 #4 の A)。0 枚のタイル表示は「ターミナルがありません」の案内だけ(タブ 0 枚と同じ文言)
+3. ページ表示(`1/2` と前後のボタン)は、ページが 2 つ以上のときだけ出す。前後のボタンは端で無効にし、循環しない(ショートカットも端では何もしない)
+4. ページを送ると、新しいページの先頭のタイルにフォーカスが移る(そのプロジェクトが選択され、ツリーが切り替わる)。前提 (c) の「フォーカス中のタイルは表示中のページにある」を保つため
+5. タイル表示でカードを選ぶと、そのプロジェクトの最初のタイルがあるページへ移る(FR-053 の 2 つ目の AC)。そのプロジェクトの表示中のタブがそのページに無ければ、最初のタイルを表示中のタブにする。タブが 0 枚のプロジェクトならページは変えない
+6. タイル表示での ⌘T・⌘W・⌘⇧[・⌘⇧] は、タブ表示と同じく選択中のプロジェクトのタブを操作する。操作のあとのフォーカス中のタイルのページへ移る(ページの数が減ったら丸める)
+7. 拡大中にカードを選ぶ・⌘⇧[ などでタブを替えると、拡大したまま、そのタブを出す(拡大中は「タブ表示と同じ形」なので)。表示モードをタブに切り替えると、拡大中は解ける
+8. タイルのダブルクリックで拡大するのは、タイルのタイトルバーのダブルクリック(ターミナルの本文のダブルクリックは xterm.js の単語の選択に使われるため)。元に戻すのは、拡大中のタイトル帯の元に戻すボタン、同じショートカット、同じタイトル帯のダブルクリック
+9. M4 で表に足すキー(PRD に無いので仮の値。本人が T50a で実機で確かめ、M4.5 で設定ファイルから変えられる):
+   - `view.toggle-display-mode`(タイル表示とタブ表示の切替): `Cmd+Shift+Backslash`(⇧⌘\。Safari の「すべてのタブを表示」と同じキー)
+   - `view.previous-page`・`view.next-page`(前・次のページ): `Cmd+Alt+Left`・`Cmd+Alt+Right`(⌥⌘←・⌥⌘→)
+   - `view.toggle-maximize`(タイルの拡大・元に戻す): `Cmd+Shift+Enter`(⇧⌘↩。iTerm2 のペインの拡大と同じキー)
+   - タブ表示では、ページ送りと拡大の項目は何もしない(メニューの項目は無効にせず並べる。開くたびに状態を問い合わせないため。M3 の【仮定】8 と同じ考え方)
+10. メニューバーの「表示」の項目の文言は固定: 「タイル表示とタブ表示を切り替える」「前のページ」「次のページ」「タイルを拡大/元に戻す」。置き場所は「編集」の右(macOS の並び)
+11. 表示モードの切替のボタンは、上部の帯の右側に置く 2 つのアイコンの切替(タブとタイル。Finder の表示の切替と同じ形)。ページ表示はタイル表示のときにタブバーの位置に出す帯の右端
+12. タイルのタイトルバーは「プロジェクト名: タブ名」(FR-061)と、その前の小さな丸い色の印(M3 の締めでカード・タブ・ツリーのヘッダを色の印にしたのにそろえる。FR-060・AC-C02 は印の色相で確かめる。M3 の合否一覧の FR-060 と同じ判定)。フォーカス中のタイルは、タイトルの文字を濃くし、細い強調の線で示す。タイル同士は細い区切り線で分け、ターミナルの本文は不透明(ADR-010)
+13. アテンション(FR-055): 印は、タイトルバーの右端の小さな丸(色はシステムの強調色。プロジェクト色ではない)。ページ表示の印は、アテンションのあるページの方向の前後のボタンに付く小さな丸。どちらもそのターミナルが表示されたら消える(設計書 §7.1「アテンション」の 5)。OSC の本文は M4 では使わない(保持しない。macOS 通知は M6)
+14. アテンションの判定は §15.2 #10 の A(アプリが背面でも、画面上で表示中のターミナルのベルはアテンションにしない)。表示中=タブ表示では選択中のプロジェクトの表示中のタブ、タイル表示では表示中のページのタイル、拡大中は拡大したタイルだけ
+15. OSC 777 は `777;notify;…` の形だけをアテンションにする(ほかの副コマンドは無視)。OSC 9 は `9;4;…`(進捗)を除く
+16. 状態ファイルの `ui.displayMode` が無い・知らない値のときはタブ表示で始め、状態ファイルの退避はしない(1 つの値のためにプロジェクトの一覧を退避しない)
+17. 隠したまま作るターミナルの初めの寸法は、M2 のまま「最後に表示していたターミナルの寸法」(タイル表示ではタイル 1 枚の寸法になる)。表示に変わったときに置き場所に合わせ直す
+18. 9 枚の検証画面の代わり: スモークと計測の 9 枚は、一時の状態フォルダに 9 プロジェクトと `ui.displayMode: "tiles"` の `state.json` を置いて起動する(起動時に各プロジェクトに 1 枚ずつタブができる。T49c)
+
+#### 現状のコードから分かった、M4 で足すところ・変えるところ
+
+- `arin-core/layout` は `panes` だけ(`layout/mod.rs` は `pub mod panes;` の 1 行)。`DisplayMode`・`TileLayout` が無い → T46a
+- `Workspace`(`workspace/state.rs`)は `layout: PaneSizes` だけを持ち、表示モード・ページ・拡大中を持たない。写し(`workspace/snapshot.rs`)にも無い。`ordered_tabs()`(プロジェクト順 → タブ順。持ち主の無いものは最後)はタイルの並びにそのまま使える → T46b
+- `select_project` は選択を変えるだけ、`activate_terminal` はそのタブのプロジェクトの表示中を変えるだけで、選択中のプロジェクトは変えない(`workspace/terminals.rs`)。「タイルをクリックするとプロジェクトも選ぶ」口が無い → T46b(`focus_terminal`)
+- 状態ファイルの `PersistedLayout`(`persistence/codec.rs`)は幅・折りたたみ・高さだけ → T46c
+- `OscScanner`(`terminal/osc.rs`)は OSC の番号と終わり方を見分け、BEL が OSC の終端かを区別済み。BEL 単独と OSC の先頭の引数(`9;4`、`777;notify`)は見ていない。読み取りスレッドは、検証用の記録があるときだけ走査する(`sessions.rs` の `read_loop`・`ClipboardCounter`)→ T48a(走査器)、T48c(常に走査する)
+- `TerminalStore` と写しの `TerminalTabSnapshot` はアテンションを持たない → T48b
+- `src-tauri/src/commands/layout.rs` は `set_pane_sizes`・`set_sidebar_collapsed` だけ → T47b。`menu.rs` は「Arin」「ターミナル」「編集」だけで、`on_menu_event` がタブの操作を `SessionRegistry` へ渡す形 → T47c で「表示」を同じ形で足す
+- ショートカットの表は 18 行(`ShortcutCommandId::ALL`)。表示の操作の ID が無い → T47a
+- 画面: `selectors.ts` の `presentation` は「表示中の 1 枚と残り」、`terminalSync.ts` は `present(shown, background)`、`TerminalManager.present` も 1 枚だけを表示に戻す。`TerminalArea.tsx` はタブバーと置き場所 1 つ → T47d(複数枚の表示)、T47e(操作)、T47f・T47g(部品)
+- `AppShell.tsx` は `verifyGrid` のときに `VerificationGrid` だけを描き、上部の帯の右端に `RendererLabel` を出す。`src/main.tsx` は起動時の指定(`get_launch_options`)で検証画面と描画方式を決める → T49c(検証画面)、T50b(描画方式の表示)
+- 9 枚の検証画面は Rust でも広く使われている: `Workspace::for_verify_grid`・`ExitPolicy::KeepTab`・`launch_options` の `ENV_VERIFY_GRID`・`VERIFY_GRID_TERMINAL_COUNT`・`LaunchOptions::terminal_count()`(M2 の残りの「使われない型」)、`launch.rs`・`lib.rs`・`persistence.rs`(読まず書かない)・`tree_watch.rs`(張らない)、`src-tauri/tests/` の多く(`sessions.rs`・`session_pty.rs`・`app_quit.rs`・`terminal_commands.rs`・`app_persistence.rs`・`tree_watch.rs`・`perf_sessions.rs`・`support/mod.rs` など)が持ち主の無い 9 枚を足場にしている。スモークは `--env=ARIN_VERIFY_GRID=1` を持つ → T49c(画面とスモーク)、T49d(Rust と結合テストの足場の置き換え)
+- 画面の自動テストの偽物(`e2e/fixtures/tauriMock.ts`)は、写しの形とプロジェクト・ツリーのコマンドを持つ。表示のコマンドと、グリッドとページの計算(Rust の規則の写し。テスト用)が無い → T47f
+- `tree_watch.rs` は写しのたびに選択中のプロジェクトとルートを比べて張り替える作り。タイルのクリックでプロジェクトが頻繁に替わっても、同じプロジェクトの中を移るだけなら張り替えないことを T47b で確かめる
+
+#### 親タスクと子タスク
+
+T46〜T50 は親として残し、作業は子タスクで行う。親は子がすべて済んだら済みにする。T47 は Rust のコマンド・メニューと画面に分けて番号を振った(T47a〜T47g)。T48 は走査器・判定・配線に分けた。
+
+| 親 | 子 |
+| -- | -- |
+| T46 — タイルの規則(`arin-core/layout`、`arin-core/workspace`) | T46a(グリッドとページの規則、表示モードの型)、T46b(`Workspace` の表示の状態・フォーカス・ページ・拡大と写し)、T46c(表示モードの保存と復元) |
+| T47 — 画面(タイルのグリッド、ページ送り、タイトルバー、拡大、モード切替) | T47a(ショートカットの表に 4 行)、T47b(表示のコマンド)、T47c(メニューバーの「表示」)、T47d(画面: 複数枚の表示と隠す)、T47e(画面: 表示の操作とタイルの写しの読み取り)、T47f(タイルのグリッド・タイトルバー・ページ送り・モード切替の部品)、T47g(拡大・アテンションの印・フォーカスと挿入の宛先) |
+| T48 — アテンションの走査を前倒しで作る(【仮定】。前提 (g)) | T48a(走査器)、T48b(表示中かの判定とアテンションの印の写し)、T48c(読み取りスレッドの走査と写しの送り) |
+| T49 — 画面の自動テスト、NFR-009 の計測、M1 の検証用の画面の撤去 | T49a(M4 のシナリオの画面の自動テスト)、T49b(NFR-009 の計測と描画方式・全角幅の方式の案)、T49c(検証画面の撤去: 画面とスモーク)、T49d(検証画面の撤去: Rust と結合テスト) |
+| T50 — M4 の完了確認 | T50a(合否一覧と人間の確認=体感の判定と描画方式の選択)、T50b(描画方式の決定の反映、`docs/` の同期、最終の検証) |
+
+粗い分解のときの親の行(内容は子に引き継いだ。消さずに残す):
 
 - [ ] T46 — タイルの規則(`arin-core/layout`、`arin-core/workspace`)(変更ファイル: crates/arin-core/src/layout/, crates/arin-core/src/workspace/ | 依存: T45)
-  - 対応: FR-048、051、052、053、054。先に書くテスト: グリッド(1→1×1、2→2×1、3〜4→2×2、5〜6→3×2、7〜9→3×3)、10 枚で `1/2`、並び順(プロジェクト順 → タブ順)、タイルとカードの連動、拡大と復帰、表示モードの保存。検証: `npm test`
+  - 対応: FR-048、051、052、053、054。先に書くテスト: グリッド(1→1×1、2→2×1、3〜4→2×2、5〜6→3×2、7〜9→3×3)、10 枚で `1/2`、並び順(プロジェクト順 → タブ順)、タイルとカードの連動、拡大と復帰、表示モードの保存。検証: `npm test` → **T46a〜T46c**
 - [ ] T48 — アテンションの走査を前倒しで作る【要確認】(変更ファイル: crates/arin-core/src/terminal/, src-tauri/src/sessions.rs | 依存: T45)
   - 対応: FR-055。FR-055(M4)は、FR-045(M6)が作るはずの BEL と OSC 9/777 の検出に依存している(§リスク #3)。本計画では走査器と判定を M4 に前倒しし、カードの印・タブのバッジ・macOS 通知は M6(T57)に残す案で書いた
-  - 先に書くテスト: BEL 単独、OSC 9、OSC 777 の検出。OSC の終端としての BEL と OSC 9;4 を除く。チャンクの切れ目をまたぐ列。表示中かどうかの判定(タイル表示=表示中ページ)。検証: `npm test`
-
-#### Phase 30(逐次。Phase 29 完了後)
-
+  - 先に書くテスト: BEL 単独、OSC 9、OSC 777 の検出。OSC の終端としての BEL と OSC 9;4 を除く。チャンクの切れ目をまたぐ列。表示中かどうかの判定(タイル表示=表示中ページ)。検証: `npm test` → **T48a〜T48c**(本節では【仮定】として扱う。前提 (g))
 - [ ] T47 — 画面(タイルのグリッド、ページ送り、タイトルバー、拡大、モード切替)(変更ファイル: src/ui/terminals/, src/state/, src/logic/keys/, src-tauri/src/commands/, src-tauri/src/menu.rs, src/ipc/ | 依存: T46, T48)
-  - 対応: FR-048、051〜055、060、061。表示中ページのタイルだけを画面に出す(NFR-009)。検証: `npm test && npm run e2e`
-
-#### Phase 31(逐次。Phase 30 完了後)
-
+  - 対応: FR-048、051〜055、060、061。表示中ページのタイルだけを画面に出す(NFR-009)。検証: `npm test && npm run e2e` → **T47a〜T47g**
 - [ ] T49 — 画面の自動テスト、NFR-009 の計測、M1 の検証用の画面の撤去(変更ファイル: e2e/, scripts/perf/, src/ui/terminals/VerificationGrid.tsx, src/ui/shell/AppShell.tsx | 依存: T47)
-  - 対応: AC-M14、AC-M15、AC-C02、NFR-009(9 枚で同時に `yes` を流して記録。合否にしない)。T22 の検証用の画面を削除する。検証: `npm test && npm run e2e && npm run perf`
+  - 対応: AC-M14、AC-M15、AC-C02、NFR-009(9 枚で同時に `yes` を流して記録。合否にしない)。T22 の検証用の画面を削除する。検証: `npm test && npm run e2e && npm run perf` → **T49a〜T49d**
 - [ ] T50 — M4 の完了確認(変更ファイル: output/tasks/PROGRESS.md, docs/ | 依存: T49)
-  - AC の合否一覧を出す。**人間**: 9 枚同時表示の体感を判定する
+  - AC の合否一覧を出す。**人間**: 9 枚同時表示の体感を判定する → **T50a・T50b**
+
+#### 共有のファイルの持ち回り
+
+同じ Phase で 2 つのタスクが同じファイルを触らないように割り当てた。下のファイルは表の順に逐次で触る。同時に動かすタスクは、どの Phase も 2 件まで(このマシンは並行のビルドとテストでメモリが足りなくなったため)。
+
+| ファイル | 触るタスク(この順) |
+| -------- | ------------------ |
+| `crates/arin-core/src/layout/mod.rs`、`crates/arin-core/src/layout/tiles.rs` | T46a だけ |
+| `crates/arin-core/src/terminal/osc.rs`、`crates/arin-core/src/terminal/attention.rs`、`crates/arin-core/src/terminal/mod.rs` | T48a → T48b(`mod.rs` の公開だけ) |
+| `crates/arin-core/src/terminal/store.rs` | T48b → T49d(`ExitPolicy::KeepTab` を外す) |
+| `crates/arin-core/src/workspace/`(`state.rs`・`snapshot.rs`・`mod.rs`・`terminals.rs`・`display.rs`) | T46b → T46c → T48b → T49d |
+| `crates/arin-core/src/persistence/codec.rs` | T46c だけ |
+| `crates/arin-core/src/shortcuts/table.rs`、`crates/arin-core/tests/shortcuts.rs` | T47a だけ |
+| `crates/arin-core/src/launch_options.rs` | T49d → T50b |
+| `crates/arin-core/tests/generated_types.rs`、`src/ipc/generated/` | T46a → T46b → T47a → T48b → T49d → T50b |
+| `src-tauri/src/sessions.rs` | T47b → T48c → T49d |
+| `src-tauri/src/lib.rs`、`src-tauri/src/commands/mod.rs`、`src-tauri/src/commands/layout.rs`、`src-tauri/Cargo.toml`(`[[test]]`) | T47b → T48c(`Cargo.toml` だけ)→ T49d → T50b |
+| `src-tauri/src/menu.rs`、`src-tauri/tests/app_menu.rs` | T47c だけ |
+| `src-tauri/src/launch.rs`、`src-tauri/src/persistence.rs`、`src-tauri/src/tree_watch.rs`、`src-tauri/src/commands/app.rs` | T49d → T50b(`launch.rs`・`commands/app.rs` だけ) |
+| `src-tauri/tests/`(`support/mod.rs` と、検証画面を足場にしている既存のテスト) | T47b(`display_commands.rs`・`app_persistence.rs` を足す・直す)→ T48c(`session_attention.rs`・`session_pty.rs`)→ T49b(`perf_sessions.rs`)→ T49d(足場の置き換え) |
+| `src/ipc/client.ts`、`src/ipc/client.test.ts` | T47b → T49c(`get_launch_options` の `verifyGrid` を読まない)→ T50b |
+| `src/terminal/TerminalManager.ts`、`src/terminal/TerminalManager.test.ts` | T47d → T50b(描画方式の表示の口) |
+| `src/state/selectors.ts`、`src/state/terminalSync.ts` | T47d → T47e(`selectors.ts` だけ)→ T49c(`terminalSync.ts` の `verifyGrid`) |
+| `src/state/actions.ts`、`src/state/uiStore.ts`、`src/state/treeStore.ts`、`src/state/startApp.ts` | T47e だけ |
+| `src/state/launchOptions.ts`、`src/main.tsx` | T49c → T50b |
+| `src/test/fakeIpc.ts` | T47d(写しの形)→ T47e → T49c |
+| `src/logic/keys/`(テストだけ) | T47a だけ |
+| `src/logic/verifyGrid.ts`、`src/logic/verifyGrid.test.ts` | T49c だけ(削除) |
+| `src/ui/terminals/`(`TerminalArea.tsx`・`TerminalArea.css`・`TileGrid.tsx`・`TileGrid.css`・`TileTitleBar.tsx`・`PageControl.tsx`・`TerminalHost.tsx`) | T47f → T47g → T49c(`VerificationGrid.tsx`・`VerificationGrid.css` の削除) |
+| `src/ui/shell/AppShell.tsx`、`src/ui/shell/AppShell.css` | T47f → T49c → T50b(`RendererLabel` を外す) |
+| `src/ui/shell/RendererLabel.tsx`、`src/terminal/rendererControl.ts` | T50b だけ |
+| `src/ui/tree/icons.tsx`、`src/ui/design/tokens.css` | T47f → T47g |
+| `e2e/fixtures/tauriMock.ts` | T47f → T47g → T49a → T49c |
+| `e2e/tiles.spec.ts` | T47f → T47g |
+| `e2e/m4-scenario.spec.ts` | T49a だけ |
+| `e2e/verify-grid.spec.ts`、`e2e/terminal-webgl.spec.ts`、`e2e/app-shell.spec.ts` | T49c(検証画面)→ T50b(描画方式) |
+| `scripts/smoke.mjs`、`scripts/smoke.test.mjs` | T49c → T50b |
+| `scripts/perf/`、`scripts/perf-run.test.mjs`、`e2e/perf-tiles.spec.ts`、`playwright.config.ts` | T49b だけ |
+| `package.json`、`package-lock.json` | T49b(計測の入口を足すときだけ)→ T50b(選ばなかった方式のアドオンを外すとき) |
+| `scripts/check-boundaries.mjs` | M4 では触らない見込み |
+| `output/design/ADR_011_tile-view.md` | T46a(着手時に読むだけ)→ T50a → T50b(状態を本人の了承に合わせる) |
+| `output/design/ADR_001_terminal-engine.md` | T49b(実測と案)→ T50b(決定) |
+| `output/design/ARCH_multi-terminal.md`、`docs/`、`project-config.md` | T50b だけ |
+
+#### Phase 29a(並行可能。M3 完了後)
+
+- [ ] T46a — タイルのグリッドとページの規則、表示モードの型(`arin-core/layout`)(変更ファイル: crates/arin-core/src/layout/mod.rs, crates/arin-core/src/layout/tiles.rs, crates/arin-core/tests/layout_tiles.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/ | 依存: T45)
+  - 対応: FR-051(グリッド)、FR-052(1 ページ最大 9 枚)、FR-048(表示モードの型)、C-10・C-11・C-23、設計書 §5.1 の `DisplayMode`・`TileLayout`、§15.2 #4、ADR-011、【仮定】2・3
+  - 置くもの: `DisplayMode`(`tabs` / `tiles`。ts-rs で生成。JSON は `"tabs"`・`"tiles"`)。`TileGrid { cols, rows }`(列×行)。純粋な関数: 枚数 → グリッド、総数 → ページ数(0 枚は 0)、ページ番号 → 並びの範囲、n 番目のページ、範囲外のページ番号の丸め。入出力・時計を持たない
+  - 並行: 可(T48a とファイルが重ならない。生成物を触るのは Phase 29a ではこのタスクだけ)
+  - 先に書くテスト: `1_枚は_1×1`、`2_枚は_2×1`、`3_枚と_4_枚は_2×2`、`5_枚と_6_枚は_3×2`、`7_枚から_9_枚は_3×3`(表で、FR-051 の AC)、`グリッドは列×行で_3×2_は_3_列_2_行`(C-23)、`10_枚は_2_ページで_1_ページ目は_9_枚_3×3_で_2_ページ目は_1_枚_1×1`(AC-M14 の規則。§15.2 #4 の A)、`19_枚は_3_ページで最後は_1_枚`、`0_枚はページが無い`、`ページ番号から並びの範囲が決まる`、`n_番目のターミナルのページ`、`範囲外のページ番号は最後のページに丸める`、`表示モードの_json_は_tabs_と_tiles`。生成した型が最新
+  - 検証: `cargo test -p arin-core --test layout_tiles --test generated_types`
+- [ ] T48a — アテンションの走査器(`arin-core/terminal`)(変更ファイル: crates/arin-core/src/terminal/osc.rs, crates/arin-core/src/terminal/attention.rs, crates/arin-core/src/terminal/mod.rs, crates/arin-core/tests/attention_scanner.rs | 依存: T45)
+  - 対応: FR-055 の検出の部分(FR-045 の走査を前倒し。前提 (g))、設計書 §1.3 #5、§7.1「アテンション」の 1、§7.2「OSC 9/777 の本文」、【仮定】13・15
+  - 置くもの: `AttentionScanner`(`OscScanner` の上に足す。1 バイトずつの状態機械のまま、チャンクの切れ目をまたいでも同じ結果。状態の大きさは一定)。返すのは「このチャンクでアテンションの契機があったか」だけ(本文は保持しない)。`OscScanner` に「BEL 単独」と「先頭の引数の判定」(`9;4` を除く、`777;notify` だけ)を足す。OSC 52 の数え方(`count_clipboard`)は変えない
+  - 並行: 可(`terminal/` の走査器の 3 ファイルとテストだけ)
+  - 先に書くテスト: `bel_単独はアテンションの契機`、`osc_の終端の_bel_は契機にしない`、`osc_9_は契機`、`st_で終わる_osc_9_も契機`、`osc_9;4_の進捗は契機にしない`、`osc_777;notify_は契機`、`osc_777_のほかの副コマンドは契機にしない`、`チャンクの切れ目をまたぐ_osc_9_も_1_回だけ`(全ての切れ目で同じ結果)、`切れ目が_esc_と_]_の間でも同じ`、`1_つのチャンクに何度あっても契機があったとだけ返す`、`本文が長くても状態の大きさが変わらない`、`can_と_sub_で打ち切った_osc_は契機にしない`。既存の OSC 52 のテストがそのまま通る
+  - 検証: `cargo test -p arin-core --test attention_scanner && cargo test -p arin-core --lib terminal`
+
+#### Phase 29b(逐次。T46a 完了後)
+
+- [ ] T46b — `Workspace` の表示の状態(表示モード・ページ・拡大・タイルへのフォーカス)と写し(変更ファイル: crates/arin-core/src/workspace/display.rs, crates/arin-core/src/workspace/mod.rs, crates/arin-core/src/workspace/state.rs, crates/arin-core/src/workspace/snapshot.rs, crates/arin-core/src/workspace/terminals.rs, crates/arin-core/tests/workspace_display.rs, crates/arin-core/tests/app_snapshot.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/ | 依存: T46a)
+  - 対応: FR-048(切替)、FR-051(並び)、FR-052(ページ)、FR-053(タイルとカードの連動)、FR-054(拡大と復帰)、NFR-009(表示中のページだけ)、設計書 §3.4、§6.1(`PaneSizes` の行の「表示モード、タイルのページ、拡大中か」)、§8「タイル表示」「タイルからの拡大」、ADR-011、前提 (a)(c)(d)、【仮定】1〜7
+  - 置くもの: `Workspace` に表示の状態(モード・ページ・拡大中)を足す。口: `set_display_mode`・`toggle_display_mode`(変わったら `true`)、`focus_terminal`(そのタブのプロジェクトを選び、タブを表示中にする。持ち主の無いもの・無い ID は失敗)、`next_page`・`previous_page`(端では何もしない。先頭のタイルにフォーカス)、`toggle_maximize`(タイル表示のときだけ)、`visible_terminals`(表示中のターミナルの並び。T48b の判定と画面の表示に使う)。選択・タブの追加・閉じる・前後・プロジェクトの削除のあとに「ページはフォーカス中のタイルに付いていく」「ページ数が減ったら丸める」を当てる(既存の口の中から 1 つの関数を呼ぶ)。写しに `display`(モード、拡大中、ページ、ページ数、グリッド、表示中のページのタイルの ID の並び)を足す。写しの版は上げない(項目の追加)
+  - 安全: 規則は `arin-core` の中だけ。画面からはモードと ID しか受けない
+  - 並行: 不可(`workspace/` と生成物を触る)
+  - 先に書くテスト: `タイルの並びはプロジェクト順でその中はタブ順`(FR-051)、`10_枚でタイル表示にすると_1_ページ目に_9_枚_ページ数は_2`(AC-M14 の Rust 側)、`タイルにフォーカスすると持ち主のプロジェクトが選択されそのタブが表示中になる`(AC-M15 の Rust 側)、`同じプロジェクトのタイルへのフォーカスは選択を変えない`、`カードを選ぶとそのプロジェクトの最初のタイルのページへ移る`(FR-053)、`表示中のタブがそのページに無ければ最初のタイルを表示中にする`、`タブが_0_枚のプロジェクトを選んでもページは変わらない`、`次のページで先頭のタイルにフォーカスが移る`、`最後のページの次と最初のページの前は何もしない`、`新しいタブを開くとそのタイルのページへ移る`、`タブを閉じてページが減るとページを丸める`、`プロジェクトを消してもページが範囲に収まる`、`拡大すると表示モードはタイルのまま拡大中になり見えるのはフォーカス中の_1_枚`(FR-054)、`もう一度で拡大が解け拡大前のページに戻る`、`拡大中にタブを替えると拡大したままそのタブを出す`、`タブ表示に切り替えると拡大が解ける`、`タブ表示ではページ送りと拡大は何もしない`、`タブ表示で見えるのは選択中のプロジェクトの表示中のタブだけ`、`タイル表示で見えるのは表示中のページのタイルだけ`(NFR-009)、`表示モードを変えると変わったと返し同じなら返さない`、`写しに表示の状態が載る`(`app_snapshot.rs`)。既存の `workspace_*` のテストがそのまま通る
+  - 検証: `cargo test -p arin-core`
+
+#### Phase 29c(並行可能。T46b 完了後)
+
+- [ ] T46c — 表示モードの保存と復元(変更ファイル: crates/arin-core/src/persistence/codec.rs, crates/arin-core/src/workspace/state.rs, crates/arin-core/tests/persistence_codec.rs, crates/arin-core/tests/workspace_display.rs | 依存: T46b)
+  - 対応: FR-048(再起動後に終了時の表示モードで開く)、FR-056、設計書 §6.2 の `ui.displayMode`、前提 (b)、【仮定】16
+  - 置くもの: `PersistedLayout` に表示モード。`state.json` の `ui.displayMode`(`"tabs"` / `"tiles"`)。無い・知らない値はタブ表示(退避しない)。`persisted_state` と `restore` でモードだけを往復させる(ページと拡大中は保存しない)
+  - 並行: 可(T47a とファイルが重ならない。生成物は触らない)
+  - 先に書くテスト: `表示モードを書いて読むと同じモードに戻る`、`display_mode_が無い状態ファイルはタブ表示で始まる`(M3 までの `state.json` を読める)、`知らない値はタブ表示にし退避しない`、`タブ表示のときも_display_mode_を書く`【仮定】、`ページと拡大中は保存する内容に入らない`、`タイル表示で保存して復元するとタイル表示の_1_ページ目でフォーカス中のタイルのページを出す`
+  - 検証: `cargo test -p arin-core --test persistence_codec --test workspace_display`
+- [ ] T47a — ショートカットの表に表示の 4 行を足す(変更ファイル: crates/arin-core/src/shortcuts/table.rs, crates/arin-core/tests/shortcuts.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/logic/keys/keyOwner.test.ts, src/logic/keys/shortcutTable.test.ts | 依存: T46b)
+  - 対応: FR-048・FR-052・FR-054(ショートカット)、【要件の追加】(表に行を足す)、前提 (f)、【仮定】9
+  - 足す行(受け口はどれも「メニューの項目」): `view.toggle-display-mode` = `Cmd+Shift+Backslash`、`view.previous-page` = `Cmd+Alt+Left`、`view.next-page` = `Cmd+Alt+Right`、`view.toggle-maximize` = `Cmd+Shift+Enter`。`ShortcutCommandId::ALL` は 22 行になる。生成物(`ShortcutCommandId.ts`・`defaultShortcuts.json`)を作り直す
+  - 画面: `terminalKeyOwner` は受け口がメニューの項目のキーを表から集めて `app` にする作り(T41b)なので、コードは変えずに新しい 4 つのキーがターミナルに渡らなくなることをテストで確かめる
+  - 並行: 可(T46c とファイルが重ならない。生成物を触るのは Phase 29c ではこのタスクだけ)
+  - 先に書くテスト: 既存の `すべてのコマンドの_id_が既定のキーを持つ`・`同じフォーカスで受けるキーに重なりが無い` が 22 行で通る、`表示の_4_行の既定のキーと受け口`(表で)、`表示の_4_行の_id_の文字列`、`表の_json_の形`(生成物が最新)。Vitest: `表示の操作のキーはターミナルに渡さない`(`keyOwner.test.ts`)、`既定の表に表示の_4_行がある`(`shortcutTable.test.ts`)
+  - 検証: `cargo test -p arin-core --test shortcuts --test generated_types && npx vitest run src/logic/keys && node --test scripts/default-shortcuts.test.mjs`
+
+#### Phase 29d(逐次。T46c・T48a 完了後)
+
+- [ ] T48b — 表示中かの判定とアテンションの印(`Workspace` と写し)(変更ファイル: crates/arin-core/src/terminal/attention.rs, crates/arin-core/src/terminal/mod.rs, crates/arin-core/src/terminal/store.rs, crates/arin-core/src/workspace/display.rs, crates/arin-core/src/workspace/state.rs, crates/arin-core/src/workspace/snapshot.rs, crates/arin-core/tests/workspace_attention.rs, crates/arin-core/tests/app_snapshot.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/ | 依存: T46c, T48a)
+  - 対応: FR-055、設計書 §7.1「アテンション」の 2・3・5、§15.2 #10 の A、【仮定】13・14
+  - 置くもの: `AttentionPolicy`(ターミナルが表示中か。`visible_terminals` を使う)。`Workspace::note_attention(id)`(表示中でなければ印を立て、立ったら `true`。既に立っていれば `false`)。表示が変わる口(モード・ページ・拡大・選択・フォーカス・タブの切替)のあとに、表示中になったターミナルの印を消す。写しの `terminals[]` に `attention`、`display` にアテンションのあるページの番号の並びを足す(画面のページ表示の印に使う)
+  - 並行: 不可(`workspace/` と生成物を触る)
+  - 先に書くテスト: `表示していないターミナルの契機で印が立つ`、`表示中のターミナルの契機では立たない`(§15.2 #10 の A)、`タイル表示では表示中のページのタイルに立たない`、`別のページのタイルに立つ`、`拡大中は拡大したタイルのほかに立つ`、`ページを送ってそのタイルが見えると消える`、`タブ表示で選んで表示すると消える`、`タイル表示に切り替えて見えたタイルの印が消える`、`立っているところにもう一度来ても変わったと返さない`、`閉じたタブの印は残らない`、`写しのターミナルに印が載る`、`写しにアテンションのあるページの番号が載る`
+  - 検証: `cargo test -p arin-core`
+
+#### Phase 30a(並行可能。T47a・T48b 完了後)
+
+- [ ] T47b — 表示のコマンド(変更ファイル: src-tauri/src/commands/layout.rs, src-tauri/src/sessions.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/display_commands.rs, src-tauri/tests/app_persistence.rs, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T46c, T47a, T48b)
+  - 対応: FR-048・FR-052〜054 のコマンド、FR-002・FR-053(ツリーの監視の張り替え)、設計書 §5.2「表示」の案、ADR-011、前提 (a)(c)
+  - コマンド: `set_display_mode`(モード)、`focus_terminal`(ターミナル ID)、`next_tile_page`・`previous_tile_page`、`toggle_tile_maximize`。`SessionRegistry` に同名の口を足し、変わったら写しを送る(保存はモードが変わったときだけ予約される。写しの中身から保存の内容を作る既存の作りのまま)
+  - 監視: タイルのクリックでプロジェクトが替わると `tree_watch.rs` が写しで張り替える(作りは変えない)。同じプロジェクトの中を移るだけなら張り替えないことを確かめる
+  - 並行: 可(T47d とファイルが重ならない)
+  - 先に書くテスト(模擬ランタイム。`harness = false` の `[[test]]` を足す): `表示モードの切替で写しが変わり状態ファイルに保存される`、`再起動すると前の表示モードで開く`(FR-048 の AC。`app_persistence.rs`)、`タイルへのフォーカスで写しの選択が替わりツリーの監視が新しいルートに張り替わる`(AC-M15 の Rust 側。偽の監視のポート)、`同じプロジェクトのタイルの間を移っても監視を張り替えない`、`ページ送りと拡大のコマンドで写しの表示が変わる`、`知らないターミナルへのフォーカスは失敗を返し何も変えない`。Vitest: 新しいコマンドの包みが正しい名前と引数で届く
+  - 検証: `cargo test -p arin --test display_commands --test app_persistence --test tree_watch && npx vitest run src/ipc/client.test.ts`
+- [ ] T47d — 画面: 表示中のターミナルの並び(複数枚の表示と隠す)(変更ファイル: src/terminal/TerminalManager.ts, src/terminal/TerminalManager.test.ts, src/state/terminalSync.ts, src/state/terminalSync.test.ts, src/state/selectors.ts, src/state/selectors.test.ts, src/test/fakeIpc.ts | 依存: T48b)
+  - 対応: NFR-009(表示中のページだけを描く)、FR-052(表示していないページのプロセスと出力が続く)、FR-042(隠したものの取り込み)、設計書 §1.3 #4、§7.3、前提 (e)、【仮定】17
+  - 変えるもの: `presentation`(写し → 表示中の並びと隠すもの。タブ表示と拡大中は 1 枚、タイル表示は写しの `display` の表示中のページのタイル)。`TerminalManager.present(shown[], background)`: 表示中の並びをすべて表示に戻し、ほかを `setVisible(false)`(描画の資源を手放す。WebGL のときはコンテキストを返す)。置き場所への出し入れは `TerminalHost` の `attach` のまま。`terminalSync.ts` を並びで伝える形に替える(検証画面の分岐は T49c まで残す)
+  - 並行: 可(T47b とファイルが重ならない)
+  - 先に書くテスト(Vitest。偽のエンジン): `タブ表示では表示中のタブ_1_枚だけを表示にする`(M2 の既存のテストが通る)、`タイル表示では表示中のページのタイルを表示にしほかを隠す`、`ページが替わると前のページのタイルを隠し新しいページのタイルを表示に戻す`、`隠したターミナルにも出力が届き処理済みを返し続ける`(FR-052)、`隠すと描画の資源を手放す`、`拡大中は拡大したタイル_1_枚だけを表示にする`、`隠したまま作るターミナルは最後に表示していたタイルの寸法で接続する`、`表示中の並びが同じなら何もしない`
+  - 検証: `npx vitest run src/terminal src/state/terminalSync.test.ts src/state/selectors.test.ts`
+
+#### Phase 30b(並行可能。T47b 完了後)
+
+- [ ] T48c — 読み取りスレッドのアテンションの走査と写しの送り(変更ファイル: src-tauri/src/sessions.rs, src-tauri/Cargo.toml, src-tauri/tests/session_attention.rs, src-tauri/tests/session_pty.rs | 依存: T47b)
+  - 対応: FR-055、設計書 §7.1「ターミナルの入出力」の 2・「アテンション」、§7.1「スレッドの分担」(PTY の読み取りと走査はターミナルごとの読み取りスレッド)
+  - 変えるもの: 読み取りスレッドが、検証用の記録の有無によらず `AttentionScanner` で走査する(走査器はそのスレッドだけが持つ。ロックを取らない)。契機があったチャンクのあとにだけ `Workspace` のロックを短く取って `note_attention` を呼び、印が立ったときだけ写しを送る。OSC 52 の数え方(検証用の記録)は変えない
+  - 安全: 走査は出力の中身を保存しない・画面へ本文を送らない。ロックの順序(接続の直列化 → Workspace → 一覧)を守り、送信のあいだはロックを持たない
+  - 並行: 可(T47c とファイルが重ならない)
+  - 先に書くテスト(偽の PTY。`harness = false` の `[[test]]` を足す): `表示していないタブで_bel_が出ると写しにアテンションが載る`、`表示中のタブの_bel_では写しを送らない`、`bel_が続いても写しは_1_回だけ送られる`、`osc_9;4_の進捗では写しを送らない`、`検証用の記録の_osc_52_の数え方は変わらない`。実 PTY(`session_pty.rs`。`/bin/zsh` 固定、`HOME` は一時フォルダ、目印、上限時間): `隠れたタブで_printf_'\a'_を実行すると印が立つ`
+  - 検証: `cargo test -p arin --test session_attention --test session_pty`
+- [ ] T47c — メニューバーの「表示」(変更ファイル: src-tauri/src/menu.rs, src-tauri/tests/app_menu.rs | 依存: T47b)
+  - 対応: FR-048・FR-052・FR-054(ショートカット)、【要件の追加】(アクセラレータは表から)、前提 (f)、【仮定】9・10
+  - 変えるもの: 「表示」の見出しと 4 つの自前の項目(文言は `menu.rs`、ID とキーは表)。並びは「編集」の右。`on_menu_event` で `SessionRegistry` の表示の口を呼ぶ(タブの操作と同じ形。画面を経由しない)
+  - 並行: 可(T48c とファイルが重ならない)
+  - 先に書くテスト(模擬ランタイム): `表示に切替_前のページ_次のページ_拡大がこの順である`、`表示の項目のアクセラレータが表の既定のキーと同じ`、`見出しの並びは_arin_ターミナル_編集_表示`、`表示の項目を選ぶと写しの表示が変わる`、`タブ表示でページ送りと拡大の項目を選んでも何も変わらない`。既存の `app_menu.rs` のテストがそのまま通る
+  - 検証: `cargo test -p arin --test app_menu`
+
+#### Phase 30c(逐次。T47b・T47d 完了後)
+
+- [ ] T47e — 画面: 表示の操作とタイルの写しの読み取り(変更ファイル: src/state/actions.ts, src/state/actions.test.ts, src/state/selectors.ts, src/state/selectors.test.ts, src/state/uiStore.ts, src/state/uiStore.test.ts, src/state/treeStore.ts, src/state/treeStore.test.ts, src/state/startApp.ts, src/state/startApp.test.ts, src/test/fakeIpc.ts | 依存: T47b, T47d)
+  - 対応: FR-048・FR-052〜055 の画面の操作、FR-061(タイトルの文字列)、設計書 §6.1、M3 の残りの問題「切り替えたあとに届いた前のプロジェクトの応答で、衝突の確認が開きうる」(タイルのクリックでプロジェクトの切替が増えるため M4 で扱う)
+  - 置くもの: `actions` に `setDisplayMode`・`focusTile`(フォーカス中なら呼ばない)・`nextTilePage`・`previousTilePage`・`toggleTileMaximize`。セレクタ `tileView`(表示中のページのタイル=ID・「プロジェクト名: タブ名」・色・フォーカス中か・アテンション・状態、グリッド、ページの文字列 `1/2`、前後に進めるか、前後のページのアテンション)。ツリー: 応答が届いたときに、そのプロジェクトがもう表示中でなければ、確認や知らせを開かずに捨てる(読み込み済みの中身の更新は続ける)
+  - 並行: 不可(`src/state/` をまとめて触る)
+  - 先に書くテスト(Vitest。偽の通信): `表示モードの切替でコマンドを呼ぶ`、`フォーカス中のタイルをクリックしてもコマンドを呼ばない`、`別のタイルへのフォーカスでコマンドを呼ぶ`、`ページ送りと拡大のコマンドを呼ぶ`、`タイルの見出しはプロジェクト名とタブ名をつなぐ`(FR-061)、`タイルの色はそのプロジェクトの色`、`ページの文字列は_1/2`(AC-M14)、`最初のページでは前へ進めない`、`前後のページのアテンションを返す`(FR-055)、`ページが_1_つならページ表示を出さない`(【仮定】3)、`プロジェクトを替えたあとに前のプロジェクトの衝突の応答が届いても確認を開かない`(M3 の残り)
+  - 検証: `npx vitest run src/state`
+
+#### Phase 30d(逐次。T47c・T47e 完了後)
+
+- [ ] T47f — タイルのグリッド、タイトルバー、ページ送り、表示モードの切替の部品(変更ファイル: src/ui/terminals/TileGrid.tsx, src/ui/terminals/TileGrid.css, src/ui/terminals/TileTitleBar.tsx, src/ui/terminals/PageControl.tsx, src/ui/terminals/TerminalArea.tsx, src/ui/terminals/TerminalArea.css, src/ui/shell/AppShell.tsx, src/ui/shell/AppShell.css, src/ui/tree/icons.tsx, src/ui/design/tokens.css, e2e/fixtures/tauriMock.ts, e2e/tiles.spec.ts | 依存: T47c, T47e)
+  - 対応: FR-048(ボタン)、FR-051、FR-052(前後のボタン、表示していないページの継続)、FR-053、FR-060(タイルのタイトルバー)、FR-061、NFR-009(表示中のページだけを描く)、PRD §6.3、設計書 §8・§9.1・§9.2、ADR-010、前提 (e)、【仮定】2・3・11・12
+  - 作るもの: `TileGrid`(Container。写しのグリッドの列×行で、表示中のページのタイルだけを描く。各タイルはタイトルバーと `TerminalHost`)、`TileTitleBar`(色の印・「プロジェクト名: タブ名」。名前は文字として差し込む)、`PageControl`(`1/2` と前後のアイコンのボタン。ツールチップのキーは受け取った表から引く)。`TerminalArea` は表示モードでタブ表示とタイル表示を出し分ける。上部の帯に表示モードの切替(アイコン 2 つ)。タイルのクリックでフォーカスのコマンド。アイコンは自作の少数の SVG(設計書 §15.2 #12)。偽の Rust 側に表示のコマンドと、グリッド・ページの計算(テスト用に Rust の規則を写したもの)を足す
+  - **デザイン**(本人の指示): 「AI にありがちなデザインを避け、Apple のデザインらしく、ハイセンスに」。macOS 標準の作法に寄せる(システムフォント 13px、控えめな色、細い区切り線、角丸の淡い選択、アイコンのボタン。パステルの塗り・太い枠・文字だけの大きなボタンを避ける)。プロジェクト色は小さな丸い印で示す。ウィンドウは半透過(すりガラス)、ターミナルの置き場所は不透明。**Playwright の画像(ライトとダーク、1・4・9・10 枚)を撮り、自分の目で確かめてから終える**(画像は `testreport/` に置き、報告に添える)
+  - 安全: プロジェクト名・タブ名は信頼しない文字列として文字で差し込む(設計書 §12)
+  - 並行: 不可
+  - 先に書くテスト(Playwright。偽の Rust 側): `切替のボタンでタイル表示になり全プロジェクトのターミナルが並ぶ`(FR-048・FR-051)、`もう一度でタブ表示に戻り表示中のタブ_1_枚だけが描かれる`、`枚数に応じたグリッド`(1→1×1、2→2×1、4→2×2、6→3×2、9→3×3 を表で。FR-051)、`10_枚で_1_ページ目に_9_枚_2_ページ目に_1_枚_表示は_1/2`(AC-M14)、`前後のボタンでページが替わり端のボタンは無効`(FR-052)、`表示中のページのタイルの置き場所だけがある`(NFR-009。ターミナルの要素の数)、`表示していないページのターミナルにも出力が届き戻ると表示されている`(FR-052)、`タイルのタイトルはプロジェクト名:_タブ名`(FR-061)、`a_の全タイルとカードの色の印は同じ色相で_b_のタイルとは違う`(AC-C02。計算済みのスタイル)、`別のプロジェクトのタイルをクリックするとカードが選ばれツリーのルートが替わる`(AC-M15)、`カードを選ぶとそのプロジェクトの最初のタイルのページへ移る`(FR-053)、`ウィンドウの大きさを変えると各タイルの寸法が送られる`(FR-051 の 3 つ目の AC)、`html_のような名前もそのまま文字で出る`。既存の `e2e/tabs.spec.ts`・`e2e/projects.spec.ts`・`e2e/terminal.spec.ts` が通る
+  - 人間が見る範囲(T50a): 実機での見た目(すりガラスの上の帯とタイトルバー、ライトとダーク)
+  - 検証: `npx tsc -b && npx playwright test e2e/tiles.spec.ts e2e/tabs.spec.ts e2e/projects.spec.ts e2e/terminal.spec.ts`
+
+#### Phase 30e(逐次。T47f 完了後。T47 の節目)
+
+- [ ] T47g — 拡大、アテンションの印、フォーカスとパスの挿入の宛先(変更ファイル: src/ui/terminals/TileGrid.tsx, src/ui/terminals/TileTitleBar.tsx, src/ui/terminals/PageControl.tsx, src/ui/terminals/TerminalArea.tsx, src/ui/terminals/TerminalArea.css, src/ui/terminals/TerminalHost.tsx, src/ui/tree/icons.tsx, src/ui/design/tokens.css, e2e/fixtures/tauriMock.ts, e2e/tiles.spec.ts | 依存: T47f)
+  - 対応: FR-054、FR-055、FR-016・FR-024(パスの挿入の宛先。M3 の申し送り)、設計書 §8「タイルからの拡大」、§15.2 #6 の A(別のプロジェクトのターミナルへは絶対パス。T38b で入れた規則)、前提 (c)(d)、【仮定】7・8・13
+  - 作るもの: タイトルバーのダブルクリックで拡大。拡大中はタブ表示の形に、タイトル帯(同じ見た目)と元に戻すアイコンのボタンを足す。タイトルバーのアテンションの印、ページ表示の前後のボタンの印。フォーカス中のタイルが替わったら、そのターミナルに入力のフォーカスを移す(M2 の `TerminalArea` の「次の描画のフレームで移す」と同じ扱い)。ツリーのドラッグの落とし先(`TerminalHost` の目印)はタイルでもそのまま使う
+  - **デザイン**: T47f と同じ方針。印は小さな丸(システムの強調色)で、塗りの大きなバッジにしない。Playwright の画像で自分の目で確かめる
+  - 並行: 不可
+  - 先に書くテスト(Playwright): `タイトルバーをダブルクリックするとそのターミナルがタブ表示の形で出て表示モードはタイルのまま`(FR-054)、`元に戻すボタンでタイル表示に戻り前のページが出る`、`拡大中のタイトル帯のダブルクリックでも戻る`、`ターミナルの本文のダブルクリックでは拡大しない`、`アテンションのあるタイルのタイトルに印が付く`(FR-055 の 1 つ目)、`別のページのアテンションはページ表示の前後のボタンに印が付く`(FR-055 の 2 つ目)、`表示すると印が消える`、`タイルをクリックするとそのターミナルに入力のフォーカスが移る`、`ツリーのパスをターミナルに挿入の宛先はフォーカス中のタイル`(M3 の申し送り)、`ツリーの項目を別のプロジェクトのタイルへ落とすとそのターミナルへの挿入が呼ばれる`(宛先の ID。絶対パスにするのは Rust の T42d の既存のテスト)、`ドラッグ中にタイルの上を通っても行が動かない`(AC-T25 の既存のテストが通る)
+  - 人間が見る範囲(T50a): 実機でのダブルクリックの手触り、印の見え方
+  - 検証: `npx playwright test e2e/tiles.spec.ts e2e/tree-dnd.spec.ts e2e/tree-ops.spec.ts`。節目として続けて `npm run lint && npm test && npm run e2e`(並行のタスクを動かさずに 1 件で回す)
+
+#### Phase 31a(並行可能。T47g・T48c 完了後)
+
+- [ ] T49a — M4 のシナリオの画面の自動テスト(変更ファイル: e2e/m4-scenario.spec.ts, e2e/fixtures/tauriMock.ts | 依存: T47g, T48c)
+  - 対応: PRD §8「UI」(タイル表示)、AC-M14、AC-M15、AC-C02 の通し、FR-048・FR-052〜055
+  - 先に書くテスト(このタスク自体がテスト): `タブ表示からタイル表示に切り替え_ページを送り_別のプロジェクトのタイルをクリックし_拡大して戻し_タブ表示に戻すを通す`、`10_枚で_1/2_を出し_2_ページ目の_1_枚に出力が続いている`(AC-M14・FR-052)、`a_のタイルにフォーカス中に_b_のタイルをクリックするとカードが_b_になりツリーのルートが_b_になる`(AC-M15)、`緑の_a_のカードとタイルの色の印が同じ色相`(AC-C02)、`別のページで鳴ったベルの印がページ表示に出て_送ると消える`(FR-055)、`再読み込みしても写しの表示モードで開く`(FR-048 の画面側)
+  - 並行: 可(T49b とファイルが重ならない)
+  - 検証: `npx playwright test e2e/m4-scenario.spec.ts`(3 回続けて合格)
+- [ ] T49b — NFR-009 の計測と、描画方式・全角幅の方式の案(変更ファイル: src-tauri/tests/perf_sessions.rs, scripts/perf/run.mjs, scripts/perf/app-memory.mjs, scripts/perf-run.test.mjs, e2e/perf-tiles.spec.ts, playwright.config.ts, package.json(入口を足すときだけ), output/design/ADR_001_terminal-engine.md | 依存: T47g, T48c)
+  - 対応: NFR-009(9 枚で同時に `yes` を流して記録。合否にしない)、ADR-001(描画方式と全角幅の方式は複数枚の実測で決める)、ADR-001 の「流量制御のしきい値(複数枚のときの値は M4 で実測して見直す)」、設計書 §7.3、前提 (h)
+  - 測るもの(記録だけ。数値で失敗させない。結果は `testreport/perf/`): (1) Rust 側: 9 つのセッションで同時に `yes` を流したときの、送り先までの量と遅れ・未処理の量の頭打ち(`perf_sessions.rs`。`#[ignore]`)。(2) 画面側: WebKit で 9 枚のタイルに偽の Rust 側から同時に大量の出力を流しているあいだの、ページ送り・タイルのクリック・キー入力の反応までの時間とフレームの間隔を、DOM と WebGL、`unicode11` と `graphemes` の組で記録する(`e2e/perf-tiles.spec.ts`。`npm run e2e` には入れず `npm run perf` から動かす。WebGL のコンテキストの数も記録する)。(3) 実アプリ: 9 プロジェクトのタイル表示の `state.json` で起動したときのメモリ(`app-memory.mjs`。【仮定】18)
+  - 書くもの: ADR-001 に「M4 の実測」の節(上の表と、描画方式・全角幅の方式・しきい値の**案**。決定は T50a の本人の体感のあと)
+  - 並行: 可(T49a とファイルが重ならない。計測は重いので、T49a の自動テストが終わってから計測を回すこと)
+  - 先に書くテスト: `scripts/perf-run.test.mjs` に `画面側の計測の結果を表にまとめる`・`9_枚の計測の行を読める`・`計測が動かせないときだけ終了コードが_0_でない`
+  - 検証: `node --test scripts/perf-run.test.mjs && npm run app && npm run perf`
+
+#### Phase 31b(逐次。T49a・T49b 完了後)
+
+- [ ] T49c — M1 の検証画面の撤去(画面とスモーク)(変更ファイル: src/ui/terminals/VerificationGrid.tsx(削除), src/ui/terminals/VerificationGrid.css(削除), src/logic/verifyGrid.ts(削除), src/logic/verifyGrid.test.ts(削除), src/ui/shell/AppShell.tsx, src/main.tsx, src/state/terminalSync.ts, src/state/terminalSync.test.ts, src/state/launchOptions.ts, src/state/launchOptions.test.ts, src/ipc/client.ts, src/ipc/client.test.ts, src/test/fakeIpc.ts, e2e/verify-grid.spec.ts(削除), e2e/fixtures/tauriMock.ts, scripts/smoke.mjs, scripts/smoke.test.mjs | 依存: T49a, T49b)
+  - 対応: §リスク #10(検証用の仕組みをリリースビルドに残さない)、ADR-001「起動時の指定の扱い」、前提 (h)、【仮定】18
+  - 変えるもの: 画面は `ARIN_VERIFY_GRID` を読まない(起動時の指定の `verifyGrid` を使わない。型の項目は T49d まで残る)。検証画面の部品・純粋ロジック・画面の自動テストを消す。スモークの `--env=ARIN_VERIFY_GRID=1` の代わりに、9 プロジェクトとタイル表示の `state.json` を置いて起動し、9 枚の準備完了と出力を確かめる `--tiles`(シェルがアプリの終了後に残らないことの確認を引き継ぐ)
+  - 並行: 不可
+  - 先に書くテスト: `scripts/smoke.test.mjs` に `タイルの指定で_9_プロジェクトとタイル表示の状態ファイルを置く`・`9_枚の印が揃うまで待つ`。Vitest: `起動時の指定に検証画面の値があっても通常の画面を出す`(`launchOptions.test.ts`)。既存の `e2e/tiles.spec.ts`・`e2e/m4-scenario.spec.ts` が通る
+  - 検証: `npx vitest run src/state src/ipc && npx playwright test e2e/tiles.spec.ts e2e/app-shell.spec.ts && node --test scripts/smoke.test.mjs && npm run app && node scripts/smoke.mjs --tiles`
+
+#### Phase 31c(逐次。T49c 完了後)
+
+- [ ] T49d — M1 の検証画面の撤去(Rust と結合テストの足場)(変更ファイル: crates/arin-core/src/launch_options.rs, crates/arin-core/src/workspace/state.rs, crates/arin-core/src/terminal/store.rs, crates/arin-core/tests/workspace_terminal.rs, crates/arin-core/tests/workspace_projects.rs, crates/arin-core/tests/app_snapshot.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src-tauri/src/launch.rs, src-tauri/src/lib.rs, src-tauri/src/sessions.rs, src-tauri/src/persistence.rs, src-tauri/src/tree_watch.rs, src-tauri/tests/(検証画面を足場にしているもの。support/mod.rs を含む) | 依存: T49c)
+  - 対応: §リスク #10、ADR-001、M2 の残りの問題「使われなくなった `terminal::TerminalSnapshot` と `LaunchOptions::terminal_count()`」
+  - 変えるもの: `ENV_VERIFY_GRID`・`VERIFY_GRID_TERMINAL_COUNT`・`LaunchOptions` の検証画面の項目・`terminal_count()`・`Workspace::for_verify_grid`・持ち主の無いタブ(`TerminalStore` の `None` のプロジェクト)・`ExitPolicy::KeepTab`・`TerminalSnapshot` を消す。`launch.rs`・`lib.rs`・`persistence.rs`(読まず書かない)・`tree_watch.rs`(張らない)の分岐を消す。結合テストの足場を「一時フォルダのプロジェクト 1〜9 件」に置き換える(共通の補助を `support/mod.rs` に置く)。写しの `projects` の「検証画面では空」・`terminals` の「持ち主の無いもの」の説明を直す
+  - 並行: 不可(`workspace/`・`sessions.rs`・`lib.rs`・生成物・多くの結合テストを触る)
+  - 先に書くテスト: `起動時の指定に_arin_verify_grid_があっても通常の起動になる`(`launch.rs` の既存のテストを書き換える)、`写しのターミナルはすべて持ち主のプロジェクトを持つ`。既存の結合テストを新しい足場で通す(数が減らないこと。`cargo test -p arin` のテスト数を作業の前後で比べて報告する)
+  - 検証: `npm test && npm run lint && npm run app && npm run smoke && node scripts/smoke.mjs --tiles`
+
+#### Phase 31d(逐次。人間ゲート)
+
+- [ ] T50a — M4 の合否一覧と人間の確認(変更ファイル: output/reports/test/M4_acceptance.md, output/tasks/PROGRESS.md, output/design/ADR_011_tile-view.md | 依存: T49d)
+  - AI がやること: `npm run build && npm test && npm run lint && npm run test:coverage && npm run e2e && npm run app && npm run smoke && node scripts/smoke.mjs --tiles && npm run perf` を通し、下の対応表に沿って AC の合否一覧を `output/reports/test/M4_acceptance.md` と `testreport/` に出す。NFR-009 の記録(T49b)を載せる(合否にしない)。人間に渡す確かめ方(9 プロジェクトの `state.json` の置き方、`ARIN_RENDERER=webgl`・`ARIN_UNICODE=graphemes` での起動の仕方)を書く。fresh context の `/code-review` と `verifier` を 1 回ずつ回す
+  - **人間がやること**(`npm run app` で作った `.app` を Finder から開く): (1) **9 枚同時表示の体感**: 9 枚で Claude Code などを動かし、いくつかで `yes` などの大量の出力を流しながら、ページ送り・タイルのクリック・入力が我慢できる速さか(NFR-009。M4 の人間ゲート)。(2) **描画方式と全角幅の方式**: 既定(DOM、`unicode11`)と `ARIN_RENDERER=webgl`・`ARIN_UNICODE=graphemes` で同じことをして比べ、T49b の案を採るか選ぶ(ADR-001)。(3) タイル表示とタブ表示の切替(ボタンと ⇧⌘\)、再起動後に同じ表示で開く(FR-048)。(4) ページ送り(前後のボタンと ⌥⌘← ⌥⌘→)、10 枚で `1/2`(FR-052)。(5) 別のプロジェクトのタイルのクリックでカードとツリーが替わる(AC-M15)、カードを選ぶとそのページへ移る。(6) タイトルバーのダブルクリックと ⇧⌘↩ での拡大と戻し(FR-054)。(7) 隠れたタイル・別のページのタイルで `printf '\a'` を実行すると印が付き、表示すると消える(FR-055)。Claude Code の入力待ちで印が付くか(参考。§15.3 #12 は M6)。(8) ツリーからタイルへのドラッグと ⌘↩ の挿入の宛先(フォーカス中のタイル。別のプロジェクトのタイルへは絶対パス)。(9) タイルのタイトルバー・ページ表示・切替のボタン・印の見た目(ライトとダーク、すりガラスの上。デザインの方針)。(10) M4 で足した 4 つのキーが US と JIS の配列で効き、ターミナルに渡らない(【仮定】9。合わなければ表の既定のキーを替える)
+  - 完了条件: AC の合否一覧ができ、本人が (1)〜(10) を確かめ、(2) で描画方式と全角幅の方式を選んだ
+
+#### Phase 31e(逐次。T50a 完了後)
+
+- [ ] T50b — 描画方式の決定の反映、`docs/` の同期、最終の検証(変更ファイル: crates/arin-core/src/launch_options.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src-tauri/src/launch.rs, src-tauri/src/lib.rs, src-tauri/src/commands/app.rs, src/ipc/client.ts, src/ipc/client.test.ts, src/state/launchOptions.ts, src/main.tsx, src/terminal/TerminalManager.ts, src/terminal/rendererControl.ts, src/ui/shell/RendererLabel.tsx(削除), src/ui/shell/AppShell.tsx, src/terminal/xterm/, e2e/terminal-webgl.spec.ts, e2e/app-shell.spec.ts, scripts/smoke.mjs, package.json, package-lock.json(選ばなかった方式のアドオンを外すときだけ), output/design/ADR_001_terminal-engine.md, output/design/ADR_011_tile-view.md, output/design/ARCH_multi-terminal.md, output/reports/test/M4_acceptance.md, output/tasks/PROGRESS.md, docs/, project-config.md | 依存: T50a)
+  - 変えるもの: T50a の (2) の決定に従い、`ARIN_RENDERER`・`ARIN_UNICODE`・`get_launch_options`・`RendererLabel` を外し、選んだ方式に固定する。選ばなかった方式のアドオンを依存から外すか、M4.5 の設定ファイルの項目に回すかは、本人の判断に従う(本人の判断が要る点)。ADR-001 を決定で直し、ADR-011 の状態を本人の了承に合わせる。`docs/`(`state.json` の `ui.displayMode`、写しの `display`・`attention`、コマンドとメニュー、ショートカットの表の 22 行、`TerminalManager.present`、検証画面と起動時の指定を外したこと、新しい落とし穴)と `project-config.md` §2・§3 を同期する。設計書を直す: §5.2 の通信の一覧(表示)、§6.1(`PaneSizes` の行)、§6.2、§8、§9.1(メニューバーの「表示」)、§15.3 #1(描画方式の決定)
+  - 先に書くテスト: `起動時の指定の環境変数があっても無視して既定の方式で起動する`(スモーク)。描画方式の切替のテスト(`e2e/terminal-webgl.spec.ts` など)は選んだ方式に合わせて直すか消す
+  - 検証: `npm run build && npm test && npm run lint && npm run test:coverage && npm run e2e && npm run app && npm run smoke && node scripts/smoke.mjs --tiles`
+  - 完了条件: 下の「M4 の完了条件」をすべて満たす
+
+#### M4 の完了条件
+
+- 下の対応表の AC が、自動テストと T50a の人間の確認で全件合格している
+- `npm run build`・`npm test`・`npm run lint`・`npm run test:coverage`(`arin-core` と `src/logic` のそれぞれで行 80%)・`npm run e2e`(`e2e/m4-scenario.spec.ts` は 3 回続けて合格)・`npm run smoke`・`node scripts/smoke.mjs --tiles` が終了コード 0。`npm run perf` が NFR-009 を記録している(合否にしない)
+- テストとスモークが、本物の `~/Library/Application Support/Arin/` と一時フォルダの外のファイルを作っていない・変えていない
+- `cargo tree -i reqwest --target aarch64-apple-darwin` が空(通信のクレートが増えていない)
+- 9 枚の検証画面(`ARIN_VERIFY_GRID`・`VerificationGrid`)と、起動時の指定 `ARIN_RENDERER`・`ARIN_UNICODE`・`RendererLabel` がソースに残っていない。ADR-001 に描画方式と全角幅の方式の決定がある
+- `src-tauri/src/menu.rs` と `src/ui/` に、M4 で足したキーの文字列の直書きが無い(表の 22 行から引く。【要件の追加】)
+- 本人が T50a の (1)〜(10) を確かめた。ADR-011 が本人の了承に合わせて直っている
+
+#### FR の受け入れ基準とタスクの対応(漏れの確認用)
+
+| FR | 受け入れ基準 | 規則 | コマンド・メニュー | 画面 | 人間(T50a) |
+| -- | ------------ | ---- | ------------------ | ---- | ---------- |
+| FR-048 | ボタンとショートカットのどちらでもタブ表示とタイル表示が切り替わる | T46a、T46b、T47a | T47b、T47c | T47e、T47f、T49a | (3)、(10) |
+| FR-048 | 再起動後、終了時の表示モードで開く | T46c | T47b(`app_persistence.rs`) | T49a | (3) |
+| FR-051 | 1→1×1、2→2×1、3〜4→2×2、5〜6→3×2、7〜9→3×3(列×行) | T46a | — | T47f | (1) |
+| FR-051 | 全プロジェクトの全ターミナルがプロジェクト順→タブ順に並ぶ | T46b | — | T47f | — |
+| FR-051 | タイル表示中もウィンドウのリサイズに追従し、各タイルの行・桁が PTY に通知される | — | 既存の `resize_terminal` | T47d、T47f | (1) |
+| FR-052 | 10 枚で 1 ページ目に 9 枚(3×3)、2 ページ目に 1 枚、ページ表示が `1/2`(AC-M14) | T46a、T46b | — | T47e、T47f、T49a | (4) |
+| FR-052 | 前後ボタンとショートカットでページが切り替わる | T46b、T47a | T47b、T47c | T47e、T47f | (4)、(10) |
+| FR-052 | 表示していないページのプロセスと出力が継続する | — | — | T47d、T47f、T49a | (1) |
+| FR-053 | A のタイルにフォーカス中に B のタイルをクリックすると、カードは B が選択状態、ツリーのルートが B(AC-M15) | T46b | T47b(監視の張り替え) | T47e、T47f、T49a | (5) |
+| FR-053 | カードを選ぶと、そのプロジェクトの最初のタイルがあるページへ移る | T46b | — | T47f | (5) |
+| FR-054 | タイルをダブルクリック(またはショートカット)すると、そのターミナルがタブ表示で拡大される | T46b、T47a | T47b、T47c | T47g、T49a | (6) |
+| FR-054 | 同じ操作でタイル表示に戻る | T46b | T47b、T47c | T47g、T49a | (6) |
+| FR-055 | アテンションのあるタイルのタイトルにバッジ(印)が付く | T48a、T48b | T48c | T47e、T47g、T49a | (7) |
+| FR-055 | そのタイルが別ページにあるとき、ページ表示にも印が付く | T48b | T48c | T47e、T47g、T49a | (7) |
+| FR-060 | A の色が緑のとき、A のカードのタイトル部と A の全タイルのタイトルバーが同じ色相で、他プロジェクトのタイルと違う(AC-C02) | — | — | T47f、T49a | (9) |
+| FR-060 | タブ表示の着色(M2・M3 で済み)を壊さない | — | — | T47f(既存の `tabs.spec.ts`・`projects.spec.ts`) | (9) |
+| FR-061 | タイルのタイトルに「プロジェクト名: タブ名」が必ず出る | — | — | T47e、T47f | (9) |
+| NFR-009 | 9 枚同時に出力が流れていても操作が 100ms 以内に反応する(目安。記録だけ)。描画するのは表示中ページのタイルだけ | T46b(表示中の並び) | — | T47d、T47f、T49b | (1)、(2) |
+| M3 の申し送り | 「パスをターミナルに挿入」の宛先をタイルのフォーカスにする | T46b(フォーカス=表示中のタブ) | 既存の `insert_entry_path` | T47g | (8) |
+| M3 の残り | 切り替えたあとに届いた前のプロジェクトの応答で衝突の確認が開かない | — | — | T47e | — |
+| ADR-001 | 描画方式と全角幅の方式を複数枚で実測して決め、起動時の指定と `RendererLabel` を外す | — | — | T49b、T50b | (2) |
+| §リスク #10 | 9 枚の検証画面を撤去する | — | — | T49c、T49d | — |
+| 【要件の追加】 | M4 のショートカットを 1 つの表から引く(M4.5 の土台) | T47a | T47c | T47f(ツールチップ) | (10) |
+
+#### M3 までの残りの問題の割当(`M2_acceptance.md`・`M3_acceptance.md` の「判断が要る点・残っている問題」から、タイル表示に関わるもの)
+
+| 項目 | 扱うタスク | 扱い |
+| ---- | ---------- | ---- |
+| 切り替えたあとに届いた前のプロジェクトの応答で、衝突の確認が開きうる(M3) | T47e | タイルのクリックでプロジェクトの切替が増えるので、M4 で直す |
+| 使われなくなった `terminal::TerminalSnapshot` と `LaunchOptions::terminal_count()`(M2) | T49d | 検証画面の撤去と一緒に消す |
+| 状態の写しが作った順と違う順で届くことがあり得る(M2) | 扱わない(注意だけ) | M4 で写しを送る回数が増える(フォーカス・ページ・アテンション)。表示が前の状態に戻る症状が T49a・T50a で出たら、写しに通し番号を足すタスクを起こす。出なければ M6(T55)の再分解のまま |
+| タブの「+」の読み上げ用のキーの表示(`Meta+T`)が直書き(M3) | 扱わない | M4.5 のまま。M4 で足すツールチップのキーの表示は表から引く(T47f) |
+| それ以外(ゴミ箱の目視、競合の隙間、「開く」の範囲、NFR-005、読み込み中が残る、Dock の終了など) | 扱わない | タイル表示に関わらない |
 
 ### M4.5 ショートカットの設定(粗い分解。T63 の着手時に分解し直す)
 
@@ -1087,10 +1400,10 @@ T56 から前倒しする範囲: 設定ファイルの置き場所と読み込�
 
 #### Phase 31.5a(逐次。M4 完了後)
 
-- [ ] T63 — M4.5 の着手時の確認と再分解、ADR(変更ファイル: output/tasks/PLAN_multi-terminal.md, output/tasks/PROGRESS.md, output/design/ADR_010_shortcut-settings.md, output/design/ADR_INDEX.md, output/design/ARCH_multi-terminal.md | 依存: T50)
+- [ ] T63 — M4.5 の着手時の確認と再分解、ADR(変更ファイル: output/tasks/PLAN_multi-terminal.md, output/tasks/PROGRESS.md, output/design/ADR_012_shortcut-settings.md, output/design/ADR_INDEX.md, output/design/ARCH_multi-terminal.md | 依存: T50)
   - 決めること: (1) 設定ファイルの置き場所と読み込み(ADR-005、設計書 §6.2 の `settings.toml`・§7.2 の「設定ファイル」の行、FR-057 に合わせる)。(2) TOML を解析するクレートとその版(正確な版、公開から 2 週間未満を避ける。`arin-core` に足すか、`arin-platform` で解析して `arin-core` に値を渡すか)。(3) キーの書式(T38d の `Cmd+Shift+N` の形)と、設定の表の形(案: `[shortcuts]` の下に `"tree.trash" = "Cmd+Backspace"`)。(4) 重なり・不正な値・未知のコマンドの ID・OS が予約するキー(⌘Q を外す、⌘H・⌘⇥・⌘Space など)の扱い(既定に戻して理由を出すか、そのキーだけ無効にするか)。(5) 反映のタイミング(起動時だけか、保存を検知して読み直すか。メニューバーを作り直せるかを Tauri 2.12.5 のソースで確かめる)。(6) 既定に戻す方法(行を消す)。(7) M3 の T45 の (5) で分かった受け口(メニューの項目か画面か)との関係
   - PRD への反映が要る点を本人に挙げる(FR の追加、AC、M4.5 という区切りの扱い)
-  - 検証: 文書だけ。`ls output/design/ADR_010_*.md` が 1 件
+  - 検証: 文書だけ。`ls output/design/ADR_012_*.md` が 1 件(ADR-010 はウィンドウの半透過、ADR-011 はタイル表示で使ったため。2026-11-15 に番号を直した)
 
 #### Phase 31.5b(逐次。T63 完了後。同じクレートを触るものは再分解のときに逐次にする)
 
@@ -1229,13 +1542,25 @@ T43a ──→ T43b ──→ T43c ──→ T43d ──→ T44b ─────
 
 細かい依存(図は省略して書いた): T42a ← T38c・T38e・T39a・T40a。T42b ← T38c・T40b・T42a。T42c ← T39b・T40c・T40d・T42b。T42d ← T38b・T42c。T42e ← T38d・T42d。T43a ← T41a・T41b・T42e。T44a ← T38b・T39b・T40c。T45 ← T44a・T44b。
 
-M4〜M6(粗い。M4.5 は 2026-11-15 の要件の追加):
+M4(T46 で分解し直した。T46〜T50 は親で、矢印は子タスクの間に引いた。同時に動かすのは 2 件まで):
 
 ```text
-T45 ──┬──→ T46 ──┐
-      └──→ T48 ──┴──→ T47 ──→ T49 ──→ T50(人間)
+T45 ──┬──→ T46a ──→ T46b ──┬──→ T46c ──┐
+      │                    └──→ T47a ──┼──────────────┐
+      └──→ T48a ───────────────────────┴──→ T48b ──┬──→ T47b ──┬──→ T48c ──────────────────────┐
+                                                   │           ├──→ T47c ──┐                   │
+                                                   └──→ T47d ──┴───────────┴──→ T47e ──→ T47f ──→ T47g ──┤
+                                                                                                        │
+T47g・T48c ──┬──→ T49a(シナリオ)──┐
+             └──→ T49b(計測)──────┴──→ T49c(画面とスモーク)──→ T49d(Rust)──→ T50a(人間)──→ T50b
+```
 
-T50 ──→ T63 ──→ T64 ──→ T65 ──→ T66(人間)
+細かい依存(図は省略して書いた): T46c ← T46b。T47a ← T46b。T48b ← T46c・T48a。T47b ← T46c・T47a・T48b。T47d ← T48b。T47c ← T47b。T48c ← T47b。T47e ← T47b・T47d。T47f ← T47c・T47e。T47g ← T47f。T49a・T49b ← T47g・T48c。
+
+M4.5〜M6(粗い。M4.5 は 2026-11-15 の要件の追加):
+
+```text
+T50b ──→ T63 ──→ T64 ──→ T65 ──→ T66(人間)
 
 T66 ──┬──→ T51 ──→ T53(人間) ──┐
       └──→ T52 ────────────────┴──→ T54(人間)
@@ -1268,7 +1593,7 @@ T54 ──→ T55 ──→ T56 / T57 / T58 / T59 / T60 / T61 ──→ T62(人�
 - M1: 出力の表示、キー入力、リサイズ、スクロールバック、コピー・ペースト、9 枚への取り込み(T19、T20、T22)
 - M2: 起動 → プロジェクト追加 → 切替 → タブ操作 → 削除の確認 → 終了の確認(T34、T35)
 - M3: ツリーの表示、コンテキストメニュー、新規作成、名称変更、衝突の確認、ドラッグ中の更新の保留(T43、T44)
-- M4: 10 枚で `1/2`、ページ送り、タイルとカードの連動、拡大(T49)
+- M4: タイルのグリッド、10 枚で `1/2`、ページ送り、タイルとカードの連動、拡大、アテンションの印(T47f、T47g)、M4 のシナリオ(T49a)。描画方式ごとの 9 枚の反応の記録は `npm run perf` から動かす(T49b。`npm run e2e` には入れない)
 - 実アプリの起動スモーク(`npm run smoke`): T10 で作り、各タスクの着手前に通す
 - ブラウザ方式では Rust 側の実物と WKWebView 固有の挙動を通らない。そこは結合テストと人間ゲートで補う
 
@@ -1280,7 +1605,7 @@ T54 ──→ T55 ──→ T56 / T57 / T58 / T59 / T60 / T61 ──→ T62(人�
 | M1 | Claude Code と Codex で Go/No-Go を判定する | T26 |
 | M2 | 実機の体感確認 | T36 |
 | M3 | ゴミ箱の「戻す」の目視(T37)。1 週間のドッグフーディング(T45) | T37、T45 |
-| M4 | 9 枚同時表示の体感の判定 | T50 |
+| M4 | 9 枚同時表示の体感の判定、描画方式と全角幅の方式の選択 | T50a |
 | M4.5 | 設定ファイルでキーを変え、メニューバーとツリーの両方で効くことの確認 | T66 |
 | M5 | 証明書と API キーの用意、署名・公証の実行、別アカウントでの起動確認 | T53、T54 |
 | M6 | ライト・ダークのコントラストの確認。不満リストが空になったことの確認 | T56、T62 |
@@ -1290,7 +1615,7 @@ T54 ──→ T55 ──→ T56 / T57 / T58 / T59 / T60 / T61 ──→ T62(人�
 | NFR | 時機 | タスク |
 | ---- | ---- | ---- |
 | NFR-004 | M1 | T24 |
-| NFR-009 | M1(簡易)、M4 | T24、T49 |
+| NFR-009 | M1(簡易)、M4 | T24、T49b |
 | NFR-005 | M3 | T44 |
 | NFR-001〜003 | M2 の完了時、M6 の完了時 | T36、T62 |
 
@@ -1320,7 +1645,7 @@ T54 ──→ T55 ──→ T56 / T57 / T58 / T59 / T60 / T61 ──→ T62(人�
 ### output/design/
 
 - `ARCH_multi-terminal.md` §4: T1 で React 前提に直す
-- ADR-003(T1)、ADR-002・004・005・006(T2)、ADR-001(T27)、ADR-007(T37)
+- ADR-003(T1)、ADR-002・004・005・006(T2)、ADR-001(T27。M4 の実測は T49b、決定は T50b)、ADR-007(T37)、ADR-011(T46 の再分解。状態は T50b で本人の了承に合わせる)
 
 ## リスク・懸念事項
 
@@ -1341,3 +1666,7 @@ T54 ──→ T55 ──→ T56 / T57 / T58 / T59 / T60 / T61 ──→ T62(人�
 | 11 | M3 のドッグフーディングのあいだは取り消し(FR-032)が無い(PRD §11) | 中 | PRD のとおり。移動は確認ダイアログ、削除はゴミ箱で守る |
 | 12 | `cargo install cargo-llvm-cov`(T9)と `npx playwright install webkit`(T11)は、手元の環境に道具を入れる | 低 | 実行前に本人に伝える |
 | 13 | PRD §9 の依存では M4 は M2 に、M5 は M0 にだけ依存する。本計画は指示どおり M0→M6 の一列で並べた | 参考 | M3 のドッグフーディングの 1 週間のあいだに M4 や M5 を進める並べ替えは、依存の上ではできる。採るかは本人が決める |
+| 14 | M4 で足すショートカット(⇧⌘\・⌥⌘←・⌥⌘→・⇧⌘↩)とページ送り・拡大の振る舞いは PRD に無い | 【仮定】 | M4 の【仮定】3〜9。本人が T50a で確かめる。キーは表の 1 行の変更で替えられ、M4.5 で設定ファイルからも変えられる |
+| 15 | WebGL 描画で 9 枚を同時に出すと、WebView のコンテキストの数の上限に近づく(ADR-001) | 中 | 隠したページは `setVisible(false)` でコンテキストを手放す(T47d)。T49b でコンテキストの数を記録し、本人が T50a で比べてから方式を決める |
+| 16 | タイル表示では写しを送る回数が増える(フォーカス・ページ・アテンション)。写しに通し番号が無く、順が入れ替わると表示が前に戻りうる(M2 の残りの問題) | 低 | T48c は印が立ったときだけ送る。症状が T49a・T50a で出たら通し番号を足すタスクを起こす |
+| 17 | 9 枚の検証画面は `src-tauri/tests/` の多くの結合テストの足場になっている | 中 | 撤去を画面(T49c)と Rust(T49d)に分け、T49d で足場を「一時フォルダのプロジェクト」に置き換える。テストの数が減らないことを前後で比べる |
