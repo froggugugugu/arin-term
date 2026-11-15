@@ -845,7 +845,7 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 可(T39b とファイルが重ならない)。生成物の後なので T38d の後
   - 先に書くテスト: `隠しファイル表示の既定はオフ`、`隠しファイル表示を書いて読むと同じに戻る`、`tree_キーの無い状態ファイルも読める`、`tree_の形が違えばそのプロジェクトだけ既定値で退避しない`、`隠しファイル表示を変えると写しが変わる`、`写しの_json_に_showHidden_が載る`、`保存する内容に展開状態を含めない`。生成した型が最新
   - 検証: `npm test && npm run lint && npm run build && npm run e2e`(既存の画面の自動テストが新しい写しの形で通る)
-- [ ] T39b — ファイル操作の手順(`FileOperationService`)、衝突、切り取り(変更ファイル: crates/arin-core/src/fileops/service.rs, crates/arin-core/src/fileops/clipboard.rs, crates/arin-core/tests/fileops_service.rs, crates/arin-core/tests/support/fake_fs.rs | 依存: T39a)
+- [x] T39b — ファイル操作の手順(`FileOperationService`)、衝突、切り取り(変更ファイル: crates/arin-core/src/fileops/service.rs, crates/arin-core/src/fileops/clipboard.rs, crates/arin-core/tests/fileops_service.rs, crates/arin-core/tests/support/fake_fs.rs | 依存: T39a)
   - 対応: FR-025〜030、FR-035、FR-036、設計書 §5.1 の `FileOperationService`・`ConflictResolution`・`FileClipboard`、§5.2(衝突は結果で返し、対処を付けて呼び直す)、§7.1「ファイル操作」、§9.1(切り取り)、【仮定】12〜15。取り消しの履歴(`FileOperationHistory`)は M6(T59)
   - 操作: 新規ファイル(空)・新規フォルダ、名称変更、移動、コピー、ゴミ箱、ペースト(ペーストボードのファイルを貼り付け先へ。切り取りの状態とペーストボードの変更番号で移動かコピーかを決める)。どれも T39a の検査を先に通し、**実行の瞬間に**存在を確かめ、上書きしないポートの操作の失敗で衝突を判定する(事前の確認だけに頼らない)。置き換えるは既存をゴミ箱に入れてから置く(ゴミ箱に入れたあとにまた同名ができたら、もう一度衝突を返す)。両方残すは T39a の名前で置く
   - T38a の型を変えない(足りなければ T42c で足す。生成物の持ち回りのため)

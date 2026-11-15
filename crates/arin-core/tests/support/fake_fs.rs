@@ -7,6 +7,9 @@
 //! 作成・移動・コピーは宛先があれば `AlreadyExists` を返し、項目が消えるのは移動の元とゴミ箱だけ。
 //! 呼ばれた操作は順に記録し、テストが「どの操作が呼ばれたか」を確かめられる。
 //!
+//! 同時操作の再現(T39b): `fail_on` で決めた呼び出しを 1 回だけ失敗させ(何も変えない)、`after_call_file` で
+//! 決めた呼び出しのあとに外からファイルが作られたことにする(メニューを開いたあとの変化や、置き換えの途中の変化)。
+//!
 //! テストのクレートごとに `#[path = "support/fake_fs.rs"] mod fake_fs;` で取り込む。
 //! クレートによって使わない関数があるので、未使用の警告はこのファイルの中で止める。
 
@@ -49,6 +52,10 @@ struct Inner {
     nodes: BTreeMap<PathBuf, Node>,
     calls: Vec<Call>,
     trashed: Vec<PathBuf>,
+    /// 1 回だけ失敗させる呼び出し(何も変えずにこの失敗を返す)。
+    failures: Vec<(Call, FsError)>,
+    /// 呼び出しのあとに外から作られるファイル(1 回だけ)。
+    triggers: Vec<(Call, PathBuf)>,
 }
 
 /// メモリの中のファイルシステム。`/` は最初からある。
@@ -134,6 +141,21 @@ impl FakeFs {
         insert_new(&mut inner.nodes, path.to_path_buf(), node);
     }
 
+    /// `call` と同じ呼び出しを 1 回だけ、何も変えずに `error` で失敗させる。
+    #[must_use]
+    pub fn fail_on(self, call: Call, error: FsError) -> Self {
+        self.lock().failures.push((call, error));
+        self
+    }
+
+    /// `call` と同じ呼び出しが終わった直後に 1 回だけ、`path` に空のファイルが外から作られたことにする。
+    #[must_use]
+    pub fn after_call_file(self, call: Call, path: &str) -> Self {
+        let path = abs(path);
+        self.lock().triggers.push((call, path));
+        self
+    }
+
     // ---- 調べる(テストの確認) ----
 
     /// その場所(最後の要素のリンクはたどらない)に何かがあるか。
@@ -179,8 +201,38 @@ impl FakeFs {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    fn record(&self, call: Call) {
-        self.lock().calls.push(call);
+    /// 呼び出しを記録し、失敗させると決めたものならその失敗を返す(何も変えない)。
+    fn record(&self, call: Call) -> Result<(), FsError> {
+        let mut inner = self.lock();
+        inner.calls.push(call.clone());
+        match inner.failures.iter().position(|(c, _)| *c == call) {
+            Some(index) => Err(inner.failures.remove(index).1),
+            None => Ok(()),
+        }
+    }
+
+    /// 呼び出しのあとに外から作られるファイルを置く。
+    fn fire(&self, call: &Call) {
+        let path = {
+            let mut inner = self.lock();
+            match inner.triggers.iter().position(|(c, _)| c == call) {
+                Some(index) => inner.triggers.remove(index).1,
+                None => return,
+            }
+        };
+        self.add(&path, Node::File);
+    }
+
+    /// 記録 → 失敗の注入 → 本体 → 外からの変化、の順に行う。
+    fn run<T>(
+        &self,
+        call: Call,
+        body: impl FnOnce(&Self) -> Result<T, FsError>,
+    ) -> Result<T, FsError> {
+        self.record(call.clone())?;
+        let result = body(self);
+        self.fire(&call);
+        result
     }
 }
 
@@ -262,9 +314,9 @@ fn resolve_with(
     Ok(current)
 }
 
-impl FileSystemPort for FakeFs {
-    fn read_dir(&self, dir: &Path) -> Result<Vec<DirEntry>, FsError> {
-        self.record(Call::ReadDir(dir.to_path_buf()));
+/// 操作の本体(記録と注入は `FileSystemPort` の実装が `run` で行う)。
+impl FakeFs {
+    fn read_dir_now(&self, dir: &Path) -> Result<Vec<DirEntry>, FsError> {
         let inner = self.lock();
         let real = resolve(&inner.nodes, dir)?;
         if inner.nodes.get(&real) != Some(&Node::Dir) {
@@ -289,8 +341,7 @@ impl FileSystemPort for FakeFs {
             .collect())
     }
 
-    fn entry_kind(&self, path: &Path) -> Result<EntryKind, FsError> {
-        self.record(Call::EntryKind(path.to_path_buf()));
+    fn entry_kind_now(&self, path: &Path) -> Result<EntryKind, FsError> {
         let inner = self.lock();
         let located = locate(&inner.nodes, path)?;
         if !inner.nodes.contains_key(&located) {
@@ -299,8 +350,7 @@ impl FileSystemPort for FakeFs {
         Ok(kind_of(&inner.nodes, &located))
     }
 
-    fn real_dir(&self, dir: &Path) -> Result<PathBuf, FsError> {
-        self.record(Call::RealDir(dir.to_path_buf()));
+    fn real_dir_now(&self, dir: &Path) -> Result<PathBuf, FsError> {
         let inner = self.lock();
         let real = resolve(&inner.nodes, dir)?;
         match inner.nodes.get(&real) {
@@ -310,18 +360,15 @@ impl FileSystemPort for FakeFs {
         }
     }
 
-    fn create_file(&self, path: &Path) -> Result<(), FsError> {
-        self.record(Call::CreateFile(path.to_path_buf()));
+    fn create_file_now(&self, path: &Path) -> Result<(), FsError> {
         self.create(path, Node::File)
     }
 
-    fn create_dir(&self, path: &Path) -> Result<(), FsError> {
-        self.record(Call::CreateDir(path.to_path_buf()));
+    fn create_dir_now(&self, path: &Path) -> Result<(), FsError> {
         self.create(path, Node::Dir)
     }
 
-    fn move_entry(&self, from: &Path, to: &Path) -> Result<(), FsError> {
-        self.record(Call::Move(from.to_path_buf(), to.to_path_buf()));
+    fn move_entry_now(&self, from: &Path, to: &Path) -> Result<(), FsError> {
         let mut inner = self.lock();
         let source = existing(&inner.nodes, from)?;
         let dest = free_place(&inner.nodes, to)?;
@@ -339,8 +386,7 @@ impl FileSystemPort for FakeFs {
         Ok(())
     }
 
-    fn copy_entry(&self, from: &Path, to: &Path) -> Result<(), FsError> {
-        self.record(Call::Copy(from.to_path_buf(), to.to_path_buf()));
+    fn copy_entry_now(&self, from: &Path, to: &Path) -> Result<(), FsError> {
         let mut inner = self.lock();
         let source = existing(&inner.nodes, from)?;
         let dest = free_place(&inner.nodes, to)?;
@@ -368,14 +414,57 @@ impl FileSystemPort for FakeFs {
         Ok(())
     }
 
-    fn trash(&self, path: &Path) -> Result<Option<PathBuf>, FsError> {
-        self.record(Call::Trash(path.to_path_buf()));
+    fn trash_now(&self, path: &Path) -> Result<Option<PathBuf>, FsError> {
         let mut inner = self.lock();
         let source = existing(&inner.nodes, path)?;
         take_subtree(&mut inner.nodes, &source);
         inner.trashed.push(source.clone());
         let name = source.file_name().expect("ルートはゴミ箱に入れない");
         Ok(Some(Path::new(TRASH_DIR).join(name)))
+    }
+}
+
+impl FileSystemPort for FakeFs {
+    fn read_dir(&self, dir: &Path) -> Result<Vec<DirEntry>, FsError> {
+        self.run(Call::ReadDir(dir.to_path_buf()), |fs| fs.read_dir_now(dir))
+    }
+
+    fn entry_kind(&self, path: &Path) -> Result<EntryKind, FsError> {
+        self.run(Call::EntryKind(path.to_path_buf()), |fs| {
+            fs.entry_kind_now(path)
+        })
+    }
+
+    fn real_dir(&self, dir: &Path) -> Result<PathBuf, FsError> {
+        self.run(Call::RealDir(dir.to_path_buf()), |fs| fs.real_dir_now(dir))
+    }
+
+    fn create_file(&self, path: &Path) -> Result<(), FsError> {
+        self.run(Call::CreateFile(path.to_path_buf()), |fs| {
+            fs.create_file_now(path)
+        })
+    }
+
+    fn create_dir(&self, path: &Path) -> Result<(), FsError> {
+        self.run(Call::CreateDir(path.to_path_buf()), |fs| {
+            fs.create_dir_now(path)
+        })
+    }
+
+    fn move_entry(&self, from: &Path, to: &Path) -> Result<(), FsError> {
+        self.run(Call::Move(from.to_path_buf(), to.to_path_buf()), |fs| {
+            fs.move_entry_now(from, to)
+        })
+    }
+
+    fn copy_entry(&self, from: &Path, to: &Path) -> Result<(), FsError> {
+        self.run(Call::Copy(from.to_path_buf(), to.to_path_buf()), |fs| {
+            fs.copy_entry_now(from, to)
+        })
+    }
+
+    fn trash(&self, path: &Path) -> Result<Option<PathBuf>, FsError> {
+        self.run(Call::Trash(path.to_path_buf()), |fs| fs.trash_now(path))
     }
 }
 
