@@ -1188,7 +1188,7 @@ T46〜T50 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 可(T48a とファイルが重ならない。生成物を触るのは Phase 29a ではこのタスクだけ)
   - 先に書くテスト: `1_枚は_1×1`、`2_枚は_2×1`、`3_枚と_4_枚は_2×2`、`5_枚と_6_枚は_3×2`、`7_枚から_9_枚は_3×3`(表で、FR-051 の AC)、`グリッドは列×行で_3×2_は_3_列_2_行`(C-23)、`10_枚は_2_ページで_1_ページ目は_9_枚_3×3_で_2_ページ目は_1_枚_1×1`(AC-M14 の規則。§15.2 #4 の A)、`19_枚は_3_ページで最後は_1_枚`、`0_枚はページが無い`、`ページ番号から並びの範囲が決まる`、`n_番目のターミナルのページ`、`範囲外のページ番号は最後のページに丸める`、`表示モードの_json_は_tabs_と_tiles`。生成した型が最新
   - 検証: `cargo test -p arin-core --test layout_tiles --test generated_types`
-- [ ] T48a — アテンションの走査器(`arin-core/terminal`)(変更ファイル: crates/arin-core/src/terminal/osc.rs, crates/arin-core/src/terminal/attention.rs, crates/arin-core/src/terminal/mod.rs, crates/arin-core/tests/attention_scanner.rs | 依存: T45)
+- [x] T48a — アテンションの走査器(`arin-core/terminal`)(変更ファイル: crates/arin-core/src/terminal/osc.rs, crates/arin-core/src/terminal/attention.rs, crates/arin-core/src/terminal/mod.rs, crates/arin-core/tests/attention_scanner.rs | 依存: T45)
   - 対応: FR-055 の検出の部分(FR-045 の走査を前倒し。前提 (g))、設計書 §1.3 #5、§7.1「アテンション」の 1、§7.2「OSC 9/777 の本文」、【仮定】13・15
   - 置くもの: `AttentionScanner`(`OscScanner` の上に足す。1 バイトずつの状態機械のまま、チャンクの切れ目をまたいでも同じ結果。状態の大きさは一定)。返すのは「このチャンクでアテンションの契機があったか」だけ(本文は保持しない)。`OscScanner` に「BEL 単独」と「先頭の引数の判定」(`9;4` を除く、`777;notify` だけ)を足す。OSC 52 の数え方(`count_clipboard`)は変えない
   - 並行: 可(`terminal/` の走査器の 3 ファイルとテストだけ)
