@@ -75,6 +75,7 @@ const DEFAULT_REPLIES: TauriMockConfig = {
   get_launch_options: { ok: { renderer: "dom", unicode: "unicode11", verifyGrid: false } },
   notify_app_ready: { ok: null },
   report_frontend_error: { ok: null },
+  confirm_quit: { ok: null },
   connect_terminal: { ok: { sizeApplied: true } },
   write_terminal: { ok: null },
   ack_terminal_output: { ok: null },

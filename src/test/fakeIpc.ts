@@ -91,6 +91,7 @@ export function createFakeIpc(handlers: Partial<FakeHandlers> = {}): FakeIpc {
     get_launch_options: () => ({ renderer: "dom", unicode: "unicode11", verifyGrid: false }),
     notify_app_ready: () => null,
     report_frontend_error: () => null,
+    confirm_quit: () => null,
     connect_terminal: () => ({ sizeApplied: true }),
     write_terminal: () => null,
     ack_terminal_output: () => null,

@@ -18,7 +18,9 @@ use std::path::{Path, PathBuf};
 
 use arin_core::launch_options::LaunchOptions;
 use arin_core::project::ProjectColor;
-use arin_core::workspace::{AddProjectOutcome, AppSnapshot, ConnectOutcome, RemoveProjectOutcome};
+use arin_core::workspace::{
+    AddProjectOutcome, AppSnapshot, ConnectOutcome, MenuCommand, QuitRequest, RemoveProjectOutcome,
+};
 use ts_rs::{Config, TS, TypeVisitor};
 
 /// 画面とやり取りする型の入口。ここから参照している型は、たどって全部生成する。
@@ -34,6 +36,8 @@ fn collect_generated(cfg: &Config) -> BTreeMap<PathBuf, String> {
     collector.visit::<AddProjectOutcome>();
     collector.visit::<RemoveProjectOutcome>();
     collector.visit::<ProjectColor>();
+    collector.visit::<MenuCommand>();
+    collector.visit::<QuitRequest>();
     collector.files
 }
 

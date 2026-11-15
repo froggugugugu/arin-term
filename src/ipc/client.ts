@@ -5,8 +5,10 @@ import type { AddProjectOutcome } from "./generated/AddProjectOutcome";
 import type { AppSnapshot } from "./generated/AppSnapshot";
 import type { ConnectOutcome } from "./generated/ConnectOutcome";
 import type { LaunchOptions } from "./generated/LaunchOptions";
+import type { MenuCommand } from "./generated/MenuCommand";
 import type { ProjectColor } from "./generated/ProjectColor";
 import type { ProjectId } from "./generated/ProjectId";
+import type { QuitRequest } from "./generated/QuitRequest";
 import type { RemoveProjectOutcome } from "./generated/RemoveProjectOutcome";
 import type { TerminalId } from "./generated/TerminalId";
 
@@ -25,6 +27,7 @@ export interface CommandMap {
   get_launch_options: { args: undefined; result: LaunchOptions };
   notify_app_ready: { args: undefined; result: null };
   report_frontend_error: { args: { message: string }; result: null };
+  confirm_quit: { args: undefined; result: null };
   connect_terminal: {
     args: { terminalId: TerminalId; rows: number; cols: number; onOutput: ChannelToken };
     result: ConnectOutcome;
@@ -49,9 +52,14 @@ export interface CommandMap {
 
 export type CommandName = keyof CommandMap;
 
-/** Rust から届くイベントと、その中身の対応。名前は src-tauri/src/commands/app.rs の定数と合わせる。 */
+/**
+ * Rust から届くイベントと、その中身の対応。名前は src-tauri/src/commands/app.rs(app-snapshot)と
+ * src-tauri/src/events.rs(menu-command・quit-requested)の定数と合わせる。
+ */
 export interface EventMap {
   "app-snapshot": AppSnapshot;
+  "menu-command": MenuCommand;
+  "quit-requested": QuitRequest;
 }
 
 export type EventName = keyof EventMap;
@@ -105,6 +113,18 @@ export interface ArinIpc {
   onAppSnapshot(listener: (snapshot: AppSnapshot) => void): Promise<Unlisten>;
   /** 画面で起きた失敗を Rust へ知らせる(Rust が標準エラーに 1 行で書く)。 */
   reportFrontendError(message: string): Promise<void>;
+  /**
+   * メニューバーの項目から画面へ送られる操作(いまは「すべてを選択」だけ)を受けるたびに listener を呼ぶ。
+   * タブの操作(⌘T・⌘W・⌘⇧[・⌘⇧])は Rust が行い、結果は写しで届く。購読が済んだら、やめる関数で解決する。
+   */
+  onMenuCommand(listener: (command: MenuCommand) => void): Promise<Unlisten>;
+  /**
+   * 終了の要求(⌘Q・ウィンドウの閉じるボタン)を Rust が動作中のターミナルのために止めたとき、動作中の一覧を渡して
+   * listener を呼ぶ(FR-063)。確認したら confirmQuit を呼ぶ。取り消すなら何も呼ばない。購読が済んだら、やめる関数で解決する。
+   */
+  onQuitRequested(listener: (request: QuitRequest) => void): Promise<Unlisten>;
+  /** 終了の確認で「終了」が選ばれた。Rust が状態を保存し、全ターミナルを終わらせてからアプリを終える。 */
+  confirmQuit(): Promise<void>;
   /**
    * 出力のチャネルをつなぐ。最初の接続で Rust が rows × cols の PTY を起動する。
    * 届いた出力は 1 回ぶんずつ onOutput に渡す。
@@ -185,6 +205,9 @@ export function createIpc(transport: IpcTransport): ArinIpc {
     notifyAppReady: () => done(invoke("notify_app_ready", undefined)),
     onAppSnapshot: (listener) => transport.listen("app-snapshot", listener),
     reportFrontendError: (message) => done(invoke("report_frontend_error", { message })),
+    onMenuCommand: (listener) => transport.listen("menu-command", listener),
+    onQuitRequested: (listener) => transport.listen("quit-requested", listener),
+    confirmQuit: () => done(invoke("confirm_quit", undefined)),
     connectTerminal: (terminalId, rows, cols, onOutput) => {
       let closed = false;
       const channel = transport.openChannel((message) => {

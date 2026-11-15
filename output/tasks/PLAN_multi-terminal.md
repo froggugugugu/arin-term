@@ -517,7 +517,7 @@ T29〜T35 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 不可
   - 先に書くテスト(偽の時計と偽のポート。実物の一時フォルダで 1 件): `改名するとカードは同じプロジェクトのまま表示用のパスが新しくなる`(AC-P07 の Rust 側)、`削除すると見つからないになりカードは残る`、`ゴミ箱へ移すと見つからない`、`変わらなければ写しを送らない`、`寸法を送ると保存が予約され_最小を下回る値は最小になる`
   - 検証: `npm test && npm run lint && npm run app && npm run smoke`
-- [ ] T33e — メニューバーと終了の確認(変更ファイル: src-tauri/src/menu.rs, src-tauri/src/lifecycle.rs, src-tauri/src/events.rs, src-tauri/src/commands/app.rs, src-tauri/src/sessions.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/app_menu.rs, src-tauri/tests/app_quit.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T33d)
+- [x] T33e — メニューバーと終了の確認(変更ファイル: src-tauri/src/menu.rs, src-tauri/src/lifecycle.rs, src-tauri/src/events.rs, src-tauri/src/commands/app.rs, src-tauri/src/sessions.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/app_menu.rs, src-tauri/tests/app_quit.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T33d)
   - 対応: FR-044(⌘T・⌘W・⌘⇧[・⌘⇧])、FR-063、決定 (b)、設計書 §9.1・§11(終了)、M1 の見送り(「すべてを選択」、終了時の後片付けが最大約 1.8 秒)
   - メニュー: 「ターミナル」に 新規タブ(⌘T)・タブを閉じる(⌘W)・前のタブ(⌘⇧[)・次のタブ(⌘⇧])。項目が選ばれたら Rust が `Workspace` を操作する(T33b の関数)。タブが 0 枚・プロジェクトが無い・見つからないときは何もしない。「編集」の「すべてを選択」は標準の項目から自前の項目に替え、`menu-command` イベントで画面へ送る(画面がフォーカス位置で振り分け、ターミナルなら xterm.js の全選択。T34b)
   - 終了: 終了の要求(⌘Q、ウィンドウの閉じるボタン)を一度止める。動作中があれば `quit-requested` イベント(プロジェクト名とタブ名の一覧)で画面に確認を出させ、`confirm_quit` で状態を即時保存して全セッションを終わらせてから終了する。動作中が無ければ確認せず、保存して終了する。【仮定】標準の「終了」の項目が終了の要求(`RunEvent::ExitRequested`)を経由するかを Tauri 2.12.5 のソースで確かめ、経由しなければ自前の項目に替える

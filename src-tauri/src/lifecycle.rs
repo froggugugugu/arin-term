@@ -1,13 +1,21 @@
 //! 起動まわり(設計書 §4 の `lifecycle.rs`)。
 //!
 //! 画面からの準備完了の通知を受けたときの処理と、ウィンドウが前面でなくなったときの保存、Finder からのドロップでの登録、
-//! アプリの終了時の後片付けを置く。
+//! 終了の確認(FR-063)、アプリの終了時の後片付けを置く。
+//!
+//! 終了の流れ(計画書 T33e、設計書 §11): 終了の要求(メニューの「終了」⌘Q=`request_quit`、ウィンドウの閉じるボタン)の
+//! ときに動作中のターミナル(`SessionRegistry::running_terminals`)があれば、終了を止めて画面へ `quit-requested` を送る。
+//! 画面が確認したら `confirm_quit` のコマンドで `quit_now` を呼ぶ。動作中が無ければ確認せずに `quit_now` と同じく終わる。
+//! 終わるときはウィンドウを閉じ(最後のウィンドウが無くなると Tauri がループを抜ける)、`RunEvent::Exit` で
+//! 見回りを止め → 状態を書き → 全セッションを終わらせる。
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use tauri::{AppHandle, DragDropEvent, Manager, RunEvent, Runtime, WindowEvent};
+use arin_core::workspace::QuitRequest;
+use tauri::{AppHandle, DragDropEvent, Emitter, Manager, RunEvent, Runtime, WindowEvent};
 
+use crate::events::QUIT_REQUESTED_EVENT;
 use crate::patrol::PatrolThread;
 use crate::persistence::Persistence;
 use crate::projects::Projects;
@@ -18,9 +26,19 @@ use crate::sessions::SessionRegistry;
 /// - ウィンドウが前面でなくなったら、保存できていない変更を待たずに書く(設計書 §6.2「書き込みの契機」)
 /// - ウィンドウに Finder から落とされたら、フォルダだけを登録する(FR-001、計画書 M2 の【仮定】7)。
 ///   フォルダを調べるのに待つことがあるので、メインスレッドの外で行う
+/// - ウィンドウの閉じるボタンは終了の要求として扱う。終わってよいと決まっていなければ、動作中のターミナルがあるときだけ
+///   閉じるのを止めて確認を求める(FR-063)。無ければそのまま閉じて終わる
 /// - 終了するときは、ルートの見回りのスレッドを止め、状態を書き終えてから、全ターミナルのシェルを終わらせる(PTY を残さない)
 pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
     match event {
+        RunEvent::WindowEvent {
+            event: WindowEvent::CloseRequested { api, .. },
+            ..
+        } => {
+            if !quit_or_ask(app) {
+                api.prevent_close();
+            }
+        }
         RunEvent::WindowEvent {
             event: WindowEvent::Focused(focused),
             ..
@@ -45,6 +63,71 @@ pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
             }
         }
         _ => {}
+    }
+}
+
+/// 終了してよいと決まったか。Tauri の管理状態に登録する(`lib.rs`)。決まったあとの閉じる要求は止めない。
+#[derive(Debug, Default)]
+pub struct QuitGate {
+    allowed: AtomicBool,
+}
+
+impl QuitGate {
+    fn allow(&self) {
+        self.allowed.store(true, Ordering::SeqCst);
+    }
+
+    fn is_allowed(&self) -> bool {
+        self.allowed.load(Ordering::SeqCst)
+    }
+}
+
+/// 終了の要求(メニューの「終了」⌘Q)。動作中のターミナルがあれば、終わらずに画面へ確認を求める(`quit-requested`)。
+/// 無ければそのまま終わる(`quit_now`)。待たない(前面のプロセスは待たずに調べる)。
+pub fn request_quit<R: Runtime>(app: &AppHandle<R>) {
+    if quit_or_ask(app) {
+        quit_now(app);
+    }
+}
+
+/// 終わってよいかを決める。終わってよければ真(以後の閉じる要求も止めない)。動作中のターミナルがあれば、
+/// 画面へ `quit-requested`(動作中の一覧)を送って偽を返す(何も変えない。取り消しは画面が何も呼ばないこと)。
+fn quit_or_ask<R: Runtime>(app: &AppHandle<R>) -> bool {
+    let Some(gate) = app.try_state::<QuitGate>() else {
+        return true;
+    };
+    if gate.is_allowed() {
+        return true;
+    }
+    let running = app
+        .try_state::<SessionRegistry>()
+        .map(|sessions| sessions.running_terminals())
+        .unwrap_or_default();
+    if running.is_empty() {
+        gate.allow();
+        return true;
+    }
+    // 画面が無いなどで送れなければ確認は出ない。そのときは閉じるボタン・⌘Q を押し直しても同じで、
+    // 終わらせるにはシェルを終えてから押す(動作中のプロセスを黙って終わらせない)。
+    let _ = app.emit(QUIT_REQUESTED_EVENT, QuitRequest { running });
+    false
+}
+
+/// 確認なしで終わる(画面が確認した=`confirm_quit`、または動作中が無いとき)。ウィンドウを閉じると、最後のウィンドウが
+/// 無くなった時点で Tauri がループを抜け、`RunEvent::Exit` で状態を書いてから全セッションを終わらせる。
+pub fn quit_now<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(gate) = app.try_state::<QuitGate>() {
+        gate.allow();
+    }
+    let windows = app.webview_windows();
+    if windows.is_empty() {
+        // ウィンドウが無いとループを抜ける契機が無いので、終了を頼む。
+        app.exit(0);
+        return;
+    }
+    for window in windows.into_values() {
+        // 閉じる要求(`close`)を経由せずに破棄する(画面の閉じる要求の購読などに止められない)。
+        let _ = window.destroy();
     }
 }
 

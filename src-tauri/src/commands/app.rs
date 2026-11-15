@@ -4,10 +4,10 @@
 
 use arin_core::launch_options::LaunchOptions;
 use arin_core::workspace::AppSnapshot;
-use tauri::State;
+use tauri::{AppHandle, Runtime, State};
 
 use crate::diagnostics::frontend_error_line;
-use crate::lifecycle::ReadyNotice;
+use crate::lifecycle::{self, ReadyNotice};
 use crate::sessions::SessionRegistry;
 
 /// 状態の写しが変わったときに送るイベントの名前。中身は `AppSnapshot`(設計書 §5.2)。
@@ -41,4 +41,11 @@ pub fn notify_app_ready(ready: State<'_, ReadyNotice>) -> Result<(), String> {
 #[tauri::command]
 pub fn report_frontend_error(message: String) {
     eprintln!("{}", frontend_error_line(&message));
+}
+
+/// 終了の確認(`quit-requested`)で本人が「終了」を選んだ(FR-063)。確認なしで終わる:
+/// ウィンドウを閉じ、状態を書いてから全セッションを終わらせる(`lifecycle::quit_now`)。取り消したときは何も呼ばない。
+#[tauri::command]
+pub fn confirm_quit<R: Runtime>(app: AppHandle<R>) {
+    lifecycle::quit_now(&app);
 }

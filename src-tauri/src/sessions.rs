@@ -17,6 +17,7 @@
 //! (`ExitAction::Closed`)に、セッションを一覧から外し、出力を閉じ(読み取りとまとめのスレッドが抜ける)、シェルを終わらせる。
 //! 書き込みが止まっていて PTY のロックが取れなければ印(`PtyCell::closing`)だけを付け、ロックを持っていた側が
 //! 手放した時点で終わらせる。終了の処理(`shutdown`)が始まったあとの接続はシェルを起動しない。
+//! 複数のセッションを一度に終わらせるとき(アプリの終了、プロジェクトの削除)は、同時に終了を送って待ちを 1 回ぶんにする(T33e)。
 
 use std::collections::HashMap;
 use std::fmt;
@@ -627,7 +628,7 @@ impl SessionRegistry {
     /// プロジェクトを一覧から外す(FR-003。フォルダには触れない)。そのプロジェクトに動作中のターミナル
     /// (`running_terminals`)があり `confirmed` が偽なら、何も変えずに確認を求める。外したらそのタブのセッションを終わらせる。
     ///
-    /// シェルを終わらせるのに 1 枚につき最大でおよそ 200ms 待つことがある。メインスレッドから呼ばない。
+    /// シェルを終わらせるのに最大でおよそ 200ms 待つことがある(複数のタブは同時に終わらせる)。メインスレッドから呼ばない。
     ///
     /// # Errors
     ///
@@ -714,9 +715,7 @@ impl SessionRegistry {
     fn end_sessions(&self, terminals: &[TerminalId]) {
         let detached: Vec<Arc<Session>> = terminals.iter().filter_map(|t| self.detach(t)).collect();
         self.notify();
-        for session in &detached {
-            end_session(session);
-        }
+        end_sessions_together(&detached);
     }
 
     /// 未処理の量と、読み取りを止めているか。セッションが無ければ `None`。
@@ -734,15 +733,14 @@ impl SessionRegistry {
     /// 2 回目以降は何もしない。
     ///
     /// 書き込みが止まっているセッションは待たない(アプリの終了で PTY の親側が閉じ、シェルには SIGHUP が届く)。
+    /// 全セッションへ同時に終了を送り、待ちはまとめて 1 回ぶんにする(9 枚でもおよそ 1 枚ぶん。計画書 T33e)。
     pub fn shutdown(&self) {
         let drained: Vec<Arc<Session>> = {
             let mut sessions = lock(&self.inner.sessions);
             self.inner.shutting_down.store(true, Ordering::SeqCst);
             sessions.drain().map(|(_, session)| session).collect()
         };
-        for session in &drained {
-            end_session(session);
-        }
+        end_sessions_together(&drained);
     }
 
     fn is_shutting_down(&self) -> bool {
@@ -770,6 +768,26 @@ impl SessionRegistry {
         let snapshot = self.snapshot();
         (self.inner.listener)(snapshot);
     }
+}
+
+/// 一覧から外したセッションを、まとめて終わらせる。シェルの終了の待ち(1 枚につき最大でおよそ 200ms)を重ねるため、
+/// 2 つ目からは 1 枚につき 1 本の短いスレッドで同時に終わらせ、全部が終わるまで待つ(全体でおよそ 1 枚ぶん)。
+/// スレッドを起こせなければ、そのセッションはこのスレッドで順に終わらせる。
+fn end_sessions_together(sessions: &[Arc<Session>]) {
+    let Some((first, rest)) = sessions.split_first() else {
+        return;
+    };
+    thread::scope(|scope| {
+        for session in rest {
+            let spawned = thread::Builder::new()
+                .name("arin-pty-end".to_owned())
+                .spawn_scoped(scope, move || end_session(session));
+            if spawned.is_err() {
+                end_session(session);
+            }
+        }
+        end_session(first);
+    });
 }
 
 /// 一覧から外したセッションを終わらせる。出力を閉じ(読み取りとまとめのスレッドが抜ける)、印を付けてシェルを終わらせる。

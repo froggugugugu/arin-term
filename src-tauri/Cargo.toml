@@ -61,7 +61,7 @@ name = "session_pty"
 name = "app_terminal_marker"
 harness = false
 
-# メニューバーの組み立て(「編集」のコピーとペースト)。理由は app_builder と同じ。
+# メニューバーの組み立てと、項目が選ばれたときの動き(T33e)。理由は app_builder と同じ。
 [[test]]
 name = "app_menu"
 harness = false
@@ -87,4 +87,9 @@ harness = false
 # 最後に模擬のアプリで寸法のコマンドと終了時に見回りのスレッドが止まることを確かめる。理由は app_builder と同じ。
 [[test]]
 name = "root_follow"
+harness = false
+
+# 終了の確認(FR-063)と終了時の後片付け(T33e)。閉じる要求とメニューの「終了」を模擬のアプリで起こす。理由は app_builder と同じ。
+[[test]]
+name = "app_quit"
 harness = false

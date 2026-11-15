@@ -3,11 +3,12 @@
 //! ここでは部品を生成して渡すことだけを行い、規則を書かない。
 //! 置き場所と起動の通知先を管理状態に登録し、起動時に状態ファイルを読んで(`persistence.rs`)`Workspace` と
 //! セッション管理と保存のスレッドとプロジェクトの操作(`projects.rs`)とルートへの追従の見回り(`patrol.rs`)を作って登録し、
-//! コマンドとメニューバー(`menu.rs`)を登録して
+//! コマンドとメニューバー(`menu.rs`。項目が選ばれたときも `menu.rs`)と終了の確認の状態(`lifecycle.rs`)を登録して
 //! tauri.conf.json のウィンドウを 1 枚出す。Finder からのドロップは `lifecycle.rs` が受ける。
 
 mod commands;
 pub mod diagnostics;
+pub mod events;
 pub mod launch;
 pub mod lifecycle;
 pub mod menu;
@@ -28,7 +29,7 @@ use tauri::{Builder, Emitter, Manager, Runtime};
 
 pub use crate::commands::app::SNAPSHOT_EVENT;
 use crate::launch::LaunchConfig;
-use crate::lifecycle::{FirstOutputNotice, ReadyNotice};
+use crate::lifecycle::{FirstOutputNotice, QuitGate, ReadyNotice};
 use crate::patrol::{PATROL_INTERVAL, PatrolThread, RootPatrol};
 use crate::persistence::{Persistence, PersistencePorts, load_startup};
 use crate::projects::{FolderPicker, NativeFolderPicker, ProjectPorts, Projects};
@@ -88,7 +89,9 @@ pub fn builder_with_project_ports<R: Runtime>(
         .manage(launch.options())
         .manage(ready)
         .manage(first_output)
+        .manage(QuitGate::default())
         .menu(menu::build)
+        .on_menu_event(|app, event| menu::on_menu_event(app, event.id().as_ref()))
         .setup(move |app| {
             let version = app.package_info().version.to_string();
             let home = terminal.home.unwrap_or_default();
@@ -167,6 +170,7 @@ pub fn builder_with_project_ports<R: Runtime>(
             commands::app::get_launch_options,
             commands::app::notify_app_ready,
             commands::app::report_frontend_error,
+            commands::app::confirm_quit,
             commands::terminal::connect_terminal,
             commands::terminal::write_terminal,
             commands::terminal::ack_terminal_output,

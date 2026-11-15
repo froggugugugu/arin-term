@@ -68,6 +68,46 @@ describe("src/ipc の包み", () => {
     expect(fake.listenerCount("app-snapshot")).toBe(0);
   });
 
+  it("メニューの操作のイベント(menu-command)を購読し、届いた操作を渡し、やめる関数で外れる", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+    const seen: string[] = [];
+
+    const unlisten = await ipc.onMenuCommand((command) => seen.push(command));
+    fake.emit("menu-command", "select-all");
+    unlisten();
+    fake.emit("menu-command", "select-all");
+
+    expect(seen).toEqual(["select-all"]);
+    expect(fake.listenerCount("menu-command")).toBe(0);
+  });
+
+  it("終了の確認の要求(quit-requested)を購読し、動作中の一覧を渡し、やめる関数で外れる", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+    const seen: unknown[] = [];
+    const running = [
+      { terminalId: "terminal-1", projectId: "p1", projectName: "app", label: "ターミナル 1" },
+    ];
+
+    const unlisten = await ipc.onQuitRequested((request) => seen.push(request.running));
+    fake.emit("quit-requested", { running });
+    unlisten();
+    fake.emit("quit-requested", { running: [] });
+
+    expect(seen).toEqual([running]);
+    expect(fake.listenerCount("quit-requested")).toBe(0);
+  });
+
+  it("確認して終了は confirm_quit を引数なしで呼ぶ", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.confirmQuit()).resolves.toBeUndefined();
+
+    expect(fake.calls).toEqual([{ command: "confirm_quit", args: undefined }]);
+  });
+
   it("入力・処理済みの量・寸法はそれぞれのコマンドに camelCase の引数で届く", async () => {
     const fake = createFakeIpc();
     const ipc = createIpc(fake.transport);

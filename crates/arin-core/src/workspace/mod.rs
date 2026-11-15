@@ -4,6 +4,7 @@
 //! ターミナルごとの cwd と状態を持つ。入出力はしない。起動時に読んだ状態とルートの解決の結果、
 //! 削除と終了の確認に使う「動作中のターミナル」は呼び出し側(`src-tauri`)が調べて引数で渡す。
 
+mod events;
 mod outcome;
 mod panes;
 mod projects;
@@ -11,6 +12,7 @@ mod snapshot;
 mod state;
 mod terminals;
 
+pub use events::{MenuCommand, QuitRequest};
 pub use outcome::{
     AddProjectOutcome, ConnectOutcome, ProjectRoot, RemoveOutcome, RemoveProjectOutcome,
     RootResolution, RunningTerminal, Startup, WorkspaceError,
