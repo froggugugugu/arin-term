@@ -47,6 +47,21 @@
   -webkit-user-select: none;
 }
 
+/* その方向のページにアテンションがあるときの小さな丸(ボタンの右上に重ねる。押下は通す)。 */
+.page-control__button {
+  position: relative;
+}
+
+.page-control__attention {
+  position: absolute;
+  top: 0;
+  right: 1px;
+  width: var(--attention-dot-size-s);
+  height: var(--attention-dot-size-s);
+  box-shadow: 0 0 0 1.5px var(--color-attention-halo);
+  pointer-events: none;
+}
+
 .page-control__button:disabled {
   background: transparent;
   opacity: 0.35;
@@ -116,6 +131,11 @@
   -webkit-user-select: none;
 }
 
+/* マウスを載せたとき(ダブルクリックで拡大できる場所だと控えめに示す。地に淡い重ねを足すだけ)。 */
+.tile-title:hover {
+  background-image: linear-gradient(var(--color-tile-title-hover), var(--color-tile-title-hover));
+}
+
 .tile-title--focused {
   background: var(--color-tile-title-focused-bg);
   color: var(--color-fg);
@@ -131,6 +151,11 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* アテンションの印(右端。名前との間を少し空け、輪が右端で切れないよう余白を取る)。 */
+.tile-title__attention {
+  margin: 0 2px 0 var(--space-1);
 }
 
 .tile-title--focused .tile-title__label {
@@ -157,4 +182,53 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   opacity: 0.8;
+}
+
+/*
+ * 拡大中の帯(タイルの帯と同じ高さ・地・下端の線)。拡大しているタイルの色の印と名前(フォーカス中のタイルと同じく濃い太字)、
+ * 右端に元に戻すアイコンのボタン。
+ */
+.tile-strip--maximized {
+  gap: 6px;
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.tile-strip__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-fg);
+  font-size: var(--font-size-m);
+  font-weight: var(--font-weight-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile-strip__restore {
+  flex: none;
+}
+
+/*
+ * ツリーからの落とし先の強調(T43d の作法)をタイルでは本文全体に出す。置き場所は本文の内側の余白の分だけ小さいので、
+ * 置き場所の重ね(TreeDrag.css)のままでは輪がタイルの縁からずれて見える。
+ */
+.tile .terminal-host[data-drop-active="true"]::after {
+  content: none;
+}
+
+.tile__body:has(> .terminal-host[data-drop-active="true"]) {
+  position: relative;
+}
+
+.tile__body:has(> .terminal-host[data-drop-active="true"])::after {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: var(--color-terminal-drop-overlay);
+  box-shadow: inset 0 0 0 2px var(--color-terminal-drop-ring);
+  content: "";
+  pointer-events: none;
 }

@@ -152,6 +152,23 @@ export function TilesViewIcon({ className }: IconProps) {
   );
 }
 
+/**
+ * 元に戻す(拡大を解いてタイル表示へ。macOS のフルスクリーンを解く印にならい、右上と左下の角から内へ向かう 2 つの矢印)。
+ */
+export function RestoreIcon({ className }: IconProps) {
+  return (
+    <svg {...common} className={className}>
+      <path
+        d="M9.5 2.75V6.5h3.75M9.5 6.5l4-4M6.5 13.25V9.5H2.75M6.5 9.5l-4 4"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /** 追加(+。フォルダを追加)。 */
 export function PlusIcon({ className }: IconProps) {
   return (

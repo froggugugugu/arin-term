@@ -194,6 +194,12 @@ export interface TileDisplayOptions {
   page?: number;
   /** フォーカスするタイル(Rust の focus_terminal と同じく、そのプロジェクトを選び、そのタブを表示中にする)。 */
   focusedTerminalId?: string;
+  /**
+   * アテンションの契機があったターミナル(T47g)。Rust の規則(計画【仮定】14)と同じく、表示中のターミナル
+   * (タイル表示は表示中のページのタイル、拡大中は拡大したタイル、タブ表示は表示中のタブ)には印を立てない・消す。
+   * 省略すると写しのターミナルの attention をそのまま使う(表示中のものは同じく消す)。
+   */
+  attention?: readonly string[];
 }
 
 /**
@@ -228,17 +234,25 @@ export function withTileDisplay(snapshot: AppSnapshot, options: TileDisplayOptio
   if (total === 0) page = 0;
   const tileIds = ids.slice(page * TILES_PER_PAGE, (page + 1) * TILES_PER_PAGE);
   const focusedTerminalId = projects.find((p) => p.id === selectedProjectId)?.activeTerminalId ?? null;
-  const attentionPages = [
-    ...new Set(snapshot.terminals.flatMap((t, i) => (t.attention ? [Math.floor(i / TILES_PER_PAGE)] : []))),
-  ];
   const mode = options.mode ?? "tiles";
+  const maximized = mode === "tiles" && (options.maximized ?? false);
+  const visible = new Set(mode === "tiles" && !maximized ? tileIds : focusedTerminalId === null ? [] : [focusedTerminalId]);
+  const marked = options.attention === undefined ? null : new Set(options.attention);
+  const terminals = snapshot.terminals.map((t) => {
+    const attention = !visible.has(t.id) && (marked === null ? t.attention : marked.has(t.id));
+    return attention === t.attention ? t : { ...t, attention };
+  });
+  const attentionPages = [
+    ...new Set(terminals.flatMap((t, i) => (t.attention ? [Math.floor(i / TILES_PER_PAGE)] : []))),
+  ];
   return {
     ...snapshot,
     projects,
     selectedProjectId,
+    terminals,
     display: {
       mode,
-      maximized: mode === "tiles" && (options.maximized ?? false),
+      maximized,
       page,
       pageCount,
       grid: tileGridFor(tileIds.length),

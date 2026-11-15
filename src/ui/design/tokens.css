@@ -90,6 +90,14 @@
   --color-tile-title-bg: var(--color-tabbar-bg);
   --color-tile-title-focused-bg: var(--color-tab-selected-bg);
   --color-tile-focus-ring: rgba(10, 100, 216, 0.9);
+  /*
+   * アテンションの印(FR-055。タイトルバーの右端と、ページ送りのボタンの右上)。システムの強調色(systemBlue)の小さな塗りの丸に
+   * 淡い輪を添え、プロジェクト色の印(輪の無い丸。名前の前)と位置と形で見分ける。点滅させない。
+   */
+  --color-attention: #007aff;
+  --color-attention-halo: rgba(0, 122, 255, 0.2);
+  /* タイトルバーにマウスを載せたときの重ね(ダブルクリックで拡大できる場所だと控えめに示す)。 */
+  --color-tile-title-hover: rgba(0, 0, 0, 0.05);
   /* 区分けのボタン(表示モードの切替。macOS のセグメントのコントロールにならう: 淡い溝と、選んだ区分けだけ白く浮かせる)。 */
   --color-segmented-bg: rgba(0, 0, 0, 0.06);
   --color-segmented-selected-bg: #ffffff;
@@ -118,6 +126,9 @@
   --tile-title-height: 24px;
   --segmented-width: 28px;
   --segmented-height: 20px;
+  /* アテンションの印の大きさ(タイトルバー)と、ページ送りのボタンに重ねる小さな印の大きさ。 */
+  --attention-dot-size: 6px;
+  --attention-dot-size-s: 5px;
   /* 小さなアイコンのボタン(サイドバーの開閉、フォルダを追加、ツリーの下端の帯。Xcode の帯のボタンにならう)。 */
   --icon-button-width: 24px;
   --icon-button-height: 20px;
@@ -186,6 +197,9 @@
     --color-copy-badge: #30d158;
     --color-copy-badge-fg: #ffffff;
     --color-tile-focus-ring: rgba(76, 155, 255, 0.9);
+    --color-attention: #0a84ff;
+    --color-attention-halo: rgba(10, 132, 255, 0.3);
+    --color-tile-title-hover: rgba(255, 255, 255, 0.05);
     --color-segmented-bg: rgba(255, 255, 255, 0.07);
     --color-segmented-selected-bg: rgba(255, 255, 255, 0.2);
     --color-segmented-selected-fg: #f5f5f7;
@@ -214,4 +228,15 @@
   height: var(--project-dot-size);
   border-radius: 50%;
   background-color: var(--project-accent);
+}
+
+/* アテンションの印(小さな丸と淡い輪。TileTitleBar・PageControl)。 */
+.attention-dot {
+  flex: none;
+  box-sizing: border-box;
+  width: var(--attention-dot-size);
+  height: var(--attention-dot-size);
+  border-radius: 50%;
+  background-color: var(--color-attention);
+  box-shadow: 0 0 0 2px var(--color-attention-halo);
 }

@@ -1285,7 +1285,7 @@ T46〜T50 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 30e(逐次。T47f 完了後。T47 の節目)
 
-- [ ] T47g — 拡大、アテンションの印、フォーカスとパスの挿入の宛先(変更ファイル: src/ui/terminals/TileGrid.tsx, src/ui/terminals/TileTitleBar.tsx, src/ui/terminals/PageControl.tsx, src/ui/terminals/TerminalArea.tsx, src/ui/terminals/TerminalArea.css, src/ui/terminals/TerminalHost.tsx, src/ui/tree/icons.tsx, src/ui/design/tokens.css, e2e/fixtures/tauriMock.ts, e2e/tiles.spec.ts | 依存: T47f)
+- [x] T47g — 拡大、アテンションの印、フォーカスとパスの挿入の宛先(変更ファイル: src/ui/terminals/TileGrid.tsx, src/ui/terminals/TileTitleBar.tsx, src/ui/terminals/PageControl.tsx, src/ui/terminals/TerminalArea.tsx, src/ui/terminals/TerminalArea.css, src/ui/terminals/TerminalHost.tsx, src/ui/tree/icons.tsx, src/ui/design/tokens.css, e2e/fixtures/tauriMock.ts, e2e/tiles.spec.ts | 依存: T47f)
   - 対応: FR-054、FR-055、FR-016・FR-024(パスの挿入の宛先。M3 の申し送り)、設計書 §8「タイルからの拡大」、§15.2 #6 の A(別のプロジェクトのターミナルへは絶対パス。T38b で入れた規則)、前提 (c)(d)、【仮定】7・8・13
   - 作るもの: タイトルバーのダブルクリックで拡大。拡大中はタブ表示の形に、タイトル帯(同じ見た目)と元に戻すアイコンのボタンを足す。タイトルバーのアテンションの印、ページ表示の前後のボタンの印。フォーカス中のタイルが替わったら、そのターミナルに入力のフォーカスを移す(M2 の `TerminalArea` の「次の描画のフレームで移す」と同じ扱い)。ツリーのドラッグの落とし先(`TerminalHost` の目印)はタイルでもそのまま使う
   - **デザイン**: T47f と同じ方針。印は小さな丸(システムの強調色)で、塗りの大きなバッジにしない。Playwright の画像で自分の目で確かめる
