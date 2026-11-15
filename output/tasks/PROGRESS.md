@@ -16,7 +16,7 @@
 
 | 項目 | 内容 |
 | ---- | ---- |
-| 最終更新 | 2026-11-16(M4 の実装と AI の分の検証が完了。残りは T50b=描画方式の決定の反映と文書の同期。本人の確認待ち: T36・T45・T50a。次は M4.5(ショートカットの設定)の T63) |
+| 最終更新 | 2026-11-16(M4 は T50b を実行中。M4.5=ショートカットの設定は T63 が済み、本人の決定も出た。**再開の手順は §3 の 0 番**) |
 | ブランチ | `feat/m4-tiles`(`feat/m3-tree` から分岐。`feat/m3-tree` ← `feat/m2-projects` ← `feat/m1-terminal`。どれも push していない)。`feat/m0-skeleton` は push 済みで、pull request #1(main 向け)が開いている |
 | 最後のコミット | `git log --oneline -1` で確認する(本ファイルに書くと古くなるため) |
 | 起動コマンド | `npm run dev`(開発用)。`.app` は `npm run app` で `target/aarch64-apple-darwin/release/bundle/macos/Arin.app` にできる |
@@ -132,6 +132,14 @@
 ---
 
 ## 3. 次にやること(優先順)
+
+
+0. **再開の手順(2026-11-16 の時点。文脈が切り替わったらここから)**
+   - `git status --short` と `git log --oneline -5` を見る。最後のコミットが「docs: 進捗ノートに再開の手順を書く」より新しくなければ、T50b の変更が未コミットで作業ツリーに残っている可能性がある
+   - **T50b(M4 の最後)**: 中身は `PLAN_multi-terminal.md` の T50b の項。本人の決定は「描画方式は DOM のまま」(ADR-012 の末尾の表)。DOM 描画と `unicode11` に固定し、`ARIN_RENDERER`・`ARIN_UNICODE`・`get_launch_options`・`RendererLabel`・`@xterm/addon-webgl`・`@xterm/addon-unicode-graphemes`・`e2e/terminal-webgl.spec.ts` を外し、ADR-001 に決定を書き、`docs/` と `project-config.md` §2・§3 を M4 に合わせる。サブエージェントに任せて実行中だった。作業ツリーに途中の変更があれば、`npx tsc -b` と `cargo check --workspace` で状態を確かめ、足りない分を続ける
+   - T50b のあとの検証(司令塔が **1 つずつ** 回す。並行にしない): `npm run lint` → `npm test` → `npm run e2e` → `npm run app` → `npm run smoke` → `node scripts/smoke.mjs --tiles` → `npm run test:coverage` → `npm run perf`。通ったら計画の T50b を `[x]` にしてコミットし、`output/reports/test/M4_acceptance.md` の検証の表と「判断が要る点」(描画方式は決定済み)を直す
+   - **M4.5(ショートカットの設定)**: 計画の M4.5 の節(Phase 31.5b から。T64a ∥ T64b → T64c ∥ T65a → T65b → T65c ∥ T65e → T65d → T66a ∥ T66b → T66c → T66d)。方式は `output/design/ADR_012_keybindings.md`(末尾に本人の決定)。ブランチは `feat/m4-tiles` から `feat/m4.5-keybindings` を切る
+   - 進め方の決まり: サブエージェント(Opus)に 1 タスクずつ任せ、同時は 2 件まで。各タスクの検証は最小限、全体の検証は節目だけ。サブエージェントの報告は短く頼む(変更ファイル・検証の終了コードと件数・【仮定】・計画と違う点だけ)。画面の部品は、デザインの方針(メモリ `design-apple-like`)を指示に入れ、画像で確かめる。push はしない
 
 1. **本人の確認**: T36(M2)、T45(M3)、T50a(M4。9 枚の体感と描画方式の選択)。結果を受けて不具合を直す。描画方式が決まったら **T50b**(`ARIN_RENDERER`・`ARIN_UNICODE`・`RendererLabel` の扱い、`docs/` の同期、最終の検証)。並行して **M4.5(ショートカットの設定。T63 から)**。各マイルストーンの「判断が要る点・残っている問題」(`output/reports/test/M2〜M4_acceptance.md`)を直すかも決める
 2. M4(T49)までに: 描画方式(DOM / WebGL)と全角幅の方式を複数枚で実測して決め、起動時の指定(`ARIN_RENDERER`・`ARIN_UNICODE`・`ARIN_VERIFY_GRID`)と `RendererLabel` を外すか設定に移す(ADR-001)
