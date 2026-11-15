@@ -248,6 +248,85 @@ describe("プロジェクトの操作(T33c)", () => {
     ]);
   });
 
+  it("作成・名称変更・移動・コピーはそれぞれのコマンドに ID と相対パスと名前だけを渡し、対処が無ければキーごと省く", async () => {
+    const fake = createFakeIpc({ create_entry: () => ({ kind: "done", select: "src/a.ts" }) });
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.createEntry(PROJECT, "src", "a.ts", "file")).resolves.toEqual({
+      kind: "done",
+      select: "src/a.ts",
+    });
+    await expect(ipc.renameEntry(PROJECT, "src/a.ts", "b.ts")).resolves.toEqual({ kind: "done", select: null });
+    await ipc.moveEntry(PROJECT, "a.md", "docs");
+    await ipc.copyEntry(PROJECT, "a.md", "docs");
+
+    expect(fake.calls).toEqual([
+      { command: "create_entry", args: { projectId: PROJECT, parent: "src", name: "a.ts", kind: "file" } },
+      { command: "rename_entry", args: { projectId: PROJECT, path: "src/a.ts", newName: "b.ts" } },
+      { command: "move_entry", args: { projectId: PROJECT, source: "a.md", destDir: "docs" } },
+      { command: "copy_entry", args: { projectId: PROJECT, source: "a.md", destDir: "docs" } },
+    ]);
+    for (const call of fake.calls) expect(call.args).not.toHaveProperty("resolution");
+  });
+
+  it("衝突のあとの呼び直しは対処を resolution で渡し、衝突の応答はそのまま返す", async () => {
+    const fake = createFakeIpc({
+      move_entry: ({ resolution }) =>
+        resolution === undefined ? { kind: "conflict", name: "a.md" } : { kind: "done", select: "docs/a.md" },
+    });
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.moveEntry(PROJECT, "a.md", "docs")).resolves.toEqual({ kind: "conflict", name: "a.md" });
+    await expect(ipc.moveEntry(PROJECT, "a.md", "docs", "replace")).resolves.toEqual({
+      kind: "done",
+      select: "docs/a.md",
+    });
+    await ipc.copyEntry(PROJECT, "a.md", "docs", "keepBoth");
+    await ipc.createEntry(PROJECT, "", "notes", "folder", "keepBoth");
+    await ipc.renameEntry(PROJECT, "b.md", "a.md", "replace");
+    await ipc.pasteEntries(PROJECT, "docs", "keepBoth");
+
+    expect(fake.calls).toEqual([
+      { command: "move_entry", args: { projectId: PROJECT, source: "a.md", destDir: "docs" } },
+      { command: "move_entry", args: { projectId: PROJECT, source: "a.md", destDir: "docs", resolution: "replace" } },
+      { command: "copy_entry", args: { projectId: PROJECT, source: "a.md", destDir: "docs", resolution: "keepBoth" } },
+      {
+        command: "create_entry",
+        args: { projectId: PROJECT, parent: "", name: "notes", kind: "folder", resolution: "keepBoth" },
+      },
+      { command: "rename_entry", args: { projectId: PROJECT, path: "b.md", newName: "a.md", resolution: "replace" } },
+      { command: "paste_entries", args: { projectId: PROJECT, destDir: "docs", resolution: "keepBoth" } },
+    ]);
+  });
+
+  it("ゴミ箱・コピー・切り取り・ペーストはそれぞれのコマンドに相対パスで届き、見つからないなどの応答をそのまま返す", async () => {
+    const fake = createFakeIpc({ trash_entry: () => ({ kind: "notFound" }) });
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.trashEntry(PROJECT, "gone.txt")).resolves.toEqual({ kind: "notFound" });
+    await expect(ipc.copyEntries(PROJECT, ["a.md", "src"])).resolves.toEqual({ kind: "done", select: null });
+    await expect(ipc.cutEntries(PROJECT, ["a.md"])).resolves.toEqual({ kind: "done", select: null });
+    await expect(ipc.pasteEntries(PROJECT, "")).resolves.toEqual({ kind: "done", select: null });
+
+    expect(fake.calls).toEqual([
+      { command: "trash_entry", args: { projectId: PROJECT, path: "gone.txt" } },
+      { command: "copy_entries", args: { projectId: PROJECT, paths: ["a.md", "src"] } },
+      { command: "cut_entries", args: { projectId: PROJECT, paths: ["a.md"] } },
+      { command: "paste_entries", args: { projectId: PROJECT, destDir: "" } },
+    ]);
+  });
+
+  it("ファイル操作の Rust 側の失敗はそのまま呼び出し元に返す", async () => {
+    const fake = createFakeIpc({
+      rename_entry: () => {
+        throw new Error("プロジェクトが見つからない");
+      },
+    });
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.renameEntry(PROJECT, "a.md", "b.md")).rejects.toThrow("プロジェクトが見つからない");
+  });
+
   it("削除は remove_project に確認の有無を渡し、確認が要るときは動作中の一覧を返す", async () => {
     const running = [{ terminalId: "terminal-1", projectId: PROJECT, projectName: "app", label: "ターミナル 1" }];
     const fake = createFakeIpc({

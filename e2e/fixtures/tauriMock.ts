@@ -172,6 +172,14 @@ const DEFAULT_REPLIES: TauriMockConfig = {
   set_sidebar_collapsed: { ok: null },
   list_directory: { ok: { kind: "listed", entries: [] } },
   set_show_hidden: { ok: null },
+  create_entry: { ok: { kind: "done", select: null } },
+  rename_entry: { ok: { kind: "done", select: null } },
+  move_entry: { ok: { kind: "done", select: null } },
+  copy_entry: { ok: { kind: "done", select: null } },
+  trash_entry: { ok: { kind: "done", select: null } },
+  copy_entries: { ok: { kind: "done", select: null } },
+  cut_entries: { ok: { kind: "done", select: null } },
+  paste_entries: { ok: { kind: "done", select: null } },
 };
 
 /** 画面のページの中で、偽の Rust 側が記録を置く場所(テストの側からだけ読む)。 */

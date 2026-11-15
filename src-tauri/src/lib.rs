@@ -3,13 +3,14 @@
 //! ここでは部品を生成して渡すことだけを行い、規則を書かない。
 //! 置き場所と起動の通知先を管理状態に登録し、起動時に状態ファイルを読んで(`persistence.rs`)`Workspace` と
 //! セッション管理と保存のスレッドとプロジェクトの操作(`projects.rs`)とルートへの追従の見回り(`patrol.rs`)を作って登録し、
-//! ツリーの操作(`tree.rs`)と、選択中のプロジェクトのツリーの監視の張り替え(`tree_watch.rs`。写しを送るたびに張り替えを頼む)を登録し、
+//! ツリーの操作(`tree.rs`)とファイル操作(`fileops.rs`。切り取りの状態をアプリに 1 つ持つ)と、選択中のプロジェクトのツリーの監視の張り替え(`tree_watch.rs`。写しを送るたびに張り替えを頼む)を登録し、
 //! コマンドとメニューバー(`menu.rs`。項目が選ばれたときも `menu.rs`)と終了の確認の状態(`lifecycle.rs`)を登録して
 //! tauri.conf.json のウィンドウを 1 枚出す。Finder からのドロップは `lifecycle.rs` が受ける。
 
 mod commands;
 pub mod diagnostics;
 pub mod events;
+pub mod fileops;
 pub mod launch;
 pub mod lifecycle;
 pub mod menu;
@@ -27,9 +28,11 @@ use std::sync::{Arc, OnceLock};
 use arin_core::persistence::codec::encode;
 use arin_core::ports::PtyPort;
 use arin_core::ports::fs::FileSystemPort;
+use arin_core::ports::pasteboard::FilePasteboardPort;
 use arin_core::ports::watch::WatcherPort;
 use arin_core::tree::TreeChange;
 use arin_core::workspace::{AppSnapshot, Workspace};
+use arin_platform::desktop::MacFilePasteboard;
 use arin_platform::fs::LocalFileSystem;
 use arin_platform::pty::{FALLBACK_SHELL, NativePty, default_shell, system_locale};
 use arin_platform::watch::FsEventsWatcher;
@@ -37,6 +40,7 @@ use tauri::{Builder, Emitter, Manager, Runtime};
 
 pub use crate::commands::app::SNAPSHOT_EVENT;
 use crate::events::TREE_CHANGED_EVENT;
+use crate::fileops::FileOps;
 use crate::launch::LaunchConfig;
 use crate::lifecycle::{FirstOutputNotice, QuitGate, ReadyNotice};
 use crate::patrol::{PATROL_INTERVAL, PatrolThread, RootPatrol};
@@ -123,6 +127,7 @@ pub fn builder_with_file_system<R: Runtime>(
 }
 
 /// `builder_with_file_system` に加えて、ツリーの監視のポートも差し替えて組み立てる(テスト用)。本物は `FsEventsWatcher`。
+/// ファイルのペーストボードは本物(一般のペーストボード)。
 pub fn builder_with_watcher<R: Runtime>(
     launch: LaunchConfig,
     pty: Arc<dyn PtyPort>,
@@ -132,6 +137,45 @@ pub fn builder_with_watcher<R: Runtime>(
     fs: Arc<dyn FileSystemPort>,
     watcher: Arc<dyn WatcherPort>,
 ) -> Builder<R> {
+    builder_with_tree_ports(
+        launch,
+        pty,
+        probe,
+        ports,
+        project_ports,
+        TreePorts {
+            fs,
+            watcher,
+            file_pasteboard: Arc::new(MacFilePasteboard::general()),
+        },
+    )
+}
+
+/// ツリーとファイル操作のポート(`builder_with_tree_ports` で差し替える)。
+pub struct TreePorts {
+    /// ファイルシステム(ツリーの読み込みとファイル操作。ゴミ箱を含む)。本物は `LocalFileSystem`。
+    pub fs: Arc<dyn FileSystemPort>,
+    /// ツリーの監視。本物は `FsEventsWatcher`。
+    pub watcher: Arc<dyn WatcherPort>,
+    /// ファイルの URL のペーストボード(ツリーのコピー・切り取り・ペースト)。本物は一般のペーストボード
+    /// (`MacFilePasteboard::general`)。テストは名前付きのものを渡す。
+    pub file_pasteboard: Arc<dyn FilePasteboardPort>,
+}
+
+/// `builder_with_watcher` に加えて、ファイルのペーストボードも差し替えて組み立てる(テスト用)。
+pub fn builder_with_tree_ports<R: Runtime>(
+    launch: LaunchConfig,
+    pty: Arc<dyn PtyPort>,
+    probe: ShellProbe,
+    ports: PersistencePorts,
+    project_ports: ProjectPorts,
+    tree_ports: TreePorts,
+) -> Builder<R> {
+    let TreePorts {
+        fs,
+        watcher,
+        file_pasteboard,
+    } = tree_ports;
     let ready = ReadyNotice::new(launch.ready_marker().map(ToOwned::to_owned));
     let first_output = FirstOutputNotice::new(launch.terminal_marker().map(ToOwned::to_owned));
     let terminal = launch.terminal().clone();
@@ -214,6 +258,11 @@ pub fn builder_with_watcher<R: Runtime>(
                 picker,
             ));
             app.manage(Tree::new(sessions.clone(), Arc::clone(&fs)));
+            app.manage(FileOps::new(
+                sessions.clone(),
+                Arc::clone(&fs),
+                Arc::clone(&file_pasteboard),
+            ));
             // 9 枚の検証画面ではプロジェクトが無いので監視しない(スレッドも作らない)。
             if !verify_grid {
                 let emitter = app.handle().clone();
@@ -261,6 +310,14 @@ pub fn builder_with_watcher<R: Runtime>(
             commands::layout::set_sidebar_collapsed,
             commands::tree::list_directory,
             commands::tree::set_show_hidden,
+            commands::fileops::create_entry,
+            commands::fileops::rename_entry,
+            commands::fileops::move_entry,
+            commands::fileops::copy_entry,
+            commands::fileops::trash_entry,
+            commands::fileops::copy_entries,
+            commands::fileops::cut_entries,
+            commands::fileops::paste_entries,
         ])
 }
 

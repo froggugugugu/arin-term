@@ -918,7 +918,7 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 不可
   - 先に書くテスト(偽の監視のポート。実物の一時フォルダで 1 件): `選択中のプロジェクトのルートにだけ監視を張る`、`プロジェクトを切り替えると前の監視をやめ新しいルートに張る`、`ルートが改名に追従すると新しいパスに張り替える`、`見つからないになると監視をやめ見つかると張り直す`、`除外の中の変更は送らない`、`変わったフォルダを相対パスでまとめて送る`、`実物の一時フォルダでファイルを作ると_2_秒以内に_tree-changed_が届く`(AC-T02 の Rust 側)、`検証画面では監視を張らない`
   - 検証: `npm test && npm run lint && npm run app && npm run smoke`。`node scripts/smoke.mjs --env=ARIN_VERIFY_GRID=1`
-- [ ] T42c — ファイル操作のコマンド(変更ファイル: src-tauri/src/fileops.rs, src-tauri/src/commands/fileops.rs, src-tauri/src/commands/mod.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/fileops_commands.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/(型を足すときだけ), src/ipc/client.ts, src/ipc/client.test.ts | 依存: T39b, T40c, T40d, T42b)
+- [x] T42c — ファイル操作のコマンド(変更ファイル: src-tauri/src/fileops.rs, src-tauri/src/commands/fileops.rs, src-tauri/src/commands/mod.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/fileops_commands.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/(型を足すときだけ), src/ipc/client.ts, src/ipc/client.test.ts | 依存: T39b, T40c, T40d, T42b)
   - 対応: FR-025〜030、FR-035、FR-036、設計書 §5.2(衝突は結果で返し、対処を付けて呼び直す)、§7.1「ファイル操作」「スレッドの分担」、【仮定】12〜15・20
   - コマンド: `create_entry`(作成先のフォルダ・名前・ファイルかフォルダか)、`rename_entry`、`move_entry`・`copy_entry`(ツリー内のドロップ。宛先のフォルダ)、`trash_entry`、`copy_entries`(ファイルの URL をペーストボードへ)、`cut_entries`、`paste_entries`(貼り付け先のフォルダ)。衝突の対処は任意の引数で受ける。どれもプロジェクト ID と相対パスで受け、T39b の手順を待ってよいスレッドで呼ぶ
   - 安全: 絶対パスを受け取らない。範囲の検査は `arin-core` の手順の中で行い、コマンドは素通しする。コマンドの結合テストはゴミ箱を偽のポートにする(【仮定】23)

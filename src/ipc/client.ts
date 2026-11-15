@@ -3,10 +3,13 @@
 
 import type { AddProjectOutcome } from "./generated/AddProjectOutcome";
 import type { AppSnapshot } from "./generated/AppSnapshot";
+import type { ConflictResolution } from "./generated/ConflictResolution";
 import type { ConnectOutcome } from "./generated/ConnectOutcome";
 import type { DirListing } from "./generated/DirListing";
+import type { FileOpOutcome } from "./generated/FileOpOutcome";
 import type { LaunchOptions } from "./generated/LaunchOptions";
 import type { MenuCommand } from "./generated/MenuCommand";
+import type { NewEntryKind } from "./generated/NewEntryKind";
 import type { ProjectColor } from "./generated/ProjectColor";
 import type { ProjectId } from "./generated/ProjectId";
 import type { QuitRequest } from "./generated/QuitRequest";
@@ -54,6 +57,33 @@ export interface CommandMap {
   /** path はルート基準の相対パス(ルートは空の文字列)。絶対パス・`..` は Rust が拒否する。 */
   list_directory: { args: { projectId: ProjectId; path: RelPath }; result: DirListing };
   set_show_hidden: { args: { projectId: ProjectId; showHidden: boolean }; result: null };
+  /**
+   * ファイル操作。項目はルート基準の相対パス(ルートは空の文字列)で指す。resolution は衝突したあとの呼び直しでだけ付ける
+   * (省略=衝突なら何も変えずに conflict を返す)。
+   */
+  create_entry: {
+    args: { projectId: ProjectId; parent: RelPath; name: string; kind: NewEntryKind; resolution?: ConflictResolution };
+    result: FileOpOutcome;
+  };
+  rename_entry: {
+    args: { projectId: ProjectId; path: RelPath; newName: string; resolution?: ConflictResolution };
+    result: FileOpOutcome;
+  };
+  move_entry: {
+    args: { projectId: ProjectId; source: RelPath; destDir: RelPath; resolution?: ConflictResolution };
+    result: FileOpOutcome;
+  };
+  copy_entry: {
+    args: { projectId: ProjectId; source: RelPath; destDir: RelPath; resolution?: ConflictResolution };
+    result: FileOpOutcome;
+  };
+  trash_entry: { args: { projectId: ProjectId; path: RelPath }; result: FileOpOutcome };
+  copy_entries: { args: { projectId: ProjectId; paths: RelPath[] }; result: FileOpOutcome };
+  cut_entries: { args: { projectId: ProjectId; paths: RelPath[] }; result: FileOpOutcome };
+  paste_entries: {
+    args: { projectId: ProjectId; destDir: RelPath; resolution?: ConflictResolution };
+    result: FileOpOutcome;
+  };
 }
 
 export type CommandName = keyof CommandMap;
@@ -201,6 +231,53 @@ export interface ArinIpc {
    * 除外(隠しファイル表示が OFF のとき)の中の変更は届かない。購読が済んだら、やめる関数で解決する。
    */
   onTreeChanged(listener: (change: TreeChange) => void): Promise<Unlisten>;
+  /*
+   * ファイル操作(FR-025〜030)。どれもプロジェクトの ID とルート基準の相対パスで指し、応答は FileOpOutcome で返る:
+   * done(select は操作のあとに選ぶ項目。無ければ null)・notFound(実行の時点で無かった。何も変えていない)・
+   * conflict(置く先に同じ名前がある。何も変えていない。確認を出し、resolution を付けて呼び直す。中止なら呼び直さない)・
+   * invalidName・notAllowed(ルート自体・ルートの外・自分の子孫へ)・failed(1 行の文言)。
+   * ツリーの更新は tree-changed と画面の読み直しに任せる。絶対パスは送らず、届かない。
+   */
+  /** フォルダ parent(ルートは空の文字列)に空のファイルかフォルダ name を作る。 */
+  createEntry(
+    projectId: ProjectId,
+    parent: RelPath,
+    name: string,
+    kind: NewEntryKind,
+    resolution?: ConflictResolution,
+  ): Promise<FileOpOutcome>;
+  /** 項目 path の名前を newName に変える。 */
+  renameEntry(
+    projectId: ProjectId,
+    path: RelPath,
+    newName: string,
+    resolution?: ConflictResolution,
+  ): Promise<FileOpOutcome>;
+  /** 項目 source をフォルダ destDir の中へ移す(ツリー内のドロップ)。 */
+  moveEntry(
+    projectId: ProjectId,
+    source: RelPath,
+    destDir: RelPath,
+    resolution?: ConflictResolution,
+  ): Promise<FileOpOutcome>;
+  /** 項目 source をフォルダ destDir の中へ写す(⌥ を押しながらのドロップ)。 */
+  copyEntry(
+    projectId: ProjectId,
+    source: RelPath,
+    destDir: RelPath,
+    resolution?: ConflictResolution,
+  ): Promise<FileOpOutcome>;
+  /** 項目 path をゴミ箱に入れる(ゴミ箱を経由しない削除は無い)。 */
+  trashEntry(projectId: ProjectId, path: RelPath): Promise<FileOpOutcome>;
+  /** 項目 paths をファイルの URL としてペーストボードに書く(Finder にペーストできる)。 */
+  copyEntries(projectId: ProjectId, paths: RelPath[]): Promise<FileOpOutcome>;
+  /** 項目 paths を切り取る(ファイルはペーストまで動かない)。 */
+  cutEntries(projectId: ProjectId, paths: RelPath[]): Promise<FileOpOutcome>;
+  /**
+   * ペーストボードのファイルをフォルダ destDir の中へ置く。切り取ったものなら移し、ほか(Finder でコピーしたものなど)はコピーする。
+   * ペーストボードにファイルが無ければ何もせず done(select は null)。
+   */
+  pasteEntries(projectId: ProjectId, destDir: RelPath, resolution?: ConflictResolution): Promise<FileOpOutcome>;
 }
 
 /**
@@ -216,6 +293,14 @@ export function toBytes(message: unknown): Uint8Array | null {
     return Uint8Array.from(message as number[]);
   }
   return null;
+}
+
+/** 衝突の対処は、あるときだけ引数に載せる(無いときはキーごと省く)。 */
+function withResolution<A extends object>(
+  args: A,
+  resolution: ConflictResolution | undefined,
+): A & { resolution?: ConflictResolution } {
+  return resolution === undefined ? args : { ...args, resolution };
 }
 
 export function createIpc(transport: IpcTransport): ArinIpc {
@@ -281,5 +366,18 @@ export function createIpc(transport: IpcTransport): ArinIpc {
     listDirectory: (projectId, path) => invoke("list_directory", { projectId, path }),
     setShowHidden: (projectId, showHidden) => done(invoke("set_show_hidden", { projectId, showHidden })),
     onTreeChanged: (listener) => transport.listen("tree-changed", listener),
+    createEntry: (projectId, parent, name, kind, resolution) =>
+      invoke("create_entry", withResolution({ projectId, parent, name, kind }, resolution)),
+    renameEntry: (projectId, path, newName, resolution) =>
+      invoke("rename_entry", withResolution({ projectId, path, newName }, resolution)),
+    moveEntry: (projectId, source, destDir, resolution) =>
+      invoke("move_entry", withResolution({ projectId, source, destDir }, resolution)),
+    copyEntry: (projectId, source, destDir, resolution) =>
+      invoke("copy_entry", withResolution({ projectId, source, destDir }, resolution)),
+    trashEntry: (projectId, path) => invoke("trash_entry", { projectId, path }),
+    copyEntries: (projectId, paths) => invoke("copy_entries", { projectId, paths }),
+    cutEntries: (projectId, paths) => invoke("cut_entries", { projectId, paths }),
+    pasteEntries: (projectId, destDir, resolution) =>
+      invoke("paste_entries", withResolution({ projectId, destDir }, resolution)),
   };
 }
