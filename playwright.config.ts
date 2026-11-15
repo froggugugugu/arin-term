@@ -13,8 +13,13 @@ import { defineConfig, devices } from "@playwright/test";
 // Tauri の開発サーバーと同じ固定のポート(vite.config.ts の strictPort、tauri.conf.json の devUrl)。
 const BASE_URL = "http://localhost:1420";
 
+// 性能の計測の spec(e2e/perf-*.spec.ts。T49b)は `npm run e2e` では動かさない。`npm run perf`(scripts/perf/run.mjs)が
+// ARIN_PERF_E2E=1 を付けて、その spec だけを 1 ワーカーで動かす(重いので、ほかの画面の自動テストと並べない)。
+const PERF_E2E = process.env.ARIN_PERF_E2E === "1";
+
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: PERF_E2E ? [] : ["**/perf-*.spec.ts"],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

@@ -1301,7 +1301,7 @@ T46〜T50 は親として残し、作業は子タスクで行う。親は子が�
   - 先に書くテスト(このタスク自体がテスト): `タブ表示からタイル表示に切り替え_ページを送り_別のプロジェクトのタイルをクリックし_拡大して戻し_タブ表示に戻すを通す`、`10_枚で_1/2_を出し_2_ページ目の_1_枚に出力が続いている`(AC-M14・FR-052)、`a_のタイルにフォーカス中に_b_のタイルをクリックするとカードが_b_になりツリーのルートが_b_になる`(AC-M15)、`緑の_a_のカードとタイルの色の印が同じ色相`(AC-C02)、`別のページで鳴ったベルの印がページ表示に出て_送ると消える`(FR-055)、`再読み込みしても写しの表示モードで開く`(FR-048 の画面側)
   - 並行: 可(T49b とファイルが重ならない)
   - 検証: `npx playwright test e2e/m4-scenario.spec.ts`(3 回続けて合格)
-- [ ] T49b — NFR-009 の計測と、描画方式・全角幅の方式の案(変更ファイル: src-tauri/tests/perf_sessions.rs, scripts/perf/run.mjs, scripts/perf/app-memory.mjs, scripts/perf-run.test.mjs, e2e/perf-tiles.spec.ts, playwright.config.ts, package.json(入口を足すときだけ), output/design/ADR_001_terminal-engine.md | 依存: T47g, T48c)
+- [x] T49b — NFR-009 の計測と、描画方式・全角幅の方式の案(変更ファイル: src-tauri/tests/perf_sessions.rs, scripts/perf/run.mjs, scripts/perf/app-memory.mjs, scripts/perf-run.test.mjs, e2e/perf-tiles.spec.ts, playwright.config.ts, package.json(入口を足すときだけ), output/design/ADR_001_terminal-engine.md | 依存: T47g, T48c)
   - 対応: NFR-009(9 枚で同時に `yes` を流して記録。合否にしない)、ADR-001(描画方式と全角幅の方式は複数枚の実測で決める)、ADR-001 の「流量制御のしきい値(複数枚のときの値は M4 で実測して見直す)」、設計書 §7.3、前提 (h)
   - 測るもの(記録だけ。数値で失敗させない。結果は `testreport/perf/`): (1) Rust 側: 9 つのセッションで同時に `yes` を流したときの、送り先までの量と遅れ・未処理の量の頭打ち(`perf_sessions.rs`。`#[ignore]`)。(2) 画面側: WebKit で 9 枚のタイルに偽の Rust 側から同時に大量の出力を流しているあいだの、ページ送り・タイルのクリック・キー入力の反応までの時間とフレームの間隔を、DOM と WebGL、`unicode11` と `graphemes` の組で記録する(`e2e/perf-tiles.spec.ts`。`npm run e2e` には入れず `npm run perf` から動かす。WebGL のコンテキストの数も記録する)。(3) 実アプリ: 9 プロジェクトのタイル表示の `state.json` で起動したときのメモリ(`app-memory.mjs`。【仮定】18)
   - 書くもの: ADR-001 に「M4 の実測」の節(上の表と、描画方式・全角幅の方式・しきい値の**案**。決定は T50a の本人の体感のあと)

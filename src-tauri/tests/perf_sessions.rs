@@ -9,6 +9,16 @@
 //! `--release -- --ignored --nocapture` で動かし、`ARIN_PERF ` で始まる行(1 行 1 つの JSON)を読み取る。
 //! Tauri のアプリは作らないので標準のハーネスで走らせる(`session_pty` と同じ)。
 //! 書き方は `session_pty.rs` と `crates/arin-platform/tests/perf_pty.rs` にならう。
+//!
+//! M4(計画書 T49b。NFR-009、ADR-001 の「複数枚のときのしきい値は M4 で実測して見直す」)で足したもの:
+//!
+//! 3. 1 枚と 9 枚で同時に `yes | head -c` を流したときの、送り先までの時間と量、未処理の量の最大値。
+//!    ベル(BEL)を含む行を流す組も測り、アテンションの走査(T48c。読み取りスレッドが常に走査し、契機のある塊のあとに
+//!    Workspace のロックを取る)が入った状態での速さを比べられるようにする
+//! 4. 9 枚で処理済みを返さないとき、各セッションの未処理の量が上限の付近で頭打ちになり、読み取りが止まること
+//! 5. アテンションの走査器だけの速さ(メモリ上の 10 万行。PTY を使わない)
+//!
+//! 流す量は 1 枚あたり `MULTI_BYTES`(4 MiB)に限る(長く流しっぱなしにしない。テストのプロセスのメモリを見るため)。
 
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -20,7 +30,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use arin_core::terminal::TerminalId;
+use arin_core::terminal::{AttentionScanner, TerminalId};
 use arin_core::workspace::Workspace;
 use arin_lib::sessions::{OutputSink, SessionConfig, SessionRegistry, ShellDefaults};
 use arin_platform::pty::NativePty;
@@ -378,5 +388,283 @@ fn 処理済みを返さない送り先では未処理の量が上限の付近�
             config_json(&SessionConfig::default()),
         );
         registry.shutdown();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// M4: 9 枚で同時に流す(T49b)
+// ---------------------------------------------------------------------------
+
+/// 9 枚の計測で 1 枚あたりに流す量(バイト。`head -c` に渡す。PTY が改行に CR を足すので、届く量は少し多い)。
+const MULTI_BYTES: u64 = 4 * 1024 * 1024;
+/// 9 枚の計測で流す行(`yes` の引数)。78 文字。
+const MULTI_LINE: &str =
+    "arin perf tiles 0123456789 abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+/// 同時に流す枚数(NFR-009 の 9 枚。`Workspace::for_verify_grid` の枚数と同じ)。
+const MULTI_TERMINALS: usize = 9;
+
+/// 一時の `HOME` で `/bin/zsh` を `count` 枚起動し、1 枚ごとに送り先をつなぐ。返す並びは写しの順。
+fn start_many(
+    home: &TempHome,
+    count: usize,
+    acking: bool,
+) -> (SessionRegistry, Vec<(TerminalId, Arc<Sink>)>) {
+    let mut vars: Vec<(OsString, OsString)> = ["USER", "LOGNAME", "TMPDIR"]
+        .into_iter()
+        .filter_map(|n| std::env::var_os(n).map(|v| (n.into(), v)))
+        .collect();
+    vars.push(("HOME".into(), home.path().as_os_str().to_owned()));
+    // 9 枚の検証画面の形で作る(持ち主の無い 9 枚。T49d で足場を置き換える)。使わない分は起動しない。
+    let workspace = Workspace::for_verify_grid("0.0.0-perf", home.path().to_path_buf(), vars);
+    let registry = SessionRegistry::new(
+        workspace,
+        Arc::new(NativePty),
+        Arc::new(|| ShellDefaults {
+            shell: PathBuf::from(ZSH),
+            locale: Some("ja_JP".to_owned()),
+        }),
+        Arc::new(|_| {}),
+        SessionConfig::default(),
+    );
+    let ids: Vec<TerminalId> = registry
+        .snapshot()
+        .terminals
+        .iter()
+        .map(|t| t.id.clone())
+        .collect();
+    assert!(
+        ids.len() >= count,
+        "ターミナルが {count} 枚無い({} 枚)",
+        ids.len()
+    );
+    let mut out = Vec::with_capacity(count);
+    for id in ids.into_iter().take(count) {
+        let sink = Sink::new(acking);
+        let _ = sink.target.set((registry.clone(), id.clone()));
+        registry
+            .connect(&id, 24, 80, Arc::clone(&sink) as Arc<dyn OutputSink>)
+            .expect("シェルを起動できなかった");
+        out.push((id, sink));
+    }
+    // どのシェルも入力を受け付けるまで待つ。
+    for (id, sink) in &out {
+        registry
+            .write(id, format!("{}\r", mark_command("ready")).as_bytes())
+            .unwrap();
+        sink.wait_mark("ready");
+    }
+    (registry, out)
+}
+
+/// `yes` の行を `bytes` バイトだけ流す入力。`bel` なら行の終わりにベルを入れる(アテンションの契機が毎回ある)。
+fn flood_command(bytes: u64, bel: bool) -> String {
+    let line = if bel {
+        format!("$'{MULTI_LINE}\\a'")
+    } else {
+        format!("'{MULTI_LINE}'")
+    };
+    format!("yes {line} | head -c {bytes}")
+}
+
+/// 1 回分の、`count` 枚で同時に流した結果を `ARIN_PERF` の行で出す。
+fn run_multi_ack(home: &TempHome, count: usize, bel: bool, run: usize) {
+    let (registry, terms) = start_many(home, count, true);
+    for (_, sink) in &terms {
+        lock(&sink.stats).max_unacked = 0;
+    }
+    let rss_before = rss_kib();
+    let begin = format!("begin{run}");
+    let end = format!("end{run}");
+    let command = format!(
+        "{}; {}; {}\r",
+        mark_command(&begin),
+        flood_command(MULTI_BYTES, bel),
+        mark_command(&end)
+    );
+    // できるだけ同時に流し始める(書き込みは順に送るだけで、待たない)。
+    for (id, _) in &terms {
+        registry.write(id, command.as_bytes()).unwrap();
+    }
+    let mut first_begin: Option<Instant> = None;
+    let mut last_end: Option<Instant> = None;
+    let mut per_terminal_ms = Vec::with_capacity(count);
+    let (mut sends, mut bytes, mut max_send, mut max_unacked) = (0u64, 0u64, 0u64, 0u64);
+    for (_, sink) in &terms {
+        let (b_at, b_sends, b_bytes) = sink.wait_mark(&begin);
+        let (e_at, e_sends, e_bytes) = sink.wait_mark(&end);
+        first_begin = Some(first_begin.map_or(b_at, |t| t.min(b_at)));
+        last_end = Some(last_end.map_or(e_at, |t| t.max(e_at)));
+        per_terminal_ms.push(e_at.duration_since(b_at).as_secs_f64() * 1000.0);
+        sends += e_sends - b_sends;
+        bytes += e_bytes - b_bytes;
+        let s = lock(&sink.stats);
+        max_send = max_send.max(s.max_send);
+        max_unacked = max_unacked.max(s.max_unacked);
+    }
+    let rss_after = rss_kib();
+    registry.shutdown();
+    let wall = last_end
+        .zip(first_begin)
+        .map_or(0.0, |(e, b)| e.duration_since(b).as_secs_f64());
+    per_terminal_ms.sort_by(f64::total_cmp);
+    let slowest = per_terminal_ms.last().copied().unwrap_or_default();
+    let fastest = per_terminal_ms.first().copied().unwrap_or_default();
+    println!(
+        "ARIN_PERF {{\"kind\":\"multi_ack\",\"run\":{run},\"terminals\":{count},\"bel\":{bel},\
+         \"bytes_per_terminal\":{MULTI_BYTES},\"bytes\":{bytes},\"sends\":{sends},\"avg_send_bytes\":{:.0},\
+         \"max_send_bytes\":{max_send},\"max_unacked\":{max_unacked},\"wall_ms\":{:.3},\
+         \"slowest_ms\":{slowest:.3},\"fastest_ms\":{fastest:.3},\"mib_per_s_total\":{:.3},\
+         \"rss_before_kib\":{rss_before},\"rss_after_kib\":{rss_after},{}}}",
+        bytes as f64 / sends.max(1) as f64,
+        wall * 1000.0,
+        bytes as f64 / wall.max(f64::MIN_POSITIVE) / (1024.0 * 1024.0),
+        config_json(&SessionConfig::default()),
+    );
+}
+
+#[test]
+#[ignore = "性能の計測。npm run perf が --ignored で動かす"]
+fn 一枚と九枚で同時に_yes_を流したときの送り先までの時間と量() {
+    let home = TempHome::new("multi");
+    for run in 1..=RUNS {
+        run_multi_ack(&home, 1, false, run);
+        run_multi_ack(&home, MULTI_TERMINALS, false, run);
+    }
+}
+
+#[test]
+#[ignore = "性能の計測。npm run perf が --ignored で動かす"]
+fn ベルを含む行を一枚と九枚で流したときの送り先までの時間と量() {
+    let home = TempHome::new("multi-bel");
+    for run in 1..=RUNS {
+        run_multi_ack(&home, 1, true, run);
+        run_multi_ack(&home, MULTI_TERMINALS, true, run);
+    }
+}
+
+#[test]
+#[ignore = "性能の計測。npm run perf が --ignored で動かす"]
+fn 九枚で処理済みを返さないと各セッションの未処理の量が上限の付近で頭打ちになる() {
+    let home = TempHome::new("multi-stall");
+    for run in 1..=RUNS {
+        let (registry, terms) = start_many(&home, MULTI_TERMINALS, true);
+        // ここから処理済みを返さない。それまでの分は返しておく。
+        for (id, sink) in &terms {
+            sink.acking.store(false, Ordering::SeqCst);
+            registry.ack(id, u64::MAX).unwrap();
+        }
+        let received_before: Vec<u64> = terms.iter().map(|(_, s)| lock(&s.stats).bytes).collect();
+        let rss_before = rss_kib();
+        let started = Instant::now();
+        let command = format!(
+            "{}; {}\r",
+            flood_command(2 * MULTI_BYTES, false),
+            mark_command("end")
+        );
+        for (id, _) in &terms {
+            registry.write(id, command.as_bytes()).unwrap();
+        }
+
+        // 全セッションが止まり、未処理の量と受け取った量が SETTLE のあいだ変わらなくなるまで待つ。
+        let deadline = started + WAIT;
+        let mut last: Vec<(u64, u64)> = Vec::new();
+        let mut stable_since = Instant::now();
+        let mut paused_at: Option<Duration> = None;
+        let now = loop {
+            let backlogs: Vec<_> = terms
+                .iter()
+                .map(|(id, _)| registry.backlog(id).expect("セッションが無い"))
+                .collect();
+            let all_paused = backlogs.iter().all(|b| b.paused);
+            if all_paused && paused_at.is_none() {
+                paused_at = Some(started.elapsed());
+            }
+            let now: Vec<(u64, u64)> = backlogs
+                .iter()
+                .zip(&terms)
+                .zip(&received_before)
+                .map(|((b, (_, s)), before)| (b.unacked, lock(&s.stats).bytes - before))
+                .collect();
+            if now != last {
+                last = now;
+                stable_since = Instant::now();
+            } else if all_paused && stable_since.elapsed() >= SETTLE {
+                break now;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "未処理の量が頭打ちにならなかった: {backlogs:?}"
+            );
+            thread::sleep(Duration::from_millis(5));
+        };
+        let rss_stalled = rss_kib();
+        let ended_while_stalled = terms
+            .iter()
+            .filter(|(_, s)| lock(&s.stats).marks.iter().any(|m| m.0 == "end"))
+            .count();
+        let unacked: Vec<u64> = now.iter().map(|(u, _)| *u).collect();
+        let received: u64 = now.iter().map(|(_, r)| *r).sum();
+
+        // 処理済みを返すと再開し、最後まで届く。
+        let resumed_at = Instant::now();
+        for (id, sink) in &terms {
+            sink.acking.store(true, Ordering::SeqCst);
+            registry.ack(id, u64::MAX).unwrap();
+        }
+        let mut last_end = resumed_at;
+        for (_, sink) in &terms {
+            let (e_at, _, _) = sink.wait_mark("end");
+            last_end = last_end.max(e_at);
+        }
+        registry.shutdown();
+        println!(
+            "ARIN_PERF {{\"kind\":\"multi_stall\",\"run\":{run},\"terminals\":{},\
+             \"bytes_per_terminal\":{},\"stalled_unacked_max\":{},\"stalled_unacked_min\":{},\
+             \"stalled_unacked_sum\":{},\"stalled_received_sum\":{received},\
+             \"paused_after_ms\":{:.3},\"settle_ms\":{},\"ended_while_stalled\":{ended_while_stalled},\
+             \"resumed_to_end_ms\":{:.3},\"rss_before_kib\":{rss_before},\"rss_stalled_kib\":{rss_stalled},{}}}",
+            terms.len(),
+            2 * MULTI_BYTES,
+            unacked.iter().max().copied().unwrap_or_default(),
+            unacked.iter().min().copied().unwrap_or_default(),
+            unacked.iter().sum::<u64>(),
+            paused_at.unwrap_or_default().as_secs_f64() * 1000.0,
+            SETTLE.as_millis(),
+            last_end.duration_since(resumed_at).as_secs_f64() * 1000.0,
+            config_json(&SessionConfig::default()),
+        );
+    }
+}
+
+#[test]
+#[ignore = "性能の計測。npm run perf が --ignored で動かす"]
+fn アテンションの走査器だけの速さ() {
+    // 10 万行(約 7.7 MB)をメモリに置き、読み取りの大きさ(16 KiB)ずつ走査する。PTY は使わない。
+    let mut text = String::with_capacity(LINES * 80);
+    for i in 1..=LINES {
+        let _ = writeln!(
+            text,
+            "{i:06} the quick brown fox jumps over the lazy dog 0123456789 abcdefghijklmn"
+        );
+    }
+    let data = text.into_bytes();
+    let chunk = SessionConfig::default().read_buffer;
+    for run in 1..=RUNS {
+        let mut scanner = AttentionScanner::new();
+        let mut hits = 0u64;
+        let started = Instant::now();
+        for piece in data.chunks(chunk) {
+            if scanner.scan(std::hint::black_box(piece)) {
+                hits += 1;
+            }
+        }
+        let secs = started.elapsed().as_secs_f64();
+        println!(
+            "ARIN_PERF {{\"kind\":\"attention_scan\",\"run\":{run},\"bytes\":{},\"chunk\":{chunk},\
+             \"hits\":{hits},\"ms\":{:.3},\"mib_per_s\":{:.1}}}",
+            data.len(),
+            secs * 1000.0,
+            data.len() as f64 / secs.max(f64::MIN_POSITIVE) / (1024.0 * 1024.0),
+        );
     }
 }
