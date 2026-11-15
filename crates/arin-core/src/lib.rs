@@ -5,13 +5,16 @@
 
 #![forbid(unsafe_code)]
 
+pub mod fileops;
 pub mod launch_options;
 pub mod layout;
 pub mod paths;
 pub mod persistence;
 pub mod ports;
 pub mod project;
+pub mod shortcuts;
 pub mod terminal;
+pub mod tree;
 pub mod workspace;
 
 /// このクレートの版。

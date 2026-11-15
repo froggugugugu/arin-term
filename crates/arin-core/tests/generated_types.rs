@@ -16,8 +16,11 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use arin_core::fileops::{ConflictResolution, FileOpOutcome, NewEntryKind};
 use arin_core::launch_options::LaunchOptions;
+use arin_core::paths::{PathKind, RelPath};
 use arin_core::project::ProjectColor;
+use arin_core::tree::{DirListing, TreeChange};
 use arin_core::workspace::{
     AddProjectOutcome, AppSnapshot, ConnectOutcome, MenuCommand, QuitRequest, RemoveProjectOutcome,
 };
@@ -38,6 +41,14 @@ fn collect_generated(cfg: &Config) -> BTreeMap<PathBuf, String> {
     collector.visit::<ProjectColor>();
     collector.visit::<MenuCommand>();
     collector.visit::<QuitRequest>();
+    // M3 のツリーとファイル操作(計画書 T38a)。
+    collector.visit::<RelPath>();
+    collector.visit::<PathKind>();
+    collector.visit::<DirListing>();
+    collector.visit::<TreeChange>();
+    collector.visit::<FileOpOutcome>();
+    collector.visit::<ConflictResolution>();
+    collector.visit::<NewEntryKind>();
     collector.files
 }
 

@@ -774,7 +774,7 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 25a(並行可能。T37 の (b)(c)(d) の完了後。(a) の結果は待たない)
 
-- [ ] T38a — `arin-core` に M3 のポートと型、モジュールの骨格、相対パスの型を置く(変更ファイル: crates/arin-core/src/lib.rs, crates/arin-core/src/ports/mod.rs, crates/arin-core/src/ports/fs.rs, crates/arin-core/src/ports/watch.rs, crates/arin-core/src/ports/desktop.rs, crates/arin-core/src/ports/pasteboard.rs, crates/arin-core/src/paths/mod.rs, crates/arin-core/src/paths/relative.rs, crates/arin-core/src/tree/mod.rs, crates/arin-core/src/tree/types.rs, crates/arin-core/src/fileops/mod.rs, crates/arin-core/src/fileops/types.rs, crates/arin-core/src/shortcuts/mod.rs, crates/arin-core/tests/rel_path.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/ | 依存: T37)
+- [x] T38a — `arin-core` に M3 のポートと型、モジュールの骨格、相対パスの型を置く(変更ファイル: crates/arin-core/src/lib.rs, crates/arin-core/src/ports/mod.rs, crates/arin-core/src/ports/fs.rs, crates/arin-core/src/ports/watch.rs, crates/arin-core/src/ports/desktop.rs, crates/arin-core/src/ports/pasteboard.rs, crates/arin-core/src/paths/mod.rs, crates/arin-core/src/paths/relative.rs, crates/arin-core/src/tree/mod.rs, crates/arin-core/src/tree/types.rs, crates/arin-core/src/fileops/mod.rs, crates/arin-core/src/fileops/types.rs, crates/arin-core/src/shortcuts/mod.rs, crates/arin-core/tests/rel_path.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/ | 依存: T37)
   - 対応: 設計書 §5.1 の `arin-core/ports`(`FileSystemPort`・`WatcherPort`・`DesktopPort`)・`tree`・`fileops`・`paths`、§5.2(ファイルはプロジェクト ID と相対パスで指す)、§7.2「画面から届く相対パス」、§3.2(機能モジュールどうしは ID 型と `paths`・`ports` だけを共有する)
   - 置くもの:
     - `RelPath`(ルート基準の相対パス。`paths/relative.rs`): 画面から届く文字列から作る。区切りは `/`、空の文字列はルート。拒否: `/` で始まるもの、`..`・`.`・空の要素(`a//b`)、末尾の `/`、NUL。親と名前に分ける・子を足す操作。JSON は文字列
