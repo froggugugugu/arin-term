@@ -1264,7 +1264,7 @@ T46〜T50 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 30c(逐次。T47b・T47d 完了後)
 
-- [ ] T47e — 画面: 表示の操作とタイルの写しの読み取り(変更ファイル: src/state/actions.ts, src/state/actions.test.ts, src/state/selectors.ts, src/state/selectors.test.ts, src/state/uiStore.ts, src/state/uiStore.test.ts, src/state/treeStore.ts, src/state/treeStore.test.ts, src/state/startApp.ts, src/state/startApp.test.ts, src/test/fakeIpc.ts | 依存: T47b, T47d)
+- [x] T47e — 画面: 表示の操作とタイルの写しの読み取り(変更ファイル: src/state/actions.ts, src/state/actions.test.ts, src/state/selectors.ts, src/state/selectors.test.ts, src/state/uiStore.ts, src/state/uiStore.test.ts, src/state/treeStore.ts, src/state/treeStore.test.ts, src/state/startApp.ts, src/state/startApp.test.ts, src/test/fakeIpc.ts | 依存: T47b, T47d)
   - 対応: FR-048・FR-052〜055 の画面の操作、FR-061(タイトルの文字列)、設計書 §6.1、M3 の残りの問題「切り替えたあとに届いた前のプロジェクトの応答で、衝突の確認が開きうる」(タイルのクリックでプロジェクトの切替が増えるため M4 で扱う)
   - 置くもの: `actions` に `setDisplayMode`・`focusTile`(フォーカス中なら呼ばない)・`nextTilePage`・`previousTilePage`・`toggleTileMaximize`。セレクタ `tileView`(表示中のページのタイル=ID・「プロジェクト名: タブ名」・色・フォーカス中か・アテンション・状態、グリッド、ページの文字列 `1/2`、前後に進めるか、前後のページのアテンション)。ツリー: 応答が届いたときに、そのプロジェクトがもう表示中でなければ、確認や知らせを開かずに捨てる(読み込み済みの中身の更新は続ける)
   - 並行: 不可(`src/state/` をまとめて触る)

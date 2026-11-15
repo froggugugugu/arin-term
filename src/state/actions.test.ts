@@ -4,7 +4,7 @@ import { createIpc } from "../ipc/client";
 import type { DirListing } from "../ipc/generated/DirListing";
 import type { FileOpOutcome } from "../ipc/generated/FileOpOutcome";
 import type { RunningTerminal } from "../ipc/generated/RunningTerminal";
-import { createFakeIpc, type FakeHandlers, sampleSnapshot } from "../test/fakeIpc";
+import { createFakeIpc, deferred, type FakeHandlers, sampleSnapshot, sampleTerminal } from "../test/fakeIpc";
 import { createActions } from "./actions";
 import { createAppStore } from "./appStore";
 import { activeTreeModel, activeTreeRows } from "./selectors";
@@ -23,7 +23,7 @@ function setup(handlers: Partial<FakeHandlers> = {}, fs: Map<string, DirListing>
   const errors: string[] = [];
   const reportError = (m: string) => errors.push(m);
   const treeController = createTreeController({ ipc, tree, app, ui, reportError });
-  const actions = createActions({ ipc, ui, tree, treeController, reportError });
+  const actions = createActions({ ipc, ui, app, tree, treeController, reportError });
   return { fake, ui, app, tree, errors, actions, fs };
 }
 
@@ -75,6 +75,107 @@ describe("actions(コマンドの包み)", () => {
     expect(errors).toEqual([
       "プロジェクトを選べなかった: 見つからない",
       "新しいターミナルを開けなかった: プロジェクトが無い",
+    ]);
+  });
+});
+
+describe("actions(表示の操作。T47e)", () => {
+  /** a1・a2(a1 にフォーカス)のタイル表示の写しを入れる。 */
+  function displaySetup(handlers: Partial<FakeHandlers> = {}) {
+    const t = setup(handlers);
+    t.app.getState().replaceSnapshot(
+      sampleSnapshot({
+        terminals: [sampleTerminal("a1", { kind: "running" }), sampleTerminal("a2", { kind: "running" })],
+        display: {
+          mode: "tiles",
+          maximized: false,
+          page: 0,
+          pageCount: 1,
+          grid: { cols: 2, rows: 1 },
+          tileIds: ["a1", "a2"],
+          focusedTerminalId: "a1",
+          attentionPages: [],
+        },
+      }),
+    );
+    return t;
+  }
+
+  it("表示モードの切替でコマンドを呼ぶ", async () => {
+    const { fake, errors, actions } = displaySetup();
+
+    await actions.setDisplayMode("tabs");
+    await actions.setDisplayMode("tiles");
+
+    expect(fake.calls).toEqual([
+      { command: "set_display_mode", args: { mode: "tabs" } },
+      { command: "set_display_mode", args: { mode: "tiles" } },
+    ]);
+    expect(errors).toEqual([]);
+  });
+
+  it("フォーカス中のタイルをクリックしてもコマンドを呼ばない", async () => {
+    const { fake, actions } = displaySetup();
+
+    await actions.focusTile("a1");
+
+    expect(fake.calls).toEqual([]);
+  });
+
+  it("別のタイルへのフォーカスでコマンドを呼ぶ", async () => {
+    const { fake, actions } = displaySetup();
+
+    await actions.focusTile("a2");
+
+    expect(fake.calls).toEqual([{ command: "focus_terminal", args: { terminalId: "a2" } }]);
+  });
+
+  it("写しがまだ無ければフォーカスのコマンドを呼ぶ", async () => {
+    const { fake, actions } = setup();
+
+    await actions.focusTile("a2");
+
+    expect(fake.calls).toEqual([{ command: "focus_terminal", args: { terminalId: "a2" } }]);
+  });
+
+  it("ページ送りと拡大のコマンドを呼ぶ", async () => {
+    const { fake, actions } = displaySetup();
+
+    await actions.nextTilePage();
+    await actions.previousTilePage();
+    await actions.toggleTileMaximize();
+
+    expect(fake.calls).toEqual([
+      { command: "next_tile_page", args: undefined },
+      { command: "previous_tile_page", args: undefined },
+      { command: "toggle_tile_maximize", args: undefined },
+    ]);
+  });
+
+  it("表示の操作の失敗は報告し_Promise_は失敗しない", async () => {
+    const fail = () => {
+      throw "写しが無い";
+    };
+    const { errors, actions } = displaySetup({
+      set_display_mode: fail,
+      focus_terminal: fail,
+      next_tile_page: fail,
+      previous_tile_page: fail,
+      toggle_tile_maximize: fail,
+    });
+
+    await expect(actions.setDisplayMode("tabs")).resolves.toBeUndefined();
+    await expect(actions.focusTile("a2")).resolves.toBeUndefined();
+    await expect(actions.nextTilePage()).resolves.toBeUndefined();
+    await expect(actions.previousTilePage()).resolves.toBeUndefined();
+    await expect(actions.toggleTileMaximize()).resolves.toBeUndefined();
+
+    expect(errors).toEqual([
+      "表示モードを切り替えられなかった: 写しが無い",
+      "タイルにフォーカスできなかった: 写しが無い",
+      "次のページに送れなかった: 写しが無い",
+      "前のページに戻せなかった: 写しが無い",
+      "タイルを拡大・元に戻せなかった: 写しが無い",
     ]);
   });
 });
@@ -517,5 +618,96 @@ describe("actions(ファイル操作の応答)", () => {
       "隠しファイルの表示を切り替えられなかった: 保存できない",
     ]);
     expect(t.lists()).toEqual([]);
+  });
+});
+
+describe("actions(切り替えたあとに届いた前のプロジェクトの応答。M3 の残り。T47e)", () => {
+  const card = (id: string) => ({
+    id,
+    name: id,
+    color: "blue" as const,
+    displayPath: `~/${id}`,
+    missing: false,
+    showHidden: false,
+    terminalIds: [],
+    activeTerminalId: null,
+  });
+  const select = (t: ReturnType<typeof setup>, selectedProjectId: string) =>
+    t.app.getState().replaceSnapshot(sampleSnapshot({ projects: [card("p1"), card("p2")], selectedProjectId }));
+
+  /** p1 を表示中にし、ファイル操作の応答を遅らせる。 */
+  async function switchSetup() {
+    const reply = deferred<FileOpOutcome>();
+    const t = setup(
+      {
+        paste_entries: () => reply.promise,
+        rename_entry: () => reply.promise,
+        move_entry: () => reply.promise,
+      },
+      new Map([
+        ["p1:", listed(dir("src"))],
+        ["p2:", listed(file("b.md"))],
+      ]),
+    );
+    select(t, "p1");
+    await settle();
+    return { ...t, reply };
+  }
+
+  it("プロジェクトを替えたあとに前のプロジェクトの衝突の応答が届いても確認を開かない", async () => {
+    const t = await switchSetup();
+
+    const pending = t.actions.pasteEntries("p1", "src");
+    select(t, "p2");
+    t.reply.resolve(conflict("a.ts"));
+    await pending;
+
+    expect(t.ui.getState().treeConflict).toBeNull();
+    expect(t.tree.getState().gate.holds.has("dialog")).toBe(false);
+    expect(t.errors).toEqual([]);
+  });
+
+  it("プロジェクトを替えたあとに届いた前のプロジェクトの失敗の応答では知らせを出さない", async () => {
+    const t = await switchSetup();
+
+    const pending = t.actions.renameEntry("p1", "src", "lib");
+    select(t, "p2");
+    t.reply.resolve({ kind: "failed", message: "書き込めません" });
+    await pending;
+
+    expect(t.ui.getState().treeNotice).toBeNull();
+  });
+
+  it("前のプロジェクトの衝突の確認で対処を選んだ応答がプロジェクトを替えたあとに届いても確認を開き直さない", async () => {
+    const t = await switchSetup();
+    t.ui.getState().openTreeConflict({ request: { op: "move", projectId: "p1", source: "a", destDir: "src" }, name: "a", total: 1 });
+
+    const pending = t.actions.resolveConflict("keepBoth");
+    select(t, "p2");
+    t.reply.resolve(conflict("a"));
+    await pending;
+
+    expect(t.ui.getState().treeConflict).toBeNull();
+  });
+
+  it("表示中でないプロジェクトへのドロップでは移動の確認を開かない", async () => {
+    const t = await switchSetup();
+    select(t, "p2");
+    await settle();
+
+    await t.actions.dropEntry("p1", "src", "", false);
+
+    expect(t.ui.getState().moveConfirmation).toBeNull();
+    expect(t.fake.calls.filter((c) => c.command !== "list_directory")).toEqual([]);
+  });
+
+  it("表示中のプロジェクトの応答なら今までどおり確認を開く", async () => {
+    const t = await switchSetup();
+
+    const pending = t.actions.pasteEntries("p1", "src");
+    t.reply.resolve(conflict("a.ts"));
+    await pending;
+
+    expect(t.ui.getState().treeConflict?.request).toEqual({ op: "paste", projectId: "p1", destDir: "src" });
   });
 });

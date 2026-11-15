@@ -42,7 +42,7 @@ export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartA
   // ツリーの部品(T43b)へは tree を props で渡す。
   const tree = createTreeStore();
   const treeController = createTreeController({ ipc, tree, app: store, ui, reportError: reporter.report });
-  const actions = createActions({ ipc, ui, tree, treeController, reportError: reporter.report });
+  const actions = createActions({ ipc, ui, app: store, tree, treeController, reportError: reporter.report });
   // 描画方式と全角幅の方式は起動時の指定で選ぶ(検証用。既定は DOM と unicode11。M4 で決めて外す。ADR-001)。
   // 指定を取ってからエンジンを作る。取れなければ既定で作り、報告する。WebGL を作れなかったときの報告も同じ口へ流す。
   const { engine, verifyGrid } = await createWithLaunchOptions(ipc, reporter.report, (options) => ({

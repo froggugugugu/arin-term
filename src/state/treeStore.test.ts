@@ -354,6 +354,22 @@ describe("treeStore(ツリーの読み込みと保留)", () => {
     expect(t.errors).toEqual(["フォルダの中身を読めなかった: 権限がありません"]);
   });
 
+  it("前のプロジェクトのツリーの知らせは_別のプロジェクトに替えると消える", async () => {
+    const t = setup();
+    t.fs.set("p1:", listed(dir("secret")));
+    t.show("p1");
+    await settle();
+    t.holdKeys.add("p1:secret");
+    t.controller.expand("secret");
+    t.held.get("p1:secret")?.[0]?.reject("権限がありません");
+    await settle();
+    expect(t.ui.getState().treeNotice).toMatchObject({ message: "フォルダを読めませんでした", projectId: "p1" });
+
+    t.show("p2");
+
+    expect(t.ui.getState().treeNotice).toBeNull();
+  });
+
   it("隠しファイル表示の切替で読み直すと_切替の前に求めた応答は捨てる", async () => {
     const t = setup();
     t.fs.set("p1:", listed(file("a.ts")));

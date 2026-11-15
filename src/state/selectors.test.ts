@@ -12,6 +12,7 @@ import {
   selectedProject,
   selectedTreeTarget,
   shownTerminal,
+  tileView,
   treeMenuContext,
   treeSelectionKind,
   visibleTerminalIds,
@@ -137,6 +138,168 @@ describe("見えるターミナルの並び(T47d。Rust の Workspace::visible_t
     const empty = sampleSnapshot({ display: { ...sampleSnapshot().display, mode: "tiles" } });
 
     expect(presentation(empty)).toEqual({ shown: [], background: [] });
+  });
+});
+
+describe("タイルの写しの読み取り(T47e)", () => {
+  // 10 枚(A: a1〜a5 は緑、B: b1〜b5 は青)。1 ページ目は 9 枚(3×3)、2 ページ目は b5 の 1 枚。a2 にフォーカス。
+  const aIds = ["a1", "a2", "a3", "a4", "a5"];
+  const bIds = ["b1", "b2", "b3", "b4", "b5"];
+  const ten = sampleSnapshot({
+    projects: [
+      { ...project("A", aIds, "a2"), name: "app", color: "green" },
+      { ...project("B", bIds, "b1"), name: "api" },
+    ],
+    selectedProjectId: "A",
+    terminals: [
+      ...aIds.map((id, i) => sampleTerminal(id, running, { projectId: "A", label: `ターミナル ${i + 1}` })),
+      ...bIds.map((id, i) => sampleTerminal(id, running, { projectId: "B", label: `ターミナル ${i + 1}` })),
+    ],
+    display: {
+      mode: "tiles",
+      maximized: false,
+      page: 0,
+      pageCount: 2,
+      grid: { cols: 3, rows: 3 },
+      tileIds: [...aIds, ...bIds.slice(0, 4)],
+      focusedTerminalId: "a2",
+      attentionPages: [],
+    },
+  });
+  const secondPage = {
+    ...ten,
+    display: { ...ten.display, page: 1, grid: { cols: 1, rows: 1 }, tileIds: ["b5"], focusedTerminalId: "b5" },
+  };
+
+  it("タイルの見出しはプロジェクト名とタブ名をつなぐ", () => {
+    const view = tileView(ten);
+
+    expect(view.tiles.map((t) => t.title).slice(0, 2)).toEqual(["app: ターミナル 1", "app: ターミナル 2"]);
+    expect(view.tiles[5]?.title).toBe("api: ターミナル 1");
+    // 持ち主の無いターミナル(検証画面)はタブ名だけ。
+    const orphan = sampleSnapshot({
+      terminals: [sampleTerminal("v1", running)],
+      display: { ...ten.display, pageCount: 1, grid: { cols: 1, rows: 1 }, tileIds: ["v1"], focusedTerminalId: null },
+    });
+    expect(tileView(orphan).tiles.map((t) => [t.title, t.projectId, t.color])).toEqual([["ターミナル 1", null, null]]);
+  });
+
+  it("タイルの色はそのプロジェクトの色", () => {
+    const view = tileView(ten);
+
+    expect(view.tiles.map((t) => t.color)).toEqual([...aIds.map(() => "green"), ...bIds.slice(0, 4).map(() => "blue")]);
+    expect(view.tiles.map((t) => t.projectId).slice(4, 6)).toEqual(["A", "B"]);
+  });
+
+  it("タイルは表示中のページの並びで_フォーカス中_状態_アテンションを持つ", () => {
+    const exited = { kind: "exited", code: 0, signal: null } as const;
+    const snapshot = {
+      ...ten,
+      terminals: ten.terminals.map((t) =>
+        t.id === "a3" ? { ...t, status: exited } : t.id === "b1" ? { ...t, attention: true } : t,
+      ),
+    };
+    const view = tileView(snapshot);
+
+    expect(view.tiles.map((t) => t.id)).toEqual([...aIds, ...bIds.slice(0, 4)]);
+    expect(view.tiles.filter((t) => t.focused).map((t) => t.id)).toEqual(["a2"]);
+    expect(view.tiles[2]?.status).toEqual(exited);
+    expect(view.tiles.filter((t) => t.attention).map((t) => t.id)).toEqual(["b1"]);
+    expect(view.grid).toEqual({ cols: 3, rows: 3 });
+    expect(view.focusedTile?.id).toBe("a2");
+  });
+
+  it("ページの文字列は_1/2", () => {
+    expect(tileView(ten).paging?.label).toBe("1/2");
+    expect(tileView(secondPage).paging?.label).toBe("2/2");
+    expect(tileView(secondPage).grid).toEqual({ cols: 1, rows: 1 });
+    expect(tileView(secondPage).tiles.map((t) => t.id)).toEqual(["b5"]);
+  });
+
+  it("最初のページでは前へ進めない", () => {
+    expect(tileView(ten).paging).toMatchObject({ canGoPrevious: false, canGoNext: true });
+    // 最後のページでは次へ進めない(循環しない。【仮定】3)。
+    expect(tileView(secondPage).paging).toMatchObject({ canGoPrevious: true, canGoNext: false });
+  });
+
+  it("前後のページのアテンションを返す", () => {
+    const withAttention = (page: typeof ten, attentionPages: number[]) => ({
+      ...page,
+      display: { ...page.display, attentionPages },
+    });
+
+    expect(tileView(ten).paging).toMatchObject({ previousAttention: false, nextAttention: false });
+    expect(tileView(withAttention(ten, [1])).paging).toMatchObject({ previousAttention: false, nextAttention: true });
+    expect(tileView(withAttention(secondPage, [0])).paging).toMatchObject({
+      previousAttention: true,
+      nextAttention: false,
+    });
+    // 表示中のページの印は前後のどちらにも数えない。
+    expect(tileView(withAttention(secondPage, [1])).paging).toMatchObject({
+      previousAttention: false,
+      nextAttention: false,
+    });
+  });
+
+  it("ページが_1_つならページ表示を出さない", () => {
+    const four = {
+      ...ten,
+      display: { ...ten.display, pageCount: 1, grid: { cols: 2, rows: 2 }, tileIds: ["a1", "a2", "a3", "a4"] },
+    };
+
+    expect(tileView(four).paging).toBeNull();
+    // タブ表示と拡大中もページ表示を出さない(タイルのグリッドを出していないため)。
+    expect(tileView({ ...ten, display: { ...ten.display, mode: "tabs" } }).paging).toBeNull();
+    expect(tileView({ ...ten, display: { ...ten.display, maximized: true } }).paging).toBeNull();
+  });
+
+  it("表示モードと拡大中と拡大したタイルを返す", () => {
+    const maximized = { ...ten, display: { ...ten.display, maximized: true } };
+
+    expect([tileView(ten).mode, tileView(ten).maximized]).toEqual(["tiles", false]);
+    expect([tileView(maximized).maximized, tileView(maximized).focusedTile?.title]).toEqual([true, "app: ターミナル 2"]);
+    expect(tileView({ ...ten, display: { ...ten.display, mode: "tabs" } }).mode).toBe("tabs");
+  });
+
+  it("写しが無い_0_枚のときは空のタイル表示", () => {
+    const view = tileView(null);
+
+    expect(view).toEqual({
+      mode: "tabs",
+      maximized: false,
+      grid: { cols: 0, rows: 0 },
+      tiles: [],
+      focusedTile: null,
+      paging: null,
+    });
+    expect(tileView(sampleSnapshot({ display: { ...sampleSnapshot().display, mode: "tiles" } })).tiles).toEqual([]);
+  });
+
+  it("写しのターミナルの一覧に無い_id_はタイルにしない", () => {
+    const snapshot = { ...ten, display: { ...ten.display, tileIds: ["a1", "gone"], focusedTerminalId: "gone" } };
+
+    expect(tileView(snapshot).tiles.map((t) => t.id)).toEqual(["a1"]);
+    expect(tileView(snapshot).focusedTile).toBeNull();
+  });
+
+  it("同じ写しには同じ結果を返し_中身が同じなら新しい写しでも同じ結果を返す", () => {
+    const view = tileView(ten);
+    expect(tileView(ten)).toBe(view);
+    // 表示に関わらない値だけが替わった写し(知らせなど)。
+    expect(tileView({ ...ten, notice: "保存できませんでした" })).toBe(view);
+  });
+
+  it("替わったタイルだけが新しくなる", () => {
+    const view = tileView(ten);
+    const next = tileView({
+      ...ten,
+      terminals: ten.terminals.map((t) => (t.id === "a1" ? { ...t, attention: true } : t)),
+    });
+
+    expect(next).not.toBe(view);
+    expect(next.tiles[0]).not.toBe(view.tiles[0]);
+    expect(next.tiles[1]).toBe(view.tiles[1]);
+    expect(next.grid).toBe(view.grid);
   });
 });
 

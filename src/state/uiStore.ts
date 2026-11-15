@@ -89,6 +89,11 @@ export interface MoveConfirmation {
 export interface TreeNotice {
   readonly id: number;
   readonly message: string;
+  /**
+   * 知らせの対象のプロジェクト(T47e)。表示中のツリーが別のプロジェクトに替わったら閉じる(resetTreeUi)。
+   * null はプロジェクトに結び付けない知らせ(替わっても閉じない)。
+   */
+  readonly projectId: ProjectId | null;
 }
 
 export interface UiState {
@@ -151,8 +156,8 @@ export interface UiState {
   closeMoveConfirmation: () => void;
   /** 出しているツリーの知らせ。無ければ null。 */
   readonly treeNotice: TreeNotice | null;
-  /** ツリーの知らせを出す。出ていれば置き換える。 */
-  showTreeNotice: (message: string) => void;
+  /** ツリーの知らせを出す。出ていれば置き換える。projectId はその知らせの対象(省略は null)。 */
+  showTreeNotice: (message: string, projectId?: ProjectId | null) => void;
   /** ツリーの知らせを閉じる。 */
   dismissTreeNotice: () => void;
   /** ツリーの項目をドラッグ中か(T43d が立てる。更新を保留する)。 */
@@ -169,7 +174,7 @@ export interface UiState {
   setShortcuts: (table: ShortcutTable) => void;
   /**
    * 表示中のツリーが替わった(別のプロジェクト、または無くなった)ときの片付け。projectId 以外のプロジェクトの
-   * メニュー・インライン編集・衝突の確認・移動の確認を閉じ、ドラッグ中とフォーカスの印を戻す(treeStore が呼ぶ)。
+   * メニュー・インライン編集・衝突の確認・移動の確認・ツリーの知らせを閉じ、ドラッグ中とフォーカスの印を戻す(treeStore が呼ぶ)。
    * 部品が外れても状態は残り、更新の保留が解けない・別のプロジェクトに確認が出る、を防ぐ。
    */
   resetTreeUi: (projectId: ProjectId | null) => void;
@@ -204,9 +209,9 @@ export function createUiStore(): UiStore {
     openMoveConfirmation: (confirmation) => set({ moveConfirmation: confirmation }),
     closeMoveConfirmation: () => set({ moveConfirmation: null }),
     treeNotice: null,
-    showTreeNotice: (message) => {
+    showTreeNotice: (message, projectId = null) => {
       noticeId += 1;
-      set({ treeNotice: { id: noticeId, message } });
+      set({ treeNotice: { id: noticeId, message, projectId } });
     },
     dismissTreeNotice: () => set({ treeNotice: null }),
     treeDragging: false,
@@ -223,6 +228,7 @@ export function createUiStore(): UiStore {
         if (other(s.inlineEdit?.projectId)) patch.inlineEdit = null;
         if (other(s.treeConflict?.request.projectId)) patch.treeConflict = null;
         if (other(s.moveConfirmation?.projectId)) patch.moveConfirmation = null;
+        if (other(s.treeNotice?.projectId ?? undefined)) patch.treeNotice = null;
         if (s.treeDragging) patch.treeDragging = false;
         if (s.treeFocused) patch.treeFocused = false;
         return Object.keys(patch).length === 0 ? s : patch;

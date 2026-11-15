@@ -10,7 +10,8 @@
 //   届いた時点で、破棄済み・そのプロジェクトがもう表示中でない・同じフォルダをあとで求め直した、のどれかなら何も変えない
 // - 中身の問い合わせの失敗(コマンドの Err)は reportError(診断)に 1 行で報告し、ツリーの知らせを出して、そのフォルダの
 //   読み込み中の印を外して閉じる(開いた印のまま空に見せない)
-// - 表示中のプロジェクトが替わったら、前のツリーの表示だけの状態(uiStore.resetTreeUi)を片付ける
+// - 表示中のプロジェクトが替わったら、前のツリーの表示だけの状態(uiStore.resetTreeUi。前のプロジェクトの知らせを含む)を片付ける
+//   (M4 ではタイルのクリックでも替わる。T47e)
 //
 // 部品(T43b〜T43d)は TreeStore を読み、開閉・選択は actions(./actions.ts)から呼ぶ(actions がここの TreeController を使う)。
 
@@ -189,7 +190,7 @@ export function createTreeController({ ipc, tree, app, ui, reportError }: TreeCo
         latest.delete(key);
         reportError(`フォルダの中身を読めなかった: ${describeError(cause)}`);
         // 開いた印のまま空に見せない(権限の無いフォルダなど)。知らせを出してフォルダを閉じる。
-        ui.getState().showTreeNotice(UNREADABLE_DIR_NOTICE);
+        ui.getState().showTreeNotice(UNREADABLE_DIR_NOTICE, projectId);
         updateActive(projectId, (model) => {
           if (!model.loading.has(dir)) return collapseDir(model, dir);
           const loading = new Set(model.loading);

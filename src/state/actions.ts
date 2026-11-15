@@ -9,9 +9,16 @@
 // - notFound: 「見つかりません」の知らせを出し、対象の親を読み直す(FR-036、AC-T24)
 // - conflict: 衝突の確認(uiStore.treeConflict)を開く。resolveConflict で対処を付けて呼び直し、cancelConflict では呼ばない
 // - invalidName・notAllowed・failed: 1 行の知らせを出す(文言に絶対パスを作らない。failed は Rust の文言をそのまま)
+// - 応答が届いた時点で、そのプロジェクトのツリーがもう表示中でなければ(タイルのクリックなどで替えた)、確認も知らせも
+//   開かずに捨てる(T47e。M3 の残り)。読み直しも表示中のツリーにしか効かないが、戻ったときに読み込み済みのフォルダを
+//   すべて読み直すので、中身は追いつく(treeStore.ts)。知らせはそのプロジェクトに結び付け、替えたら閉じる
+//
+// 表示の操作(M4。T47e): 表示モードの切替・タイルへのフォーカス・ページ送り・拡大は、どれも Rust のコマンドを呼ぶだけ
+// (応答は無く、結果は写しの display で届く)。フォーカス中のタイルへのフォーカスは呼ばない(写しを増やさない)。
 
 import type { ArinIpc } from "../ipc/client";
 import type { ConflictResolution } from "../ipc/generated/ConflictResolution";
+import type { DisplayMode } from "../ipc/generated/DisplayMode";
 import type { FileOpOutcome } from "../ipc/generated/FileOpOutcome";
 import type { InvalidNameReason } from "../ipc/generated/InvalidNameReason";
 import type { NewEntryKind } from "../ipc/generated/NewEntryKind";
@@ -23,6 +30,7 @@ import type { RelPath } from "../ipc/generated/RelPath";
 import type { TerminalId } from "../ipc/generated/TerminalId";
 import { describeError } from "../logic/describeError";
 import { nameOf, parentPath } from "../logic/tree/treePath";
+import type { AppStore } from "./appStore";
 import { selectionWithin, type TreeController, type TreeStore } from "./treeStore";
 import type { RetryableFileOp, UiStore } from "./uiStore";
 
@@ -40,6 +48,11 @@ export type ActionsBackend = Pick<
   | "selectTerminal"
   | "setPaneSizes"
   | "setSidebarCollapsed"
+  | "setDisplayMode"
+  | "focusTerminal"
+  | "nextTilePage"
+  | "previousTilePage"
+  | "toggleTileMaximize"
   | "confirmQuit"
   | "setShowHidden"
   | "createEntry"
@@ -59,7 +72,9 @@ export type ActionsBackend = Pick<
 export interface ActionsDeps {
   ipc: ActionsBackend;
   ui: UiStore;
-  /** ツリーの状態(ゴミ箱に入れた項目の選択を外すのに読む)。 */
+  /** 写し(フォーカス中のタイルを読む。T47e)。 */
+  app: AppStore;
+  /** ツリーの状態(ゴミ箱に入れた項目の選択を外す・応答のプロジェクトが表示中かを確かめるのに読む)。 */
   tree: TreeStore;
   /** ツリーの開閉・選択・読み直し。 */
   treeController: TreeController;
@@ -99,6 +114,21 @@ export interface Actions {
   confirmQuit(): Promise<void>;
   /** 開いている終了の確認で「取り消し」を選んだ。確認を閉じるだけ(Rust には何も送らない)。 */
   cancelQuit(): void;
+
+  // ── 表示(M4。T47e)。結果は写しの display で届く ──
+  /** 表示モードをタブ表示・タイル表示にする(FR-048。表示モードの切替のボタン)。 */
+  setDisplayMode(mode: DisplayMode): Promise<void>;
+  /**
+   * タイルをクリックした: そのターミナルにフォーカスする(FR-053。そのプロジェクトが選ばれ、そのタブが表示中になる)。
+   * もうフォーカス中(写しの display.focusedTerminalId)なら何も呼ばない。
+   */
+  focusTile(id: TerminalId): Promise<void>;
+  /** 次のページへ(FR-052。端では Rust が何もしない)。 */
+  nextTilePage(): Promise<void>;
+  /** 前のページへ(FR-052)。 */
+  previousTilePage(): Promise<void>;
+  /** フォーカス中のタイルを拡大する・元に戻す(FR-054。タイトルバーのダブルクリック、元に戻すボタン)。 */
+  toggleTileMaximize(): Promise<void>;
 
   // ── ツリー(M3)。開閉・選択は表示中のプロジェクトのツリーに効く ──
   /** フォルダを開く(未読込なら中身を求める。FR-013)。 */
@@ -181,7 +211,10 @@ export function notFoundMessage(path: RelPath): string {
 /** 親のフォルダ(ルートの親はルートとして扱う)。 */
 const parentOf = (path: RelPath): RelPath => parentPath(path) ?? "";
 
-export function createActions({ ipc, ui, tree, treeController, reportError }: ActionsDeps): Actions {
+export function createActions({ ipc, ui, app, tree, treeController, reportError }: ActionsDeps): Actions {
+  /** そのプロジェクトのツリーが表示中か(替えたあとに届いた応答で、確認や知らせを開かないため。T47e)。 */
+  const isShown = (projectId: ProjectId) => tree.getState().activeProjectId === projectId;
+
   /** コマンドを呼び、失敗は what を付けて報告する。 */
   const run = async (what: string, request: () => Promise<unknown>): Promise<void> => {
     try {
@@ -206,29 +239,33 @@ export function createActions({ ipc, ui, tree, treeController, reportError }: Ac
     outcome: FileOpOutcome,
     { target, reload, retry }: { target: RelPath; reload: readonly RelPath[]; retry?: RetryableFileOp },
   ) => {
+    // 読み直し・選択は表示中のツリーにしか効かない(treeController が確かめる)。確認と知らせはここで確かめる。
+    const notice = (message: string) => {
+      if (isShown(projectId)) ui.getState().showTreeNotice(message, projectId);
+    };
     switch (outcome.kind) {
       case "done":
         treeController.refresh(projectId, outcome.select === null ? reload : [...reload, parentOf(outcome.select)]);
         if (outcome.select !== null) treeController.reveal(projectId, outcome.select);
         return;
       case "notFound":
-        ui.getState().showTreeNotice(notFoundMessage(target));
+        notice(notFoundMessage(target));
         treeController.refresh(projectId, [parentOf(target)]);
         return;
       case "conflict":
-        if (retry !== undefined) {
+        if (retry === undefined) notice(`「${outcome.name}」と同じ名前の項目があります`);
+        else if (isShown(projectId)) {
           ui.getState().openTreeConflict({ request: retry, name: outcome.name, total: outcome.total });
         }
-        else ui.getState().showTreeNotice(`「${outcome.name}」と同じ名前の項目があります`);
         return;
       case "invalidName":
-        ui.getState().showTreeNotice(INVALID_NAME[outcome.reason]);
+        notice(INVALID_NAME[outcome.reason]);
         return;
       case "notAllowed":
-        ui.getState().showTreeNotice(NOT_ALLOWED[outcome.reason]);
+        notice(NOT_ALLOWED[outcome.reason]);
         return;
       case "failed":
-        ui.getState().showTreeNotice(outcome.message);
+        notice(outcome.message);
         return;
     }
   };
@@ -309,6 +346,15 @@ export function createActions({ ipc, ui, tree, treeController, reportError }: Ac
     },
     cancelQuit: () => ui.getState().closeQuitConfirmation(),
 
+    setDisplayMode: (mode) => run("表示モードを切り替えられなかった", () => ipc.setDisplayMode(mode)),
+    focusTile: async (id) => {
+      if (app.getState().snapshot?.display.focusedTerminalId === id) return;
+      await run("タイルにフォーカスできなかった", () => ipc.focusTerminal(id));
+    },
+    nextTilePage: () => run("次のページに送れなかった", () => ipc.nextTilePage()),
+    previousTilePage: () => run("前のページに戻せなかった", () => ipc.previousTilePage()),
+    toggleTileMaximize: () => run("タイルを拡大・元に戻せなかった", () => ipc.toggleTileMaximize()),
+
     expandDir: (path) => treeController.expand(path),
     collapseDir: (path) => treeController.collapse(path),
     toggleDir: (path) => treeController.toggle(path),
@@ -336,7 +382,8 @@ export function createActions({ ipc, ui, tree, treeController, reportError }: Ac
         await runRetryable({ op: "copy", projectId, source, destDir });
         return;
       }
-      ui.getState().openMoveConfirmation({ projectId, source, destDir });
+      // 表示中でないプロジェクトの確認は開かない(開いても resetTreeUi が閉じる対象。T47e)。
+      if (isShown(projectId)) ui.getState().openMoveConfirmation({ projectId, source, destDir });
     },
     confirmMove: async () => {
       const pending = ui.getState().moveConfirmation;

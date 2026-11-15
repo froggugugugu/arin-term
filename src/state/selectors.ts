@@ -2,10 +2,14 @@
 // 部品(T34c・T34d)はストアから写しを読み、ここの関数で必要な値にする。
 
 import type { AppSnapshot } from "../ipc/generated/AppSnapshot";
+import type { DisplayMode } from "../ipc/generated/DisplayMode";
 import type { ProjectCardSnapshot } from "../ipc/generated/ProjectCardSnapshot";
+import type { ProjectColor } from "../ipc/generated/ProjectColor";
 import type { ProjectId } from "../ipc/generated/ProjectId";
 import type { TerminalId } from "../ipc/generated/TerminalId";
+import type { TerminalStatus } from "../ipc/generated/TerminalStatus";
 import type { TerminalTabSnapshot } from "../ipc/generated/TerminalTabSnapshot";
+import type { TileGrid } from "../ipc/generated/TileGrid";
 import type { TreeSelectionKind } from "../logic/keys/clipboard";
 import type { ShortcutTable } from "../logic/keys/shortcutTable";
 import type { TreeMenuContext, TreeMenuTarget } from "../logic/menu/treeMenu";
@@ -68,6 +72,168 @@ export function presentation(snapshot: AppSnapshot | null): Presentation {
   const visible = new Set(shown);
   const background = (snapshot?.terminals ?? []).map((t) => t.id).filter((id) => !visible.has(id));
   return { shown, background };
+}
+
+// ── タイル(M4。T47e)。写しの display をタイルの部品(T47f・T47g)がそのまま描ける形にする ──
+
+/** タイル 1 枚(表示中のページのもの)。 */
+export interface TileItem {
+  readonly id: TerminalId;
+  /** タイトルバーの文字列「プロジェクト名: タブ名」(FR-061)。持ち主の無いターミナルはタブ名だけ。 */
+  readonly title: string;
+  readonly projectId: ProjectId | null;
+  /** プロジェクト色(FR-060。色の印)。持ち主の無いターミナルは null。 */
+  readonly color: ProjectColor | null;
+  readonly status: TerminalStatus;
+  /** アテンションの印(FR-055)。 */
+  readonly attention: boolean;
+  /** フォーカス中のタイルか(=選択中のプロジェクトの表示中のタブ)。 */
+  readonly focused: boolean;
+}
+
+/** ページ表示(`1/2` と前後のボタン)。ページが 2 つ以上のタイル表示(拡大中でない)だけで出す(【仮定】3)。 */
+export interface TilePaging {
+  /** `1/2` の形(ページは 1 から数える)。 */
+  readonly label: string;
+  /** 前・次のページへ進めるか(端では進めない。循環しない)。 */
+  readonly canGoPrevious: boolean;
+  readonly canGoNext: boolean;
+  /** 前側・次側のページにアテンションの印のあるタイルがあるか(FR-055 の 2 つ目)。 */
+  readonly previousAttention: boolean;
+  readonly nextAttention: boolean;
+}
+
+/** 右ペインの表示(タイルの部品が読む形)。グリッドとページは Rust が計算したものをそのまま使う。 */
+export interface TileView {
+  readonly mode: DisplayMode;
+  readonly maximized: boolean;
+  /** 表示中のページのグリッド(列×行)。 */
+  readonly grid: TileGrid;
+  /** 表示中のページのタイル(並びの順)。写しのターミナルの一覧に無い ID は入れない。 */
+  readonly tiles: readonly TileItem[];
+  /** フォーカス中のタイル(拡大中のタイトル帯に使う)。無ければ null。 */
+  readonly focusedTile: TileItem | null;
+  /** ページ表示。出さないときは null。 */
+  readonly paging: TilePaging | null;
+}
+
+const EMPTY_TILE_VIEW: TileView = {
+  mode: "tabs",
+  maximized: false,
+  grid: { cols: 0, rows: 0 },
+  tiles: [],
+  focusedTile: null,
+  paging: null,
+};
+
+const tileViewCache = new WeakMap<AppSnapshot, TileView>();
+/** 直前に返した結果。中身が同じ部分は前の参照を使い回す(写しが届くたびにタイルを描き直さないため)。 */
+let lastTileView: TileView = EMPTY_TILE_VIEW;
+
+function sameStatus(a: TerminalStatus, b: TerminalStatus): boolean {
+  return a === b || JSON.stringify(a) === JSON.stringify(b);
+}
+
+function sameTile(a: TileItem, b: TileItem): boolean {
+  return (
+    a.id === b.id &&
+    a.title === b.title &&
+    a.projectId === b.projectId &&
+    a.color === b.color &&
+    a.attention === b.attention &&
+    a.focused === b.focused &&
+    sameStatus(a.status, b.status)
+  );
+}
+
+function samePaging(a: TilePaging | null, b: TilePaging | null): boolean {
+  if (a === null || b === null) return a === b;
+  return (
+    a.label === b.label &&
+    a.canGoPrevious === b.canGoPrevious &&
+    a.canGoNext === b.canGoNext &&
+    a.previousAttention === b.previousAttention &&
+    a.nextAttention === b.nextAttention
+  );
+}
+
+function buildTileView(snapshot: AppSnapshot, previous: TileView): TileView {
+  const { display } = snapshot;
+  const projects = new Map(snapshot.projects.map((p) => [p.id, p]));
+  const terminals = new Map(snapshot.terminals.map((t) => [t.id, t]));
+  const reuse = new Map(previous.tiles.map((t) => [t.id, t]));
+  if (previous.focusedTile !== null) reuse.set(previous.focusedTile.id, previous.focusedTile);
+
+  const tileOf = (id: TerminalId): TileItem | null => {
+    const terminal = terminals.get(id);
+    if (terminal === undefined) return null;
+    const project = terminal.projectId === null ? undefined : projects.get(terminal.projectId);
+    const item: TileItem = {
+      id,
+      title: project === undefined ? terminal.label : `${project.name}: ${terminal.label}`,
+      projectId: terminal.projectId,
+      color: project?.color ?? null,
+      status: terminal.status,
+      attention: terminal.attention,
+      focused: id === display.focusedTerminalId,
+    };
+    const old = reuse.get(id);
+    return old !== undefined && sameTile(old, item) ? old : item;
+  };
+
+  const tiles = display.tileIds.flatMap((id) => tileOf(id) ?? []);
+  const focusedId = display.focusedTerminalId;
+  const focusedTile =
+    focusedId === null ? null : (tiles.find((t) => t.id === focusedId) ?? tileOf(focusedId));
+  const { page, pageCount, attentionPages } = display;
+  const paging: TilePaging | null =
+    display.mode === "tiles" && !display.maximized && pageCount >= 2
+      ? {
+          label: `${page + 1}/${pageCount}`,
+          canGoPrevious: page > 0,
+          canGoNext: page < pageCount - 1,
+          previousAttention: attentionPages.some((p) => p < page),
+          nextAttention: attentionPages.some((p) => p > page),
+        }
+      : null;
+  const grid =
+    previous.grid.cols === display.grid.cols && previous.grid.rows === display.grid.rows ? previous.grid : display.grid;
+
+  const next: TileView = {
+    mode: display.mode,
+    maximized: display.maximized,
+    grid,
+    tiles:
+      tiles.length === previous.tiles.length && tiles.every((t, i) => t === previous.tiles[i]) ? previous.tiles : tiles,
+    focusedTile,
+    paging: samePaging(previous.paging, paging) ? previous.paging : paging,
+  };
+  const unchanged =
+    next.mode === previous.mode &&
+    next.maximized === previous.maximized &&
+    next.grid === previous.grid &&
+    next.tiles === previous.tiles &&
+    next.focusedTile === previous.focusedTile &&
+    next.paging === previous.paging;
+  return unchanged ? previous : next;
+}
+
+/**
+ * 写しから右ペインの表示(タイル・グリッド・ページ表示・拡大中・表示モード)を取り出す(FR-048・FR-051〜055・FR-061)。
+ * 同じ写しには同じ結果を返す。写しが替わっても中身が同じなら前の結果(タイルは 1 枚ずつ)の参照を返す
+ * (zustand の購読で描き直しを増やさないため)。写しが無ければ空のタブ表示。
+ */
+export function tileView(snapshot: AppSnapshot | null): TileView {
+  if (snapshot === null) return EMPTY_TILE_VIEW;
+  const cached = tileViewCache.get(snapshot);
+  if (cached !== undefined) {
+    lastTileView = cached;
+    return cached;
+  }
+  const view = buildTileView(snapshot, lastTileView);
+  tileViewCache.set(snapshot, view);
+  lastTileView = view;
+  return view;
 }
 
 // ── ツリー(M3。T43a)。treeStore.ts の TreeState から読む。循環を避けるため、型は形だけ受け取る ──

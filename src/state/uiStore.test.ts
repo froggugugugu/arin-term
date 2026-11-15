@@ -188,6 +188,21 @@ describe("uiStore(ツリーの表示だけの状態。M3)", () => {
     expect([ui.getState().inlineEdit, ui.getState().moveConfirmation]).toEqual([null, null]);
   });
 
+  it("ツリーの片付けは_ほかのプロジェクトの知らせを閉じ_持ち主の無い知らせは残す", () => {
+    const ui = createUiStore();
+    ui.getState().showTreeNotice("「a.ts」が見つかりません", "p1");
+    expect(ui.getState().treeNotice).toMatchObject({ message: "「a.ts」が見つかりません", projectId: "p1" });
+
+    ui.getState().resetTreeUi("p1");
+    expect(ui.getState().treeNotice?.message).toBe("「a.ts」が見つかりません");
+    ui.getState().resetTreeUi("p2");
+    expect(ui.getState().treeNotice).toBeNull();
+
+    ui.getState().showTreeNotice("フォルダを読めませんでした");
+    ui.getState().resetTreeUi("p2");
+    expect(ui.getState().treeNotice).toMatchObject({ message: "フォルダを読めませんでした", projectId: null });
+  });
+
   it("ツリーの片付けで消すものが無ければ状態を変えない", () => {
     const ui = createUiStore();
     const before = ui.getState();
