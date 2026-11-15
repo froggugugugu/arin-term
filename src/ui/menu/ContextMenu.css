@@ -1,0 +1,64 @@
+/* 画面内のコンテキストメニュー。 */
+.context-menu {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: var(--space-1);
+  border-radius: var(--radius-m);
+  background: var(--color-surface);
+  color: var(--color-fg);
+  box-shadow: var(--shadow-popup);
+  font-size: var(--font-size-l);
+}
+
+.context-menu--submenu {
+  min-width: 140px;
+}
+
+.context-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 3px var(--space-2);
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.context-menu__item:focus {
+  outline: none;
+  background: var(--color-highlight);
+  color: var(--color-highlight-fg);
+}
+
+.context-menu__item:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.context-menu__label {
+  flex: 1;
+}
+
+.context-menu__check {
+  width: 1em;
+  text-align: center;
+}
+
+/* 下の階層がある項目の印(文字にしない。読み上げは aria-haspopup が伝える)。 */
+.context-menu__item--submenu::after {
+  content: "▸";
+  font-size: var(--font-size-s);
+}
+
+.context-menu__separator {
+  height: 1px;
+  margin: var(--space-1) var(--space-2);
+  background: var(--color-border);
+}

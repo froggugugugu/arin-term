@@ -52,6 +52,13 @@ export interface UiState {
   openCardMenu: (projectId: ProjectId, position: { readonly x: number; readonly y: number }) => void;
   /** カードのメニューを閉じる。 */
   closeCardMenu: () => void;
+  /**
+   * 画面で閉じた知らせ(写しの `notice`)の文。無ければ null。Rust に「閉じた」を伝えるコマンドは無いので、
+   * 閉じたことは画面だけが覚え、同じ文の知らせを出さない(知らせは保存されないので、次の起動では出ない)。
+   */
+  readonly dismissedNotice: string | null;
+  /** 知らせを閉じる。 */
+  dismissNotice: (notice: string) => void;
 }
 
 export type UiStore = StoreApi<UiState>;
@@ -67,5 +74,7 @@ export function createUiStore(): UiStore {
     closeRemoveConfirmation: () => set({ removeConfirmation: null }),
     openCardMenu: (projectId, { x, y }) => set({ cardMenu: { projectId, x, y } }),
     closeCardMenu: () => set({ cardMenu: null }),
+    dismissedNotice: null,
+    dismissNotice: (notice) => set({ dismissedNotice: notice }),
   }));
 }

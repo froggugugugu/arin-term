@@ -66,6 +66,15 @@ describe("uiStore(表示だけの状態)", () => {
     expect(ui.getState().cardMenu).toBeNull();
   });
 
+  it("閉じた知らせの文を覚える(最初は無い)", () => {
+    const ui = createUiStore();
+    expect(ui.getState().dismissedNotice).toBeNull();
+
+    ui.getState().dismissNotice("状態ファイルを退避しました");
+
+    expect(ui.getState().dismissedNotice).toBe("状態ファイルを退避しました");
+  });
+
   it("生成関数ごとに別のストアになる", () => {
     const a = createUiStore();
     const b = createUiStore();

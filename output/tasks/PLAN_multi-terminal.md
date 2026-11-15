@@ -534,7 +534,7 @@ T29〜T35 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 不可
   - 先に書くテスト(Vitest。偽のエンジンと偽の通信): `写しから消えたターミナルは破棄され購読が外れる`、`プロジェクトを切り替えてもサーフェスを破棄しない`、`隠したまま作ったサーフェスは表示中の寸法で接続する`、`表示中が無ければエンジンの既定の寸法で接続する`、`onBinary_のバイト列が順に送られる`、`すべてを選択はフォーカスのあるターミナルを全選択する`、`寸法を反映していない応答なら寸法を送り直す`、`バイト列にできない中身は報告する`、`終了の確認の要求で確認が開く`、`actions_は正しいコマンドを呼ぶ`
   - 検証: `npm test && npm run lint && npm run build && npm run e2e`(既存の画面の自動テストが通る)
-- [ ] T34c — 画面の枠: ペインの分割、カード一覧、ツリーのヘッダ、色、確認ダイアログ、知らせ(変更ファイル: src/ui/shell/, src/ui/projects/, src/ui/tree/TreeHeader.tsx, src/ui/dialogs/, src/ui/menu/, src/ui/design/, src/ui/terminals/VerificationGrid.tsx, e2e/fixtures/tauriMock.ts, e2e/projects.spec.ts | 依存: T34b)
+- [x] T34c — 画面の枠: ペインの分割、カード一覧、ツリーのヘッダ、色、確認ダイアログ、知らせ(変更ファイル: src/ui/shell/, src/ui/projects/, src/ui/tree/TreeHeader.tsx, src/ui/dialogs/, src/ui/menu/, src/ui/design/, src/ui/terminals/VerificationGrid.tsx, e2e/fixtures/tauriMock.ts, e2e/projects.spec.ts | 依存: T34b)
   - 対応: FR-001(「フォルダを追加」)、FR-002(カードとツリーのヘッダの切替。ツリーの中身は M3)、FR-003(一覧から削除と確認)、FR-007(「見つからない」の表示、再リンク、ツールチップ)、FR-008、FR-009、FR-059(色の変更)、FR-060(カードのタイトル部、ツリーのヘッダ)、FR-064、設計書 §8「プロジェクト 0 件」「見つからない」、§9.2、【仮定】10・15・16
   - 色の値は `src/ui/design/palette.ts` にライト・ダークの 2 値で持つ(設計書 §9.3。M6 の T56 で両モードを人間が確認する)。退避の知らせは 1 行で出し、閉じられる
   - 検証画面のときは M1 と同じく検証画面だけを出す

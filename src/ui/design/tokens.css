@@ -1,0 +1,73 @@
+/*
+ * 画面の色・余白・文字サイズのトークン(設計書 §9.2・§9.3)。部品の CSS はここのカスタムプロパティを使い、値を直接書かない。
+ * OS のライト・ダークに追従する(prefers-color-scheme。アプリ独自の切替は持たない)。
+ * プロジェクト色の値は palette.ts が持ち、部品が要素に CSS の変数として付ける(.project-tinted が外観で使い分ける)。
+ */
+:root {
+  color-scheme: light dark;
+
+  --color-bg: #ffffff;
+  --color-pane: #f5f5f7;
+  --color-fg: #1d1d1f;
+  --color-muted: #6e6e73;
+  --color-border: #d2d2d7;
+  --color-focus: #0a64d8;
+  --color-surface: #ffffff;
+  --color-highlight: #0a64d8;
+  --color-highlight-fg: #ffffff;
+  --color-danger: #c4001a;
+  --color-danger-fg: #ffffff;
+  --color-backdrop: rgba(0, 0, 0, 0.3);
+  --color-notice: #fdf3d0;
+  --color-notice-fg: #3d2e00;
+  --shadow-popup: 0 6px 24px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.08);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --radius-s: 4px;
+  --radius-m: 6px;
+  --font-size-s: 11px;
+  --font-size-m: 12px;
+  --font-size-l: 13px;
+  --font-size-xl: 15px;
+  --font-family: system-ui, -apple-system, sans-serif;
+
+  --divider-hit: 6px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #1e1e1e;
+    --color-pane: #262628;
+    --color-fg: #f5f5f7;
+    --color-muted: #a1a1a6;
+    --color-border: #3a3a3c;
+    --color-focus: #4c9bff;
+    --color-surface: #2c2c2e;
+    --color-highlight: #2f6fde;
+    --color-highlight-fg: #ffffff;
+    --color-danger: #ff6961;
+    --color-danger-fg: #1d1d1f;
+    --color-backdrop: rgba(0, 0, 0, 0.5);
+    --color-notice: #4a3b0c;
+    --color-notice-fg: #fbefc4;
+    --shadow-popup: 0 6px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* プロジェクト色で薄く着色する箇所(カードのタイトル部、ツリーのヘッダ。タブは T34d)。値は palette.ts の CSS の変数。 */
+.project-tinted {
+  --project-accent: var(--project-accent-light);
+  background-color: var(--project-tint-light);
+  color: var(--project-ink-light);
+}
+
+@media (prefers-color-scheme: dark) {
+  .project-tinted {
+    --project-accent: var(--project-accent-dark);
+    background-color: var(--project-tint-dark);
+    color: var(--project-ink-dark);
+  }
+}

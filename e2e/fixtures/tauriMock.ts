@@ -29,6 +29,8 @@ import type { Page } from "@playwright/test";
 
 import type { CommandMap, CommandName, EventMap, EventName } from "../../src/ipc/client";
 import type { AppSnapshot } from "../../src/ipc/generated/AppSnapshot";
+import type { ProjectCardSnapshot } from "../../src/ipc/generated/ProjectCardSnapshot";
+import type { ProjectColor } from "../../src/ipc/generated/ProjectColor";
 import type { TerminalStatus } from "../../src/ipc/generated/TerminalStatus";
 import type { TerminalTabSnapshot } from "../../src/ipc/generated/TerminalTabSnapshot";
 
@@ -94,6 +96,43 @@ export function projectSnapshot(terminals: readonly TerminalTabSnapshot[], overr
     terminals: terminals.map((t) => ({ ...t, projectId: SAMPLE_PROJECT_ID })),
     ...overrides,
   });
+}
+
+/** テスト用のプロジェクト 1 件(projectsSnapshot に渡す)。`tabs` はタブの表示名で、ターミナルの ID は `<id>-t<番号>`。 */
+export interface SampleProject {
+  id: string;
+  name: string;
+  color?: ProjectColor;
+  displayPath?: string;
+  missing?: boolean;
+  /** タブの表示名(タブの順)。既定は見つからないなら 0 枚、それ以外は「ターミナル 1」の 1 枚。 */
+  tabs?: readonly string[];
+}
+
+/**
+ * 複数のプロジェクトを載せた写し(T34c)。既定では最初のプロジェクトを選択中にし、各プロジェクトの最初のタブを表示中にする。
+ * ターミナルは動作中で、写しの順(プロジェクトの順、その中はタブの順)に並ぶ。
+ */
+export function projectsSnapshot(projects: readonly SampleProject[], overrides: Partial<AppSnapshot> = {}): AppSnapshot {
+  const cards: ProjectCardSnapshot[] = [];
+  const terminals: TerminalTabSnapshot[] = [];
+  for (const project of projects) {
+    const tabs = project.tabs ?? (project.missing === true ? [] : ["ターミナル 1"]);
+    const ids = tabs.map((_, index) => `${project.id}-t${index + 1}`);
+    cards.push({
+      id: project.id,
+      name: project.name,
+      color: project.color ?? "blue",
+      displayPath: project.displayPath ?? `~/dev/${project.name}`,
+      missing: project.missing ?? false,
+      terminalIds: ids,
+      activeTerminalId: ids[0] ?? null,
+    });
+    tabs.forEach((label, index) => {
+      terminals.push({ id: ids[index] ?? "", projectId: project.id, label, status: { kind: "running" } });
+    });
+  }
+  return sampleSnapshot({ projects: cards, selectedProjectId: projects[0]?.id ?? null, terminals, ...overrides });
 }
 
 const DEFAULT_REPLIES: TauriMockConfig = {

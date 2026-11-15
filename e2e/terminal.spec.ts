@@ -181,11 +181,12 @@ test("取り込みが済んだ量の合計が、流したバイト数と同じ�
   const { channelId } = await openTerminal(page);
   const utf8 = Array.from(new TextEncoder().encode("日本"));
   // "日" の 3 バイトを 2 回に分けて送る(PTY の読み取りは文字の切れ目を知らない)。
-  const chunks: OutputChunk[] = ["abc ", utf8.slice(0, 2), utf8.slice(2), "\x1b[32mgreen\x1b[0m\r\n", "x".repeat(5_000)];
+  // 最後の長い行は画面に収まる長さにする(左ペインのぶん幅が狭いと折り返しが増え、先頭の行が画面の外へ流れるため。T34c)。
+  const chunks: OutputChunk[] = ["abc ", utf8.slice(0, 2), utf8.slice(2), "\x1b[32mgreen\x1b[0m\r\n", "x".repeat(2_000)];
 
   const sent = await sendAndWait(page, channelId, chunks);
 
-  expect(sent).toBe(4 + 6 + "\x1b[32mgreen\x1b[0m\r\n".length + 5_000);
+  expect(sent).toBe(4 + 6 + "\x1b[32mgreen\x1b[0m\r\n".length + 2_000);
   const acks = await readCallArgs(page, "ack_terminal_output");
   expect(acks.every((ack) => ack.terminalId === TERMINAL_ID && ack.bytes > 0)).toBe(true);
   await expect(screenRows(page).nth(0)).toHaveText("abc 日本green");

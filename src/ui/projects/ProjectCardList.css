@@ -1,0 +1,100 @@
+/* 左ペイン上段: カードの一覧と「フォルダを追加」。一覧だけがスクロールする(FR-008)。 */
+.card-list-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.card-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  overflow-y: auto;
+  list-style: none;
+}
+
+.card-list__item + .card-list__item {
+  margin-top: var(--space-1);
+}
+
+.project-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px var(--space-2) 4px 10px;
+  border: 2px solid transparent;
+  border-radius: var(--radius-m);
+  /* 左の帯はプロジェクト色の目印(飾り。名前と同じ情報を持つ)。 */
+  box-shadow: inset 4px 0 0 var(--project-accent);
+  font: inherit;
+  font-size: var(--font-size-l);
+  text-align: left;
+  cursor: default;
+}
+
+.project-card:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+/* 選択中: 色だけでなく、枠と太字でも分かる。 */
+.project-card--selected {
+  border-color: currentColor;
+  font-weight: 600;
+}
+
+.project-card__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 見つからない: 名前を斜体にし、「見つかりません」の文字を出す。 */
+.project-card--missing .project-card__name {
+  font-style: italic;
+  opacity: 0.8;
+}
+
+.project-card__badge {
+  flex: none;
+  padding: 0 var(--space-1);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-s);
+  font-size: var(--font-size-s);
+  font-weight: 400;
+}
+
+.card-list-pane__footer {
+  flex: none;
+  padding: var(--space-1) var(--space-2) var(--space-2);
+}
+
+.add-project {
+  width: 100%;
+}
+
+.projects-empty {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-3);
+  overflow-y: auto;
+  color: var(--color-muted);
+  font-size: var(--font-size-m);
+}
+
+.projects-empty__title {
+  margin: 0 0 var(--space-1);
+  color: var(--color-fg);
+  font-weight: 600;
+}
+
+.projects-empty__hint {
+  margin: 0;
+}

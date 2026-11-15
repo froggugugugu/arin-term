@@ -1,4 +1,4 @@
-/* ウィンドウ全体の枠。色・余白のトークン(src/ui/design/)は M2 で入れる。 */
+/* ウィンドウ全体の枠。色・余白・文字サイズは src/ui/design/tokens.css のトークンを使う。 */
 html,
 body,
 #root {
@@ -6,18 +6,26 @@ body,
   margin: 0;
 }
 
+body {
+  overflow: hidden;
+}
+
 .app-shell {
   display: flex;
   flex-direction: column;
   height: 100%;
-  font-family: system-ui, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-family);
 }
 
 .app-shell__header {
   display: flex;
+  flex: none;
   align-items: baseline;
-  gap: 12px;
-  padding: 4px 12px;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .app-shell__header h1 {
@@ -27,12 +35,197 @@ body,
 
 .app-shell__header p {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-size-m);
+}
+
+.app-shell__sidebar-toggle {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--font-size-s);
+}
+
+.app-shell__sidebar-toggle:focus-visible,
+.button:focus-visible,
+.notice-bar__close:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
 }
 
 /* 描画方式の表示(検証用。M4 で外す。ADR-001)。 */
 .app-shell__renderer {
   opacity: 0.6;
+}
+
+/* ボタン(カード一覧の「フォルダを追加」、ダイアログ、見つからないときの案内)。 */
+.button {
+  padding: 3px var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-m);
+  background: var(--color-surface);
+  color: var(--color-fg);
+  font: inherit;
+  font-size: var(--font-size-l);
+}
+
+.button--primary {
+  border-color: var(--color-highlight);
+  background: var(--color-highlight);
+  color: var(--color-highlight-fg);
+}
+
+.button--danger {
+  border-color: var(--color-danger);
+  background: var(--color-danger);
+  color: var(--color-danger-fg);
+}
+
+/* 知らせ(1 行。長い文は省略し、全文はツールチップ)。 */
+.notice-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 2px var(--space-3);
+  background: var(--color-notice);
+  color: var(--color-notice-fg);
+  font-size: var(--font-size-m);
+}
+
+.notice-bar__text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notice-bar__close {
+  flex: none;
+  padding: 0 var(--space-2);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+/* ペインの分割。左ペインの幅とカード領域の高さは PaneSplit が表示値(computePaneLayout)を書き、残りは flex で埋める。 */
+.pane-split {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pane-sidebar {
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  box-sizing: border-box;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-pane);
+}
+
+.card-area {
+  flex: none;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tree-area {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-height: 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.tree-header {
+  flex: none;
+  margin: 0;
+  padding: 5px var(--space-3);
+  overflow: hidden;
+  font-size: var(--font-size-m);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-area__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.tree-missing {
+  padding: var(--space-3);
+  font-size: var(--font-size-m);
+}
+
+.tree-missing p {
+  margin: 0 0 var(--space-1);
+}
+
+.tree-missing__title {
+  font-weight: 600;
+}
+
+.tree-missing__path {
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+
+.tree-missing__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* 境界(当たり判定だけの細い帯。見た目の線はペインの枠線)。 */
+.divider {
+  position: absolute;
+  z-index: 10;
+  touch-action: none;
+}
+
+.divider--vertical {
+  top: 0;
+  bottom: 0;
+  width: var(--divider-hit);
+  margin-left: calc(var(--divider-hit) / -2);
+  cursor: col-resize;
+}
+
+.divider--horizontal {
+  right: 0;
+  left: 0;
+  height: var(--divider-hit);
+  margin-top: calc(var(--divider-hit) / -2);
+  cursor: row-resize;
+}
+
+.divider:hover,
+.divider:focus-visible {
+  outline: none;
+  background: var(--color-focus);
+  opacity: 0.5;
+}
+
+.pane-terminal {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
 
 .app-shell__terminal {
