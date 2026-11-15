@@ -15,6 +15,7 @@ export type ShortcutCommandId =
   | "terminal.next-tab"
   | "edit.select-all"
   | "app.quit"
+  | "app.open-settings"
   | "edit.copy"
   | "edit.cut"
   | "edit.paste"

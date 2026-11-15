@@ -8,6 +8,7 @@ use arin_core::shortcuts::overrides::{
     ShortcutSettingReason, apply_overrides, notice_line,
 };
 use arin_core::shortcuts::reserved::{RESERVED_KEYS, is_reserved};
+use arin_core::shortcuts::sample::sample_settings_toml;
 use arin_core::shortcuts::table::{ShortcutCommandId as C, ShortcutTable};
 
 fn chord(s: &str) -> KeyChord {
@@ -608,4 +609,36 @@ fn 問題が無ければ知らせは無い() {
     let (_, problems) = apply(&[text("terminal.new-tab", "Cmd+Shift+T")]);
     assert!(problems.is_empty());
     assert_eq!(notice_line(&problems), None);
+}
+
+// ---- 設定ファイルの見本(計画書 T64c。ADR-012 の 6、AC-K08 の規則の部分) ----
+
+/// 見本の `# "ID" = "キー"` の行のコメントを外した設定の行(書いた順)。
+fn uncommented_sample_rows(sample: &str) -> Vec<ShortcutOverride> {
+    sample
+        .lines()
+        .filter_map(|line| line.strip_prefix("# \""))
+        .filter_map(|rest| {
+            let (id, value) = rest.split_once("\" = \"")?;
+            let value = value.strip_suffix('"')?;
+            Some(text(id, &value.replace("\\\"", "\"").replace("\\\\", "\\")))
+        })
+        .collect()
+}
+
+#[test]
+fn 見本の行のコメントを外しても検査で問題が出ない() {
+    let defaults = ShortcutTable::default_table();
+    let rows = uncommented_sample_rows(&sample_settings_toml(&defaults));
+    assert!(!rows.is_empty(), "見本にコマンドの行が無い");
+
+    // 1 行ずつ外しても、全部まとめて外しても、問題は無く既定の表のまま。
+    for row in &rows {
+        let (table, problems) = apply_overrides(&defaults, std::slice::from_ref(row));
+        assert!(problems.is_empty(), "{} の行で問題: {problems:?}", row.id);
+        assert_eq!(table, defaults, "{} の行で表が変わった", row.id);
+    }
+    let (table, problems) = apply_overrides(&defaults, &rows);
+    assert!(problems.is_empty(), "{problems:?}");
+    assert_eq!(table, defaults);
 }

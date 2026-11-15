@@ -183,4 +183,18 @@ fn 既定のショートカットの表の_json_が最新である() {
         "生成物 {} が Rust の既定の表と合っていない。{hint}",
         path.display()
     );
+
+    // 計画書 T64c: 表は 23 行で、`app.open-settings` = `Cmd+,`(受け口はメニューの項目)を持つ。
+    // 書き出しと同じテストの中で読む(別のテストにすると、再生成のときに書き出しと並んで走り古い中身を読む)。
+    let rows: serde_json::Value = serde_json::from_str(&actual).expect("JSON でない");
+    let rows = rows.as_array().expect("配列でない");
+    assert_eq!(rows.len(), 23);
+    assert!(
+        rows.contains(&serde_json::json!({
+            "command": "app.open-settings",
+            "accelerator": "Cmd+,",
+            "receiver": "menu-item"
+        })),
+        "設定ファイルを開くの行が無い"
+    );
 }

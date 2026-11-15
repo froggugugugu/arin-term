@@ -30,6 +30,11 @@
     "receiver": "menu-item"
   },
   {
+    "command": "app.open-settings",
+    "accelerator": "Cmd+,",
+    "receiver": "menu-item"
+  },
+  {
     "command": "edit.copy",
     "accelerator": "Cmd+C",
     "receiver": "edit-item"

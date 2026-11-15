@@ -1,4 +1,4 @@
-//! コマンドの ID と既定のキーと受け口の表(計画書 M3 の前提 (e)、T38d、【仮定】21)。
+//! コマンドの ID と既定のキーと受け口の表(計画書 M3 の前提 (e)、T38d、【仮定】21。M4.5 の T64c で 23 行)。
 //!
 //! キーの文字列をコードのあちこちに直書きせず、この 1 つの表から引く。メニューバー(`src-tauri/src/menu.rs`。T42e)は
 //! 受け口が「メニューの項目」の行からアクセラレータを作り、画面(`src/logic/keys`。T41b)は表を受け取って振り分ける。
@@ -40,6 +40,9 @@ pub enum ShortcutCommandId {
     /// 終了。
     #[serde(rename = "app.quit")]
     AppQuit,
+    /// 設定ファイルを開く(M4.5。ADR-012 の 6。無ければ見本を作ってから開く)。
+    #[serde(rename = "app.open-settings")]
+    AppOpenSettings,
     /// コピー(ターミナルとツリーで共有)。
     #[serde(rename = "edit.copy")]
     EditCopy,
@@ -92,13 +95,14 @@ pub enum ShortcutCommandId {
 
 impl ShortcutCommandId {
     /// すべてのコマンドの ID(表の順)。
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 23] = [
         Self::TerminalNewTab,
         Self::TerminalCloseTab,
         Self::TerminalPreviousTab,
         Self::TerminalNextTab,
         Self::EditSelectAll,
         Self::AppQuit,
+        Self::AppOpenSettings,
         Self::EditCopy,
         Self::EditCut,
         Self::EditPaste,
@@ -127,6 +131,7 @@ impl ShortcutCommandId {
             Self::TerminalNextTab => "terminal.next-tab",
             Self::EditSelectAll => "edit.select-all",
             Self::AppQuit => "app.quit",
+            Self::AppOpenSettings => "app.open-settings",
             Self::EditCopy => "edit.copy",
             Self::EditCut => "edit.cut",
             Self::EditPaste => "edit.paste",
@@ -245,7 +250,8 @@ pub enum ShortcutTableProblem {
 pub struct ShortcutTable(Vec<ShortcutBinding>);
 
 impl ShortcutTable {
-    /// 既定の表(PRD §6.4 と M2 のメニューのキー。受け口は【仮定】21。表示の 4 行は M4 の【仮定】9・ADR-011 の 6)。
+    /// 既定の表(PRD §6.4 と M2 のメニューのキー。受け口は【仮定】21。表示の 4 行は M4 の【仮定】9・ADR-011 の 6。
+    /// 設定ファイルを開く ⌘, は M4.5 の ADR-012 の 6)。
     ///
     /// # Panics
     ///
@@ -255,13 +261,14 @@ impl ShortcutTable {
         use ShortcutCommandId as C;
         use ShortcutReceiver::{EditItem, MenuItem, Screen};
 
-        let rows: [(C, &str, ShortcutReceiver); 22] = [
+        let rows: [(C, &str, ShortcutReceiver); 23] = [
             (C::TerminalNewTab, "Cmd+T", MenuItem),
             (C::TerminalCloseTab, "Cmd+W", MenuItem),
             (C::TerminalPreviousTab, "Cmd+Shift+[", MenuItem),
             (C::TerminalNextTab, "Cmd+Shift+]", MenuItem),
             (C::EditSelectAll, "Cmd+A", MenuItem),
             (C::AppQuit, "Cmd+Q", MenuItem),
+            (C::AppOpenSettings, "Cmd+,", MenuItem),
             (C::EditCopy, "Cmd+C", EditItem),
             (C::EditCut, "Cmd+X", EditItem),
             (C::EditPaste, "Cmd+V", EditItem),

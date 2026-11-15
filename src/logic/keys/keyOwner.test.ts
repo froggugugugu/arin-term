@@ -134,6 +134,19 @@ describe("terminalKeyOwner(M3 の表)", () => {
     ).toBe("terminal");
   });
 
+  it("設定ファイルを開くキーはターミナルに渡さない", () => {
+    // ⌘,(計画 T64c。受け口がメニューの項目なので表から拾う)
+    expect(owner(chord(",", { metaKey: true }))).toBe("app");
+    expect(owner(chord(",", { metaKey: true, code: "Comma" }))).toBe("app");
+    // 修飾キーが違うものはターミナルに任せる
+    expect(owner(chord(","))).toBe("terminal");
+    expect(owner(chord(",", { ctrlKey: true }))).toBe("terminal");
+    expect(owner(chord(",", { metaKey: true, altKey: true, code: "Comma" }))).toBe("terminal");
+    // 表の行を外すとターミナルに任せる
+    const withoutSettings = DEFAULT_SHORTCUT_TABLE.filter((binding) => binding.command !== "app.open-settings");
+    expect(ownerFromTable(withoutSettings, chord(",", { metaKey: true }))).toBe("terminal");
+  });
+
   it("表が空ならすべてターミナルに任せる", () => {
     expect(ownerFromTable([], chord("c", { metaKey: true }))).toBe("terminal");
   });

@@ -4,10 +4,12 @@
 //! - `key`: キーの文字列の読み取り(T38d)
 //! - `overrides`: 設定ファイルの値を表に当てる規則と問題の一覧・知らせ(T64a。ADR-012 の 3)
 //! - `reserved`: 予約のキーの一覧(T64a。ADR-012 の 3 の #6)
+//! - `sample`: 設定ファイルの見本の文(T64c。ADR-012 の 6)
 //!
 //! 後のタスクがこのファイルを触らずに足せるよう、子モジュールを公開して中の名前で使う。
 
 pub mod key;
 pub mod overrides;
 pub mod reserved;
+pub mod sample;
 pub mod table;

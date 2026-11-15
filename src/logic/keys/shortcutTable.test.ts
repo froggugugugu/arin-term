@@ -158,7 +158,6 @@ describe("表の引き方", () => {
     ]);
     // 表の最後の 4 行(Rust の表と同じ順)
     expect(DEFAULT_SHORTCUT_TABLE.slice(-4)).toEqual(view);
-    expect(DEFAULT_SHORTCUT_TABLE).toHaveLength(22);
     // ツールチップに出すキーの表示(T47f が表から引く)
     expect(shortcutLabel(DEFAULT_SHORTCUT_TABLE, "view.toggle-display-mode")).toBe("⇧⌘G");
     expect(shortcutLabel(DEFAULT_SHORTCUT_TABLE, "view.previous-page")).toBe("⌥⌘←");
@@ -171,6 +170,22 @@ describe("表の引き方", () => {
     expect(
       matchesAccelerator(previous, chord("ArrowLeft", { metaKey: true, altKey: true, code: "ArrowLeft" })),
     ).toBe(true);
+  });
+
+  it("既定の表に_23_行がある", () => {
+    expect(DEFAULT_SHORTCUT_TABLE).toHaveLength(23);
+    // コマンドの id は 1 行に 1 つ
+    expect(new Set(DEFAULT_SHORTCUT_TABLE.map((binding) => binding.command)).size).toBe(23);
+    // 23 行目は設定ファイルを開く(⌘,。計画 T64c)。表の順では終了のすぐ後ろ
+    const index = DEFAULT_SHORTCUT_TABLE.findIndex((binding) => binding.command === "app.open-settings");
+    expect(DEFAULT_SHORTCUT_TABLE[index]).toEqual({
+      command: "app.open-settings",
+      accelerator: "Cmd+,",
+      receiver: "menu-item",
+    });
+    expect(DEFAULT_SHORTCUT_TABLE[index - 1]?.command).toBe("app.quit");
+    expect(shortcutLabel(DEFAULT_SHORTCUT_TABLE, "app.open-settings")).toBe("⌘,");
+    expect(parseAccelerator("Cmd+,")).toEqual({ meta: true, shift: false, alt: false, ctrl: false, key: "," });
   });
 
   it("見本の表はすべての行が読める", () => {

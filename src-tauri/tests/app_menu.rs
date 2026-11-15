@@ -274,7 +274,8 @@ fn 受け口がメニューの項目の行にはすべて文言がある() {
     let missing: Vec<&str> = table
         .by_receiver(ShortcutReceiver::MenuItem)
         .map(ShortcutBinding::command)
-        .filter(|&c| c != C::AppQuit && menu::label(c).is_none())
+        // 「設定ファイルを開く…」は表に行だけある(T64c)。文言とメニューの項目は T65d で足し、この除外を外す。
+        .filter(|&c| c != C::AppQuit && c != C::AppOpenSettings && menu::label(c).is_none())
         .map(ShortcutCommandId::as_str)
         .collect();
     assert!(missing.is_empty(), "文言が無い: {missing:?}");
@@ -374,6 +375,8 @@ fn メニューの項目のアクセラレータが表の既定のキーと同�
             ("terminal.next-tab", Some("Cmd+Shift+]".to_owned())),
             ("edit.select-all", Some("Cmd+A".to_owned())),
             ("app.quit", Some("Cmd+Q".to_owned())),
+            // M4.5 の「設定ファイルを開く…」(T64c)。メニューに載せるのは T65d。
+            ("app.open-settings", Some("Cmd+,".to_owned())),
             ("edit.copy", None),
             ("edit.cut", None),
             ("edit.paste", None),
@@ -447,6 +450,8 @@ fn 受け口がメニューの項目のものだけがメニューに載る() {
     let menu = app.menu().expect("アプリにメニューが付いていない");
     let expected: BTreeSet<String> = ShortcutTable::default_table()
         .by_receiver(ShortcutReceiver::MenuItem)
+        // 「設定ファイルを開く…」は表に行だけある(T64c)。メニューに載せるのは T65d(そのときこの除外を外す)。
+        .filter(|b| b.command() != C::AppOpenSettings)
         .map(|b| b.command().as_str().to_owned())
         .collect();
     assert_eq!(own_ids(&menu), expected);

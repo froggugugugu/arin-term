@@ -1,6 +1,8 @@
 //! ショートカットの表とキーの文字列(計画書 T38d。前提 (e)【要件の追加(本人。2026-11-15)】、【仮定】21・22)。
 
 use arin_core::shortcuts::key::{KeyChord, KeyParseError, Modifier};
+use arin_core::shortcuts::reserved::RESERVED_KEYS;
+use arin_core::shortcuts::sample::sample_settings_toml;
 use arin_core::shortcuts::table::{
     ShortcutBinding, ShortcutCommandId, ShortcutReceiver, ShortcutTable, ShortcutTableProblem,
 };
@@ -15,13 +17,15 @@ fn chord(s: &str) -> KeyChord {
 ///
 /// キーは PRD §6.4 と M2 のメニュー(`src-tauri/src/menu.rs`)のとおり。受け口は【仮定】21。
 /// 最後の 4 行は M4 の表示の操作(計画書 M4 の前提 (f)・【仮定】9、ADR-011 の 6。T47a)。
-const EXPECTED_DEFAULTS: [(&str, &str, ShortcutReceiver); 22] = [
+/// `app.open-settings` は M4.5 の「設定ファイルを開く…」(計画書 T64c。ADR-012 の 6)。
+const EXPECTED_DEFAULTS: [(&str, &str, ShortcutReceiver); 23] = [
     ("terminal.new-tab", "Cmd+T", MenuItem),
     ("terminal.close-tab", "Cmd+W", MenuItem),
     ("terminal.previous-tab", "Cmd+Shift+[", MenuItem),
     ("terminal.next-tab", "Cmd+Shift+]", MenuItem),
     ("edit.select-all", "Cmd+A", MenuItem),
     ("app.quit", "Cmd+Q", MenuItem),
+    ("app.open-settings", "Cmd+,", MenuItem),
     ("edit.copy", "Cmd+C", EditItem),
     ("edit.cut", "Cmd+X", EditItem),
     ("edit.paste", "Cmd+V", EditItem),
@@ -201,7 +205,38 @@ fn 表示の_4_行の_id_の文字列() {
         );
         assert!(ShortcutCommandId::ALL.contains(&id), "{id} が ALL に無い");
     }
-    assert_eq!(ShortcutCommandId::ALL.len(), 22);
+    assert_eq!(ShortcutCommandId::ALL.len(), 23);
+}
+
+#[test]
+fn 設定ファイルを開くの既定は_cmd_カンマで受け口はメニューの項目() {
+    // ADR-012 の 6(【要確認】4 の A): macOS の「設定…」と同じ ⌘,。
+    let id = ShortcutCommandId::AppOpenSettings;
+    assert_eq!(id.as_str(), "app.open-settings");
+    assert_eq!(id.to_string(), "app.open-settings");
+    assert_eq!(ShortcutCommandId::from_id("app.open-settings"), Some(id));
+    assert_eq!(
+        serde_json::to_value(id).expect("ID を JSON にできなかった"),
+        serde_json::Value::String("app.open-settings".to_owned())
+    );
+    assert!(ShortcutCommandId::ALL.contains(&id));
+
+    let table = ShortcutTable::default_table();
+    let binding = table.get(id);
+    assert_eq!(binding.accelerator(), chord("Cmd+,"));
+    assert_eq!(binding.accelerator().to_string(), "Cmd+,");
+    assert_eq!(binding.receiver(), MenuItem);
+    // 表の順では終了のすぐ後ろ(アプリ名のメニューの行どうしで並べる)。
+    let ids: Vec<ShortcutCommandId> = table
+        .bindings()
+        .iter()
+        .map(ShortcutBinding::command)
+        .collect();
+    let quit = ids
+        .iter()
+        .position(|&c| c == ShortcutCommandId::AppQuit)
+        .expect("終了の行が無い");
+    assert_eq!(ids[quit + 1], id);
 }
 
 #[test]
@@ -223,6 +258,7 @@ fn 受け口ごとに行を引ける() {
             "terminal.next-tab",
             "edit.select-all",
             "app.quit",
+            "app.open-settings",
             "view.toggle-display-mode",
             "view.previous-page",
             "view.next-page",
@@ -492,7 +528,7 @@ fn 受け口を_1_行で替えられる() {
 
     let table = ShortcutTable::from_bindings(bindings).expect("作れない");
     assert_eq!(table.get(ShortcutCommandId::TreeTrash).receiver(), MenuItem);
-    assert_eq!(table.by_receiver(MenuItem).count(), 11);
+    assert_eq!(table.by_receiver(MenuItem).count(), 12);
 }
 
 #[test]
@@ -531,4 +567,118 @@ fn 表の_json_の形() {
         .collect();
     let expected = format!("[\n{}\n]\n", rows_text.join(",\n"));
     assert_eq!(ShortcutTable::default_table().to_json(), expected);
+}
+
+// ---- 設定ファイルの見本(計画書 T64c。ADR-012 の 6) ----
+
+/// 見本の行のうち、コメントを外せば設定の行になる `# "ID" = "キー"` の行(ID とキーの組。書いた順)。
+fn sample_rows(sample: &str) -> Vec<(String, String)> {
+    sample
+        .lines()
+        .filter_map(|line| line.strip_prefix("# \""))
+        .filter_map(|rest| {
+            let (id, value) = rest.split_once("\" = \"")?;
+            let value = value.strip_suffix('"')?;
+            Some((
+                id.to_owned(),
+                value.replace("\\\"", "\"").replace("\\\\", "\\"),
+            ))
+        })
+        .collect()
+}
+
+#[test]
+fn 見本はすべてのコマンドの_id_と既定のキーをコメントで並べる() {
+    let table = ShortcutTable::default_table();
+    let sample = sample_settings_toml(&table);
+
+    // 変えられるコマンド(受け口が「編集」の標準の項目でないもの)は、表の順に `# "ID" = "既定のキー"` の行で並ぶ。
+    let expected: Vec<(String, String)> = table
+        .bindings()
+        .iter()
+        .filter(|b| b.receiver() != EditItem)
+        .map(|b| (b.command().as_str().to_owned(), b.accelerator().to_string()))
+        .collect();
+    assert_eq!(sample_rows(&sample), expected);
+    assert_eq!(expected.len(), ShortcutCommandId::ALL.len() - 3);
+
+    // 変えられないコマンドも、ID と既定のキーがコメントの行に書いてある(コメントを外しても設定の行にならない形で)。
+    for binding in table.by_receiver(EditItem) {
+        let id = binding.command().as_str();
+        let key = binding.accelerator().to_string();
+        assert!(
+            sample
+                .lines()
+                .any(|line| line.starts_with('#') && line.contains(id) && line.contains(&key)),
+            "{id} と {key} が見本に無い"
+        );
+    }
+    // 設定ファイルを開く自身の行もある。
+    assert!(sample.contains("# \"app.open-settings\" = \"Cmd+,\""));
+}
+
+#[test]
+fn 見本の行はコメントか_shortcuts_の見出しだけ() {
+    let sample = sample_settings_toml(&ShortcutTable::default_table());
+    assert!(sample.ends_with('\n'), "末尾に改行が無い");
+    assert!(!sample.ends_with("\n\n"), "末尾に空の行がある");
+
+    let headings: Vec<&str> = sample
+        .lines()
+        .filter(|line| !line.starts_with('#'))
+        .collect();
+    assert_eq!(
+        headings,
+        ["[shortcuts]"],
+        "コメントでも見出しでもない行がある"
+    );
+    // 見出しより前は説明、後ろはコマンドの行(説明の後ろに置く)。
+    let heading = sample
+        .lines()
+        .position(|line| line == "[shortcuts]")
+        .expect("見出しが無い");
+    let first_row = sample
+        .lines()
+        .position(|line| line.starts_with("# \""))
+        .expect("コマンドの行が無い");
+    assert!(heading < first_row);
+    // TOML のコメントに置けない制御文字(タブ以外)を含まない。
+    assert!(
+        !sample
+            .chars()
+            .any(|c| c.is_control() && c != '\n' && c != '\t'),
+        "制御文字がある"
+    );
+}
+
+#[test]
+fn 見本に変えられないコマンドと予約のキーが書いてある() {
+    let sample = sample_settings_toml(&ShortcutTable::default_table());
+    let comments: String = sample
+        .lines()
+        .filter(|line| line.starts_with('#') && !line.starts_with("# \""))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    for id in ["edit.cut", "edit.copy", "edit.paste"] {
+        assert!(
+            comments.contains(id),
+            "変えられないコマンド {id} が説明に無い"
+        );
+    }
+    assert!(comments.contains("変えられません"));
+    for key in RESERVED_KEYS {
+        assert!(comments.contains(key), "予約のキー {key} が説明に無い");
+    }
+    // 書き方の決まり・効かないときの確かめ方・リンクの先の変更は拾えないこと。
+    for needle in [
+        "[shortcuts]",
+        "引用符",
+        "既定",
+        "効かない",
+        "システム設定",
+        "シンボリックリンク",
+    ] {
+        assert!(comments.contains(needle), "説明に {needle:?} が無い");
+    }
 }

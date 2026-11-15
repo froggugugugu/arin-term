@@ -25,7 +25,7 @@ describe("既定のショートカットの表", () => {
   it("生成した既定の表のキーはすべて画面で読める", async () => {
     const { parseAccelerator } = await import("../src/logic/keys/shortcutTable.ts");
     const generated = JSON.parse(fs.readFileSync(generatedPath, "utf8"));
-    assert.equal(generated.length, 22);
+    assert.equal(generated.length, 23);
     for (const binding of generated) {
       assert.notEqual(parseAccelerator(binding.accelerator), null, binding.command);
     }

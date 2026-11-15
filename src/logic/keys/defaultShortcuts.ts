@@ -18,6 +18,7 @@ export const DEFAULT_SHORTCUT_TABLE: ShortcutTable = [
   { command: "terminal.next-tab", accelerator: "Cmd+Shift+]", receiver: "menu-item" },
   { command: "edit.select-all", accelerator: "Cmd+A", receiver: "menu-item" },
   { command: "app.quit", accelerator: "Cmd+Q", receiver: "menu-item" },
+  { command: "app.open-settings", accelerator: "Cmd+,", receiver: "menu-item" },
   { command: "edit.copy", accelerator: "Cmd+C", receiver: "edit-item" },
   { command: "edit.cut", accelerator: "Cmd+X", receiver: "edit-item" },
   { command: "edit.paste", accelerator: "Cmd+V", receiver: "edit-item" },
