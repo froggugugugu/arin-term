@@ -125,5 +125,12 @@ Playwright の WebKit は macOS 標準の WKWebView とは別のビルドで、T
 
 ## 追記(実装のときに書く)
 
-- T40b: `notify` の版、公開日、推移的に増えたクレートの数、`cargo tree -i reqwest` の結果: 未記入
+- T40b(2026-11-15):
+  - 版: `notify` =8.2.1(2026-10-25 公開、CC0-1.0)。最新の 8.2.2 は 2026-11-08 公開で 2 週間未満のため避けた。9.0.0 は rc のため使わない
+  - feature: `default-features = false`、`macos_fsevent` だけ(既定と同じ。`kqueue`・`mio`・`crossbeam-channel`・`flume`・`serde` は入れない)
+  - 推移的な `notify-types`(要求 `^2.0.0`)は、最新の 2.3.0 が 2026-11-09 公開で 2 週間未満のため、`cargo update -p notify-types --precise 2.1.0` で 2.1.0(2026-01-25 公開、MIT OR Apache-2.0)に止めた。Cargo.toml では固定できないので、`cargo update` のときに上がらないか確かめる【仮定】
+  - `Cargo.lock` に増えたクレート: 7 個(`notify` 8.2.1、`notify-types` 2.1.0、`objc2-core-services` 0.3.2(2025-10-04、Zlib OR Apache-2.0 OR MIT)、`inotify` 0.11.5(ISC)、`inotify-sys` 0.1.8(ISC)、`kqueue` 1.2.1(MIT)、`kqueue-sys` 1.1.2(MIT))。aarch64-apple-darwin で組み込まれるのは前の 3 個だけ(`inotify` 系は Linux・Android、`kqueue` 系は BSD・iOS のときだけ。Lock は全 OS の依存を載せる)。ほかの依存(`objc2-core-foundation` 0.3.2、`bitflags` 2.13.2、`libc` 0.2.191、`log`、`walkdir`、`mio`、`windows-sys` 0.61.2)は既に Lock にある版にそろい、二重にならない。`objc2-core-services` は Tauri は使っていない(新規)
+  - 通信: `cargo tree -i reqwest --target aarch64-apple-darwin` は「nothing to print」(空)。`node scripts/check-boundaries.mjs` の http-client-crate は OK。ビルド時のコード生成(build.rs・proc-macro)は増えていない
+  - 作り方: `notify` の FSEvents は待ち時間 0・ファイル単位のイベント(`kFSEventStreamCreateFlagFileEvents | NoDefer`)で張るので、`arin-platform/src/watch/fsevents.rs` の束ねるスレッドで 0.2 秒まとめて受け口へ渡す。届くパスは変わった項目そのものの実パス(`/var/...` で張っても `/private/var/...` で届く)
+  - FSEvents を `objc2-core-services` で直接呼ぶ案は採らなかった(どちらでも `objc2-core-services` は増える。`notify` で増えて組み込まれるのは 2 個だけで、止める処理(run loop の停止と join)を自前で書かずに済む)
 - T40c・T40d: 足した feature と、Tauri がすでに有効にしていたか: 未記入

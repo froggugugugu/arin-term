@@ -5,7 +5,11 @@
 //! - [`FsRootLocator::open`] は、フォルダを `O_EVTONLY` で開いて持つ。改名・移動のあとも `fcntl(F_GETPATH)` で
 //!   現在のパスが取れ、削除後は取れない
 //!
-//! ファイル監視(FSEvents。M3)もこのモジュールに足す。
+//! ツリーのファイル監視(FSEvents。M3。T40b)は [`FsEventsWatcher`](`fsevents.rs`)。上の 2 つとは別の用途。
+
+mod fsevents;
+
+pub use fsevents::{FsEventsWatcher, LATENCY};
 
 use std::ffi::{CStr, OsStr};
 use std::fs::{self, File, OpenOptions};

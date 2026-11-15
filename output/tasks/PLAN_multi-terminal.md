@@ -863,7 +863,7 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 可(`arin-platform/src/lib.rs` を触るのは M3 ではこのタスクだけ。Cargo の 3 ファイルは触らない)
   - 先に書くテスト(一時ディレクトリだけ): `フォルダの中身を名前と種類で返す`、`ファイルへのリンクとフォルダへのリンクを見分ける`、`壊れたリンクも項目として返す`、`新規作成は既にあれば失敗し中身を変えない`、`フォルダの作成は既にあれば失敗する`、`移動は宛先に同名があれば失敗しどちらも変えない`、`移動はフォルダごと動く`、`コピーは宛先に同名があれば失敗しどちらも変えない`、`フォルダのコピーは中身ごと複製される`、`大文字小文字だけを変える名称変更ができる`、`テスト用のパスが一時領域の外なら補助が拒否する`
   - 検証: `npm test && npm run lint`
-- [ ] T40b — ファイル監視(FSEvents。`arin-platform/watch`)(変更ファイル: Cargo.toml, Cargo.lock, crates/arin-platform/Cargo.toml, crates/arin-platform/src/watch/mod.rs, crates/arin-platform/src/watch/fsevents.rs, crates/arin-platform/tests/watch.rs, output/design/ADR_007_finder-integration.md | 依存: T38a)
+- [x] T40b — ファイル監視(FSEvents。`arin-platform/watch`)(変更ファイル: Cargo.toml, Cargo.lock, crates/arin-platform/Cargo.toml, crates/arin-platform/src/watch/mod.rs, crates/arin-platform/src/watch/fsevents.rs, crates/arin-platform/tests/watch.rs, output/design/ADR_007_finder-integration.md | 依存: T38a)
   - 対応: FR-014、PRD C7、NFR-003(監視は選択中の 1 本だけ)、設計書 §1.3 #7、§5.4「ファイル監視」、前提 (d)
   - 使うクレート: `notify`。**正確な版は着手のときに `cargo search notify` と crates.io の公開日で確かめ、公開から 2 週間未満を避けて `=` で固定する**(計画と設計書の「8.2 系」は目安)。既定の feature のうち FSEvents 以外を切れるか確かめる。`git diff Cargo.lock` で増えたクレートを数え、`cargo tree -i reqwest --target aarch64-apple-darwin` が空であることと合わせて ADR-007 の追記に書く。増えるクレートが多すぎる・通信を含むと分かったら、このタスクを止め、FSEvents を `objc2` 系で直接呼ぶ案と並べて本人に選んでもらう
   - 置くもの: ルートに再帰の監視を 1 本張り、待ち時間 0.2 秒程度でまとめて絶対パスの束を受け口へ渡す。返した値を捨てると止まる。除外の判定は `arin-core`(T38c)を呼び出し側(T42b)が当てる
