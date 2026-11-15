@@ -45,6 +45,7 @@ function snapshotOf(
       color: p.color,
       displayPath: `~/dev/${p.name}`,
       missing: false,
+      showHidden: false,
       terminalIds: p.tabs.map((t) => t.id),
       activeTerminalId: p.active === undefined ? (p.tabs[0]?.id ?? null) : p.active,
     })),

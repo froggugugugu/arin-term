@@ -10,6 +10,7 @@ const project = (id: string, terminalIds: string[], activeTerminalId: string | n
   color: "blue",
   displayPath: `~/${id}`,
   missing: false,
+  showHidden: false,
   terminalIds,
   activeTerminalId,
 });

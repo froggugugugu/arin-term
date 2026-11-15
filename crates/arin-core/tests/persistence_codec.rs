@@ -50,7 +50,8 @@ fn sample_state() -> PersistedState {
                 Some("Ym9va21hcmstYg=="),
                 Some("フロント"),
                 ProjectColor::Teal,
-            ),
+            )
+            .with_show_hidden(true),
             project(ID_C, "/Users/me/notes", None, None, ProjectColor::Pink),
         ],
         selected_project_id: Some(id(ID_B)),
@@ -134,6 +135,7 @@ fn 書いた_json_の形() {
                     "lastKnownPath": "/Users/me/dev/app/frontend",
                     "customName": "フロント",
                     "colorId": "teal",
+                    "tree": { "showHidden": true },
                 },
                 {
                     "id": ID_C,
@@ -272,11 +274,167 @@ fn 未知のキーは無視する() {
         "ui": { "displayMode": "tiles", "selectedProjectId": ID_A },
     })));
 
+    // `tree.showHidden` は読む(計画書 T38e)。`tree.expanded` は M6 まで読まない
     assert_eq!(
         outcome.state.projects,
-        vec![project(ID_A, "/a", Some("Ym0="), None, ProjectColor::Green)]
+        vec![project(ID_A, "/a", Some("Ym0="), None, ProjectColor::Green).with_show_hidden(true)]
     );
     assert_eq!(outcome.state.selected_project_id, Some(id(ID_A)));
+}
+
+// ---- ツリーの保存設定(計画書 T38e、設計書 §6.2 の `projects[].tree.showHidden`、【仮定】3) ----
+
+#[test]
+fn 隠しファイル表示の既定はオフ() {
+    assert!(!project(ID_A, "/a", None, None, ProjectColor::Red).show_hidden());
+
+    let outcome = loaded(decode_value(&json!({
+        "schemaVersion": 1,
+        "projects": [minimal_project(ID_A, "/a")],
+    })));
+    assert!(!outcome.state.projects[0].show_hidden());
+}
+
+#[test]
+fn 隠しファイル表示を書いて読むと同じに戻る() {
+    let state = PersistedState {
+        projects: vec![
+            project(ID_A, "/a", Some("Ym0="), None, ProjectColor::Red).with_show_hidden(true),
+            project(ID_B, "/b", Some("Ym0="), None, ProjectColor::Blue),
+        ],
+        ..PersistedState::default()
+    };
+
+    let back = loaded(decode_str(&encode(&state).expect("書ける")));
+
+    assert_eq!(back.state, state);
+    assert!(back.state.projects[0].show_hidden());
+    assert!(!back.state.projects[1].show_hidden());
+}
+
+/// M2 のアプリが書いた `state.json`(版 1。`tree` のキーが無い)。利用者の手元にあるものをそのまま読めること。
+const M2_STATE_JSON: &str = r#"{
+  "schemaVersion": 1,
+  "projects": [
+    {
+      "id": "0123abcd-89ab-4def-8123-456789abcdef",
+      "bookmark": "Ym9va21hcmstYQ==",
+      "lastKnownPath": "/Users/me/dev/app",
+      "customName": null,
+      "colorId": "red"
+    },
+    {
+      "id": "11111111-2222-4333-8444-555555555555",
+      "bookmark": null,
+      "lastKnownPath": "/Users/me/notes",
+      "customName": "メモ",
+      "colorId": "teal"
+    }
+  ],
+  "ui": {
+    "selectedProjectId": "11111111-2222-4333-8444-555555555555",
+    "sidebarWidth": 280.0,
+    "sidebarCollapsed": false,
+    "cardAreaHeight": 220.0
+  }
+}
+"#;
+
+#[test]
+fn tree_キーの無い状態ファイルも読める() {
+    // 退避せずに読め、隠しファイル表示は既定(オフ)になる
+    let outcome = loaded(decode_str(M2_STATE_JSON));
+
+    assert_eq!(
+        outcome.state,
+        PersistedState {
+            projects: vec![
+                project(
+                    ID_A,
+                    "/Users/me/dev/app",
+                    Some("Ym9va21hcmstYQ=="),
+                    None,
+                    ProjectColor::Red,
+                ),
+                project(
+                    ID_B,
+                    "/Users/me/notes",
+                    None,
+                    Some("メモ"),
+                    ProjectColor::Teal
+                ),
+            ],
+            selected_project_id: Some(id(ID_B)),
+            layout: PersistedLayout {
+                sidebar_width: Some(280.0),
+                sidebar_collapsed: false,
+                card_area_height: Some(220.0),
+            },
+        }
+    );
+    assert!(outcome.state.projects.iter().all(|p| !p.show_hidden()));
+    assert_eq!(outcome.rebuild_bookmarks, vec![id(ID_B)]);
+
+    // 書き直しても版は 1 のまま。隠しファイル表示が既定のあいだは `tree` を書かず、M2 と同じ形になる
+    let rewritten: Value = serde_json::from_str(&encode(&outcome.state).expect("書ける")).unwrap();
+    let original: Value = serde_json::from_str(M2_STATE_JSON).unwrap();
+    assert_eq!(rewritten, original);
+}
+
+#[test]
+fn tree_の形が違えばそのプロジェクトだけ既定値で退避しない() {
+    let bad_trees = [
+        json!(null),
+        json!(true),
+        json!(1),
+        json!("showHidden"),
+        json!([]),
+        json!({ "showHidden": "yes" }),
+        json!({ "showHidden": 1 }),
+        json!({ "showHidden": null }),
+        json!({ "expanded": "src" }),
+    ];
+    for bad in bad_trees {
+        let outcome = loaded(decode_value(&json!({
+            "schemaVersion": 1,
+            "projects": [
+                { "id": ID_A, "bookmark": "Ym0=", "lastKnownPath": "/a", "colorId": "red", "tree": bad },
+                { "id": ID_B, "bookmark": "Ym0=", "lastKnownPath": "/b", "colorId": "blue", "tree": { "showHidden": true } },
+            ],
+            "ui": { "selectedProjectId": ID_A },
+        })));
+
+        // 形の違うプロジェクトは既定値(オフ)、ほかのプロジェクトと選択はそのまま
+        assert_eq!(
+            outcome.state.projects,
+            vec![
+                project(ID_A, "/a", Some("Ym0="), None, ProjectColor::Red),
+                project(ID_B, "/b", Some("Ym0="), None, ProjectColor::Blue).with_show_hidden(true),
+            ],
+            "{bad}"
+        );
+        assert_eq!(outcome.state.selected_project_id, Some(id(ID_A)), "{bad}");
+    }
+}
+
+#[test]
+fn 保存する内容に展開状態を含めない() {
+    // 展開状態(`tree.expanded`)は M6(T59)まで保存しない。読んだ値も書き戻さない
+    let outcome = loaded(decode_value(&json!({
+        "schemaVersion": 1,
+        "projects": [{
+            "id": ID_A,
+            "bookmark": "Ym0=",
+            "lastKnownPath": "/a",
+            "colorId": "green",
+            "tree": { "expanded": ["src", "docs"], "showHidden": true },
+        }],
+    })));
+
+    let value: Value = serde_json::from_str(&encode(&outcome.state).expect("書ける")).unwrap();
+
+    assert_eq!(value["projects"][0]["tree"], json!({ "showHidden": true }));
+    assert!(!value.to_string().contains("expanded"), "{value}");
 }
 
 // ---- 無い・退避 ----

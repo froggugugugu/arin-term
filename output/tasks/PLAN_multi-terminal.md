@@ -838,7 +838,7 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 25c(並行可能)
 
-- [ ] T38e — 隠しファイル表示の保存値と写し(変更ファイル: crates/arin-core/src/project/store.rs, crates/arin-core/src/persistence/codec.rs, crates/arin-core/src/workspace/, crates/arin-core/tests/persistence_codec.rs, crates/arin-core/tests/workspace_projects.rs, crates/arin-core/tests/app_snapshot.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/test/fakeIpc.ts, e2e/fixtures/tauriMock.ts | 依存: T38d)
+- [x] T38e — 隠しファイル表示の保存値と写し(変更ファイル: crates/arin-core/src/project/store.rs, crates/arin-core/src/persistence/codec.rs, crates/arin-core/src/workspace/, crates/arin-core/tests/persistence_codec.rs, crates/arin-core/tests/workspace_projects.rs, crates/arin-core/tests/app_snapshot.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/test/fakeIpc.ts, e2e/fixtures/tauriMock.ts | 依存: T38d)
   - 対応: FR-017(切替の保存)、FR-056、設計書 §6.2 の `projects[].tree.showHidden`、【仮定】3
   - 置くもの: `ProjectStore` のプロジェクトに隠しファイル表示(既定 false)、`state.json` の `projects[].tree.showHidden` の読み書き(キーの追加なので版は 1 のまま。`tree` が無い・形が違うときはそのプロジェクトを既定値にし、退避しない【仮定】)、写しの `ProjectCardSnapshot` に `showHidden`、`Workspace` に切替の操作。展開状態は足さない
   - `fakeIpc.ts` と `tauriMock.ts` は写しの新しい項目を既定値で埋めるだけ(M2 の T32b と同じ)

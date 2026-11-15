@@ -1,4 +1,4 @@
-//! `Workspace` のプロジェクトのコマンドの口(計画書 T33c): 登録・色の変更・再リンク・ルートのパス。
+//! `Workspace` のプロジェクトのコマンドの口(計画書 T33c): 登録・色の変更・再リンク・ルートのパス・隠しファイル表示(T38e)。
 //! と、ルートへの追従の見回りの口(計画書 T33d): 対象の一覧・追従・見つからない。
 //!
 //! 入出力はしない。フォルダの正規化・ブックマーク・ID の乱数・ダイアログ・ペーストボード・開いたフォルダの現在位置は
@@ -52,6 +52,20 @@ impl Workspace {
         color: ProjectColor,
     ) -> Result<(), ProjectError> {
         self.projects.set_color(id, color)
+    }
+
+    /// 隠しファイル表示を切り替える(FR-017、計画書 T38e)。写しの `showHidden` と保存する内容が変わる
+    /// (写しを送り保存を予約するのは呼び出し側)。見つからないプロジェクトでも変えられる。
+    ///
+    /// # Errors
+    ///
+    /// その ID のプロジェクトが無いとき(`ProjectError::NotFound`。何も変えない)。
+    pub fn set_project_show_hidden(
+        &mut self,
+        id: &ProjectId,
+        show_hidden: bool,
+    ) -> Result<(), ProjectError> {
+        self.projects.set_show_hidden(id, show_hidden)
     }
 
     /// 本人が選んだフォルダにつなぎ直す(FR-007 の再リンク)。ID・色・並び順・表示名を保ち、見つからない状態を解く。

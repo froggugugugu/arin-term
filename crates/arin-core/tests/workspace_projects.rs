@@ -515,6 +515,103 @@ fn 保存する内容に表示値_見つからない_表示用のパス_を含�
 }
 
 // ---------------------------------------------------------------------------
+// 隠しファイル表示(計画書 T38e、FR-017、【仮定】3)
+// ---------------------------------------------------------------------------
+
+fn show_hidden_of(ws: &Workspace, project: &ProjectId) -> bool {
+    ws.snapshot()
+        .projects
+        .into_iter()
+        .find(|p| &p.id == project)
+        .map(|p| p.show_hidden)
+        .expect("写しにプロジェクトがある")
+}
+
+#[test]
+fn 隠しファイル表示の既定はオフ() {
+    let mut ws = restore_abc();
+    ws.register_project(id(9), root("/Users/me/dev/new"))
+        .expect("登録できる");
+
+    for n in [1, 2, 3, 9] {
+        assert!(!show_hidden_of(&ws, &id(n)), "プロジェクト {n}");
+    }
+}
+
+#[test]
+fn 隠しファイル表示を変えると写しが変わる() {
+    let mut ws = restore_abc();
+    let before = ws.snapshot();
+
+    ws.set_project_show_hidden(&id(1), true)
+        .expect("変えられる");
+
+    let after = ws.snapshot();
+    assert_ne!(after, before);
+    assert!(show_hidden_of(&ws, &id(1)));
+    // ほかのプロジェクトと選択は変わらない
+    assert!(!show_hidden_of(&ws, &id(2)));
+    assert!(!show_hidden_of(&ws, &id(3)));
+    assert_eq!(after.selected_project_id, Some(id(2)));
+
+    ws.set_project_show_hidden(&id(1), false).expect("戻せる");
+    assert_eq!(ws.snapshot(), before);
+}
+
+#[test]
+fn 隠しファイル表示は保存する内容に載り起動時に戻る() {
+    let mut ws = restore_abc();
+    ws.set_project_show_hidden(&id(3), true).unwrap();
+
+    let saved = ws.persisted_state().unwrap();
+    let flags: Vec<bool> = saved.projects.iter().map(Project::show_hidden).collect();
+    assert_eq!(flags, [false, false, true]);
+
+    // 書いて読んで起動し直しても保たれる
+    let text = codec::encode(&saved).unwrap();
+    let codec::LoadOutcome::Loaded(loaded) = codec::decode(Some(text.as_bytes())) else {
+        panic!("読めるはず: {text}");
+    };
+    let roots = found_all(&loaded.state);
+    let ws = restore(Startup {
+        state: loaded.state,
+        roots,
+        notice: None,
+    });
+    assert!(show_hidden_of(&ws, &id(3)));
+    assert!(!show_hidden_of(&ws, &id(1)));
+}
+
+#[test]
+fn 見つからないプロジェクトも隠しファイル表示を保つ() {
+    let state = PersistedState {
+        projects: vec![project(1, "/Users/me/dev/a", ProjectColor::Red).with_show_hidden(true)],
+        ..PersistedState::default()
+    };
+    let roots = vec![(id(1), RootResolution::Missing)];
+    let ws = restore(Startup {
+        state,
+        roots,
+        notice: None,
+    });
+
+    assert!(show_hidden_of(&ws, &id(1)));
+    assert!(ws.persisted_state().unwrap().projects[0].show_hidden());
+}
+
+#[test]
+fn 登録の無いプロジェクトの隠しファイル表示は変えられない() {
+    let mut ws = restore_abc();
+    let before = ws.snapshot();
+
+    assert_eq!(
+        ws.set_project_show_hidden(&id(7), true),
+        Err(ProjectError::NotFound(id(7)))
+    );
+    assert_eq!(ws.snapshot(), before);
+}
+
+// ---------------------------------------------------------------------------
 // 9 枚の検証画面
 // ---------------------------------------------------------------------------
 

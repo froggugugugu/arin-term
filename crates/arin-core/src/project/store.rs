@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 use ts_rs::TS;
 
@@ -79,7 +79,34 @@ impl RootReference {
     }
 }
 
-/// 登録したプロジェクト 1 件。JSON の形は `state.json` の `projects[]` の 1 件(ツリーの設定を除く)。
+/// ツリーの保存設定(`state.json` の `projects[].tree`。設計書 §6.2、計画書 T38e)。
+///
+/// M3 は隠しファイル表示だけを持つ。展開状態(`expanded`)は M6(T59)で足すまで読まず書かない。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TreePrefs {
+    /// 隠しファイル表示(FR-017)。無ければ偽。
+    #[serde(default)]
+    show_hidden: bool,
+}
+
+impl TreePrefs {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// `tree` を読む。形が違う(オブジェクトでない・`showHidden` が真偽でないなど)ときは、
+/// 状態ファイルを退避せずにそのプロジェクトだけ既定値にする(計画書 T38e の【仮定】)。
+fn lenient_tree_prefs<'de, D>(deserializer: D) -> Result<TreePrefs, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
+/// 登録したプロジェクト 1 件。JSON の形は `state.json` の `projects[]` の 1 件。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Project {
@@ -90,6 +117,14 @@ pub struct Project {
     custom_name: Option<String>,
     #[serde(rename = "colorId")]
     color: ProjectColor,
+    /// ツリーの保存設定。M2 の状態ファイルには無いので、無ければ既定値で読む(版は 1 のまま)。
+    /// 既定値のあいだは書かない(切り替えたことの無い利用者の `state.json` は M2 と同じ形のまま)。
+    #[serde(
+        default,
+        deserialize_with = "lenient_tree_prefs",
+        skip_serializing_if = "TreePrefs::is_default"
+    )]
+    tree: TreePrefs,
     /// ルートが見つからない(表示値。保存しない)。
     #[serde(skip)]
     missing: bool,
@@ -109,8 +144,16 @@ impl Project {
             root,
             custom_name,
             color,
+            tree: TreePrefs::default(),
             missing: false,
         }
+    }
+
+    /// 隠しファイル表示を付けたもの(`state.json` の読み込みとテスト用)。
+    #[must_use]
+    pub fn with_show_hidden(mut self, show_hidden: bool) -> Self {
+        self.tree.show_hidden = show_hidden;
+        self
     }
 
     /// 識別子。
@@ -150,6 +193,12 @@ impl Project {
     #[must_use]
     pub fn color(&self) -> ProjectColor {
         self.color
+    }
+
+    /// 隠しファイル表示(FR-017。保存値。既定は偽)。
+    #[must_use]
+    pub fn show_hidden(&self) -> bool {
+        self.tree.show_hidden
     }
 
     /// ルートが見つからない状態か(FR-007)。
@@ -327,6 +376,21 @@ impl ProjectStore {
     pub fn set_color(&mut self, id: &ProjectId, color: ProjectColor) -> Result<(), ProjectError> {
         let index = self.require(id)?;
         self.projects[index].color = color;
+        Ok(())
+    }
+
+    /// 隠しファイル表示を切り替える(FR-017)。展開状態などツリーのほかの値は持たない。
+    ///
+    /// # Errors
+    ///
+    /// その ID が無いとき(`NotFound`)。
+    pub fn set_show_hidden(
+        &mut self,
+        id: &ProjectId,
+        show_hidden: bool,
+    ) -> Result<(), ProjectError> {
+        let index = self.require(id)?;
+        self.projects[index].tree.show_hidden = show_hidden;
         Ok(())
     }
 

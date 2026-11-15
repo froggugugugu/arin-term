@@ -28,6 +28,10 @@ displayPath: string,
  */
 missing: boolean, 
 /**
+ * ツリーで隠しファイルを表示する(FR-017。プロジェクトごとの保存値。計画書 T38e)。
+ */
+showHidden: boolean, 
+/**
  * このプロジェクトのタブ(タブの順)。
  */
 terminalIds: Array<TerminalId>, 

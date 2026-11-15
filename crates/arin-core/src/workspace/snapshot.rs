@@ -50,6 +50,8 @@ pub struct ProjectCardSnapshot {
     pub display_path: String,
     /// ルートが見つからない。
     pub missing: bool,
+    /// ツリーで隠しファイルを表示する(FR-017。プロジェクトごとの保存値。計画書 T38e)。
+    pub show_hidden: bool,
     /// このプロジェクトのタブ(タブの順)。
     pub terminal_ids: Vec<TerminalId>,
     /// 表示中のタブ。0 枚なら `null`。

@@ -89,6 +89,7 @@ export function projectSnapshot(terminals: readonly TerminalTabSnapshot[], overr
         color: "blue",
         displayPath: "~/e2e",
         missing: false,
+        showHidden: false,
         terminalIds: terminals.map((t) => t.id),
         activeTerminalId: terminals[0]?.id ?? null,
       },
@@ -126,6 +127,7 @@ export function projectsSnapshot(projects: readonly SampleProject[], overrides: 
       color: project.color ?? "blue",
       displayPath: project.displayPath ?? `~/dev/${project.name}`,
       missing: project.missing ?? false,
+      showHidden: false,
       terminalIds: ids,
       activeTerminalId: ids[0] ?? null,
     });

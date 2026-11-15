@@ -1,10 +1,12 @@
 //! `state.json` 版 1 の読み書き(計画書 T30a)。
 //!
 //! 設計書 §6.2 のスキーマのうち M2 で使う分(`projects[]` の `id`・`bookmark`・`lastKnownPath`・`customName`・`colorId`、
-//! `ui` の `selectedProjectId`・`sidebarWidth`・`sidebarCollapsed`・`cardAreaHeight`)を読み書きする。
+//! `ui` の `selectedProjectId`・`sidebarWidth`・`sidebarCollapsed`・`cardAreaHeight`)と、M3 で足した
+//! `projects[].tree.showHidden`(計画書 T38e)を読み書きする。`tree.expanded` は M6 まで読まず書かない。
 //! 入出力はしない。読んだバイト列(無ければ `None`)を受けて結果を返し、書く文字列を返すだけ。
 //!
-//! - 欠けたキーは既定値で補い、未知のキーは無視する(キーの追加では版を上げない)
+//! - 欠けたキーは既定値で補い、未知のキーは無視する(キーの追加では版を上げない)。M2 が書いた `tree` の無いファイルもそのまま読む
+//! - `tree` の形が違うときは、退避せずにそのプロジェクトのツリーの設定だけを既定値にする(計画書 T38e の【仮定】)
 //! - JSON として読めない・版が正しくない・新しすぎる・形が違うときは「退避する」を返す(決定 (d))。
 //!   退避の名前は [`broken_file_name`] が時計の値から作る(【仮定】3)
 //! - ブックマークは base64 の文字列のまま扱い、中身は解釈しない(【仮定】2)。null のものは作り直しの指示にする(【仮定】13)

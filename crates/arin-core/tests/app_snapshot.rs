@@ -60,6 +60,7 @@ fn 写しの_json_の形() {
                     "color": "green",
                     "displayPath": "~/dev/a",
                     "missing": false,
+                    "showHidden": false,
                     "terminalIds": ["terminal-1"],
                     "activeTerminalId": "terminal-1",
                 },
@@ -69,6 +70,7 @@ fn 写しの_json_の形() {
                     "color": "blue",
                     "displayPath": "/Volumes/ext/b",
                     "missing": true,
+                    "showHidden": false,
                     "terminalIds": [],
                     "activeTerminalId": null,
                 },
@@ -86,6 +88,19 @@ fn 写しの_json_の形() {
             "notice": "退避した",
         })
     );
+}
+
+#[test]
+fn 写しの_json_に_show_hidden_が載る() {
+    // 計画書 T38e。隠しファイル表示(FR-017)はカードごとの真偽で、既定はオフ
+    let mut ws = sample();
+    ws.set_project_show_hidden(&id(2), true)
+        .expect("変えられる");
+
+    let value = serde_json::to_value(ws.snapshot()).unwrap();
+
+    assert_eq!(value["projects"][0]["showHidden"], json!(false));
+    assert_eq!(value["projects"][1]["showHidden"], json!(true));
 }
 
 #[test]

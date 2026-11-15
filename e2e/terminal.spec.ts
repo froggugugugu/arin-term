@@ -336,6 +336,7 @@ function twoProjects(selected: "A" | "B", terminalsOfB: string[] = ["t-b"]): App
     color: "blue" as const,
     displayPath: `~/${id}`,
     missing: false,
+    showHidden: false,
     terminalIds,
     activeTerminalId: terminalIds[0] ?? null,
   });

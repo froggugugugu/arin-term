@@ -242,6 +242,7 @@ impl Workspace {
                         p.custom_name().map(ToOwned::to_owned),
                         p.color(),
                     )
+                    .with_show_hidden(p.show_hidden())
                 })
                 .collect(),
             selected_project_id: self.projects.selected().cloned(),
@@ -268,12 +269,14 @@ impl Workspace {
                     .map(|tab| tab.id.clone())
                     .collect();
                 let active_terminal_id = self.tabs.active(Some(&p.id)).cloned();
+                let show_hidden = self.projects.get(&p.id).is_some_and(Project::show_hidden);
                 ProjectCardSnapshot {
                     id: p.id,
                     name: p.name,
                     color: p.color,
                     display_path: p.display_path,
                     missing: p.missing,
+                    show_hidden,
                     terminal_ids,
                     active_terminal_id,
                 }
