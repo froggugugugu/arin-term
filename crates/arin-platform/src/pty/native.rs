@@ -11,6 +11,8 @@
 
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use arin_core::ports::{ChildExit, Foreground, PtyError, PtyPort, PtySession, PtySize, SpawnedPty};
 use arin_core::terminal::ShellLaunchSpec;
@@ -35,8 +37,8 @@ impl PtyPort for NativePty {
 
         Ok(SpawnedPty {
             session: Box::new(NativePtySession {
-                master: pair.master,
-                writer,
+                master: Some(pair.master),
+                writer: Some(writer),
                 child,
             }),
             output,
@@ -103,10 +105,16 @@ fn spawn_error(error: impl std::fmt::Display) -> PtyError {
     PtyError::Spawn(format!("{error:#}"))
 }
 
+/// 捨てるときに、シェルの回収を待つ上限。過ぎたら待つのをやめる(呼び出し側=タブを閉じる処理やアプリの終了を止めない)。
+const REAP_TIMEOUT: Duration = Duration::from_secs(1);
+/// 回収を確かめる間隔。
+const REAP_POLL: Duration = Duration::from_millis(10);
+
 /// 起動した PTY 1 組。捨てると(`Drop`)、シェルがまだ動いていれば終了させて回収する。
+/// `master` と `writer` は捨てるときにだけ `None` になる(回収を待つ前に親側を閉じるため)。
 struct NativePtySession {
-    master: Box<dyn MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
+    master: Option<Box<dyn MasterPty + Send>>,
+    writer: Option<Box<dyn Write + Send>>,
     child: Box<dyn Child + Send + Sync>,
 }
 
@@ -119,14 +127,20 @@ impl NativePtySession {
 
 impl PtySession for NativePtySession {
     fn write(&mut self, data: &[u8]) -> Result<(), PtyError> {
-        self.writer
+        let writer = self
+            .writer
+            .as_mut()
+            .ok_or_else(|| PtyError::Write("PTY は閉じている".to_owned()))?;
+        writer
             .write_all(data)
-            .and_then(|()| self.writer.flush())
+            .and_then(|()| writer.flush())
             .map_err(|error| PtyError::Write(error.to_string()))
     }
 
     fn resize(&mut self, size: PtySize) -> Result<(), PtyError> {
         self.master
+            .as_ref()
+            .ok_or_else(|| PtyError::Resize("PTY は閉じている".to_owned()))?
             .resize(pty_size(size))
             .map_err(|error| PtyError::Resize(format!("{error:#}")))
     }
@@ -165,7 +179,11 @@ impl PtySession for NativePtySession {
             .child
             .process_id()
             .and_then(|pid| i32::try_from(pid).ok());
-        match (self.master.process_group_leader(), shell) {
+        let leader = self
+            .master
+            .as_ref()
+            .and_then(|master| master.process_group_leader());
+        match (leader, shell) {
             (Some(leader), Some(shell)) if leader == shell => Foreground::Shell,
             (Some(_), Some(_)) => Foreground::Other,
             _ => Foreground::Unknown,
@@ -175,10 +193,19 @@ impl PtySession for NativePtySession {
 
 impl Drop for NativePtySession {
     fn drop(&mut self) {
-        if self.is_running() {
-            // `kill` は最後に `SIGKILL` を送るので、続く `wait` は長く待たない。ゾンビを残さないよう回収する。
-            let _ = self.child.kill();
-            let _ = self.child.wait();
+        // 先に親側(書き込みの口と master)を閉じる。開いたままだと、前面でコマンドが動いていたシェルは、終了の途中で
+        // 端末の出力が読み出されるのを待って止まり(この待ちには `SIGKILL` も効かない)、回収の待ちと互いに待ち合う。
+        // 読み取りの口(`SpawnedPty::output`)は読み取りの側が持つ。読み続けるか手放せば、同じく終了が進む。
+        self.writer = None;
+        self.master = None;
+        if !self.is_running() {
+            return;
+        }
+        // `kill` は最後に `SIGKILL` を送る。ゾンビを残さないよう回収するが、上限を過ぎたら待たない。
+        let _ = self.child.kill();
+        let deadline = Instant::now() + REAP_TIMEOUT;
+        while self.is_running() && Instant::now() < deadline {
+            thread::sleep(REAP_POLL);
         }
     }
 }
