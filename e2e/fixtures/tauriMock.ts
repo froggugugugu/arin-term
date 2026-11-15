@@ -33,12 +33,14 @@ import type { CommandMap, CommandName, EventMap, EventName } from "../../src/ipc
 import type { AppSnapshot } from "../../src/ipc/generated/AppSnapshot";
 import type { DirEntry } from "../../src/ipc/generated/DirEntry";
 import type { DirListing } from "../../src/ipc/generated/DirListing";
+import type { DisplayMode } from "../../src/ipc/generated/DisplayMode";
 import type { EntryKind } from "../../src/ipc/generated/EntryKind";
 import type { ProjectCardSnapshot } from "../../src/ipc/generated/ProjectCardSnapshot";
 import type { ProjectColor } from "../../src/ipc/generated/ProjectColor";
 import type { RunningTerminal } from "../../src/ipc/generated/RunningTerminal";
 import type { TerminalStatus } from "../../src/ipc/generated/TerminalStatus";
 import type { TerminalTabSnapshot } from "../../src/ipc/generated/TerminalTabSnapshot";
+import type { TileGrid } from "../../src/ipc/generated/TileGrid";
 // 既定の表の見本。生成した src/ipc/generated/defaultShortcuts.json と同じ中身であることを
 // scripts/default-shortcuts.test.mjs が確かめる(e2e/ の tsconfig は JSON を対象に含めないので見本を使う)。
 import { DEFAULT_SHORTCUT_TABLE } from "../../src/logic/keys/defaultShortcuts";
@@ -68,7 +70,7 @@ export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapsho
     terminals: [],
     layout: { sidebarWidth: 260, sidebarCollapsed: false, cardAreaHeight: 200 },
     notice: null,
-    // 表示の状態の既定(タブ表示・拡大なし・0 枚)。偽の Rust 側のタイルの計算は T47f で足す
+    // 表示の状態の既定(タブ表示・拡大なし・0 枚)。タイル表示の写しは withTileDisplay で作る
     display: {
       mode: "tabs",
       maximized: false,
@@ -161,6 +163,90 @@ export function projectsSnapshot(projects: readonly SampleProject[], overrides: 
     });
   }
   return sampleSnapshot({ projects: cards, selectedProjectId: projects[0]?.id ?? null, terminals, ...overrides });
+}
+
+// ── 表示(タイル。T47f)。Rust の規則(crates/arin-core/src/layout/tiles.rs と workspace/display.rs)をテスト用に写したもの ──
+// 偽の Rust 側は写しを送り返さない(コマンドは記録するだけ)ので、テストが Rust の返す写しをここで作って流す。
+
+/** 1 ページのタイルの最大数(FR-052)。 */
+export const TILES_PER_PAGE = 9;
+
+/** 枚数からグリッド(列×行)を決める(FR-051。0→0×0、1→1×1、2→2×1、3〜4→2×2、5〜6→3×2、7〜9→3×3)。 */
+export function tileGridFor(count: number): TileGrid {
+  if (count <= 0) return { cols: 0, rows: 0 };
+  if (count === 1) return { cols: 1, rows: 1 };
+  if (count === 2) return { cols: 2, rows: 1 };
+  if (count <= 4) return { cols: 2, rows: 2 };
+  if (count <= 6) return { cols: 3, rows: 2 };
+  return { cols: 3, rows: 3 };
+}
+
+/** withTileDisplay の指定。どれも省略できる。 */
+export interface TileDisplayOptions {
+  /** 表示モード。既定はタイル表示。 */
+  mode?: DisplayMode;
+  /** 拡大中か。既定は false。 */
+  maximized?: boolean;
+  /**
+   * 表示するページ(0 から)。指定すると、Rust のページ送りと同じく、そのページの先頭のタイルにフォーカスを移す
+   * (そのプロジェクトを選び、そのタブを表示中にする。計画【仮定】4)。範囲の外は最後のページに丸める。
+   */
+  page?: number;
+  /** フォーカスするタイル(Rust の focus_terminal と同じく、そのプロジェクトを選び、そのタブを表示中にする)。 */
+  focusedTerminalId?: string;
+}
+
+/**
+ * 写しの display を、写しのターミナルの並び(プロジェクトの順 → タブの順)から Rust と同じ規則で作り直した写しを返す。
+ * フォーカス中のタイルは選択中のプロジェクトの表示中のタブで、ページは(page を指定しなければ)フォーカス中のタイルのページ。
+ * 最終ページのグリッドはそのページの枚数で決める(計画【仮定】2)。渡した写しは書き換えない。
+ */
+export function withTileDisplay(snapshot: AppSnapshot, options: TileDisplayOptions = {}): AppSnapshot {
+  const ids = snapshot.terminals.map((t) => t.id);
+  const total = ids.length;
+  const pageCount = Math.ceil(total / TILES_PER_PAGE);
+  const clampPage = (page: number) => Math.max(0, Math.min(page, pageCount - 1));
+  let projects = snapshot.projects;
+  let selectedProjectId = snapshot.selectedProjectId;
+  const focusOn = (terminalId: string) => {
+    const owner = snapshot.terminals.find((t) => t.id === terminalId)?.projectId ?? null;
+    if (owner === null) return;
+    selectedProjectId = owner;
+    projects = projects.map((p) => (p.id === owner ? { ...p, activeTerminalId: terminalId } : p));
+  };
+  let page: number;
+  if (options.page !== undefined) {
+    page = clampPage(options.page);
+    const first = ids[page * TILES_PER_PAGE];
+    if (first !== undefined) focusOn(first);
+  } else {
+    if (options.focusedTerminalId !== undefined) focusOn(options.focusedTerminalId);
+    const focused = projects.find((p) => p.id === selectedProjectId)?.activeTerminalId ?? null;
+    const index = focused === null ? -1 : ids.indexOf(focused);
+    page = index < 0 ? 0 : clampPage(Math.floor(index / TILES_PER_PAGE));
+  }
+  if (total === 0) page = 0;
+  const tileIds = ids.slice(page * TILES_PER_PAGE, (page + 1) * TILES_PER_PAGE);
+  const focusedTerminalId = projects.find((p) => p.id === selectedProjectId)?.activeTerminalId ?? null;
+  const attentionPages = [
+    ...new Set(snapshot.terminals.flatMap((t, i) => (t.attention ? [Math.floor(i / TILES_PER_PAGE)] : []))),
+  ];
+  const mode = options.mode ?? "tiles";
+  return {
+    ...snapshot,
+    projects,
+    selectedProjectId,
+    display: {
+      mode,
+      maximized: mode === "tiles" && (options.maximized ?? false),
+      page,
+      pageCount,
+      grid: tileGridFor(tileIds.length),
+      tileIds,
+      focusedTerminalId,
+      attentionPages,
+    },
+  };
 }
 
 /** 終了・削除の確認に載せる動作中のターミナル 1 枚(quit-requested のイベントの中身などに使う。T34d)。 */

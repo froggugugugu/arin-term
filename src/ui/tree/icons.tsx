@@ -112,6 +112,46 @@ export function SidebarIcon({ className }: IconProps) {
   );
 }
 
+/** 前へ(左向きの山形。タイル表示の前のページ)。 */
+export function ChevronLeftIcon({ className }: IconProps) {
+  return (
+    <svg {...common} className={className}>
+      <path d="M10 3.75 5.75 8 10 12.25" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** 次へ(右向きの山形。タイル表示の次のページ)。 */
+export function ChevronRightIcon({ className }: IconProps) {
+  return (
+    <svg {...common} className={className}>
+      <path d="M6 3.75 10.25 8 6 12.25" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** タブ表示(角の丸い窓と、上端のタブの帯。表示モードの切替)。 */
+export function TabsViewIcon({ className }: IconProps) {
+  return (
+    <svg {...common} className={className}>
+      <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M1.75 5.75h12.5M6.25 2.75v3" stroke="currentColor" strokeWidth="1.1" />
+    </svg>
+  );
+}
+
+/** タイル表示(2×2 の角の丸います目。表示モードの切替)。 */
+export function TilesViewIcon({ className }: IconProps) {
+  return (
+    <svg {...common} className={className}>
+      <rect x="2" y="2.5" width="5.25" height="4.75" rx="1.25" stroke="currentColor" strokeWidth="1.1" />
+      <rect x="8.75" y="2.5" width="5.25" height="4.75" rx="1.25" stroke="currentColor" strokeWidth="1.1" />
+      <rect x="2" y="8.75" width="5.25" height="4.75" rx="1.25" stroke="currentColor" strokeWidth="1.1" />
+      <rect x="8.75" y="8.75" width="5.25" height="4.75" rx="1.25" stroke="currentColor" strokeWidth="1.1" />
+    </svg>
+  );
+}
+
 /** 追加(+。フォルダを追加)。 */
 export function PlusIcon({ className }: IconProps) {
   return (

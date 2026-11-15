@@ -5,21 +5,31 @@ import { useStore } from "zustand";
 
 import type { Actions } from "../../state/actions";
 import type { AppStore } from "../../state/appStore";
-import { projectTabs, selectedProject, shownTerminal } from "../../state/selectors";
+import { projectTabs, selectedProject, shownTerminal, tileView } from "../../state/selectors";
 import { describeTerminalStatus } from "../../state/terminalStatus";
+import type { UiStore } from "../../state/uiStore";
 import type { TerminalManager } from "../../terminal/TerminalManager";
 import { TabBar, tabDomId } from "./TabBar";
 import { TerminalHost } from "./TerminalHost";
+import { TileGrid } from "./TileGrid";
 
 interface TerminalAreaProps {
   store: AppStore;
-  actions: Pick<Actions, "newTerminal" | "selectTerminal" | "closeTerminal">;
+  /** 表示だけの状態(ページ表示のツールチップのキーを引くショートカットの表)。 */
+  ui: UiStore;
+  actions: Pick<
+    Actions,
+    "newTerminal" | "selectTerminal" | "closeTerminal" | "focusTile" | "nextTilePage" | "previousTilePage"
+  >;
   terminals: TerminalManager;
 }
 
 /**
- * 右ペインのターミナル領域(設計書 §8「タブ表示」「タブ 0 枚」、§9.1 の Container)。
- * 選択中のプロジェクトのタブバーと、表示中のタブのターミナルの置き場所を 1 つだけ描く。
+ * 右ペインのターミナル領域(設計書 §8「タブ表示」「タブ 0 枚」「タイル表示」、§9.1 の Container)。
+ * 写しの表示モード(display.mode)で出し分ける。
+ * - タブ表示(と、タイル表示の拡大中。前提 (d)。拡大中のタイトル帯は T47g): 選択中のプロジェクトのタブバーと、
+ *   表示中のタブのターミナルの置き場所を 1 つだけ描く
+ * - タイル表示: TileGrid(帯とページ表示、表示中のページのタイル)。0 枚なら「ターミナルがありません」だけ(【仮定】2)
  *
  * - 他のタブ・他のプロジェクトのターミナルは描かない。TerminalManager が写しのたびに隠したまま出力の取り込みを続け
  *   (FR-042。src/state/terminalSync.ts の present)、表示に変わったらこの置き場所へ要素を移す(接続は作り直さない)
@@ -27,8 +37,9 @@ interface TerminalAreaProps {
  * - タブ 0 枚(C-21)は「ターミナルがありません」と「新規ターミナル(⌘T)」。見つからないプロジェクトでは新しいタブを開けない
  * - プロジェクトが 0 件・選択が無い(一覧に無い)ときは、案内だけを出す(フォルダの追加は左ペインのボタン)
  */
-export function TerminalArea({ store, actions, terminals }: TerminalAreaProps) {
+export function TerminalArea({ store, ui, actions, terminals }: TerminalAreaProps) {
   const snapshot = useStore(store, (s) => s.snapshot);
+  const view = useStore(store, (s) => tileView(s.snapshot));
   const idBase = useId();
   const panelId = `${idBase}-panel`;
   const project = selectedProject(snapshot);
@@ -52,14 +63,27 @@ export function TerminalArea({ store, actions, terminals }: TerminalAreaProps) {
     return () => cancelAnimationFrame(frame);
   }, [terminals, shownId]);
 
+  if (view.mode === "tiles" && !view.maximized) {
+    const none = (snapshot?.projects.length ?? 0) === 0;
+    return (
+      <div className="terminal-area" data-display-mode="tiles">
+        {none ? (
+          <NoProjects />
+        ) : view.tiles.length === 0 ? (
+          <EmptyState title="ターミナルがありません" />
+        ) : (
+          <TileGrid view={view} store={store} ui={ui} actions={actions} terminals={terminals} />
+        )}
+      </div>
+    );
+  }
+
   if (project === null) {
     const none = (snapshot?.projects.length ?? 0) === 0;
     return (
       <div className="terminal-area">
         {none ? (
-          <EmptyState title="プロジェクトがありません">
-            <p>左の「フォルダを追加」でフォルダを登録すると、そのフォルダでターミナルが開きます。</p>
-          </EmptyState>
+          <NoProjects />
         ) : (
           <EmptyState title="プロジェクトを選んでください">
             <p>左の一覧からプロジェクトを選ぶと、そのプロジェクトのターミナルが出ます。</p>
@@ -122,11 +146,19 @@ export function TerminalArea({ store, actions, terminals }: TerminalAreaProps) {
   );
 }
 
-function EmptyState({ title, children }: { title: string; children: ReactNode }) {
+function NoProjects() {
+  return (
+    <EmptyState title="プロジェクトがありません">
+      <p>左の「フォルダを追加」でフォルダを登録すると、そのフォルダでターミナルが開きます。</p>
+    </EmptyState>
+  );
+}
+
+function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <div className="terminals-empty" data-testid="terminals-empty">
       <p className="terminals-empty__title">{title}</p>
-      <div className="terminals-empty__body">{children}</div>
+      {children !== undefined && <div className="terminals-empty__body">{children}</div>}
     </div>
   );
 }

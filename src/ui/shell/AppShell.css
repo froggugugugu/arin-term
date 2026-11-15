@@ -70,6 +70,62 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* 表示モードの切替は帯の右側(アプリ名の左)。アプリ名とのあいだは少しだけ空ける。 */
+.app-shell__display-mode {
+  margin-left: auto;
+}
+
+.app-shell__display-mode + .app-shell__meta {
+  margin-left: var(--space-2);
+}
+
+/*
+ * 区分けのボタン(macOS のセグメントのコントロールにならう)。淡い溝の中に区分けを並べ、選んだ区分けだけ明るい地と
+ * 控えめな影で浮かせる。区分けはアイコンだけ(意味は aria-label とツールチップ)。
+ */
+.segmented {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 1px;
+  padding: 1px;
+  border-radius: var(--radius-m);
+  background: var(--color-segmented-bg);
+}
+
+.segmented__item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--segmented-width);
+  height: var(--segmented-height);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--color-muted);
+}
+
+.segmented__item svg {
+  width: 14px;
+  height: 14px;
+}
+
+.segmented__item:hover:not(.segmented__item--selected) {
+  background: var(--color-control-hover);
+}
+
+.segmented__item--selected {
+  background: var(--color-segmented-selected-bg);
+  box-shadow: var(--shadow-control);
+  color: var(--color-segmented-selected-fg);
+}
+
+.segmented__item:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -1px;
+}
+
 /* 描画方式の表示(検証用。M4 で外す。ADR-001)。さらに薄く、等幅の小さな文字で。 */
 .app-shell__renderer {
   padding-left: var(--space-1);

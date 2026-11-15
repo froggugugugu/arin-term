@@ -1273,7 +1273,7 @@ T46〜T50 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 30d(逐次。T47c・T47e 完了後)
 
-- [ ] T47f — タイルのグリッド、タイトルバー、ページ送り、表示モードの切替の部品(変更ファイル: src/ui/terminals/TileGrid.tsx, src/ui/terminals/TileGrid.css, src/ui/terminals/TileTitleBar.tsx, src/ui/terminals/PageControl.tsx, src/ui/terminals/TerminalArea.tsx, src/ui/terminals/TerminalArea.css, src/ui/shell/AppShell.tsx, src/ui/shell/AppShell.css, src/ui/tree/icons.tsx, src/ui/design/tokens.css, e2e/fixtures/tauriMock.ts, e2e/tiles.spec.ts | 依存: T47c, T47e)
+- [x] T47f — タイルのグリッド、タイトルバー、ページ送り、表示モードの切替の部品(変更ファイル: src/ui/terminals/TileGrid.tsx, src/ui/terminals/TileGrid.css, src/ui/terminals/TileTitleBar.tsx, src/ui/terminals/PageControl.tsx, src/ui/terminals/TerminalArea.tsx, src/ui/terminals/TerminalArea.css, src/ui/shell/AppShell.tsx, src/ui/shell/AppShell.css, src/ui/tree/icons.tsx, src/ui/design/tokens.css, e2e/fixtures/tauriMock.ts, e2e/tiles.spec.ts | 依存: T47c, T47e)
   - 対応: FR-048(ボタン)、FR-051、FR-052(前後のボタン、表示していないページの継続)、FR-053、FR-060(タイルのタイトルバー)、FR-061、NFR-009(表示中のページだけを描く)、PRD §6.3、設計書 §8・§9.1・§9.2、ADR-010、前提 (e)、【仮定】2・3・11・12
   - 作るもの: `TileGrid`(Container。写しのグリッドの列×行で、表示中のページのタイルだけを描く。各タイルはタイトルバーと `TerminalHost`)、`TileTitleBar`(色の印・「プロジェクト名: タブ名」。名前は文字として差し込む)、`PageControl`(`1/2` と前後のアイコンのボタン。ツールチップのキーは受け取った表から引く)。`TerminalArea` は表示モードでタブ表示とタイル表示を出し分ける。上部の帯に表示モードの切替(アイコン 2 つ)。タイルのクリックでフォーカスのコマンド。アイコンは自作の少数の SVG(設計書 §15.2 #12)。偽の Rust 側に表示のコマンドと、グリッド・ページの計算(テスト用に Rust の規則を写したもの)を足す
   - **デザイン**(本人の指示): 「AI にありがちなデザインを避け、Apple のデザインらしく、ハイセンスに」。macOS 標準の作法に寄せる(システムフォント 13px、控えめな色、細い区切り線、角丸の淡い選択、アイコンのボタン。パステルの塗り・太い枠・文字だけの大きなボタンを避ける)。プロジェクト色は小さな丸い印で示す。ウィンドウは半透過(すりガラス)、ターミナルの置き場所は不透明。**Playwright の画像(ライトとダーク、1・4・9・10 枚)を撮り、自分の目で確かめてから終える**(画像は `testreport/` に置き、報告に添える)

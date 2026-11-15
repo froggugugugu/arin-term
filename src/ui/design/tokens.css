@@ -83,6 +83,17 @@
   /* ターミナルの置き場所へ落とせるときの重ね(地が外観によらず黒なので、外観で変えない明るめのアクセント色)。 */
   --color-terminal-drop-overlay: rgba(76, 155, 255, 0.1);
   --color-terminal-drop-ring: rgba(76, 155, 255, 0.7);
+  /*
+   * タイル表示(M4)。タイトルバーの地はタブバーと同じ控えめな影で、フォーカス中のタイルだけ表示中のタブと同じ明るい地に浮かせる
+   * (プロジェクト色では塗らない。色は印だけ)。フォーカス中のタイルの細い輪は、地が黒のターミナルの上でも見える強調色。
+   */
+  --color-tile-title-bg: var(--color-tabbar-bg);
+  --color-tile-title-focused-bg: var(--color-tab-selected-bg);
+  --color-tile-focus-ring: rgba(10, 100, 216, 0.9);
+  /* 区分けのボタン(表示モードの切替。macOS のセグメントのコントロールにならう: 淡い溝と、選んだ区分けだけ白く浮かせる)。 */
+  --color-segmented-bg: rgba(0, 0, 0, 0.06);
+  --color-segmented-selected-bg: #ffffff;
+  --color-segmented-selected-fg: #1d1d1f;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -103,6 +114,10 @@
   /* 上部の帯とタブバーの高さ。 */
   --header-height: 30px;
   --tab-bar-height: 28px;
+  /* タイルのタイトルバーの高さ(macOS の小さなパネルのタイトルにならう)と、区分けのボタンの 1 区分けの幅・高さ。 */
+  --tile-title-height: 24px;
+  --segmented-width: 28px;
+  --segmented-height: 20px;
   /* 小さなアイコンのボタン(サイドバーの開閉、フォルダを追加、ツリーの下端の帯。Xcode の帯のボタンにならう)。 */
   --icon-button-width: 24px;
   --icon-button-height: 20px;
@@ -170,6 +185,10 @@
     --shadow-drag-ghost: 0 3px 12px rgba(0, 0, 0, 0.45), 0 0 0 0.5px rgba(255, 255, 255, 0.16);
     --color-copy-badge: #30d158;
     --color-copy-badge-fg: #ffffff;
+    --color-tile-focus-ring: rgba(76, 155, 255, 0.9);
+    --color-segmented-bg: rgba(255, 255, 255, 0.07);
+    --color-segmented-selected-bg: rgba(255, 255, 255, 0.2);
+    --color-segmented-selected-fg: #f5f5f7;
   }
 }
 
