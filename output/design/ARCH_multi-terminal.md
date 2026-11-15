@@ -3,6 +3,7 @@
 > 生成元: `output/prd/PRD_multi-terminal.md`(承認済み。FR-001〜064、NFR-001〜009)
 > 参照: `project-config.md` §1〜§3・§6、過去作 `froggugugugu/tadcap`(Tauri 2)、`froggugugugu/mdslide`(Electron。参考程度)
 > 生成日: 2026-11-14
+> 改訂: 2026-11-15 M2 の実装で決まったこと・食い違いを反映(計画 T28b。Rust 側と決定済みのことだけ。差分は本人の確認待ち。画面側は T36 で直す)
 > ステータス: 承認済み(2026-11-14、設計ゲート通過。本人承認。§15.1 の 12 件は確定、§15.2 の仮定 12 件は異論なし)
 
 **この文書の読み方**
@@ -69,11 +70,11 @@ flowchart TD
 ```text
 ┌─ Arin.app ──────────────────────────────────────────────────────────────┐
 │ メインプロセス(Rust)                                                   │
-│  ├─ Workspace(状態の正本。Mutex で保護)… arin-core                    │
+│  ├─ Workspace(状態の正本。SessionRegistry の Mutex の中)… arin-core   │
 │  ├─ ターミナルごと: PTY + 読み取り・まとめのスレッド + アテンション走査 │
-│  ├─ ファイル監視(選択中プロジェクトのルートに FSEvents)               │
-│  ├─ 見回り(1 秒間隔): 前面プロセスの調査、ルートフォルダの現在位置     │
-│  └─ 状態ファイルの書き込み(0.5 秒まとめ)                              │
+│  ├─ ファイル監視(選択中プロジェクトのルートに FSEvents。M3)           │
+│  ├─ 見回り(1 秒間隔): ルートフォルダの現在位置。前面プロセスは M6     │
+│  └─ 状態ファイルの書き込み(専用スレッド 1 本。0.5 秒まとめ)           │
 │        ▲ コマンド(操作)        │ イベント(状態の写し)                │
 │        │                         ▼ チャネル(PTY の出力。生バイト)      │
 │ WebKit の補助プロセス(WKWebView。TypeScript)                           │
@@ -104,7 +105,7 @@ flowchart TD
 | 12 | ログインシェルの起動 | 環境変数を許可リストから組み立て、`argv[0]` を `-zsh` の形にして起動する(§7.1) | FR-040。確認済み(§1.4 #11) |
 | 13 | アプリ内のドラッグ | ツリー内の移動、ツリーからターミナルへの挿入、カードの並び替えは、マウスのイベントで自前に実装する(HTML 標準のドラッグ機能を使わない)。Finder からのドロップは Tauri の機能で受ける | Tauri が Finder からのドロップを受ける設定のとき、HTML 標準のドロップは画面に届かない見込み(§1.4 #8) |
 | 14 | 確認ダイアログとメニュー | 確認ダイアログ(削除・終了・移動・名前衝突)とコンテキストメニューは画面内に描く。フォルダ選択ダイアログとメニューバーは macOS 標準 | Playwright で自動テストできる。メニュー表示中の更新保留(FR-037)が素直に書ける。別案は §15.1 #9 |
-| 15 | 実行中の判定 | PTY の前面プロセスグループを 1 秒間隔で調べ、シェル以外なら「実行中」とする | FR-012・046。確認済み(§1.4 #11) |
+| 15 | 実行中の判定 | PTY の前面プロセスグループを 1 秒間隔で調べ、シェル以外なら「実行中」とする。M2 では削除と終了の確認のときだけ調べ(`PtySession::foreground`)、1 秒の見回りでの判定は M6【仮定】 | FR-012・046。確認済み(§1.4 #11) |
 | 16 | 異常終了の扱い | リリースビルドで `panic = "abort"` を使わない(tadcap とは変える) | 1 本のスレッドの異常でアプリ全体が落ちるのを避ける(NFR-006) |
 
 ### 1.4 設計時に確認した事実(2026-11-14)
@@ -124,8 +125,8 @@ flowchart TD
 | 9 | Tauri に `backgroundThrottling` の設定があり、macOS 14 以降で効く。説明には、隠れたビューはタイマーが抑えられ約 5 分で処理が止まるとある | tauri-utils 2.10.2 `src/config.rs`、wry 0.57.2 のソース。実機では未実行 |
 | 10 | Tauri のチャネルは生バイトを送れる。1024 バイト未満は直接、それ以上は取りに来させる方式で渡す | tauri 2.12.5 `src/ipc/channel.rs` |
 | 11 | `portable-pty` 0.9.0 はこの Mac でビルドでき、次が動く: ログインシェルの起動(`argv[0]` が `-zsh`、ログインかつ対話)、最小の環境変数から始めて PATH が 16 件に組み立てられ `claude` が見つかる、前面プロセスグループがシェルと実行中のコマンドで変わる、行・桁数の変更が端末に届く | スクラッチパッドの最小プログラムを `cargo run` |
-| 12 | macOS のブックマークは改名に追従する(改名後に解決すると新しい名前が返る)。削除後は解決に失敗する | Swift のスクリプトで OS の動作を確認。Rust からの呼び出しは未実行。`objc2-foundation` 0.3.2 に該当 API がある |
-| 13 | 開いたままにしたフォルダは、改名しても移動しても現在のパスを取得できる(`fcntl` の `F_GETPATH`)。削除後は取得に失敗する | Python のスクリプト |
+| 12 | macOS のブックマークは改名に追従する(改名後に解決すると新しい名前が返る)。削除後は解決に失敗する。**M2(T28)の追記**: Rust から `objc2-foundation` 0.3.2 の `NSURL` で作成・解決できた(セキュリティスコープなし)。改名・別の親への移動のあとは新しいパスと `stale=true` が返る。既知の制約: 消したあと同じパスに別のフォルダがあるとそこに解決される。改名後に元の名前で新しいフォルダを作ると新しい方に解決される。どちらもアプリを止めているあいだの操作で起きる(起動中は見回りが先に作り直す)。受け入れる【仮定】 | Swift のスクリプト。M2 で Rust の小さなプログラム(PROGRESS の T28)と `arin-platform` のテスト |
+| 13 | 開いたままにしたフォルダは、改名しても移動しても現在のパスを取得できる(`fcntl` の `F_GETPATH`)。**M2 の訂正**: 削除後も `F_GETPATH` は消える前のパスを返す。実装(`arin-platform/src/watch/`)は、記述子の `fstat` が `ENOENT` になることと、返ったパスにあるものの装置番号・inode が開いたフォルダと一致するかで「見つからない」を判定する | Python のスクリプト。M2 で `arin-platform` のテスト(macOS 26、APFS。ADR-009) |
 | 14 | `renamex_np`(`RENAME_EXCL`)と `copyfile`(`COPYFILE_EXCL`)は、移動先・コピー先が既にあると何も変えずに失敗する。`libc` 0.2.191 に定義がある | Python のスクリプト、`libc` のソース |
 | 15 | ゴミ箱に入れる標準の API(`NSFileManager` の `trashItemAtURL`)は、一部の環境で Finder の「戻す」が出ないと `trash` クレート 5.3.0 が文書に書いている。Finder に頼む方式は「戻す」が出るが、権限の確認が出ることがある | `trash` 5.3.0 `src/macos/mod.rs` のドキュメントコメント。この Mac では未検証 |
 | 16 | xterm.js 6.0.0 は canvas 描画を廃止した。描画は DOM か WebGL。同期出力(DEC 2026)に対応した。日本語入力で英数キーで確定すると文字が二重になる不具合(#5778)と、WKWebView での韓国語入力の不具合(#5704)が未解決 | xterm.js 6.0.0 のリリースノート、GitHub の issue |
@@ -152,17 +153,17 @@ flowchart TD
 | xterm.js のアドオン | `addon-fit`(寸法合わせ)0.11.0、`addon-unicode11` 0.9.0(全角幅・絵文字。既定)、`addon-unicode-graphemes` 0.4.0(`ARIN_UNICODE=graphemes` で切替。M4 まで残す)、`addon-search`(FR-047)、`addon-web-links`(FR-047) | 左に記載。search と web-links は入れるときに選ぶ | fit と全角幅は確定(ADR-001)。search と web-links は FR-047 を作るとき(M6 の T61)に入れる |
 | PTY | `portable-pty` / `pty-process` / 自前実装 | 0.9.0 | 確定(§15.1 #3)。`portable-pty` |
 | ファイル監視 | FSEvents。`notify` クレート経由 | 8.2 系 | FSEvents は確定(PRD §7 C7)。クレートは推奨 |
-| macOS の API 呼び出し | `objc2`、`objc2-foundation`、`objc2-app-kit`、`libc` | 0.6 / 0.3 / 0.3 / 0.2 | 推奨・踏襲。Tauri が既に使っているクレートで、新しい供給元が増えない |
+| macOS の API 呼び出し | `objc2`、`objc2-foundation`、`objc2-app-kit`、`libc`、`base64`(ブックマークを文字列にする) | =0.6.5 / =0.3.2 / =0.3.2 / =0.2.191 / =0.23.1 | 確定(M2。ADR-009)。どれも Tauri が使っている版と同じで、`Cargo.lock` に新しいクレートは増えない。使うのは `arin-platform` だけ |
 | 状態の永続化 | JSON(`serde_json`) | 1 系 | 確定(FR-056) |
 | 設定ファイル | TOML / 厳密な JSON / コメント付き JSON | — | 確定(§15.1 #4)。TOML |
 | Rust と TypeScript の型合わせ | `ts-rs` で生成 / 手書きと照合テスト | 12 系 | 確定(§15.1 #7)。`ts-rs` |
-| フォルダ選択ダイアログ | `tauri-plugin-dialog` | 2.8 系 | 推奨。Tauri 公式のプラグイン |
+| フォルダ選択ダイアログ | `NSOpenPanel` を `objc2-app-kit` で直接呼ぶ | (上の `objc2-app-kit`) | 確定(M2。ADR-009 の追記)。`tauri-plugin-dialog` は `tauri-plugin-fs` を外せない依存に持つ(§12 に反する)ため使わない |
 | スタイリング | 素の CSS とカスタムプロパティ | — | 推奨・踏襲 |
 | アイコン | 自作の少数の SVG | — | 【仮定】§15.2 #12。SF Symbols は画面内に埋め込めない |
 | テスト(Rust) | `cargo test`、カバレッジは `cargo-llvm-cov` | 0.9 系 | 推奨。カバレッジの道具は M0 で入れる |
 | テスト(TypeScript) | Vitest、カバレッジは `@vitest/coverage-v8` | 5 系 | 推奨・踏襲(§15.1 #5) |
 | 画面の自動テスト | Playwright(ブラウザ方式。WebKit) | 1.65 系 | 確定(§15.1 #6) |
-| コード品質 | `tsc` の厳格オプション、`cargo clippy -- -D warnings`、`cargo fmt --check`、境界検査スクリプト | — | 推奨・踏襲(§15.1 #10) |
+| コード品質 | `tsc` の厳格オプション、`cargo clippy -- -D warnings`、`cargo fmt --check`、境界検査スクリプト、React のフックの検査に Biome(`@biomejs/biome`。規則は `useExhaustiveDependencies`・`useHookAtTopLevel` の 2 つだけ) | Biome 2.6.4 | 推奨・踏襲(§15.1 #10)。Biome は M2 で追加(ADR-008) |
 | 配布 | Developer ID 署名、Hardened Runtime、`notarytool`、staple。Tauri のバンドラと tadcap の `package-mac.sh` の方式 | — | 確定(PRD §7 C1)。手順は踏襲 |
 | CI | GitHub Actions の `macos-26` | — | 確定(PRD §7)。ランナーとアクションの版を固定するやり方は踏襲 |
 
@@ -214,7 +215,7 @@ No-Go のときは、原因に応じて描画方式の変更か実装技術の�
 | レイヤー | ビルド単位 | 責務 | 依存可能な対象 |
 | -------- | ---------- | ---- | -------------- |
 | App(Rust) | `src-tauri`(クレート `arin`) | エントリーポイント。実装を生成して `Workspace` に渡す。コマンド(画面からの操作を受けて Core を呼ぶ薄い関数)、イベントの送信、メニューバー、終了の制御 | `arin-core`、`arin-platform`、`tauri`、Tauri のプラグイン |
-| Platform(Rust) | `crates/arin-platform` | Core のポートの実装(ファイル操作、監視、PTY、ブックマーク、状態・設定ファイル、ペーストボード、Finder 連携、通知、git の HEAD 読み取り、プロセス調査) | `arin-core`、`libc`、`objc2` 系、`notify`、PTY のクレート |
+| Platform(Rust) | `crates/arin-platform` | Core のポートの実装(ファイル操作、監視、PTY、ブックマーク、状態・設定ファイル、ペーストボード、フォルダ選択のダイアログ、Finder 連携、通知、git の HEAD 読み取り、プロセス調査、乱数・時計) | `arin-core`、`libc`、`objc2` 系、`base64`、`notify`、PTY のクレート |
 | Core(Rust) | `crates/arin-core` | ドメインモデル、状態(ストア)、規則、ポート定義、ストアをまたぐ操作 | `serde`、`serde_json`、`thiserror`、`ts-rs` のみ(`ts-rs` は型の生成だけに使い、入出力をしない。T1 で追加) |
 | UI(TS) | `src/ui` | DOM の部品。状態を読み、操作を呼ぶ | `src/state`、`src/logic`、`src/terminal`(抽象のみ) |
 | State(TS) | `src/state` | Rust の状態の写し、表示だけの状態、操作(`src/ipc` を呼ぶ) | `src/logic`、`src/ipc` |
@@ -306,26 +307,27 @@ arin-term/
 ├── crates/
 │   ├── arin-core/                    # 状態・規則・ポート定義(入出力なし)
 │   │   └── src/
-│   │       ├── project/              # Project、ProjectStore、色の割当、二重登録の判定
+│   │       ├── project/              # Project、ProjectId、ProjectStore、色の割当、二重登録の判定(M2)
 │   │       ├── tree/                 # 除外の規則、フォルダの中身の型、ツリーの保存設定
 │   │       ├── fileops/              # ファイル操作の手順、衝突の扱い、対象範囲の検査、名前の検証、切り取り状態、取り消し
 │   │       ├── paths/                # 相対・絶対パスの整形、シェルエスケープ
 │   │       ├── terminal/             # タブのモデル、TerminalStore、起動の仕様、アテンションの走査と判定
-│   │       ├── layout/               # 表示モード、タイルのグリッドとページ、LayoutStore
+│   │       ├── layout/               # ペインの寸法の規則(PaneSizes。M2)。表示モード、タイルのグリッドとページ(M4)
 │   │       ├── settings/             # 設定のスキーマ・既定値・検証、SettingsStore
-│   │       ├── persistence/          # state.json のスキーマ、読み書き、版の移行、保存の予約
+│   │       ├── persistence/          # state.json の読み書きと退避の名前(codec)、保存のまとめ(scheduler)。版の移行は版 2 を作るとき
 │   │       ├── workspace/            # ストアをまたぐ操作の入口、画面へ渡す状態の写しの生成
-│   │       └── ports/                # OS 入出力の trait と時計の抽象
+│   │       └── ports/                # OS 入出力の trait と時計・乱数の抽象
 │   └── arin-platform/                # ポートの実装(OS 入出力)
 │       └── src/
 │           ├── fs/                   # フォルダの読み込み、上書きしない作成・移動・コピー、ゴミ箱
-│           ├── watch/                # FSEvents、ルートフォルダの現在位置の調査
-│           ├── pty/                  # PTY の生成、読み書き、寸法の変更、終了
-│           ├── bookmark/             # ブックマークの生成と解決
-│           ├── storage/              # state.json と設定ファイルの読み書きと退避
-│           ├── desktop/              # ペーストボード、Finder で表示、アプリで開く、Quick Look、通知
+│           ├── watch/                # ルートの正規化と開いたフォルダの現在位置(M2)、FSEvents(M3)
+│           ├── pty/                  # PTY の生成、読み書き、寸法の変更、終了、前面プロセスグループの調査(M2)
+│           ├── bookmark/             # ブックマークの生成と解決、base64 との変換(M2)
+│           ├── storage/              # state.json の読み書きと退避(M2)、設定ファイルの読み込み
+│           ├── desktop/              # ペーストボード、フォルダ選択のダイアログ(M2)、Finder で表示、アプリで開く、Quick Look、通知
+│           ├── system/               # プロジェクト ID の乱数(/dev/urandom)と時計(M2)
 │           ├── git/                  # .git の HEAD を読むだけの実装
-│           └── process/              # 前面プロセスの調査、プロセス名の取得
+│           └── process/              # プロセス名の取得
 ├── src-tauri/                        # Tauri のアプリ本体
 │   ├── Cargo.toml                    # クレート arin
 │   ├── tauri.conf.json               # ウィンドウ、CSP、バンドル、Bundle ID
@@ -334,11 +336,14 @@ arin-term/
 │   └── src/
 │       ├── main.rs                   # エントリーポイント
 │       ├── lib.rs                    # 組み立て(ポート実装 → Workspace → Tauri)
-│       ├── commands/                 # 画面からの操作を受ける薄い関数(機能ごとに 1 ファイル)
-│       ├── events.rs                 # 画面へ送るイベント
-│       ├── sessions.rs               # ターミナルごとの読み取り・まとめのスレッドとチャネルの管理
-│       ├── menu.rs                   # メニューバー(Tauri の既定を「Arin」と「編集」だけに置き換える)
-│       └── lifecycle.rs              # 起動、終了の確認、見回りの開始
+│       ├── commands/                 # 画面からの操作を受ける薄い関数(機能ごとに 1 ファイル。app・terminal・project・layout)
+│       ├── events.rs                 # 画面へ送るイベントの名前
+│       ├── sessions.rs               # ターミナルごとの読み取り・まとめのスレッドとチャネルの管理。Workspace を Mutex で持つ
+│       ├── persistence.rs            # 起動時の state.json の読み込み・退避・ブックマークの解決、保存のスレッド(M2)
+│       ├── projects.rs               # プロジェクトの登録・再リンク・パスのコピーの手順(ダイアログ・ドロップから。M2)
+│       ├── patrol.rs                 # ルートフォルダへの追従の見回りのスレッド(M2)
+│       ├── menu.rs                   # メニューバー(Tauri の既定を「Arin」「ターミナル」「編集」に置き換える)
+│       └── lifecycle.rs              # 準備完了、前面でなくなったときの保存、Finder からのドロップ、終了の確認と後片付け
 ├── e2e/                              # Playwright のテスト
 │   ├── fixtures/                     # 偽の Rust 側(通信の差し替え)、テストデータ
 │   └── *.spec.ts                     # シナリオ
@@ -363,14 +368,14 @@ arin-term/
 | `arin-core/fileops` | 新規作成・名称変更・移動・コピー・複製・ゴミ箱の手順。実行時の存在確認と衝突判定。対象範囲の限定。取り消し | `FileOperationService`、`ConflictResolution`、`PathScopeGuard`、`NameValidator`、`UniqueNameGenerator`、`FileClipboard`、`FileOperationHistory` | — |
 | `arin-core/paths` | 相対・絶対パスの整形、複数選択の連結、シェルエスケープ | `PathFormatter`、`ShellEscaper` | — |
 | `arin-core/terminal` | タブの並びと状態、起動の仕様、アテンションの走査と判定、実行中の判定、タブ名 | `TerminalId`、`TerminalTab`、`TerminalStore`、`ShellLaunchSpec`、`AttentionScanner`、`AttentionPolicy` | `TerminalStore` |
-| `arin-core/layout` | 表示モード、タイルのグリッドとページ、タイルからの拡大、ペインの寸法 | `DisplayMode`、`TileLayout`、`LayoutStore` | `LayoutStore` |
+| `arin-core/layout` | ペインの寸法の規則(M2)。表示モード、タイルのグリッドとページ、タイルからの拡大(M4) | `PaneSizes`(M2)、`DisplayMode`、`TileLayout`(M4) | —(`Workspace` が `PaneSizes` を直接持つ。`LayoutStore` は作らない) |
 | `arin-core/settings` | 設定の読み込み結果、既定値、値の検証 | `Settings`、`SettingsValidator`、`SettingsStore` | `SettingsStore` |
-| `arin-core/persistence` | 状態のスキーマ、読み書き、版の移行、保存の予約 | `PersistedState`、`StateCodec`、`StateMigrator`、`PersistenceScheduler` | 全ストア(読むだけ) |
-| `arin-core/workspace` | ストアをまたぐ操作(切替、削除、起動時の復元、終了前の確認材料、タイルとカードの連動、パスの挿入)。画面へ渡す状態の写しの生成 | `Workspace`、`AppSnapshot` | 全ストア |
-| `arin-core/ports` | OS 入出力の抽象 | `FileSystemPort`、`WatcherPort`、`PtyPort`、`BookmarkPort`、`RootLocatorPort`、`StateFilePort`、`SettingsFilePort`、`PasteboardPort`、`DesktopPort`、`NotificationPort`、`GitInfoPort`、`ProcessProbePort`、`Clock` | — |
-| `arin-platform` | 上のポートの実装 | `LocalFileSystem`、`FsEventsWatcher`、`NativePty`、`BookmarkResolver`、`OpenDirLocator`、`StateFileStore`、`SettingsFileStore`、`SystemPasteboard`、`DesktopActions`、`UserNotifier`、`GitHeadReader`、`ForegroundProcessProbe` | — |
+| `arin-core/persistence` | `state.json` の読み書き(`codec` の `decode`・`encode`)、退避の名前(`broken_file_name`)、保存のまとめ(`scheduler`)。版の移行は版 2 を作るときに足す | `PersistedState`、`LoadOutcome`、`SaveScheduler` | 全ストア(読むだけ) |
+| `arin-core/workspace` | ストアをまたぐ操作(切替、削除、起動時の復元、終了前の確認材料、タイルとカードの連動、パスの挿入)。画面へ渡す状態の写しの生成。`Workspace` は `src-tauri/sessions` の `SessionRegistry` の中の Mutex が持つ | `Workspace`、`AppSnapshot` | 全ストア |
+| `arin-core/ports` | OS 入出力の抽象 | `FileSystemPort`、`WatcherPort`、`PtyPort`(前面プロセスの調査 `PtySession::foreground` を含む。M2)、`BookmarkPort`、`RootLocatorPort`、`StateFilePort`、`SettingsFilePort`、`PasteboardPort`、`IdSource`、`DesktopPort`、`NotificationPort`、`GitInfoPort`、`ProcessProbePort`、`Clock` | — |
+| `arin-platform` | 上のポートの実装 | M2 で実装: `NativePty`、`MacBookmarks`、`FsRootLocator`(開いたフォルダは `FdOpenRoot`)、`FsStateFile`、`MacPasteboard`、`UrandomIdSource`、`SystemClock`、フォルダ選択の `choose_folder`。後のマイルストーン: `LocalFileSystem`、`FsEventsWatcher`、`SettingsFileStore`、`DesktopActions`、`UserNotifier`、`GitHeadReader`、`ForegroundProcessProbe` | — |
 | `src-tauri/commands` | 画面からの操作を `Workspace` に渡す | 機能ごとのコマンド関数 | — |
-| `src-tauri/sessions` | ターミナルごとの読み取りスレッドとまとめのスレッド、出力のまとめ、流量制御、チャネルの付け替え | `SessionRegistry`、`Pump` | `TerminalStore`(イベントの反映先) |
+| `src-tauri/sessions` | ターミナルごとの読み取りスレッドとまとめのスレッド、出力のまとめ、流量制御、チャネルの付け替え。`Workspace` を Mutex で持ち、変わるたびに写しを送る | `SessionRegistry`、`Pump` | `TerminalStore`(イベントの反映先) |
 | `src/logic/tree` | ツリーの行の並び、遅延読み込みの管理、差分の適用、更新の保留、目印、選択、絞り込み | `TreeModel`、`applyDirListing`、`UpdateGate`、`RecentMarks`、`Selection` | — |
 | `src/logic/dnd` | ドラッグの開始判定とドロップ先の判定 | `DragMachine`、`resolveDropTarget` | — |
 | `src/logic/keys` | ショートカットの表と、フォーカス位置による振り分け | `keymap`、`resolveCommand` | — |
@@ -424,22 +429,24 @@ export interface TerminalSurface {
 - ファイル操作は 画面 → コマンド → `FileOperationService` → `FileSystemPort`。名前が衝突したら、コマンドは「衝突した」という結果を返し、画面が確認ダイアログを出す。画面は選ばれた対処(置き換える / 両方残す)を付けて同じコマンドを呼び直し、Rust は実行の瞬間にもう一度判定する。
 - `arin-core` の機能モジュールどうしは直接参照しない。共有するのは ID 型、`paths`、`ports` だけ。
 
-通信の一覧(案。名前は実装時に確定):
+通信の一覧(M2 までに実装したものは名前で書いた。正本は `src-tauri/src/lib.rs` の登録と `src/ipc/client.ts` の `CommandMap`・`EventMap`。それ以外は案):
 
 | 分類 | コマンド(画面 → Rust) |
 | ---- | ----------------------- |
-| アプリ | 準備完了の通知、状態の写しの取得、終了の確定 |
-| プロジェクト | ダイアログで追加、ドロップで追加、選択、削除、並び替え、表示名の変更、色の変更、再リンク、ルートパスのコピー |
-| ターミナル | 新規(プロジェクトと、任意でフォルダ)、接続(出力チャネルを渡す)、入力の書き込み、処理済みの量の通知、寸法の変更、閉じる、フォーカスの通知、タブ名の変更、パスの挿入 |
-| 表示 | 表示モードの切替、ペイン寸法の保存、タイルのページ切替、タイルの拡大 |
-| ツリー | フォルダの中身の取得、展開状態の保存、隠しファイル表示の切替 |
-| ファイル操作 | 新規作成、名称変更、移動、コピー、複製、ゴミ箱、取り消し、ファイルのコピー・切り取り・ペースト、パスのコピー |
-| デスクトップ | Finder で表示、開く、開けるアプリの一覧、Quick Look |
+| アプリ | `get_app_snapshot`、`notify_app_ready`、`confirm_quit`(終了の確定)、`report_frontend_error`、`get_launch_options`(M1 の検証用の指定。M4 で外す) |
+| プロジェクト | `add_project_by_dialog`(ダイアログは Rust が開き、選んだパスは画面を経由しない)、`select_project`、`remove_project`(動作中があり未確認なら何も変えず確認を求める結果を返す)、`relink_project`(同じくダイアログは Rust)、`set_project_color`、`copy_project_path`(パスは画面に返さない)。Finder からのドロップはコマンドではなく Rust がウィンドウのイベントで受ける。案: 並び替え、表示名の変更(M6) |
+| ターミナル | `new_terminal`(選択中プロジェクトの末尾)、`close_terminal`、`select_terminal`、`connect_terminal`(出力チャネルを渡す)、`write_terminal`、`write_terminal_bytes`、`ack_terminal_output`、`resize_terminal`。案: 新規(任意でフォルダ)、フォーカスの通知、タブ名の変更、パスの挿入 |
+| 表示 | `set_pane_sizes`、`set_sidebar_collapsed`。案: 表示モードの切替、タイルのページ切替、タイルの拡大(M4) |
+| ツリー | 案: フォルダの中身の取得、展開状態の保存、隠しファイル表示の切替 |
+| ファイル操作 | 案: 新規作成、名称変更、移動、コピー、複製、ゴミ箱、取り消し、ファイルのコピー・切り取り・ペースト、パスのコピー |
+| デスクトップ | 案: Finder で表示、開く、開けるアプリの一覧、Quick Look |
 
 | 分類 | Rust → 画面 |
 | ---- | ----------- |
-| イベント | 状態の写しの更新、ツリーの変更(プロジェクト、フォルダ、項目)、終了の確認の要求 |
+| イベント | `app-snapshot`(状態の写しの更新)、`menu-command`(メニューから画面へ渡す操作。M2 は「すべてを選択」だけ)、`quit-requested`(終了の確認の要求と動作中の一覧)。案: ツリーの変更(プロジェクト、フォルダ、項目) |
 | チャネル | PTY の出力(ターミナルごと。生バイト) |
+
+メニューバーのタブ操作(⌘T・⌘W・⌘⇧[・⌘⇧])は画面を経由せず Rust が `Workspace` を操作し、結果は写しで画面に届く(§9.1)。
 
 どのコマンドも、ファイルはプロジェクト ID とルート基準の相対パスで指す。絶対パスを画面から受け取らない(§12)。
 
@@ -467,7 +474,7 @@ export interface TerminalSurface {
 | FR-041、047 | `src/terminal/xterm`(FR-041 は人間ゲート) |
 | FR-045、055 | `AttentionScanner`、`AttentionPolicy`、`NotificationPort` |
 | FR-049、057 | `arin-core/settings`、`SettingsFilePort`、`src/terminal/xterm` |
-| FR-051、052、054 | `TileLayout`、`LayoutStore`、`src/ui/terminals` |
+| FR-051、052、054 | `TileLayout`、`Workspace`、`src/ui/terminals` |
 | FR-060〜062 | `src/ui/design`、`src/ui/projects`、`src/ui/terminals` |
 | FR-063 | `Workspace`(動作中の一覧)、`src-tauri/lifecycle`、`src/ui/dialogs` |
 | FR-022、023、050(Could) | 未実装。§16 |
@@ -482,7 +489,7 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 
 | 機能 | 実現方法(案) | 確認状況 |
 | ---- | -------------- | -------- |
-| フォルダの移動・改名への追従(FR-007) | 保存はブックマーク(`objc2-foundation` の `NSURL`)。動作中は、開いたままにしたフォルダの現在のパスを見回りで調べる(`libc` の `fcntl`) | OS の動作は確認済み(§1.4 #12・#13)。Rust からブックマークを呼ぶ部分は未実行。M2 の最初に確かめる |
+| フォルダの移動・改名への追従(FR-007) | 保存はブックマーク(`objc2-foundation` の `NSURL`)。動作中は、開いたままにしたフォルダの現在のパスを見回りで調べる(`libc` の `fcntl`) | M2 で Rust から実装済み(§1.4 #12・#13、ADR-009)。既知の制約は §1.4 #12 |
 | ゴミ箱と Finder の「戻す」(FR-028) | 標準 API の `trashItemAtURL` から試す | 未検証。「戻す」が出ない環境があるとの記述がある(§1.4 #15)。M3 の最初に確かめる(§15.3 #3) |
 | Quick Look(FR-018。Should) | 標準のパネルを `objc2-quick-look-ui` で出す。ウィンドウの参照は `src-tauri` が渡す | 未検証。M6(§15.3 #8) |
 | Finder からのドロップ(FR-001、FR-031) | Tauri のドロップのイベント(パスと座標)で受け、画面が座標からドロップ先を決める。修飾キーは Rust 側で取得する | イベントの中身はソースで確認済み(§1.4 #8)。実機では未実行 |
@@ -498,14 +505,14 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 
 ### 6.1 ストア一覧
 
-正本(Rust の `arin-core`。`Workspace` が持つ):
+正本(Rust の `arin-core`。`Workspace` が持つ。`Workspace` 自体は `src-tauri` の `SessionRegistry` の中の Mutex が持つ):
 
 | ストア | 責務 | 永続化 | ストレージキー |
 | ------ | ---- | ------ | -------------- |
-| `ProjectStore` | プロジェクトの一覧(順序つき)、選択中のプロジェクト、色、表示名、「見つからない」状態、ブランチ名、ツリーの保存設定(展開、隠しファイル表示) | あり(ブランチ名と「見つからない」は保存しない) | `state.json` の `projects[]`、`ui.selectedProjectId` |
-| `TerminalStore` | プロジェクトごとのタブの並び、表示中のタブ、フォーカス中のターミナル、タブ名、実行中、アテンション | なし(FR-050 は Could。§16) | — |
-| `LayoutStore` | 表示モード、タイルのページ、タイルからの拡大中か、ペインの寸法、左ペインの折りたたみ | 一部あり(ページと拡大中は保存しない) | `state.json` の `ui` |
-| `SettingsStore` | 設定ファイルを読んだ結果(読み取り専用)と、読み込みエラー | なし(設定ファイル自体が正本) | `settings.toml` |
+| `ProjectStore` | プロジェクトの一覧(順序つき)、選択中のプロジェクト、色、表示名(`customName`。変更の操作は M6)、ルートの参照(ブックマークと最後に分かっていたパス)、「見つからない」状態。ブランチ名は M6、ツリーの保存設定(展開、隠しファイル表示)は M3 で足す | あり(「見つからない」は保存しない) | `state.json` の `projects[]`、`ui.selectedProjectId` |
+| `TerminalStore` | プロジェクトごとのタブの並び(0 枚も許す)、表示中のタブ、タブ名(「ターミナル N」)、シェルが終わったタブを閉じるか(検証画面だけ残す)。ターミナルの状態と cwd は `Workspace` が持つ。フォーカス中のターミナル、実行中、アテンションは M4・M6 で足す | なし(FR-050 は Could。§16) | — |
+| ペインの寸法(`PaneSizes`。ストアにせず `Workspace` が直接持つ) | 左ペインの幅、左ペインの折りたたみ、カード領域の高さ。最小寸法と不正な値の規則は `layout::panes`。表示モード、タイルのページ、タイルからの拡大中かは M4 で足す | あり(ページと拡大中は保存しない予定) | `state.json` の `ui` |
+| `SettingsStore` | 設定ファイルを読んだ結果(読み取り専用)と、読み込みエラー(M6) | なし(設定ファイル自体が正本) | `settings.toml` |
 
 画面(TypeScript の `src/state`):
 
@@ -525,26 +532,26 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 | -------- | ------ | ---- |
 | `state.json` | アプリだけ | プロジェクト一覧と UI 状態 |
 | `settings.toml` | 人間だけ(アプリは読むだけ) | フォント、配色、確認の省略など(FR-057)。形式は §15.1 #4 |
-| `state.corrupt-<日時>.json` | アプリ(退避) | 読めなかった `state.json` の退避先(FR-058) |
+| `state.json.broken-<UTC の日時>` | アプリ(退避) | 読めなかった `state.json` の退避先(FR-058)。日時は `20261115T093000Z` の形。同じ名前があれば `-2`、`-3` と足す【仮定】 |
 
-`state.json` のスキーマ(版 1。提案):
+`state.json` のスキーマ(版 1。M2 で読み書きするのは「M2」の行。それ以外は使うマイルストーンでキーを足す。キーの追加なので版は上げない):
 
-| キー | 型 | 内容 | 根拠 |
-| ---- | -- | ---- | ---- |
-| `schemaVersion` | 整数 | `1` | PRD §5 |
-| `projects[]` | 配列 | 並び順は配列の順 | FR-004、005 |
-| `projects[].id` | UUID 文字列 | プロジェクトの識別子 | — |
-| `projects[].bookmark` | Base64 文字列 | ルートフォルダのブックマーク | FR-007 |
-| `projects[].lastKnownPath` | 文字列 | 最後に分かっていた絶対パス。「見つからない」表示に使う | FR-007 |
-| `projects[].customName` | 文字列または null | 変更した表示名。null のときはフォルダ名を表示する【仮定】§15.2 #5 | FR-005 |
-| `projects[].colorId` | 文字列 | パレットの色の識別子(例 `green`) | FR-059 |
-| `projects[].tree.expanded` | 文字列の配列 | 展開中フォルダの相対パス | FR-020 |
-| `projects[].tree.showHidden` | 真偽 | 隠しファイル表示 | FR-017 |
-| `ui.selectedProjectId` | UUID 文字列または null | 最後に選択していたプロジェクト | FR-004 |
-| `ui.displayMode` | `"tabs"` / `"tiles"` | 表示モード | FR-048 |
-| `ui.sidebarWidth` | 数値(CSS ピクセル) | 左ペインの幅 | FR-009 |
-| `ui.sidebarCollapsed` | 真偽 | 左ペインの折りたたみ | FR-009 |
-| `ui.cardAreaHeight` | 数値(CSS ピクセル) | 左ペイン上段の高さ | FR-009 |
+| キー | 型 | 内容 | 根拠 | 読み書き |
+| ---- | -- | ---- | ---- | -------- |
+| `schemaVersion` | 整数 | `1` | PRD §5 | M2 |
+| `projects[]` | 配列 | 並び順は配列の順 | FR-004、005 | M2 |
+| `projects[].id` | UUID v4 の形の文字列 | プロジェクトの識別子。乱数は `arin-platform` の `IdSource`(`/dev/urandom` の 16 バイト)、文字列への整形と検査は `arin-core`(`uuid` クレートは足さない)【仮定】 | — | M2 |
+| `projects[].bookmark` | base64 の文字列または null | ルートフォルダのブックマーク。base64 との変換は `arin-platform`、`arin-core` は中身を解釈しない文字列として運ぶ。null なら起動時に `lastKnownPath` から作り直す【仮定】 | FR-007 | M2 |
+| `projects[].lastKnownPath` | 文字列 | 最後に分かっていた絶対パス。「見つからない」表示に使う | FR-007 | M2 |
+| `projects[].customName` | 文字列または null | 変更した表示名。null のときはフォルダ名を表示する【仮定】§15.2 #5 | FR-005 | M2(変更の操作は M6) |
+| `projects[].colorId` | 文字列 | パレットの色の識別子(`red`・`orange`・`yellow`・`green`・`teal`・`blue`・`purple`・`pink`)【仮定】 | FR-059 | M2 |
+| `projects[].tree.expanded` | 文字列の配列 | 展開中フォルダの相対パス | FR-020 | M3 で足す |
+| `projects[].tree.showHidden` | 真偽 | 隠しファイル表示 | FR-017 | M3 で足す |
+| `ui.selectedProjectId` | UUID 文字列または null | 最後に選択していたプロジェクト | FR-004 | M2 |
+| `ui.displayMode` | `"tabs"` / `"tiles"` | 表示モード | FR-048 | M4 で足す |
+| `ui.sidebarWidth` | 数値(CSS ピクセル) | 左ペインの幅 | FR-009 | M2 |
+| `ui.sidebarCollapsed` | 真偽 | 左ペインの折りたたみ | FR-009 | M2 |
+| `ui.cardAreaHeight` | 数値(CSS ピクセル) | 左ペイン上段の高さ | FR-009 | M2 |
 
 保存値と表示値の分離: ルートのパス表示(`~` 省略)、「見つからない」、ブランチ名、実行中、アテンションは保存しない(PRD §5)。色は識別子を保存し、実際の色値は `src/ui/design` が持つ。
 
@@ -552,14 +559,14 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 
 | 項目 | 方式 |
 | ---- | ---- |
-| 書き込みの契機 | 保存対象の変更から 0.5 秒まとめる。ウィンドウが前面でなくなったときと終了時は即時 |
+| 書き込みの契機 | 保存対象の変更から 0.5 秒まとめる。ウィンドウが前面でなくなったときと終了時は待たずに書く。書き込みは専用のスレッド 1 本で直列に行い、前回書いた中身と同じなら書かない(`src-tauri/src/persistence.rs`) |
 | 書き込み方法 | 同じフォルダの一時ファイルに書いてから置き換える(原子的)。フォルダは 0700、ファイルは 0600 |
-| 読み込み | 起動時に 1 回。欠けたキーは既定値で補う |
-| 破損時 | 読み取りに失敗したら `state.corrupt-<日時>.json` に改名して退避し、空の状態で始める。削除しない(FR-058) |
-| 版の移行 | キーの追加は既定値で吸収し、版を上げない。互換性が切れる変更のときだけ `schemaVersion` を上げ、`StateMigrator` に 1 版ずつの変換を足す |
-| 未知の版 | 読んだ `schemaVersion` が対応より新しいときは、破損時と同じく退避して空で始める |
+| 読み込み | 起動時に 1 回。欠けたキーは既定値で補い、未知のキーは無視する |
+| 破損時 | JSON として読めない・形が違うときは `state.json.broken-<UTC の日時>` に改名して退避し、空の状態で始めて画面に 1 行で知らせる。退避は改名だけで、消さない・上書きしない(同名があれば `-2` などを足す)。退避に失敗した回と、無い以外の理由で読めなかった回は一度も書かない(FR-058。決定 (d)【仮定】) |
+| 版の移行 | キーの追加は既定値で吸収し、版を上げない。互換性が切れる変更のときだけ `schemaVersion` を上げ、1 版ずつの変換を足す(版 2 を作るとき) |
+| 未知の版 | 読んだ `schemaVersion` が対応より新しい・正しくないときは、破損時と同じく退避して空で始める |
 | 並び順 | 配列の順が正。別の順序フィールドを持たない |
-| 書き手 | Rust だけが書く。画面は状態ファイルに触れない |
+| 書き手 | Rust だけが書く。画面は状態ファイルに触れない。9 枚の検証画面(`ARIN_VERIFY_GRID`)では読まず書かない |
 
 設定ファイルのキー(提案。範囲外の値は既定値に戻し、理由を画面に出す):
 
@@ -581,6 +588,19 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 - 画面の `appStore` は Rust から届いた写しで丸ごと置き換える。画面のコードが部分的に書き換えることはない。
 - 画面の `treeStore` が持つ展開状態は、変更から少し待って Rust へ送る(保存のため)。それ以外の `treeStore` と `uiStore` の中身は Rust に送らない。
 
+状態の写し(`AppSnapshot`。M2 の形。正本は `crates/arin-core/src/workspace/snapshot.rs`、TypeScript の型は `src/ipc/generated/` に生成):
+
+| 項目 | 内容 |
+| ---- | ---- |
+| `schemaVersion`・`appVersion` | 写しの形の版(項目の追加では上げない)とアプリの版 |
+| `projects[]` | カード 1 枚ずつ(並び順): `id`、`name`(表示名)、`color`(色の識別子)、`displayPath`(`~` 省略の表示用のパス)、`missing`、`terminalIds`(タブの順)、`activeTerminalId` |
+| `selectedProjectId` | 選択中のプロジェクト(無ければ null) |
+| `terminals[]` | タブ 1 枚ずつ(プロジェクトの並び順、その中はタブの順。検証画面の持ち主の無いものは最後): `id`、`projectId`(検証画面では null)、`label`、`status` |
+| `layout` | ペインの寸法の保存値(`sidebarWidth`・`sidebarCollapsed`・`cardAreaHeight`)。ウィンドウに合わせた表示値は画面が計算する |
+| `notice` | 状態ファイルを退避したときなどの 1 行の知らせ(無ければ null) |
+
+絶対パスとブックマークは写しに載せない(§12。「絶対パスをコピー」は Rust がペーストボードに書く)。表示モード・実行中・アテンションなどは使うマイルストーンで項目を足す。
+
 ---
 
 ## 7. データフロー
@@ -592,10 +612,10 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 **起動(FR-004、FR-039、C-22)**
 
 1. Rust が置き場所を決め、ポートの実装を生成する
-2. 設定ファイルを読む(無ければ既定値)
-3. `state.json` を読む(壊れていたら退避して空)
-4. 各プロジェクトのブックマークを解決する。解決できないものは「見つからない」にする
-5. 解決できた全プロジェクトにターミナルを 1 枚ずつ登録する(この時点では PTY を起動しない)
+2. 設定ファイルを読む(無ければ既定値。M6)
+3. `state.json` を読む(壊れていたら退避して空。§6.2「破損時」。`src-tauri/src/persistence.rs` の `load_startup`)
+4. 各プロジェクトのブックマークを解決し、返ったパスを正規化する。古くなっていれば作り直す。ブックマークが null か壊れていれば `lastKnownPath` から作り直す。フォルダが消えていれば「見つからない」にする(保存値は読んだまま)。作り直したときは起動直後に保存を予約する
+5. 解決できた全プロジェクトにターミナルを 1 枚ずつ登録する(この時点では PTY を起動しない)。`Workspace` を作り、`SessionRegistry` に持たせる。保存のスレッドとルートの見回りのスレッドを始める
 6. ウィンドウを表示する。画面が状態の写しを取得する
 7. 画面が、写しにある各ターミナルのサーフェスを作り、出力チャネルを渡して接続する。Rust は最初の接続のときにログインシェルを起動する
 8. 画面が選択中プロジェクトのツリーを読み込む。Rust が監視を張る
@@ -603,11 +623,11 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 **プロジェクトの切替(FR-002、FR-042)**
 
 1. カードのクリック → 選択のコマンド
-2. `Workspace` が `ProjectStore` の選択を更新し、監視を新しいルートに張り替える
+2. `Workspace` が `ProjectStore` の選択を更新し、監視を新しいルートに張り替える(監視は M3)
 3. 状態の写しが画面に届く
 4. 画面は、前のプロジェクトのターミナルの要素を隠し、新しいプロジェクトの表示中タブの要素を出す(xterm.js のインスタンスと PTY はそのまま)
 5. 画面は、新しいプロジェクトの読込済みフォルダを読み直す
-6. `PersistenceScheduler` が保存を予約する
+6. 写しを送るたびに保存が予約される(`Persistence::mark_changed`。中身が前回と同じなら書かない)
 
 **ターミナルの起動(FR-039、FR-040)**
 
@@ -667,11 +687,18 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 
 **ルートフォルダへの追従(FR-007)**
 
-1. 登録時にブックマークを作り、フォルダを開いたままにする
-2. 見回り(1 秒間隔)で、開いたフォルダの現在のパスを調べる
-3. パスが変わっていたら `lastKnownPath` を更新し、ブックマークを作り直し、監視を張り替える。カードは同じプロジェクトのまま
-4. 取得に失敗したら「見つからない」にする。カードは残す(C-06)
+1. 登録時にブックマークを作る。見回りのスレッド(1 本。`src-tauri/src/patrol.rs`)がフォルダを `O_EVTONLY` で開いたままにする
+2. 見回り(1 秒間隔)で、開いたフォルダの現在のパスを調べる(§1.4 #13)
+3. パスが変わっていたら `lastKnownPath` を更新し、ブックマークを作り直す。カードは同じプロジェクトのまま。ゴミ箱の中に移っていたら「見つからない」にする(§15.2 #7)。監視(FSEvents)の張り替えは M3
+4. 取得に失敗しても 1 回では決めない。続けて 2 回取れなければ開き直し(最後に分かっていたパス、次にブックマーク)を試み、それでも駄目なら「見つからない」にする。カードとタブは残す(C-06)。「見つからない」ものも毎回開き直しを試み、見つかれば解除する(タブは開かない)
 5. 次回の起動時はブックマークから解決する。古くなっていたら作り直す
+
+**動作中の判定と終了(FR-003、FR-063。M2)**
+
+1. 動作中=前面のプロセスグループがシェル以外(§15.2 #2 の A)。M2 では、プロジェクトの削除と終了の確認のときだけ、待たずに各 PTY を調べる(`SessionRegistry::running_terminals`)。1 秒の見回りでの判定は M6【仮定】
+2. 終了の要求(メニューの「終了」⌘Q、ウィンドウの閉じるボタン)で動作中があれば、終了を止めて画面へ `quit-requested`(動作中の一覧)を送る。画面が確認したら `confirm_quit` で終わる。取り消しは何も呼ばない。動作中が無ければ確認せずに終わる(`src-tauri/src/lifecycle.rs`)
+3. 終了時の後片付け: 見回りのスレッドを止める → 保存できていない変更を書き終える → 全セッションへ同時に終了を送る(待ちはおよそ 1 枚ぶん)
+4. プロジェクトの削除で動作中があり未確認なら、`remove_project` は何も変えず確認を求める結果を返す。確認後に呼び直すと一覧から外し、そのプロジェクトのシェルを終わらせる。⌘W は動作中でも確認しない【仮定】
 
 **アテンション(FR-045、FR-055)**
 
@@ -690,8 +717,10 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 | 出力のまとめと送信、シェルの終了の確認 | ターミナルごとのまとめのスレッド |
 | フォルダの読み込み、ファイル操作 | コマンドの非同期タスク(メインスレッドを塞がない) |
 | FSEvents のコールバック | 監視用のスレッド。除外の判定までここで行う |
-| 見回り(前面プロセス、ルートの位置) | 専用スレッド。1 秒間隔 |
-| 状態ファイルの書き込み | 専用スレッド。写しの作成だけ Mutex の中 |
+| 見回り(ルートの位置。前面プロセスは M6) | 専用スレッド 1 本。1 秒間隔。フォルダを調べる入出力は `Workspace` のロックの外 |
+| 状態ファイルの書き込み | 専用スレッド 1 本。保存する内容の作成だけ Mutex の中 |
+| フォルダ選択のダイアログ(`NSOpenPanel`) | コマンドを待ってよいスレッドで受け、メインスレッドで開いて結果を待つ |
+| Finder からのドロップの登録 | 待ってよいスレッド(フォルダを調べるため) |
 | メニューバー、ウィンドウ、ペーストボード、Quick Look | メインスレッド |
 
 ### 7.2 バリデーション戦略
@@ -703,7 +732,7 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 | 画面から届く相対パス | 絶対パス、`..` を含む経路、NUL を含む経路を拒否する | `PathScopeGuard`(Core) |
 | 存在と名前衝突 | 実行の瞬間に判定する(メニューを開いた時点ではない) | `FileOperationService`(Core)と `FileSystemPort` |
 | ターミナルへ挿入する文字列 | シェルエスケープ。制御文字を無害化する | `ShellEscaper`(Core) |
-| `state.json` | 読み取りの失敗と未知の版は退避して空で始める | `StateCodec`、`StateFilePort` |
+| `state.json` | 読み取りの失敗と未知の版は `state.json.broken-<UTC の日時>` に改名して退避し、空で始めて画面に 1 行で知らせる。改名に失敗したらその回は書かない(§6.2) | `persistence::codec`(Core)、`StateFilePort` |
 | 設定ファイル | 未知のキーは無視。範囲外の値は既定値に戻して理由を表示。構文エラーのときは直前の値を保ち、エラーを表示する | `SettingsValidator`(Core) |
 | プロジェクトの登録 | 解決後の正規化したパスが既存と同じなら追加せず既存を選択する。入れ子は別プロジェクトとして許す | `ProjectStore`(FR-010) |
 | OSC 9/777 の本文 | 信頼しない文字列として扱う。長さを切り詰め、制御文字を除く | `AttentionScanner` |
@@ -749,8 +778,8 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 
 | 部位 | 実装 | 理由 |
 | ---- | ---- | ---- |
-| メニューバー、フォルダ選択ダイアログ | macOS 標準(Tauri のメニューと `tauri-plugin-dialog`)。メニューバーは Tauri の既定を使わず、`menu.rs` で「Arin」と「編集」だけに置き換える(M1) | macOS のアプリとして必要。選んだパスが画面を経由しない。既定のメニューの ⌘W などは M2 のタブ操作(FR-044)とぶつかる |
-| ウィンドウ内の分割とペイン境界 | 画面内(CSS とマウスのイベント) | 最小寸法、折りたたみ、境界位置の読み書きを `LayoutStore` 経由で `state.json` に持つ(FR-009) |
+| メニューバー、フォルダ選択ダイアログ | macOS 標準(Tauri のメニューと、`objc2-app-kit` で直接呼ぶ `NSOpenPanel`。ADR-009)。メニューバーは Tauri の既定を使わず、`menu.rs` で次の 3 つに置き換える(M2): 「Arin」(隠す・ほかを隠す・すべてを表示・終了 ⌘Q)、「ターミナル」(新規タブ ⌘T・タブを閉じる ⌘W・前のタブ ⌘⇧[・次のタブ ⌘⇧])、「編集」(コピー ⌘C・ペースト ⌘V・すべてを選択 ⌘A)。タブ操作は Rust の中で処理して写しで返し、「すべてを選択」は画面へ `menu-command` で送る。「終了」と「すべてを選択」は標準の項目ではなく自前の項目にする | macOS のアプリとして必要。選んだパスが画面を経由しない。既定のメニューの ⌘W などはタブ操作(FR-044)とぶつかる。標準の「終了」は終了の要求を経由せずに終わり(FR-063 の確認を挟めない)、標準の「すべてを選択」は xterm.js ではなく文書全体を選ぶ |
+| ウィンドウ内の分割とペイン境界 | 画面内(CSS とマウスのイベント) | 最小寸法、折りたたみ、境界位置の読み書きを `Workspace` の `PaneSizes` 経由で `state.json` に持つ(FR-009) |
 | ツリー | 画面内。見えている行だけを描く仮想スクロール(自作するか React 用のライブラリを使うかは M3 の着手時に決め、足すなら ADR に残す) | 大きなフォルダでも行数に比例して重くならない(NFR-005) |
 | ターミナル | エンジンの要素を `TerminalHost` に入れる | 1 ターミナル 1 要素。表示先が変わるときは要素を付け替える |
 | カード一覧、タブバー、タイルのタイトル、空状態 | 画面内 | 状態の写しをそのまま映すだけで済む |
@@ -762,7 +791,7 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 - Container: zustand のフックでストアを読んで部品に値を渡し、`actions` を呼ぶ(`ProjectCardList`、`FileTreeView`、`TerminalArea`)
 - xterm.js の要素は React の管理の外に置く。`TerminalHost` は置き場所の要素だけを描き、エンジンの要素の付け外しは `TerminalManager` が行う(再描画でターミナルが作り直されないようにするため)
 - コンテキストメニューの項目と有効・無効は `src/logic/menu` が決める(例: ルートを選択中は名称変更・切り取り・ゴミ箱が無効。FR-035)。UI は結果を映すだけ。Rust 側も同じ操作を拒否する
-- ⌘C・⌘V・⌘X は、画面のコピー・ペーストのイベントを入口にし、フォーカス位置(ツリーかターミナルか)で振り分ける(C-04)。⌘C・⌘V は「編集」メニューの項目を経由して画面の `copy`・`paste` イベントになる(M1 で実装)。受け口の確認は §15.3 #7
+- ⌘C・⌘V・⌘X は、画面のコピー・ペーストのイベントを入口にし、フォーカス位置(ツリーかターミナルか)で振り分ける(C-04)。⌘C・⌘V は「編集」メニューの項目を経由して画面の `copy`・`paste` イベントになる(M1 で実装)。アプリのショートカットの受け口は §15.3 #7
 - ツリーでコピーした項目は、ファイルの URL としてペーストボードに書く(Finder と互換。FR-027)
 - 切り取りはアプリ内の状態で表す。ペースト時にペーストボードが切り取り時から変わっていなければ移動、変わっていればコピーにする(Finder に「切り取り」の概念が無いため)
 
@@ -843,12 +872,12 @@ Rust 側のエントリーポイントは `src-tauri/src/main.rs`。組み立て
 | -- | ------------ | ------ |
 | 1 | 置き場所の決定(`AppPaths`。環境変数での差し替えを含む) | 2、3 |
 | 2 | ポートの実装(`arin-platform` の各型) | 3、4 |
-| 3 | 設定と状態の読み込み(設定ファイル、`state.json`、ブックマークの解決) | 4 |
-| 4 | `Workspace`(ストアとポートを受け取る)。Tauri の管理状態に登録する | 5、6、7 |
-| 5 | Tauri のプラグイン(ダイアログ)とコマンドの登録 | — |
-| 6 | メニューバー | — |
-| 7 | `SessionRegistry`、見回り、ルートの調査、`PersistenceScheduler` の開始 | — |
-| 8 | ウィンドウの表示、終了イベントの監視 | — |
+| 3 | 設定と状態の読み込み(設定ファイル=M6、`state.json`、ブックマークの解決。`persistence.rs` の `load_startup`) | 4 |
+| 4 | `Workspace`(読んだ状態とルートの解決の結果を受け取る)。Tauri の管理状態には直接登録せず、`SessionRegistry` の中の Mutex に持たせる | 7 |
+| 5 | コマンドの登録(Tauri のプラグインは使わない。フォルダ選択は `NSOpenPanel` を直接呼ぶ) | — |
+| 6 | メニューバー(`menu.rs`)と、項目が選ばれたときの処理 | — |
+| 7 | `SessionRegistry`(`Workspace` を持つ)、保存のスレッド(`Persistence`)、プロジェクトの操作(`Projects`)、見回りのスレッド(`PatrolThread`)。それぞれ Tauri の管理状態に登録する | — |
+| 8 | ウィンドウの表示、イベントループのイベントの監視(閉じる要求、前面でなくなった、ドロップ、終了。`lifecycle.rs`) | — |
 
 画面側のエントリーポイントは `src/main.tsx`。
 
@@ -861,7 +890,7 @@ Rust 側のエントリーポイントは `src-tauri/src/main.rs`。組み立て
 | 5 | Rust へ準備完了を通知し、写しにあるターミナルを接続する | — |
 
 - 画面側は、ストアとエンジンを `main.tsx` で生成して props で渡す。zustand のストアも、モジュールの読み込み時に作る形ではなく、生成関数で作る。グローバル変数とシングルトンを使わない(テストで差し替えられなくなるため)
-- 終了時は、Rust が終了の要求を一度止め、動作中のプロセスがあれば画面に確認を出させる(FR-063)。確定したら状態を即時保存し、PTY を閉じて終了する
+- 終了時は、Rust が終了の要求を一度止め、動作中のプロセスがあれば画面に確認を出させる(FR-063)。確定したら(`confirm_quit`)見回りを止め、状態を即時保存し、全 PTY に同時に終了を送って終了する(§7.1「動作中の判定と終了」)
 
 ---
 
@@ -896,7 +925,7 @@ Rust 側のエントリーポイントは `src-tauri/src/main.rs`。組み立て
 | -------- | ---- |
 | `npm run build` | 画面の型検査とビルド(`tsc -b`、`vite build`)、Rust のビルド(`cargo build --workspace --locked`) |
 | `npm test` | 単体・結合テスト(`vitest run`、`cargo test --workspace --locked`) |
-| `npm run lint` | `tsc -b`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo fmt --check`、`node scripts/check-boundaries.mjs` |
+| `npm run lint` | `tsc -b`、`biome lint --error-on-warnings`(M2。ADR-008)、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo fmt --check`、`node scripts/check-boundaries.mjs` |
 | `npm run app` | `.app` を生成(`tauri build`。署名なし) |
 | `npm run dev` | 開発用に起動(`tauri dev`)。人間が体感確認するとき |
 | `npm run test:coverage` | カバレッジ付きテスト。出力先 `testreport/coverage/` |
@@ -947,17 +976,19 @@ Xcode は要らない(§1.4 #3)。
 | `project-config.md` §2・§3・§11 | 技術スタック・コマンド・既知の落とし穴(AI が更新できる節)。§2・§3 は 2026-11-14 に Tauri 向けへ更新済み |
 | `testreport/` | テストとカバレッジの生データ、AC の合否一覧 |
 
-ADR の候補(設計ゲートの回答を受けて `/adr` で起こす):
+ADR の一覧(設計ゲートの回答と各マイルストーンの判断を受けて `/adr` で起こす。索引は `ADR_INDEX.md`):
 
 | ADR | 主題 | 対応する §15.1 |
 | --- | ---- | -------------- |
 | ADR-001 | ターミナルエンジンと描画方式、アドオン、CSP(作成済み。`ADR_001_terminal-engine.md`。M1 の Go/No-Go は Go、DOM と `unicode11` を既定にした) | — |
-| ADR-002 | ロジック層の置き場所と依存方向の強制方法 | #1、#10 |
+| ADR-002 | ロジック層の置き場所と依存方向の強制方法(作成済み。`ADR_002_logic-placement.md`) | #1、#10 |
 | ADR-003 | 画面のフレームワーク(作成済み。`ADR_003_ui-framework.md`) | #2 |
-| ADR-004 | PTY のクレートと出力の流し方 | #3 |
-| ADR-005 | 設定ファイルの形式 | #4 |
-| ADR-006 | テストの構成と画面の自動テストの方式 | #5、#6、#7、#8 |
-| ADR-007 | Finder 連携の実装方法(ゴミ箱の方式を含む。M3 の検証結果を追記) | — |
+| ADR-004 | PTY のクレートと出力の流し方(作成済み。`ADR_004_pty.md`) | #3 |
+| ADR-005 | 設定ファイルの形式(作成済み。`ADR_005_settings-format.md`) | #4 |
+| ADR-006 | テストの構成と画面の自動テストの方式(作成済み。`ADR_006_test-structure.md`) | #5、#6、#7、#8 |
+| ADR-007 | Finder 連携の実装方法(ゴミ箱の方式を含む。未作成。M3 の検証結果で作る) | — |
+| ADR-008 | React のフックの検査に Biome 2.6.4 を使い、規則は 2 つだけにする(作成済み。`ADR_008_hooks-lint.md`。M2) | #10 |
+| ADR-009 | M2 の OS 連携に Tauri が使っているクレートを同じ版で使う。フォルダ選択は `NSOpenPanel` を直接呼ぶ(作成済み。`ADR_009_m2-platform-deps.md`。M2) | — |
 
 ---
 
@@ -976,7 +1007,7 @@ ADR の候補(設計ゲートの回答を受けて `/adr` で起こす):
 | 7 | Rust と TypeScript の型の合わせ方 | **確定: A**(`ts-rs` で生成) | `src/ipc/generated/`、偽の Rust 側の信頼性。#1 が B なら重要度は下がる |
 | 8 | カバレッジ 80% の対象 | **確定: A**(`arin-core` と `src/logic` のそれぞれ) | 実装ゲートの基準(C-15 の「ロジック層」の範囲) |
 | 9 | コンテキストメニューの実装 | **確定: A**(画面内に描く) | `src/ui/menu`、FR-024・037。A は自動テストでき、表示中の更新保留が素直に書けるが、見た目が macOS 標準と少し違う。B は見た目が標準だが、自動テストできない |
-| 10 | 画面側の依存方向の検査とコード品質の道具 | **確定: A**(プロジェクト参照と検査スクリプト、`tsc` の厳格オプション)。React のフックの誤用は `tsc` では検出できないため、M2 の着手時に lint の追加(B の Biome など)を再検討する | §3.3、§13.1 |
+| 10 | 画面側の依存方向の検査とコード品質の道具 | **確定: A**(プロジェクト参照と検査スクリプト、`tsc` の厳格オプション)。React のフックの誤用は `tsc` では検出できないため、M2 の着手時に再検討した。**M2 の決定【仮定】(本人の了承は M2 の完了確認)**: Biome 2.6.4 を足し、`useExhaustiveDependencies` と `useHookAtTopLevel` の 2 つだけを `npm run lint` で検査する(ADR-008) | §3.3、§13.1 |
 | 11 | スクロールバック行数と目印の時間を設定項目にするか(PRD §5 が設計での確認を求めた) | **確定: A**(設定ファイルの項目にする) | `arin-core/settings` |
 | 12 | 検証コマンドの入口 | **確定: A**(npm のスクリプト) | §13.1、`project-config.md` §3 |
 
@@ -987,12 +1018,12 @@ ADR の候補(設計ゲートの回答を受けて `/adr` で起こす):
 | # | 項目 | 選択肢 | 影響範囲 |
 | - | ---- | ------ | -------- |
 | 1 | 隠しファイル表示の切替が指すもの(FR-017) | **A【仮定】**: 既定では `.git` `node_modules` `.DS_Store` の 3 つだけを隠し、他のドットファイル(`.claude` `.github` など)は表示する。切替を ON にすると 3 つも表示する / B: ドットファイル全般を既定で隠し、3 つは常に隠す | `ExclusionRule`、監視の除外範囲 |
-| 2 | 「動作中のプロセス」の定義(FR-003、FR-063) | **A【仮定】**: シェル以外が前面で動いているターミナルがあるときだけ確認する(FR-012 と同じ判定)/ B: シェルが 1 つでも生きていれば確認する(C-22 により、ほぼ毎回確認が出る) | 終了とプロジェクト削除の確認 |
-| 3 | シェルが終了したタブ(`exit` など) | **A【仮定】**: タブを自動で閉じる(0 枚も許す。C-21)/ B: 「終了しました」の表示でタブを残す | `TerminalStore`、NFR-006 の見え方 |
+| 2 | 「動作中のプロセス」の定義(FR-003、FR-063) | **A【仮定】**: シェル以外が前面で動いているターミナルがあるときだけ確認する(FR-012 と同じ判定)/ B: シェルが 1 つでも生きていれば確認する(C-22 により、ほぼ毎回確認が出る)。**M2 で A を実装【仮定】(本人の了承は M2 の完了確認)**: 調べるのは削除と終了の確認のときだけ。前面を調べられないものは動作中に数えない | 終了とプロジェクト削除の確認 |
+| 3 | シェルが終了したタブ(`exit` など) | **A【仮定】**: タブを自動で閉じる(0 枚も許す。C-21)/ B: 「終了しました」の表示でタブを残す。**M2 で A を実装【仮定】(本人の了承は M2 の完了確認)**: 9 枚の検証画面だけは閉じずに「終了しました」を出す | `TerminalStore`、NFR-006 の見え方 |
 | 4 | タイルの最終ページのグリッド(FR-051、FR-052) | **A【仮定】**: そのページの枚数で決める(10 枚なら 2 ページ目は 1×1)/ B: 1 ページ目と同じ 3×3 の枠を保つ | `TileLayout` |
-| 5 | 表示名の持ち方(FR-005) | **A【仮定】**: 変更していないあいだはフォルダ名に追従する(フォルダを改名するとカード名も変わる)/ B: 登録時のフォルダ名を固定で保存する | `state.json` の `customName` |
+| 5 | 表示名の持ち方(FR-005) | **A【仮定】**: 変更していないあいだはフォルダ名に追従する(フォルダを改名するとカード名も変わる)/ B: 登録時のフォルダ名を固定で保存する。M2 で A の保存値(`customName` が null ならフォルダ名)を実装。名前を変える操作は M6 | `state.json` の `customName` |
 | 6 | 別プロジェクトのターミナルへのパスのドロップ(タイル表示で起こる) | **A【仮定】**: ドロップ先のターミナルが同じプロジェクトなら相対パス、違うプロジェクトなら絶対パスを挿入する / B: 常にルート基準の相対パス | `Workspace`(FR-016) |
-| 7 | ゴミ箱に入れられたルートフォルダ(FR-007) | **A【仮定】**: 「見つからない」として扱う / B: ゴミ箱の中を指したまま表示を続ける | `RootLocatorPort`、カードの表示 |
+| 7 | ゴミ箱に入れられたルートフォルダ(FR-007) | **A【仮定】**: 「見つからない」として扱う / B: ゴミ箱の中を指したまま表示を続ける。**M2 で A を実装【仮定】(本人の了承は M2 の完了確認)**: 見回りと起動時の解決でゴミ箱の中に移っていたら、ルートを変えずに「見つからない」にする。ゴミ箱の中のフォルダは登録・再リンクもできない | `ProjectStore`(判定)、`RootLocatorPort`、カードの表示 |
 | 8 | フォルダを指すシンボリックリンク | **A【仮定】**: 展開しない項目として表示する(ルートの外を操作させないため)/ B: 展開する | `FileSystemPort`、`PathScopeGuard` |
 | 9 | クリップボードを操作する制御シーケンス(OSC 52) | **A【仮定】**: 無効にする(対応するアドオンを入れない)/ B: 書き込みだけ許す。M1 では必要とする場面を確かめておらず、A のままにした(ADR-001)。必要になったら B に変える | §12、xterm.js のアドオン |
 | 10 | アプリが背面にあるときのアテンション | **A【仮定】**: PRD の文言どおり、画面上で表示中のターミナルのベルはアテンションにしない(アプリが背面でも同じ)/ B: アプリが背面のときは、表示中のターミナルでもアテンションと通知を出す | `AttentionPolicy`(FR-045) |
@@ -1009,7 +1040,7 @@ ADR の候補(設計ゲートの回答を受けて `/adr` で起こす):
 | 4 | アプリ内のドラッグの実装 | M3 の最初に、マウスのイベントによる自前実装で FR-016 と FR-029 が成り立つことを確かめる。あわせて §1.4 #8(HTML 標準のドロップが届かない)を実機で確認する | M3。`src/logic/dnd`、`src/ui/tree` |
 | 5 | Finder と他アプリへのドラッグ(FR-031) | A: ウィンドウの外へ出たときに macOS のドラッグへ切り替える / B: ツリーのドラッグをすべて macOS のドラッグで始め、アプリ内へのドロップも同じ経路で受ける。どちらも `tauri-plugin-drag` か `objc2-app-kit` の直接呼び出しで実装する。未検証 | M6 |
 | 6 | Finder からの ⌘ドロップ=移動(FR-031)と、対象をルート配下に限る(FR-035)の関係 | A: 外からの移動は例外として許す / B: 外からはコピーだけにする | M6。A は登録外のファイルを動かすことになる。ドロップ時の修飾キーは Rust 側で取得する(§1.4 #8、#19) |
-| 7 | ショートカットの受け口 | メニューバーの項目と画面内のキー処理のどちらで受けるかを M2 で確かめる。⌘C・⌘V・⌘X は画面のコピー・ペーストのイベントで受ける案(§9.1。⌘C・⌘V は M1 で「編集」メニュー経由として実装済み) | M2。FR-006、FR-044、C-04 |
+| 7 | ショートカットの受け口 | **決定(M2)【仮定】**: メニューバーの項目のアクセラレータで受ける(WKWebView より先に OS が受けるため)。⌘T・⌘W・⌘⇧[・⌘⇧] は Rust の中で処理し、⌘A は画面へ送る(§9.1)。⌘1〜9(FR-006)は M6 で同じ経路に足す。⌘C・⌘V・⌘X は画面のコピー・ペーストのイベントで受ける(⌘C・⌘V は M1 で「編集」メニュー経由として実装済み)。実機の確認は M2 の完了確認 | M2。FR-006、FR-044、C-04 |
 | 8 | Quick Look(FR-018) | A: 標準のパネル(`QLPreviewPanel`)を `objc2-quick-look-ui` で出す / B: `qlmanage -p` を別プロセスで起動する(簡単だが、閉じ方などの挙動が Finder と違う) | M6。未検証 |
 | 9 | macOS 通知(FR-045) | A: `tauri-plugin-notification` / B: `UNUserNotificationCenter` を直接呼ぶ | M6。署名済みの `.app` での表示と許可の出方を実機で確かめる |
 | 10 | ファイル名の絞り込みの範囲(FR-021) | A: プロジェクト全体(名前の索引を Rust 側で作る)/ B: 読込済みのフォルダだけ | M6。A は 10 万ファイル規模で索引の時間がかかる |
