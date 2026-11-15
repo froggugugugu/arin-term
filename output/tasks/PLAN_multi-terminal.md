@@ -856,7 +856,7 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 26a(並行可能。T38a 完了後。Phase 25b・25c と同時に進めてよい)
 
-- [ ] T40a — フォルダの読み込みと、上書きしない作成・移動・コピー(`arin-platform/fs`)(変更ファイル: crates/arin-platform/src/lib.rs, crates/arin-platform/src/fs/mod.rs, crates/arin-platform/src/fs/local.rs, crates/arin-platform/tests/fs.rs | 依存: T38a)
+- [x] T40a — フォルダの読み込みと、上書きしない作成・移動・コピー(`arin-platform/fs`)(変更ファイル: crates/arin-platform/src/lib.rs, crates/arin-platform/src/fs/mod.rs, crates/arin-platform/src/fs/local.rs, crates/arin-platform/tests/fs.rs | 依存: T38a)
   - 対応: FR-013、FR-025〜027、FR-029、FR-030、FR-036、設計書 §1.4 #14、§5.4「上書きしない移動・コピー」、§7.1「スレッドの分担」(読み込みはメインスレッドの外)、【仮定】14・15・24。依存は足さない(`libc` =0.2.191 の `renamex_np`・`copyfile`、標準ライブラリ)
   - 置くもの: フォルダの中身(`read_dir` の種類で判定し、シンボリックリンクだけ先をたどってフォルダか調べる)、空のファイルの新規作成(`create_new`)、フォルダの新規作成、移動(`renamex_np` の `RENAME_EXCL`。宛先が同じ項目=大文字小文字だけの変更なら普通の改名)、コピー(`copyfile` の `COPYFILE_EXCL`。フォルダは中身ごと)、フォルダの実パス
   - 安全: テストの補助は、使うパスがシステムの一時領域の下にあることを確かめてから使う。上書きしないことを実ファイルで確かめる

@@ -4,6 +4,7 @@
 
 pub mod bookmark;
 pub mod desktop;
+pub mod fs;
 pub mod pty;
 pub mod storage;
 pub mod system;
