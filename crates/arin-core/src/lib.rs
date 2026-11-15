@@ -6,7 +6,6 @@
 #![forbid(unsafe_code)]
 
 pub mod fileops;
-pub mod launch_options;
 pub mod layout;
 pub mod paths;
 pub mod persistence;

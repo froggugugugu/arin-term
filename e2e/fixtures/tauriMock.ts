@@ -279,7 +279,6 @@ export function sampleRunningTerminal(
 
 const DEFAULT_REPLIES: TauriMockConfig = {
   get_app_snapshot: { ok: sampleSnapshot() },
-  get_launch_options: { ok: { renderer: "dom", unicode: "unicode11" } },
   get_shortcuts: { ok: DEFAULT_SHORTCUT_TABLE.map((binding) => ({ ...binding })) },
   notify_app_ready: { ok: null },
   report_frontend_error: { ok: null },

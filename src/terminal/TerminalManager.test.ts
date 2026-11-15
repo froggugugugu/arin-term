@@ -787,26 +787,6 @@ describe("TerminalManager(表示と非表示・描画方式。T21、設計書 §
     expect(engine.created).toEqual([]);
   });
 
-  it("描画方式を引け(無ければ作らず undefined)、変わったら受け取り手に届き、外したら届かない", () => {
-    const { engine, manager } = setup();
-    const seen: string[] = [];
-
-    expect(manager.rendererOf("t1")).toBeUndefined();
-    expect(engine.created).toHaveLength(0);
-    const off = manager.onRendererChange("t1", (renderer) => seen.push(renderer));
-    const surface = engine.created[0];
-    if (surface === undefined) throw new Error("サーフェスが無い");
-    expect(engine.created).toHaveLength(1);
-    expect(manager.rendererOf("t1")).toBe("dom");
-
-    surface.rendererKind = "webgl";
-    expect(manager.rendererOf("t1")).toBe("webgl");
-    surface.emitRendererChange("dom");
-    off();
-    surface.emitRendererChange("webgl");
-
-    expect(seen).toEqual(["dom"]);
-  });
 });
 
 describe("TerminalManager(コピー・ペーストの振り分け。FR-043、設計書 §9.1)", () => {
@@ -1246,7 +1226,7 @@ describe("TerminalManager(表示中のターミナルの並び。T47d、NFR-009�
 
     for (const id of TILES) expect(fakeSurface(ctx.engine, id).visible, id).toBe(false);
     for (const id of NEXT) expect(fakeSurface(ctx.engine, id).visible, id).toBe(true);
-    // 先に隠してから表示に戻す(WebGL のコンテキストを先に返し、同時に持つ数が上限を超えないように)。
+    // 先に隠してから表示に戻す(描画を先に止める)。
     expect(order).toEqual([...TILES.map((id) => `${id}:隠す`), ...NEXT.map((id) => `${id}:表示`)]);
     // 表示に戻したタイルは置き場所に合わせ直し、行・桁が変わったものだけ寸法を送る。隠したタイルには送らない。
     expect(resizesOf(ctx.fake)).toEqual(NEXT.map((id) => [id, 40, 60]));

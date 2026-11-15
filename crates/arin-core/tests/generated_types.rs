@@ -17,7 +17,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use arin_core::fileops::{ConflictResolution, FileOpOutcome, NewEntryKind};
-use arin_core::launch_options::LaunchOptions;
 use arin_core::layout::tiles::{DisplayMode, TileGrid};
 use arin_core::paths::{PathKind, RelPath};
 use arin_core::project::ProjectColor;
@@ -37,7 +36,6 @@ fn collect_generated(cfg: &Config) -> BTreeMap<PathBuf, String> {
         files: BTreeMap::new(),
     };
     collector.visit::<AppSnapshot>();
-    collector.visit::<LaunchOptions>();
     collector.visit::<ConnectOutcome>();
     collector.visit::<AddProjectOutcome>();
     collector.visit::<RemoveProjectOutcome>();

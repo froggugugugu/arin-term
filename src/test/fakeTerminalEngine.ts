@@ -1,7 +1,7 @@
 // テスト用の偽のターミナルエンジン。作ったサーフェスと、サーフェスへの操作を記録する。
 // xterm.js も DOM も使わない(Vitest は node の環境で動く)。
 
-import type { RendererKind, TerminalEngine, TerminalId, TerminalSize, TerminalSurface } from "../terminal/engine";
+import type { TerminalEngine, TerminalId, TerminalSize, TerminalSurface } from "../terminal/engine";
 
 export interface FakeSurface extends TerminalSurface {
   readonly id: TerminalId;
@@ -25,10 +25,6 @@ export interface FakeSurface extends TerminalSurface {
   visible: boolean;
   /** setVisible に渡された順の値(同じ値の二重の呼び出しも残す)。 */
   readonly visibleCalls: boolean[];
-  /** renderer が返す描画方式(既定は dom)。 */
-  rendererKind: RendererKind;
-  /** 描画方式を変え、受け取り手へ流す(WebGL から DOM へ戻ったときの真似)。 */
-  emitRendererChange(renderer: RendererKind): void;
   /** 登録された入力の受け取り手へ、キー入力を流す。 */
   emitInput(data: string): void;
   /** 登録された寸法の受け取り手へ、寸法の変更を流す。 */
@@ -59,7 +55,6 @@ export function createFakeTerminalEngine(): FakeTerminalEngine {
       const inputListeners: ((data: string) => void)[] = [];
       const resizeListeners: ((cols: number, rows: number) => void)[] = [];
       const binaryListeners: ((data: string) => void)[] = [];
-      const rendererListeners = new Set<(renderer: RendererKind) => void>();
       const surface: FakeSurface = {
         id,
         // node の環境には DOM が無い。テストでは要素の中身を見ないので、目印のオブジェクトで代える。
@@ -74,7 +69,6 @@ export function createFakeTerminalEngine(): FakeTerminalEngine {
         pasted: [],
         visible: true,
         visibleCalls: [],
-        rendererKind: "dom",
         resized: [],
         selectAllCount: 0,
         write(data) {
@@ -117,19 +111,6 @@ export function createFakeTerminalEngine(): FakeTerminalEngine {
         setVisible(visible) {
           surface.visibleCalls.push(visible);
           surface.visible = visible;
-        },
-        renderer() {
-          return surface.rendererKind;
-        },
-        onRendererChange(listener) {
-          rendererListeners.add(listener);
-          return () => {
-            rendererListeners.delete(listener);
-          };
-        },
-        emitRendererChange(renderer) {
-          surface.rendererKind = renderer;
-          for (const listener of [...rendererListeners]) listener(renderer);
         },
         getSelection() {
           return surface.selection;

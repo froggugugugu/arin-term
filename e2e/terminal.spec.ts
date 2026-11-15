@@ -5,7 +5,7 @@
 // 最後の __TAURI_INTERNALS__ だけが偽物になる。製品のソースにテスト用の口は置かない。
 //
 // 表示は xterm.js の DOM 描画の要素(.xterm-rows の行)から読む。これは xterm.js 6.0.0 の内部の構造なので、
-// xterm.js を上げたときや WebGL 描画(T21)では読み方を見直す。
+// xterm.js を上げたときは読み方を見直す(描画は DOM に固定。ADR-001)。
 
 import { expect, test, type Locator, type Page } from "@playwright/test";
 

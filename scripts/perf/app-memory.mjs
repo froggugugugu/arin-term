@@ -21,13 +21,14 @@
 //
 // M4(計画書 T49b。NFR-009、ADR-001、計画書 M4 の【仮定】18)で、起動の組(APP_SCENARIOS)を足した:
 // - tabs5: 上の 5 プロジェクト・各 1 タブ(タブ表示)。M2・M3 の値と並べる
-// - tiles9-<描画方式>: 9 プロジェクト・各 1 タブで `ui.displayMode: "tiles"` の state.json。起動から 9 枚のシェルが
-//   揃うまでの時間と、落ち着いたあとのメモリ。描画方式は ARIN_RENDERER で渡す(dom・webgl)
-// - tiles9-<描画方式>-flood: 同じ 9 枚で、各シェルが起動直後に `yes | head -c` で FLOOD_BYTES だけ流す。
+// - tiles9-dom: 9 プロジェクト・各 1 タブで `ui.displayMode: "tiles"` の state.json。起動から 9 枚のシェルが
+//   揃うまでの時間と、落ち着いたあとのメモリ。描画方式は DOM(T50b で固定。T49b は ARIN_RENDERER で webgl の組も測った。
+//   その組と起動時の指定は T50b で外した。名前の -dom は T49b の記録と並べるために残す)
+// - tiles9-dom-flood: 同じ 9 枚で、各シェルが起動直後に `yes | head -c` で FLOOD_BYTES だけ流す。
 //   シェルに流させるため、一時フォルダの HOME(.zshrc だけを置く)をアプリに渡す(HOME はシェルへ引き継がれる)。
 //   流し終えたシェルが HOME に印のファイルを書くので、9 枚が流し終えるまでの時間と、そのあいだの本体・WebKit の
 //   常駐メモリ(ps の RSS)の最大を記録する。量に上限があるので流しっぱなしにはならない
-// どの組でも標準エラーの `[arin:frontend-error]`(WebGL を作れず DOM に戻ったときなど)の行を数える。
+// どの組でも標準エラーの `[arin:frontend-error]` の行を数える。
 // 起動の前ごとにシステムのメモリの空き(memory_pressure)を見て、下限を下回ったら残りを測らずに止める
 // (このマシンはメモリに余裕が無い。2026-11-15 に計測の途中でコマンドが止められた)。
 
@@ -73,10 +74,8 @@ export const DEFAULT_MIN_FREE_PERCENT = 50;
  */
 export const APP_SCENARIOS = [
   { name: "tabs5", projects: PERF_PROJECT_COUNT, displayMode: null, env: {}, flood: false, runs: 3 },
-  { name: "tiles9-dom", projects: TILE_PROJECT_COUNT, displayMode: "tiles", env: { ARIN_RENDERER: "dom" }, flood: false, runs: 2 },
-  { name: "tiles9-webgl", projects: TILE_PROJECT_COUNT, displayMode: "tiles", env: { ARIN_RENDERER: "webgl" }, flood: false, runs: 2 },
-  { name: "tiles9-dom-flood", projects: TILE_PROJECT_COUNT, displayMode: "tiles", env: { ARIN_RENDERER: "dom" }, flood: true, runs: 2 },
-  { name: "tiles9-webgl-flood", projects: TILE_PROJECT_COUNT, displayMode: "tiles", env: { ARIN_RENDERER: "webgl" }, flood: true, runs: 2 },
+  { name: "tiles9-dom", projects: TILE_PROJECT_COUNT, displayMode: "tiles", env: {}, flood: false, runs: 2 },
+  { name: "tiles9-dom-flood", projects: TILE_PROJECT_COUNT, displayMode: "tiles", env: {}, flood: true, runs: 2 },
 ];
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -362,7 +361,6 @@ async function measureOnce({ executable, scenario, settleMs, timeoutMs, floodTim
     log?.(`  ${scenario.name} アプリ ${child.pid}: ターミナルの印まで ${times.terminal.toFixed(0)} ms${shellNote}${floodNote}`);
     return {
       scenario: scenario.name,
-      renderer: scenario.env.ARIN_RENDERER ?? "dom",
       display_mode: scenario.displayMode ?? "tabs",
       projects: projectDirs.length,
       shell_count: shells.length,

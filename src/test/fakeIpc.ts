@@ -113,7 +113,6 @@ export function deferred<T>(): Deferred<T> {
 export function createFakeIpc(handlers: Partial<FakeHandlers> = {}): FakeIpc {
   const all: FakeHandlers = {
     get_app_snapshot: () => sampleSnapshot(),
-    get_launch_options: () => ({ renderer: "dom", unicode: "unicode11" }),
     get_shortcuts: () => DEFAULT_SHORTCUT_TABLE.map((binding) => ({ ...binding })),
     notify_app_ready: () => null,
     report_frontend_error: () => null,

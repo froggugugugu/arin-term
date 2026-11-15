@@ -2,15 +2,11 @@
 // 画面と TerminalManager はこの形だけを知り、xterm.js(src/terminal/xterm/)を直接使わない。
 // このファイルは @xterm/* を import しない。src/ipc からは Rust から生成した型だけを使う。
 
-import type { RendererKind } from "../ipc/generated/RendererKind";
-import type { TerminalId } from "../ipc/generated/TerminalId";
-import type { UnicodeWidth } from "../ipc/generated/UnicodeWidth";
+// 描画方式は DOM、全角幅は unicode11 に固定した(M4。ADR-001)。この形は描画方式を知らない。
 
-/**
- * 描画方式(`dom` / `webgl`)と全角幅の方式(`unicode11` / `graphemes`)。型は Rust の起動時の指定
- * (`arin_core::launch_options`)から生成したもの。既定は DOM と unicode11(ADR-001)。複数枚で実測する M4 で決める。
- */
-export type { RendererKind, TerminalId, UnicodeWidth };
+import type { TerminalId } from "../ipc/generated/TerminalId";
+
+export type { TerminalId };
 
 /** 行・桁数。 */
 export interface TerminalSize {
@@ -45,18 +41,11 @@ export interface TerminalSurface {
   fit(): void;
   /**
    * 表示と非表示を切り替える(設計書 §5.1、§2.2「非表示のインスタンス」。NFR-009)。作った直後は表示。
-   * - false: 要素を隠し、描画の資源を手放す(WebGL なら描画のアドオンを破棄してコンテキストを返す)
-   * - true: 要素を戻し、描画の資源を持ち直して、寸法を合わせ直す
+   * - false: 要素を隠す(描画は止まる)
+   * - true: 要素を戻し、寸法を合わせ直す
    * 隠している間も write は取り込みを続け、取り込みが済んだバイト数で解決する。同じ値で呼んでも何もしない。
    */
   setVisible(visible: boolean): void;
-  /**
-   * いまの描画方式(表示しているときに使う方式)。WebGL を指定しても作れなかった・失ったときは `dom` になる
-   * (そのときは診断に報告してある)。
-   */
-  renderer(): RendererKind;
-  /** 描画方式が変わったときに受け取る(WebGL から DOM へ戻ったとき)。外す関数を返す。 */
-  onRendererChange(listener: (renderer: RendererKind) => void): () => void;
   /** いまの行・桁数。 */
   size(): TerminalSize;
   /** 選択している文字列。選択が無ければ空文字列。 */

@@ -26,7 +26,7 @@ import { type ClipboardFocus, type ClipboardKind, routeClipboard } from "../logi
 import { type MenuCommand, routeMenuCommand } from "../logic/keys/menuCommand";
 import { createSerialSender, INPUT_QUEUE_LIMIT, latest, type SerialSender } from "../logic/serialSender";
 import type { TerminalStatus } from "../ipc/generated/TerminalStatus";
-import type { RendererKind, TerminalEngine, TerminalId, TerminalSize, TerminalSurface } from "./engine";
+import type { TerminalEngine, TerminalId, TerminalSize, TerminalSurface } from "./engine";
 import { binaryToBytes, type InputBatch, inputBatchMerger } from "./inputQueue";
 
 /** 画面のコピー・ペーストのイベントの clipboardData のうち、使う部分(DataTransfer はこの形を満たす)。 */
@@ -196,9 +196,9 @@ export class TerminalManager {
   /**
    * 見えるターミナルの並び(0〜9 枚。タブ表示と拡大中は 1 枚、タイル表示は表示中のページのタイル)と、
    * 隠したまま出力を取り込み続けるターミナルを伝える(FR-042・FR-052、NFR-009。写しの更新ごとに
-   * src/state/terminalSync.ts が呼ぶ。検証画面では呼ばない)。並びが前と同じなら何もしない。
-   * - 先に隠すものを隠してから、見えるものを表示に戻す(WebGL のコンテキストを先に返し、ページ送りで
-   *   同時に持つ数が上限を超えないようにする。超えると古いものが失われ、描画が DOM に戻ってしまう)
+   * src/state/terminalSync.ts が呼ぶ)。並びが前と同じなら何もしない。
+   * - 先に隠すものを隠してから、見えるものを表示に戻す(描画を先に止める。WebGL 描画を比べていたときに決めた順で、
+   *   DOM 描画に固定した T50b でも動きを変えないために保つ)
    * - 隠すもの: 表示していれば隠す(描画の資源を手放す。出力の取り込みと処理済みの通知は続け、接続は切らない)。
    *   サーフェスが無ければ隠したまま作り、接続する(1 回だけ試す)。接続の寸法は最後に表示していたターミナル
    *   (タイル表示ならタイル)の寸法。表示中のターミナルがまだ寸法を決めていなければ、決まるまで接続を待たせる。
@@ -232,16 +232,6 @@ export class TerminalManager {
   /** ID のサーフェスへ入力のフォーカスを移す。持っていない ID なら何もしない。 */
   focus(id: TerminalId): void {
     this.#entries.get(id)?.surface.focus();
-  }
-
-  /** ID のサーフェスのいまの描画方式。サーフェスが無ければ undefined(作らない。描画中に呼ばれるため)。 */
-  rendererOf(id: TerminalId): RendererKind | undefined {
-    return this.#entries.get(id)?.surface.renderer();
-  }
-
-  /** ID のサーフェスの描画方式が変わったときに受け取る。サーフェスが無ければ作る。外す関数を返す。 */
-  onRendererChange(id: TerminalId, listener: (renderer: RendererKind) => void): () => void {
-    return this.#entry(id).surface.onRendererChange(listener);
   }
 
   /**

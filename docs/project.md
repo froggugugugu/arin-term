@@ -3,7 +3,7 @@
 ## 概要
 
 macOS 向けのライト・マルチターミナル「Arin」(Tauri 2、arm64、最低 OS 15.0)。M0(骨格)と M1(ターミナル 1 枚。ログインシェル・PTY・xterm.js・コピー/ペースト)の実装が済み、M1 は本人が Go と判定した(`output/design/ADR_001_terminal-engine.md`)。
-M2(プロジェクトの登録・カード一覧・タブ・ペインの分割・`state.json` の保存・ルートへの追従・終了の確認)と M3(ファイルツリー・ファイル操作・ドラッグ・ショートカット)の実装が済み、M3 は本人の完了確認待ち。タイル表示・設定ファイルは未実装。設計は `output/design/ARCH_multi-terminal.md`、進捗は `output/tasks/PROGRESS.md`。
+M2(プロジェクトの登録・カード一覧・タブ・ペインの分割・`state.json` の保存・ルートへの追従・終了の確認)、M3(ファイルツリー・ファイル操作・ドラッグ・ショートカット)、M4(タイル表示・ページ送り・拡大・アテンションの印)の実装が済み、M2〜M4 は本人の完了確認待ち。描画は DOM、全角幅は `unicode11` に固定(ADR-001)。設定ファイルは未実装。設計は `output/design/ARCH_multi-terminal.md`、進捗は `output/tasks/PROGRESS.md`。
 
 ## コマンド
 
@@ -20,13 +20,14 @@ npm run gen:types      # Rust の型から src/ipc/generated/ を再生成
 npm run e2e            # Playwright(WebKit、Vite の画面に対して)
 npm run app            # 配布用 .app(tauri build --target aarch64-apple-darwin)
 npm run app:debug      # デバッグ版の .app(target/aarch64-apple-darwin/debug/bundle/macos/。[arin:verify] が出る)
-npm run smoke          # .app を一時の状態フォルダで起動し準備完了とターミナルの出力を確認(先に npm run app)
-                       #   -- --env=NAME=VALUE(繰り返し可)で環境変数を足す、-- --app=<パス> で .app を指定
+npm run smoke          # .app を一時の状態フォルダで起動し準備完了とターミナルの出力を確認、続けて壊れた state.json で起動(先に npm run app)
+                       #   -- --tiles で 9 プロジェクトのタイル表示で 1 回だけ起動し、シェルが 9 個揃うまで確認
+                       #   -- --env=NAME=VALUE(繰り返し可)でアプリに環境変数を足す、-- --app=<パス> で .app を指定
 npm run perf           # 性能の計測(記録だけで失敗しない。結果は testreport/perf/。先に npm run app)
                        #   -- --tree-files=<数> でツリーの見本のファイル数(既定 100000、100 以上)
 ```
 
-起動時の指定(検証用。リリースビルドでも有効。既定は DOM 描画と `unicode11`。M4 で外すか設定に移す): `ARIN_RENDERER`(`dom`/`webgl`)、`ARIN_UNICODE`(`unicode11`/`graphemes`)、`ARIN_VERIFY_GRID`(`1` で 9 枚の検証画面)。不正な値は既定に戻し標準エラーに `[arin:launch]` で出す。
+アプリ独自の環境変数は `ARIN_STATE_DIR`(状態フォルダの差し替え。絶対パス)と `ARIN_SMOKE`(`1` でスモークの印。差し替え時だけ)だけ。M1 の検証用の `ARIN_RENDERER`・`ARIN_UNICODE`・`ARIN_VERIFY_GRID` は M4 で外した(指定しても読まない)。
 
 ## 技術スタック
 
@@ -34,7 +35,7 @@ npm run perf           # 性能の計測(記録だけで失敗しない。結果
 | -------- | ---- |
 | アプリ基盤 | Tauri 2.12.5(Rust 1.98.1、edition 2024) |
 | 画面 | React 19.3.1、zustand 5.0.16(vanilla ストア)、Vite 8.3.5、TypeScript 6.0.3 |
-| ターミナル | @xterm/xterm 6.0.0(addon-fit 0.11.0、addon-unicode11 0.9.0、addon-unicode-graphemes 0.4.0、addon-webgl 0.19.0)、portable-pty 0.9.0 |
+| ターミナル | @xterm/xterm 6.0.0(DOM 描画。addon-fit 0.11.0、addon-unicode11 0.9.0)、portable-pty 0.9.0 |
 | ファイルの監視 | notify 8.2.1(FSEvents) |
 | macOS の API(`arin-platform` だけ) | objc2 0.6.5、objc2-foundation 0.3.2、objc2-app-kit 0.3.2、libc 0.2.191、base64 0.23.1(どれも Tauri と同じ版。ADR-009) |
 | フックの検査 | @biomejs/biome 2.6.4(`useExhaustiveDependencies`・`useHookAtTopLevel` だけ。ADR-008) |

@@ -433,6 +433,48 @@ test.describe("ページ送り(FR-052、AC-M14、NFR-009)", () => {
     // 接続は作り直さない。
     expect((await readCallArgs(page, "connect_terminal")).filter((c) => c.terminalId === "p10-t1")).toHaveLength(1);
   });
+
+  // 描画方式の比べ(e2e/terminal-webgl.spec.ts。T50b で外した)が確かめていた、ページ送りでの隠す→戻すの往復を DOM で確かめる。
+  test("ページ送りで隠した_9_枚にも出力が届き続け_戻すと隠す前と隠していた間の文字があり_往復しても接続を作り直さない", async ({
+    page,
+  }) => {
+    // 10 件: 1 ページ目に 9 枚、2 ページ目に 1 枚。
+    const list = projects(10);
+    const first = list.slice(0, 9).map((p) => `${p.id}-t1`);
+    await open(page, withTileDisplay(projectsSnapshot(list)));
+    const channels = new Map<string, number>();
+    for (const id of first) channels.set(id, parseChannelId((await connectOf(page, id)).onOutput));
+    /** 1 ページ目の 9 枚それぞれに流し、9 枚とも取り込みが済んだ量が追いつくまで待つ。 */
+    const sendToFirst = async (text: (id: string) => string) => {
+      for (const id of first) {
+        const before = await ackedBytes(page, id);
+        const sent = await sendChannelBytes(page, channels.get(id) ?? -1, [text(id)]);
+        await expect.poll(() => ackedBytes(page, id), { message: id }).toBe(before + sent);
+      }
+    };
+    const rowsOf = (id: string) =>
+      page.locator(`[data-testid="terminal-host"][data-terminal-id="${id}"] .xterm-rows > div`);
+
+    // 9 枚とも DOM で描く。
+    await sendToFirst((id) => `before ${id}\r\n`);
+    for (const id of first) await expect(rowsOf(id).nth(0), id).toHaveText(`before ${id}`);
+
+    for (const round of [1, 2]) {
+      await emitEvent(page, "app-snapshot", withTileDisplay(projectsSnapshot(list), { page: 1 }));
+      await expect.poll(() => tileIds(page)).toEqual(["p10-t1"]);
+      await sendToFirst((id) => `hidden${round} ${id}\r\n`);
+
+      await emitEvent(page, "app-snapshot", withTileDisplay(projectsSnapshot(list), { page: 0 }));
+      await expect.poll(() => tileIds(page)).toEqual(first);
+      for (const id of first) {
+        await expect(rowsOf(id).nth(0), id).toHaveText(`before ${id}`);
+        await expect(rowsOf(id).nth(round), id).toHaveText(`hidden${round} ${id}`);
+      }
+    }
+    // 接続は作り直さない。
+    const connects = await readCallArgs(page, "connect_terminal");
+    for (const id of first) expect(connects.filter((c) => c.terminalId === id), id).toHaveLength(1);
+  });
 });
 
 // ── T47g ──────────────────────────────────────────────────────────────────────────────────────────

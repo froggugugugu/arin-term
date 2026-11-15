@@ -14,7 +14,7 @@
 //           (perf_sessions.rs の続き)
 //   3b. 9 プロジェクトのタイル表示で起動したときのメモリと、9 枚に流させたとき(app-memory.mjs の APP_SCENARIOS)
 //   5. 画面側: WebKit で 9 枚のタイルに偽の Rust 側から同時に流しているあいだの取り込み・フレームの間隔・操作の反応
-//      (e2e/perf-tiles.spec.ts。DOM と WebGL、unicode11 と graphemes の組。`npm run e2e` には入らない)
+//      (e2e/perf-tiles.spec.ts。DOM・unicode11。T49b の記録は DOM と WebGL、unicode11 と graphemes の 4 組。`npm run e2e` には入らない)
 // 画面の反応(描画の滑らかさ、入力の遅れ)は自動では測れないので、結果に「人間が見る項目」として書く。
 //
 // 出力: testreport/perf/perf-<日時>.json と .md、latest.json と latest.md。
@@ -179,7 +179,6 @@ const SECTION_TITLES = {
 
 const multiCol = (terminals, bel) => (r) => r.terminals === terminals && r.bel === bel;
 const appCol = (scenario) => (r) => r.scenario === scenario;
-const e2eCol = (renderer, unicode) => (r) => r.renderer === renderer && r.unicode === unicode;
 const median = (xs) => stats(xs)?.median ?? null;
 const pick = (key) => (r) => r[key];
 
@@ -212,9 +211,7 @@ const MATRICES = {
     note: "「流す」は各シェルが起動直後に `yes | head -c 4 MiB` を流す組。印は 1 枚目の出力で立つので、9 枚が揃ったことはシェルの数で見る。",
     columns: [
       { key: "dom", label: "DOM", filter: appCol("tiles9-dom") },
-      { key: "webgl", label: "WebGL", filter: appCol("tiles9-webgl") },
       { key: "dom-flood", label: "DOM・流す", filter: appCol("tiles9-dom-flood") },
-      { key: "webgl-flood", label: "WebGL・流す", filter: appCol("tiles9-webgl-flood") },
     ],
     rows: [
       { label: "起動→準備完了の印", unit: "ms", get: pick("startup_ready_ms"), digits: 0, guide: "NFR-002 の参考" },
@@ -229,20 +226,15 @@ const MATRICES = {
       { label: "1 枚が流し終えるまで(9 枚の最大)", unit: "ms", get: (r) => stats(r.flood?.terminal_ms ?? [])?.max ?? null, digits: 0 },
       { label: "流しているあいだの WebKit の RSS の最大", unit: "MiB", get: (r) => (r.flood == null ? null : r.flood.peak_webkit_rss / MIB), guide: "増え続けないか(流し終えたあとの footprint と比べる)" },
       { label: "流しているあいだの本体の RSS の最大", unit: "MiB", get: (r) => (r.flood == null ? null : r.flood.peak_app_rss / MIB) },
-      { label: "画面の失敗の行(DOM に戻した報告など)", unit: "行", get: (r) => (r.frontend_errors?.length ?? 0) + (r.frontend_errors_dropped ?? 0), digits: 0, guide: "0 であること(WebGL のコンテキストが足りないと出る)" },
+      { label: "画面の失敗の行", unit: "行", get: (r) => (r.frontend_errors?.length ?? 0) + (r.frontend_errors_dropped ?? 0), digits: 0, guide: "0 であること" },
       { label: "起動の前のメモリの空き", unit: "%", get: pick("free_percent_before"), digits: 0 },
       { label: "WebKit がアプリの終了と一緒に消えた", unit: "1=はい", get: (r) => (r.webkit_exited_with_app ? 1 : 0), digits: 0 },
     ],
   },
   tiles_e2e: {
     title: "5. 画面側: 9 枚のタイルに同時に流す(Playwright の WebKit、偽の Rust 側。e2e/perf-tiles.spec.ts)",
-    note: "偽の Rust 側が、製品と同じ流量制御(未処理 512 KiB まで、64 KiB ずつ)で 9 枚に同時に流す。WKWebView の実機とは別のビルドなので、組どうしの比較に使う。",
-    columns: [
-      { key: "dom-u11", label: "DOM・unicode11", filter: e2eCol("dom", "unicode11") },
-      { key: "webgl-u11", label: "WebGL・unicode11", filter: e2eCol("webgl", "unicode11") },
-      { key: "dom-gr", label: "DOM・graphemes", filter: e2eCol("dom", "graphemes") },
-      { key: "webgl-gr", label: "WebGL・graphemes", filter: e2eCol("webgl", "graphemes") },
-    ],
+    note: "偽の Rust 側が、製品と同じ流量制御(未処理 512 KiB まで、64 KiB ずつ)で 9 枚に同時に流す。WKWebView の実機とは別のビルドなので、回どうし・版どうしの比較に使う。",
+    columns: [{ key: "dom-u11", label: "DOM・unicode11", filter: () => true }],
     rows: [
       { label: "9 枚が取り込み終えるまで", unit: "ms", get: pick("ingestMs"), digits: 0, guide: "流し始めから、全量の処理済みが返るまで" },
       { label: "取り込みの速さ(9 枚の合計)", unit: "MiB/s", get: pick("mibPerS") },
@@ -254,10 +246,8 @@ const MATRICES = {
       { label: "キー入力→書き込みのコマンド", unit: "ms", get: pick("keyToCommandMs") },
       { label: "次のページのボタン→コマンド", unit: "ms", get: pick("nextPageToCommandMs") },
       { label: "2 ページ目の写し→描き終わり", unit: "ms", get: pick("pageAwayMs"), guide: "9 枚を隠し 1 枚を出す" },
-      { label: "1 ページ目の写し→描き終わり", unit: "ms", get: pick("pageBackMs"), guide: "9 枚を出し直す(WebGL はコンテキストを作り直す)" },
-      { label: "WebGL の canvas の数(1 ページ目)", unit: "個", get: pick("webglCanvases"), digits: 0, guide: "DOM なら 0。WebGL は 1 枚に canvas が 2 つ(addon-webgl 0.19.0)なので 9 枚で 18" },
-      { label: "WebGL の canvas の数(戻ったあと)", unit: "個", get: pick("webglCanvasesAfter"), digits: 0 },
-      { label: "画面の失敗の報告", unit: "件", get: pick("frontendErrors"), digits: 0, guide: "0 であること(DOM に戻した報告など)" },
+      { label: "1 ページ目の写し→描き終わり", unit: "ms", get: pick("pageBackMs"), guide: "9 枚を出し直す" },
+      { label: "画面の失敗の報告", unit: "件", get: pick("frontendErrors"), digits: 0, guide: "0 であること" },
     ],
   },
 };
@@ -351,9 +341,9 @@ export function summarize(measures) {
 // ---------------------------------------------------------------------------
 
 export const HUMAN_ITEMS = [
-  "描画の滑らかさ: `cat` で 10 万行を流しているあいだのスクロールと、切替の操作が 100ms 以内に反応するか(NFR-004。DOM と WebGL を比べる。設計書 §2.2「描画方式」)",
+  "描画の滑らかさ: `cat` で 10 万行を流しているあいだのスクロールと、切替の操作が 100ms 以内に反応するか(NFR-004)",
   "入力の遅れ: キーを押してから文字が出るまでの遅れ、日本語入力の候補の出方",
-  "9 枚同時表示の体感: 9 枚のタイルで Claude Code などを動かし、いくつかで `yes` を流しながら、ページ送り・タイルのクリック・入力が我慢できる速さか(NFR-009。M4 の人間ゲート T50a。DOM と WebGL、unicode11 と graphemes を比べる)",
+  "9 枚同時表示の体感: 9 枚のタイルで Claude Code などを動かし、いくつかで `yes` を流しながら、ページ送り・タイルのクリック・入力が我慢できる速さか(NFR-009。M4 の人間ゲート T50a)",
   "画面側の流量制御: 大量出力を長く流したとき WebKit の補助プロセス(WebContent)のメモリが増え続けないか(アクティビティモニタ。設計書 §2.2「流量制御」)。計測は 1 枚 4 MiB までしか流さない",
   "アイドル時の CPU: 全ターミナルが無出力のときの CPU(NFR-003。`top -pid` の 60 秒平均)。このスクリプトでは測らない",
 ];
@@ -491,10 +481,10 @@ export const CONDITIONS = [
   "ツリーの読み込みは見本を一時フォルダに 2 つ作って各 3 回(1 つのフォルダに全ファイル、全ファイルを 100 ファイルずつのフォルダに分けたもの。どちらも .git・node_modules・.DS_Store を足す)。見本は計測の後で消す。ファイルの数は --tree-files(既定 10 万)",
   "2c・2d は 9 プロジェクト・各 1 タブの Workspace の 9 枚(ルートは一時フォルダの HOME の下のフォルダ。T49d より前の記録は M1 の 9 枚の検証画面=Workspace::for_verify_grid の持ち主の無い 9 枚で、cwd は HOME)で、シェルは /bin/zsh、HOME は一時フォルダ。各 3 回。`yes '<78 文字>' | head -c 4194304`(2d は 8 MiB)を 9 枚に順に書き込んで同時に流す。ベル入りは行の終わりに BEL を足したもの",
   "2a・2b の 1 枚の値の、アテンションの走査(T48c)を入れる前の記録: testreport/perf/perf-20261115-205753(2a の所要時間の中央値 39.8 ms、185.2 MiB/s、2b の頭打ち 525,184 B)",
-  "3b は 3. と同じ起動で、9 プロジェクト・各 1 タブ・`ui.displayMode: \"tiles\"` の state.json。描画方式は ARIN_RENDERER で渡し、全角幅の方式は既定(unicode11)のまま。各 2 回。印が揃い、シェルが 9 個になってから 3 秒置いて測る",
+  "3b は 3. と同じ起動で、9 プロジェクト・各 1 タブ・`ui.displayMode: \"tiles\"` の state.json。描画方式は DOM、全角幅の方式は unicode11(T50b で固定。T49b の記録は ARIN_RENDERER で DOM と WebGL を比べたもの)。各 2 回。印が揃い、シェルが 9 個になってから 3 秒置いて測る",
   "3b の「流す」組は、一時フォルダの HOME(.zshrc だけ)をアプリに渡し、各シェルが起動直後に `yes | head -c 4194304` を流す。流し終えたシェルが HOME に書く印を 250ms ごとに見ながら、本体と WebKit の RSS(ps)の最大を取る。上限 60 秒",
   "起動の前ごとに memory_pressure のメモリの空きを記録し、50% を下回ったら残りのアプリの起動を止める",
-  "5. は Vite の画面を Playwright の WebKit(ヘッドレス、1280×720)で開き、10 プロジェクト・各 1 タブのタイル表示(1 ページ目に 9 枚)の 1 ページ目の 9 枚に、偽の Rust 側が 1 枚あたり 2 MiB を同時に流す(行は ASCII と全角の混ざった 1 行)。組ごとに 2 回。流しているあいだにタイルのクリック・キー入力・次のページのボタンを 1 回ずつ行い、写しで 2 ページ目へ送って戻す",
+  "5. は Vite の画面を Playwright の WebKit(ヘッドレス、1280×720)で開き、10 プロジェクト・各 1 タブのタイル表示(1 ページ目に 9 枚)の 1 ページ目の 9 枚に、偽の Rust 側が 1 枚あたり 2 MiB を同時に流す(行は ASCII と全角の混ざった 1 行)。DOM・unicode11 で 2 回(T49b の記録は描画方式と全角幅の方式の 4 組で各 2 回)。流しているあいだにタイルのクリック・キー入力・次のページのボタンを 1 回ずつ行い、写しで 2 ページ目へ送って戻す",
   "ツリーの読み込みは src-tauri の list_directory と同じ手順(範囲の検査・read_dir・除外・並べ替え)を Rust の中で測った時間。作った直後に測るのでディスクのキャッシュが効いている。コマンドの呼び出し・写しの受け渡し・画面の描画は含まない(T44b)",
 ];
 

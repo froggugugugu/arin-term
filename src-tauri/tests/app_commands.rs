@@ -11,19 +11,12 @@ mod support;
 use std::cell::Cell;
 use std::rc::Rc;
 
-use arin_core::launch_options::{LaunchOptions, RendererKind, UnicodeWidth};
 use arin_core::workspace::{AppSnapshot, SNAPSHOT_SCHEMA_VERSION};
 use serde_json::json;
 use support::{request, request_with};
 use tauri::ipc::InvokeBody;
 use tauri::test::{MockRuntime, get_ipc_response};
 use tauri::{AppHandle, Manager, RunEvent, WebviewWindow};
-
-/// この組み立てに渡す起動時の指定。既定と違う値にして、組み立てからコマンドまで通ることを見る。
-const LAUNCH_OPTIONS: LaunchOptions = LaunchOptions {
-    renderer: RendererKind::Webgl,
-    unicode: UnicodeWidth::Graphemes,
-};
 
 /// 状態ファイルに置くプロジェクトの数(各 1 タブで 9 枚。既定の起動=プロジェクト 0 件・ターミナル 0 枚は
 /// `app_builder.rs` が確かめる。M1 の 9 枚の検証画面の指定の代わり。T49d)。
@@ -59,23 +52,17 @@ fn 写しの取得コマンドが_app_snapshot_を返す(
     }
 }
 
-fn 起動時の指定の取得コマンドが組み立てに渡した指定を返す(
+fn 外した起動時の指定の取得コマンドは呼べない(
     handle: &AppHandle<MockRuntime>,
     window: &WebviewWindow<MockRuntime>,
     _state_dir: &support::TempDir,
 ) {
-    let body = get_ipc_response(window, request(handle, "get_launch_options"))
-        .unwrap_or_else(|e| panic!("get_launch_options が失敗した: {e}"));
-    assert_eq!(
-        body.clone()
-            .deserialize::<serde_json::Value>()
-            .unwrap_or_else(|e| panic!("JSON として読めなかった: {e}")),
-        json!({ "renderer": "webgl", "unicode": "graphemes" })
+    // 描画方式と全角幅の方式の起動時の指定は T50b で外した(DOM 描画と `unicode11` に固定。ADR-001)。
+    let result = get_ipc_response(window, request(handle, "get_launch_options"));
+    assert!(
+        result.is_err(),
+        "外したはずの get_launch_options が呼べた: {result:?}"
     );
-    let options: LaunchOptions = body
-        .deserialize()
-        .unwrap_or_else(|e| panic!("LaunchOptions として読めなかった: {e}"));
-    assert_eq!(options, LAUNCH_OPTIONS);
 }
 
 fn 準備完了の通知コマンドを画面から呼べる(
@@ -173,8 +160,8 @@ const CHECKS: &[(&str, Check)] = &[
         写しの取得コマンドが_app_snapshot_を返す,
     ),
     (
-        "起動時の指定の取得コマンドが組み立てに渡した指定を返す",
-        起動時の指定の取得コマンドが組み立てに渡した指定を返す,
+        "外した起動時の指定の取得コマンドは呼べない",
+        外した起動時の指定の取得コマンドは呼べない,
     ),
     (
         "準備完了の通知コマンドを画面から呼べる",
@@ -201,8 +188,7 @@ fn main() {
     let state_dir = support::TempDir::new("commands");
     let work = support::TempDir::new("commands-work");
     let roots = support::make_project_roots(&work, PROJECTS);
-    let launch = support::launch_with_projects_in(&state_dir, &roots, false)
-        .with_launch_options(LAUNCH_OPTIONS);
+    let launch = support::launch_with_projects_in(&state_dir, &roots, false);
     let app = arin_lib::builder::<MockRuntime>(launch)
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| panic!("組み立てに失敗した: {e}"));

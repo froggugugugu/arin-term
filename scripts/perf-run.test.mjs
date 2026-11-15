@@ -244,10 +244,8 @@ describe("5 プロジェクト・各 1 タブの状態(T35b)", () => {
 // ---------------------------------------------------------------------------
 
 /** 画面側の 1 回分(e2e/perf-tiles.spec.ts が書く runs の 1 つ)。 */
-const e2eRun = (renderer, unicode, run, ingestMs) => ({
+const e2eRun = (run, ingestMs) => ({
   kind: "tiles_e2e",
-  renderer,
-  unicode,
   run,
   bytesPerTerminal: 2_097_152,
   terminals: 9,
@@ -259,19 +257,10 @@ const e2eRun = (renderer, unicode, run, ingestMs) => ({
   nextPageToCommandMs: 4,
   pageAwayMs: 30,
   pageBackMs: 60,
-  webglCanvases: renderer === "webgl" ? 9 : 0,
-  webglCanvasesAfter: renderer === "webgl" ? 9 : 0,
   frontendErrors: 0,
 });
 
-const E2E_RUNS = [
-  e2eRun("dom", "unicode11", 1, 1000),
-  e2eRun("dom", "unicode11", 2, 1200),
-  e2eRun("webgl", "unicode11", 1, 800),
-  e2eRun("webgl", "unicode11", 2, 600),
-  e2eRun("dom", "graphemes", 1, 1500),
-  e2eRun("webgl", "graphemes", 1, 900),
-];
+const E2E_RUNS = [e2eRun(1, 1000), e2eRun(2, 1200), e2eRun(3, 1500)];
 
 describe("画面側の 9 枚の計測(e2e/perf-tiles.spec.ts)", () => {
   it("画面側の計測の結果を表にまとめる", async () => {
@@ -285,25 +274,23 @@ describe("画面側の 9 枚の計測(e2e/perf-tiles.spec.ts)", () => {
     });
     assert.equal(exitCode, 0);
     const m = result.matrices.tiles_e2e;
+    // 描画方式は DOM・unicode11 に固定したので、列は 1 つ(T50b)。
     assert.deepEqual(
       m.columns.map((c) => [c.key, c.n]),
-      [
-        ["dom-u11", 2],
-        ["webgl-u11", 2],
-        ["dom-gr", 1],
-        ["webgl-gr", 1],
-      ],
+      [["dom-u11", 3]],
     );
     const ingest = m.rows.find((r) => r.label === "9 枚が取り込み終えるまで");
-    assert.deepEqual(ingest.cells, { "dom-u11": 1100, "webgl-u11": 700, "dom-gr": 1500, "webgl-gr": 900 });
-    const canvases = m.rows.find((r) => r.label === "WebGL の canvas の数(1 ページ目)");
-    assert.deepEqual(canvases.cells, { "dom-u11": 0, "webgl-u11": 9, "dom-gr": 0, "webgl-gr": 9 });
+    assert.deepEqual(ingest.cells, { "dom-u11": 1200 });
+    assert.equal(
+      m.rows.some((r) => r.label.includes("WebGL")),
+      false,
+    );
 
     const md = await readFile(path.join(outDir, "latest.md"), "utf8");
     assert.match(md, /## 5\. 画面側: 9 枚のタイルに同時に流す/);
-    assert.ok(md.includes("| 項目 | DOM・unicode11(2 回) | WebGL・unicode11(2 回) | DOM・graphemes(1 回) | WebGL・graphemes(1 回) | 単位 | 目安・備考 |"), md);
-    assert.ok(md.includes("| 9 枚が取り込み終えるまで | 1,100 | 700 | 1,500 | 900 | ms |"), md);
-    assert.match(md, /\| tiles_e2e \| 計測した \| 6 \|/);
+    assert.ok(md.includes("| 項目 | DOM・unicode11(3 回) | 単位 | 目安・備考 |"), md);
+    assert.ok(md.includes("| 9 枚が取り込み終えるまで | 1,200 | ms |"), md);
+    assert.match(md, /\| tiles_e2e \| 計測した \| 3 \|/);
   });
 
   it("画面側の計測が無ければ 5. の節は未計測", async () => {
@@ -371,7 +358,6 @@ describe("9 枚の計測の行(perf_sessions.rs の M4 の分)", () => {
     const appRun = (scenario, extra = {}) => ({
       run: 1,
       scenario,
-      renderer: scenario.includes("webgl") ? "webgl" : "dom",
       projects: scenario === "tabs5" ? 5 : 9,
       shell_count: scenario === "tabs5" ? 1 : 9,
       startup_ready_ms: 300,
@@ -392,7 +378,7 @@ describe("9 枚の計測の行(perf_sessions.rs の M4 の分)", () => {
         ...FAKE,
         app: () => ({
           status: "ok",
-          runs: [appRun("tabs5"), appRun("tiles9-dom"), appRun("tiles9-webgl-flood", { flood, frontend_errors: ["[arin:frontend-error] x"] })],
+          runs: [appRun("tabs5"), appRun("tiles9-dom"), appRun("tiles9-dom-flood", { flood, frontend_errors: ["[arin:frontend-error] x"] })],
         }),
       },
       environment: ENV,
@@ -404,14 +390,14 @@ describe("9 枚の計測の行(perf_sessions.rs の M4 の分)", () => {
     const m = result.matrices.app_tiles;
     assert.deepEqual(
       m.columns.map((c) => c.n),
-      [1, 0, 0, 1],
+      [1, 1],
     );
     const cell = (label) => m.rows.find((r) => r.label === label).cells;
     assert.equal(cell("起動→シェルが 9 個揃う").dom, 900);
     assert.equal(cell("本体 + WebKit(footprint)").dom, 300);
-    assert.equal(cell("1 枚が流し終えるまで(9 枚の中央値)")["webgl-flood"], 2000);
-    assert.equal(cell("流しているあいだの WebKit の RSS の最大")["webgl-flood"], 400);
-    assert.equal(cell("画面の失敗の行(DOM に戻した報告など)")["webgl-flood"], 1);
+    assert.equal(cell("1 枚が流し終えるまで(9 枚の中央値)")["dom-flood"], 2000);
+    assert.equal(cell("流しているあいだの WebKit の RSS の最大")["dom-flood"], 400);
+    assert.equal(cell("画面の失敗の行")["dom-flood"], 1);
     assert.equal(cell("起動→9 枚が流し終える").dom, null);
   });
 });
@@ -460,7 +446,7 @@ describe("計測の動かし方(T49b)", () => {
     });
     assert.equal(broken.exitCode, 1);
     const slow = await runPerf({
-      measures: { tiles_e2e: () => ({ status: "ok", runs: [e2eRun("webgl", "graphemes", 1, 1e9)] }) },
+      measures: { tiles_e2e: () => ({ status: "ok", runs: [e2eRun(1, 1e9)] }) },
       environment: ENV,
       outDir: path.join(root, "e2e-slow"),
       now: NOW,
@@ -491,15 +477,13 @@ describe("9 プロジェクトのタイル表示の起動(計画書 M4 の【仮
     assert.equal("displayMode" in JSON.parse(perfStateFixture(["/tmp/a"])).ui, false);
   });
 
-  it("起動の組は 5 プロジェクトと、9 枚の DOM・WebGL の落ち着いた状態と流す状態", () => {
+  it("起動の組は 5 プロジェクトと、9 枚の落ち着いた状態と流す状態で、描画方式の指定を渡さない", () => {
     assert.deepEqual(
-      APP_SCENARIOS.map((s) => [s.name, s.projects, s.displayMode, s.env.ARIN_RENDERER ?? null, s.flood]),
+      APP_SCENARIOS.map((s) => [s.name, s.projects, s.displayMode, s.env, s.flood]),
       [
-        ["tabs5", 5, null, null, false],
-        ["tiles9-dom", 9, "tiles", "dom", false],
-        ["tiles9-webgl", 9, "tiles", "webgl", false],
-        ["tiles9-dom-flood", 9, "tiles", "dom", true],
-        ["tiles9-webgl-flood", 9, "tiles", "webgl", true],
+        ["tabs5", 5, null, {}, false],
+        ["tiles9-dom", 9, "tiles", {}, false],
+        ["tiles9-dom-flood", 9, "tiles", {}, true],
       ],
     );
     assert.ok(APP_SCENARIOS.every((s) => s.runs >= 1 && s.runs <= 3));

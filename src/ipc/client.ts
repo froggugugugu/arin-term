@@ -8,7 +8,6 @@ import type { ConnectOutcome } from "./generated/ConnectOutcome";
 import type { DirListing } from "./generated/DirListing";
 import type { DisplayMode } from "./generated/DisplayMode";
 import type { FileOpOutcome } from "./generated/FileOpOutcome";
-import type { LaunchOptions } from "./generated/LaunchOptions";
 import type { MenuCommand } from "./generated/MenuCommand";
 import type { NewEntryKind } from "./generated/NewEntryKind";
 import type { PathKind } from "./generated/PathKind";
@@ -33,7 +32,6 @@ export type ChannelToken = { readonly __channelToken: unique symbol };
  */
 export interface CommandMap {
   get_app_snapshot: { args: undefined; result: AppSnapshot };
-  get_launch_options: { args: undefined; result: LaunchOptions };
   /** ショートカットの表(T42e)。メニューバーと同じ表。行はコマンドの ID の順。 */
   get_shortcuts: { args: undefined; result: ShortcutTable };
   notify_app_ready: { args: undefined; result: null };
@@ -158,18 +156,10 @@ export interface OutputSubscription {
   close(): void;
 }
 
-/**
- * 画面が使う起動時の指定(描画方式と全角幅の方式。M1 の検証用で、M4 の T50b で外す)。
- * 9 枚の検証画面の項目(verifyGrid)は計画書 T49c(画面)・T49d(Rust)で外した。
- */
-export type ScreenLaunchOptions = Pick<LaunchOptions, "renderer" | "unicode">;
-
 /** 画面が使う Rust の操作。 */
 export interface ArinIpc {
   /** 状態の写しを取得する。 */
   getAppSnapshot(): Promise<AppSnapshot>;
-  /** 起動時の指定(描画方式と全角幅の方式。M1 の検証用)を取得する。起動時に 1 回だけ呼ぶ。ほかの項目は読まない。 */
-  getLaunchOptions(): Promise<ScreenLaunchOptions>;
   /**
    * ショートカットの表(コマンドの ID → キーと受け口)を取得する。起動時に 1 回だけ呼ぶ。
    * メニューバーのアクセラレータと同じ表(M4.5 では設定ファイルの値をまとめたもの)。
@@ -383,8 +373,6 @@ export function createIpc(transport: IpcTransport): ArinIpc {
   };
   return {
     getAppSnapshot: () => invoke("get_app_snapshot", undefined),
-    getLaunchOptions: () =>
-      invoke("get_launch_options", undefined).then(({ renderer, unicode }) => ({ renderer, unicode })),
     getShortcuts: () => invoke("get_shortcuts", undefined),
     notifyAppReady: () => done(invoke("notify_app_ready", undefined)),
     onAppSnapshot: (listener) => transport.listen("app-snapshot", listener),

@@ -126,14 +126,6 @@ body {
   outline-offset: -1px;
 }
 
-/* 描画方式の表示(検証用。M4 で外す。ADR-001)。さらに薄く、等幅の小さな文字で。 */
-.app-shell__renderer {
-  padding-left: var(--space-1);
-  border-left: 1px solid var(--color-separator);
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  opacity: 0.75;
-}
-
 /*
  * 小さなアイコンのボタン(サイドバーの開閉、フォルダを追加。ツリーの下端の帯のボタンと同じ寸法と作法)。
  * 地は塗らず、押せる場所は押したときの淡い塗りで示す。

@@ -17,16 +17,6 @@ describe("src/ipc の包み", () => {
     expect(result).toBe(snapshot);
   });
 
-  it("起動時の指定の取得は get_launch_options を引数なしで呼び、描画方式と全角幅の方式だけを返す", async () => {
-    const fake = createFakeIpc({ get_launch_options: () => ({ renderer: "webgl", unicode: "graphemes" }) });
-    const ipc = createIpc(fake.transport);
-
-    const result = await ipc.getLaunchOptions();
-
-    expect(fake.calls).toEqual([{ command: "get_launch_options", args: undefined }]);
-    expect(result).toEqual({ renderer: "webgl", unicode: "graphemes" });
-  });
-
   it("ショートカットの表の取得は_get_shortcuts_を引数なしで呼び_届いた表をそのまま返す", async () => {
     const table = [{ command: "tree.trash", accelerator: "Cmd+Backspace", receiver: "screen" }] as const;
     const fake = createFakeIpc({ get_shortcuts: () => [...table] });

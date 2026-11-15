@@ -212,7 +212,6 @@ pub fn builder_with_desktop<R: Runtime>(
     let terminal = launch.terminal().clone();
     Builder::<R>::new()
         .manage(launch.paths().clone())
-        .manage(launch.options())
         .manage(ready)
         .manage(first_output)
         .manage(QuitGate::default())
@@ -313,7 +312,6 @@ pub fn builder_with_desktop<R: Runtime>(
         })
         .invoke_handler(tauri::generate_handler![
             commands::app::get_app_snapshot,
-            commands::app::get_launch_options,
             commands::app::get_shortcuts,
             commands::app::notify_app_ready,
             commands::app::report_frontend_error,

@@ -33,10 +33,10 @@
 //
 // 使い方: node scripts/smoke.mjs [--tiles] [--timeout-ms=30000] [--app=<Arin.app のパス>] [--env=<名前>=<値> ...]
 //
-// --env はアプリに渡す環境変数を足す(何度でも指定できる)。例: --env=ARIN_RENDERER=webgl(T21 の描画方式の指定)。
-// WebGL を作れずに DOM へ戻ると画面が診断に 1 行出すので、そのスモークは失敗になる(黙って DOM で通らない)。
+// --env はアプリに渡す環境変数を足す(何度でも指定できる)。値は特別に扱わず、そのまま渡す。
 // 状態フォルダとスモークの印の環境変数(ARIN_STATE_DIR・ARIN_SMOKE)は、このスクリプトが決めるので指定できない。
-// 9 枚の確認は --tiles で行う(撤去した検証画面の指定 ARIN_VERIFY_GRID は、渡してもアプリが読まない)。
+// M1 の検証用の起動時の指定(ARIN_VERIFY_GRID・ARIN_RENDERER・ARIN_UNICODE)は M4 で外した(T49c・T49d・T50b。ADR-001)。
+// 渡してもアプリは読まず、DOM 描画と unicode11 の通常の起動になる(例: --env=ARIN_RENDERER=webgl で確かめられる)。
 
 import { spawn, spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";

@@ -291,11 +291,11 @@ describe("runSmoke", () => {
   it("追加の環境変数をアプリに渡す(状態フォルダとスモークの印の指定は上書きさせない)", async () => {
     const app = await fakeApp(
       "extra-env",
-      `if (process.env.ARIN_RENDERER !== "webgl") process.stderr.write("${FRONTEND_ERROR_PREFIX} ARIN_RENDERER=" + process.env.ARIN_RENDERER + "\\n");\n${WRITE_MARKER}`,
+      `if (process.env.SMOKE_EXTRA !== "yes") process.stderr.write("${FRONTEND_ERROR_PREFIX} SMOKE_EXTRA=" + process.env.SMOKE_EXTRA + "\\n");\n${WRITE_MARKER}`,
     );
 
     const result = await runSmoke(
-      options(app, { extraEnv: { ARIN_RENDERER: "webgl", ARIN_STATE_DIR: "/should-not-win", ARIN_SMOKE: "0" } }),
+      options(app, { extraEnv: { SMOKE_EXTRA: "yes", ARIN_STATE_DIR: "/should-not-win", ARIN_SMOKE: "0" } }),
     );
 
     assert.equal(result.ok, true, result.message);
@@ -542,8 +542,8 @@ describe("createOutputWatcher", () => {
 
 describe("parseArgs", () => {
   it("--env を何度でも受け、名前と値に分ける(値の中の = と空の値も受ける)", () => {
-    assert.deepEqual(parseArgs(["--env=ARIN_RENDERER=webgl", "--env=ARIN_UNICODE=graphemes", "--env=X=a=b", "--env=EMPTY="]), {
-      extraEnv: { ARIN_RENDERER: "webgl", ARIN_UNICODE: "graphemes", X: "a=b", EMPTY: "" },
+    assert.deepEqual(parseArgs(["--env=SMOKE_A=1", "--env=SMOKE_B=two", "--env=X=a=b", "--env=EMPTY="]), {
+      extraEnv: { SMOKE_A: "1", SMOKE_B: "two", X: "a=b", EMPTY: "" },
     });
   });
 
@@ -553,15 +553,15 @@ describe("parseArgs", () => {
 
   it("--tiles を受け_ほかの指定と並べられる", () => {
     assert.deepEqual(parseArgs(["--tiles"]), { tiles: true });
-    assert.deepEqual(parseArgs(["--tiles", "--env=ARIN_RENDERER=webgl"]), { tiles: true, extraEnv: { ARIN_RENDERER: "webgl" } });
+    assert.deepEqual(parseArgs(["--tiles", "--env=SMOKE_A=1"]), { tiles: true, extraEnv: { SMOKE_A: "1" } });
     assert.throws(() => parseArgs(["--tiles=1"]), /知らない引数/);
   });
 
   it("形の違う --env、スモークが決める環境変数、知らない引数は失敗する", () => {
-    assert.throws(() => parseArgs(["--env=ARIN_RENDERER"]), /<名前>=<値>/);
-    assert.throws(() => parseArgs(["--env==webgl"]), /<名前>=<値>/);
+    assert.throws(() => parseArgs(["--env=SMOKE_A"]), /<名前>=<値>/);
+    assert.throws(() => parseArgs(["--env==1"]), /<名前>=<値>/);
     assert.throws(() => parseArgs(["--env=ARIN_STATE_DIR=/tmp/x"]), /指定できない/);
     assert.throws(() => parseArgs(["--env=ARIN_SMOKE=1"]), /指定できない/);
-    assert.throws(() => parseArgs(["--renderer=webgl"]), /知らない引数/);
+    assert.throws(() => parseArgs(["--renderer=dom"]), /知らない引数/);
   });
 });

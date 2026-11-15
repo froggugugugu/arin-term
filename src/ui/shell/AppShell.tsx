@@ -9,7 +9,7 @@ import { shortcutLabel } from "../../logic/keys/shortcutTable";
 import { DEFAULT_PANE_SIZES } from "../../logic/panes/paneLayout";
 import type { Actions } from "../../state/actions";
 import type { AppStore } from "../../state/appStore";
-import { selectedProject, shownTerminal } from "../../state/selectors";
+import { selectedProject } from "../../state/selectors";
 import type { TreeStore } from "../../state/treeStore";
 import type { UiStore } from "../../state/uiStore";
 import type { TerminalManager } from "../../terminal/TerminalManager";
@@ -21,7 +21,6 @@ import type { Snapshot } from "../snapshotTypes";
 import { SidebarIcon, TabsViewIcon, TilesViewIcon } from "../tree/icons";
 import { NoticeBar } from "./NoticeBar";
 import { PaneSplit } from "./PaneSplit";
-import { RendererLabel } from "./RendererLabel";
 import { TreePane } from "./TreePane";
 import { usePaneSizes } from "./usePaneSizes";
 
@@ -38,7 +37,7 @@ interface AppShellProps {
 
 /**
  * ウィンドウ全体の枠(設計書 §8・§9.1)。上から順に、上部の帯(左にサイドバーの開閉のアイコンのボタンと起動の失敗、
- * 右端にアプリ名・写しの版・描画方式(検証用)を小さく控えめに)、知らせ(1 行)、ペインの分割(左: カード一覧とファイルツリー、
+ * 右端にアプリ名と写しの版を小さく控えめに)、知らせ(1 行)、ペインの分割(左: カード一覧とファイルツリー、
  * 右: ターミナル領域)。削除と終了の確認もここに置く。
  * 地はウィンドウのすりガラス(ADR-010)に半透明の淡い色を重ねたもので、ターミナルの置き場所だけが不透明。
  * 上部の帯の右側(アプリ名の左)に、タブ表示とタイル表示を切り替える区分けのボタンを置く(FR-048。計画【仮定】11)。
@@ -49,7 +48,6 @@ export function AppShell({ store, ui, tree, actions, terminals }: AppShellProps)
   const snapshot = useStore(store, (s) => s.snapshot);
   const startupError = useStore(store, (s) => s.startupError);
   const panes = usePaneSizes(snapshot?.layout ?? DEFAULT_PANE_SIZES, actions);
-  const terminal = shownTerminal(snapshot) ?? undefined;
   const collapsed = panes.sizes.sidebarCollapsed;
 
   return (
@@ -87,7 +85,6 @@ export function AppShell({ store, ui, tree, actions, terminals }: AppShellProps)
               {snapshot.appVersion}
             </p>
           )}
-          {terminal !== undefined && <RendererLabel terminals={terminals} terminalId={terminal.id} />}
         </div>
       </header>
       {snapshot !== null && (

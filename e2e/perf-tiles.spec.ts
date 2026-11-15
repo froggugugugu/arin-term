@@ -1,4 +1,4 @@
-// 画面側の 9 枚同時表示の計測(計画書 T49b。NFR-009、ADR-001「描画方式と全角幅の方式は複数枚で実測してから決める」)。
+// 画面側の 9 枚同時表示の計測(計画書 T49b。NFR-009、ADR-001)。
 //
 // 記録だけで、数値では失敗させない。`npm run e2e` には入らない(playwright.config.ts の testIgnore。
 // `npm run perf` が ARIN_PERF_E2E=1 を付けて、この spec だけを 1 ワーカーで動かす)。結果は testreport/perf/e2e-tiles-*.json。
@@ -14,14 +14,15 @@
 // - タイルのクリック→focus_terminal、キー入力→write_terminal、次のページのボタン→next_tile_page の、画面がコマンドを
 //   呼ぶまでの時間(押した瞬間は捕捉段階の pointerdown・keydown)
 // - 写しで 2 ページ目へ送ってから描き終わるまで(9 枚を隠して 1 枚を出す)と、1 ページ目へ戻して描き終わるまで
-// - WebGL の canvas の数(1 ページ目、戻ったあと)と、画面の失敗の報告(WebGL を作れず DOM に戻したときなど)
+// - 画面の失敗の報告
 //
-// 組は描画方式(dom・webgl)× 全角幅の方式(unicode11・graphemes)。組ごとに RUNS 回、毎回新しいページで開く。
-// Playwright の WebKit は WKWebView の実機とは別のビルドなので、組どうしの比較に使う(実機の体感は本人が T50a で見る)。
+// RUNS 回、毎回新しいページで開く。描画方式は DOM、全角幅の方式は unicode11(製品の固定の方式)。
+// T49b では描画方式(dom・webgl)× 全角幅の方式(unicode11・graphemes)の 4 組を測り、その結果で T50b に DOM・unicode11 に
+// 決めた(ADR-001「M4 の実測と案」。そのときの記録は testreport/perf/ の 2026-11 の e2e-tiles-*.json)。
+// Playwright の WebKit は WKWebView の実機とは別のビルドなので、数値は回どうし・版どうしの比較に使う。
 
 import { expect, type Browser, type Page, test } from "@playwright/test";
 
-import type { LaunchOptions } from "../src/ipc/generated/LaunchOptions";
 import type { ProjectColor } from "../src/ipc/generated/ProjectColor";
 import {
   installTauriMock,
@@ -41,20 +42,13 @@ const HIGH_WATER = 512 * 1024;
 const CHUNK_BYTES = 64 * 1024;
 /** 送る間隔(arin-core の OUTPUT_BATCH_WINDOW_MS)。 */
 const TICK_MS = 4;
-/** 流す行(ASCII・全角・絵文字の修飾子・記号を混ぜる。全角幅の方式で処理が変わる文字を含める)。 */
+/** 流す行(ASCII・全角・絵文字の修飾子・記号を混ぜる)。 */
 const LINE = "arin perf tiles 0123456789 日本語の全角の文字 abcdefghij 👍🏽 ✅ ─│┌┐\r\n";
 /** 取り込みを待つ上限。 */
 const FLOOD_TIMEOUT_MS = 60_000;
 const RUNS = 2;
 const PROJECTS = 10;
 const VISIBLE = 9;
-
-const COMBOS: readonly LaunchOptions[] = [
-  { renderer: "dom", unicode: "unicode11" },
-  { renderer: "webgl", unicode: "unicode11" },
-  { renderer: "dom", unicode: "graphemes" },
-  { renderer: "webgl", unicode: "graphemes" },
-];
 
 const COLORS: readonly ProjectColor[] = ["blue", "green", "orange", "purple", "teal", "pink", "red", "yellow"];
 const LIST: SampleProject[] = Array.from({ length: PROJECTS }, (_, i) => ({
@@ -76,8 +70,6 @@ interface PerfWindow {
 }
 
 interface RunResult {
-  renderer: string;
-  unicode: string;
   run: number;
   bytesPerTerminal: number;
   terminals: number;
@@ -91,8 +83,6 @@ interface RunResult {
   nextPageToCommandMs: number | null;
   pageAwayMs: number | null;
   pageBackMs: number | null;
-  webglCanvases: number;
-  webglCanvasesAfter: number;
   frontendErrors: number;
   frontendErrorMessages: string[];
 }
@@ -233,13 +223,11 @@ async function emitAndWaitTiles(page: Page, snapshot: unknown, count: number): P
   );
 }
 
-const webglCanvasCount = (page: Page) => page.locator('[data-testid="tile"] .xterm-screen canvas').count();
-
-async function measureOnce(browser: Browser, options: LaunchOptions, run: number): Promise<RunResult> {
+async function measureOnce(browser: Browser, run: number): Promise<RunResult> {
   const page = await browser.newPage();
   try {
     const snapshot = withTileDisplay(projectsSnapshot(LIST));
-    await installTauriMock(page, { get_launch_options: { ok: options }, get_app_snapshot: { ok: snapshot } });
+    await installTauriMock(page, { get_app_snapshot: { ok: snapshot } });
     await page.goto("/");
     await expect.poll(async () => (await readRecordedCalls(page)).map((c) => c.command)).toContain("notify_app_ready");
     await expect(page.getByTestId("tile")).toHaveCount(VISIBLE);
@@ -252,9 +240,6 @@ async function measureOnce(browser: Browser, options: LaunchOptions, run: number
       if (c === undefined) throw new Error(`${id} の接続が無い`);
       return { id, channel: parseChannelId(c.onOutput) };
     });
-    // 描画の部品(WebGL の canvas)が揃うのを少し待ってから数える。
-    await page.waitForTimeout(300);
-    const webglCanvases = await webglCanvasCount(page);
 
     await instrument(page);
     await startFlood(page, channels);
@@ -270,8 +255,6 @@ async function measureOnce(browser: Browser, options: LaunchOptions, run: number
     const nextPageToCommandMs = await latency(page, "pointerdown", ["next_tile_page"]);
     const pageAwayMs = await emitAndWaitTiles(page, withTileDisplay(projectsSnapshot(LIST), { page: 1 }), 1);
     const pageBackMs = await emitAndWaitTiles(page, withTileDisplay(projectsSnapshot(LIST), { page: 0 }), VISIBLE);
-    await page.waitForTimeout(300);
-    const webglCanvasesAfter = await webglCanvasCount(page);
 
     const flood = await page.evaluate(async () => {
       const perf = (window as unknown as PerfWindow).__ARIN_PERF__;
@@ -282,8 +265,6 @@ async function measureOnce(browser: Browser, options: LaunchOptions, run: number
     const frames = flood.frames.filter((f) => Number.isFinite(f) && f > 0);
     const errors = (await readCallArgs(page, "report_frontend_error")).map((r) => r.message);
     return {
-      renderer: options.renderer,
-      unicode: options.unicode,
       run,
       bytesPerTerminal: BYTES_PER_TERMINAL,
       terminals: VISIBLE,
@@ -306,8 +287,6 @@ async function measureOnce(browser: Browser, options: LaunchOptions, run: number
       nextPageToCommandMs: round(nextPageToCommandMs),
       pageAwayMs: round(pageAwayMs),
       pageBackMs: round(pageBackMs),
-      webglCanvases,
-      webglCanvasesAfter,
       frontendErrors: errors.length,
       frontendErrorMessages: errors.slice(0, 10),
     };
@@ -335,18 +314,16 @@ function repoRoot(): string {
 
 test.describe.configure({ mode: "serial" });
 
-test("9_枚のタイルに同時に流しているあいだの取り込みと反応を描画方式と全角幅の方式の組ごとに記録する", async ({ browser, browserName }) => {
+test("9_枚のタイルに同時に流しているあいだの取り込みと反応を記録する", async ({ browser, browserName }) => {
   test.setTimeout(600_000);
   const runs: RunResult[] = [];
-  for (const options of COMBOS) {
-    for (let run = 1; run <= RUNS; run++) {
-      const r = await measureOnce(browser, options, run);
-      runs.push(r);
-      test.info().annotations.push({
-        type: "NFR-009",
-        description: `${options.renderer}・${options.unicode} ${run} 回目: 取り込み ${r.ingestMs}ms、フレーム p95 ${r.frames?.p95Ms}ms、失敗の報告 ${r.frontendErrors}`,
-      });
-    }
+  for (let run = 1; run <= RUNS; run++) {
+    const r = await measureOnce(browser, run);
+    runs.push(r);
+    test.info().annotations.push({
+      type: "NFR-009",
+      description: `${run} 回目: 取り込み ${r.ingestMs}ms、フレーム p95 ${r.frames?.p95Ms}ms、失敗の報告 ${r.frontendErrors}`,
+    });
   }
 
   const result = {
@@ -371,5 +348,5 @@ test("9_枚のタイルに同時に流しているあいだの取り込みと反
   fs.writeFileSync(`${outDir}/e2e-tiles-latest.json`, body);
 
   // 数値では失敗させない。測れたことだけを確かめる。
-  expect(runs).toHaveLength(COMBOS.length * RUNS);
+  expect(runs).toHaveLength(RUNS);
 });
