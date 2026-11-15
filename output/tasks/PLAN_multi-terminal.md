@@ -1248,7 +1248,7 @@ T46〜T50 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 30b(並行可能。T47b 完了後)
 
-- [ ] T48c — 読み取りスレッドのアテンションの走査と写しの送り(変更ファイル: src-tauri/src/sessions.rs, src-tauri/Cargo.toml, src-tauri/tests/session_attention.rs, src-tauri/tests/session_pty.rs | 依存: T47b)
+- [x] T48c — 読み取りスレッドのアテンションの走査と写しの送り(変更ファイル: src-tauri/src/sessions.rs, src-tauri/Cargo.toml, src-tauri/tests/session_attention.rs, src-tauri/tests/session_pty.rs | 依存: T47b)
   - 対応: FR-055、設計書 §7.1「ターミナルの入出力」の 2・「アテンション」、§7.1「スレッドの分担」(PTY の読み取りと走査はターミナルごとの読み取りスレッド)
   - 変えるもの: 読み取りスレッドが、検証用の記録の有無によらず `AttentionScanner` で走査する(走査器はそのスレッドだけが持つ。ロックを取らない)。契機があったチャンクのあとにだけ `Workspace` のロックを短く取って `note_attention` を呼び、印が立ったときだけ写しを送る。OSC 52 の数え方(検証用の記録)は変えない
   - 安全: 走査は出力の中身を保存しない・画面へ本文を送らない。ロックの順序(接続の直列化 → Workspace → 一覧)を守り、送信のあいだはロックを持たない

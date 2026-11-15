@@ -13,6 +13,11 @@
 //! OSC 52 を走査し、流量制御の状態と処理済みの通知を集計する(T23)。ロックの順序は「接続の直列化 → Workspace → セッションの一覧」で、
 //! PTY の操作(起動・書き込み・寸法・終了)と送り先への送信のあいだは Workspace と一覧のロックを持たない。
 //!
+//! アテンション(FR-055。計画書 T48c): 読み取りスレッドは検証用の記録の有無によらず、自分だけが持つ `AttentionScanner` で
+//! 出力を走査する(ロックを取らない)。契機があったチャンクのあとにだけ Workspace のロックを短く取って
+//! `Workspace::note_attention` を呼び、印が立ったときだけ、ロックを手放してから写しを送る。出力を閉じたあと
+//! (タブを閉じた・アプリの終了)の契機では何もしない。
+//!
 //! セッションの後片付け(T33b): タブを閉じたとき(`close_terminal`)とシェルが終わってタブが閉じたとき
 //! (`ExitAction::Closed`)に、セッションを一覧から外し、出力を閉じ(読み取りとまとめのスレッドが抜ける)、シェルを終わらせる。
 //! 書き込みが止まっていて PTY のロックが取れなければ印(`PtyCell::closing`)だけを付け、ロックを持っていた側が
@@ -34,8 +39,9 @@ use arin_core::persistence::codec::PersistedState;
 use arin_core::ports::{Foreground, PtyError, PtyPort, PtySession, SpawnedPty};
 use arin_core::project::{ProjectColor, ProjectError, ProjectId, RootReference};
 use arin_core::terminal::{
-    ExitAction, FlowControl, OUTPUT_BATCH_MAX_BYTES, OUTPUT_BATCH_WINDOW_MS, OUTPUT_HIGH_WATER,
-    OUTPUT_LOW_WATER, OscScanner, OutputBatch, TerminalError, TerminalId, validate_size,
+    AttentionScanner, ExitAction, FlowControl, OUTPUT_BATCH_MAX_BYTES, OUTPUT_BATCH_WINDOW_MS,
+    OUTPUT_HIGH_WATER, OUTPUT_LOW_WATER, OscScanner, OutputBatch, TerminalError, TerminalId,
+    validate_size,
 };
 use arin_core::workspace::{
     AddProjectOutcome, AppSnapshot, ConnectOutcome, ConnectPlan, ProjectRoot, RemoveOutcome,
@@ -396,9 +402,13 @@ impl SessionRegistry {
             let state = Arc::clone(&state);
             let buffer = inner.config.read_buffer;
             let id = id.clone();
+            let mut attention = AttentionWatch {
+                scanner: AttentionScanner::new(),
+                registry: self.clone(),
+            };
             thread::Builder::new()
                 .name(format!("arin-pty-read-{id}"))
-                .spawn(move || read_loop(output, &state, &tx, buffer, &id))
+                .spawn(move || read_loop(output, &state, &tx, buffer, &id, &mut attention))
         };
         let pump = reader.and_then(|_| {
             let pump = Pump {
@@ -1033,6 +1043,7 @@ fn read_loop(
     tx: &Sender<Vec<u8>>,
     buffer: usize,
     id: &TerminalId,
+    attention: &mut AttentionWatch,
 ) {
     let mut buf = vec![0u8; buffer.max(1)];
     // 検証用の記録があるときだけ OSC 52 を走査する。走査器はこのスレッドだけが持つ(ロックを取らない)。
@@ -1052,9 +1063,38 @@ fn read_loop(
                 if tx.send(buf[..n].to_vec()).is_err() {
                     break;
                 }
+                // 出力をまとめのスレッドへ渡してから見る(画面へ送る順序と遅れを変えない)。
+                attention.scan(id, state, &buf[..n]);
             }
             Err(e) if e.kind() == ErrorKind::Interrupted => {}
             Err(_) => break,
+        }
+    }
+}
+
+/// アテンションの走査と印(FR-055。計画書 T48c)。読み取りスレッドだけが持つ。本文は保持しない・送らない。
+///
+/// Workspace のロックは契機があったチャンクのあとにだけ取る(出力の塊ごとには取らない)。印が既に立っているあいだの
+/// 契機でもロックは取るが、`note_attention` が `false` を返すので写しは送らない(連続するベルで写しが連発しない)。
+struct AttentionWatch {
+    scanner: AttentionScanner,
+    registry: SessionRegistry,
+}
+
+impl AttentionWatch {
+    fn scan(&mut self, id: &TerminalId, state: &OutputState, data: &[u8]) {
+        if !self.scanner.scan(data) {
+            return;
+        }
+        // 閉じたタブ・終了の処理のあとの契機では、印を立てず写しも送らない。閉じたタブは Workspace に無いので
+        // `note_attention` も `false` を返すが、終了の処理ではタブが残るので、ここで止める。
+        if state.is_closed() {
+            return;
+        }
+        let marked = lock(&self.registry.inner.workspace).note_attention(id);
+        if marked {
+            // ロックを手放してから送る(`notify` が自分でロックを取り直して写しを作る)。
+            self.registry.notify();
         }
     }
 }

@@ -17,8 +17,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use arin_core::persistence::codec::PersistedState;
 use arin_core::project::{Project, ProjectColor, ProjectId, RootReference};
 use arin_core::terminal::{TerminalId, TerminalStatus};
-use arin_core::workspace::{RootResolution, Startup, Workspace};
-use arin_lib::sessions::{OutputSink, SessionConfig, SessionRegistry, ShellDefaults};
+use arin_core::workspace::{AppSnapshot, RootResolution, Startup, Workspace};
+use arin_lib::sessions::{
+    OutputSink, SessionConfig, SessionRegistry, ShellDefaults, SnapshotListener,
+};
 use arin_platform::pty::NativePty;
 
 const WAIT: Duration = Duration::from_secs(20);
@@ -251,6 +253,11 @@ struct Projects {
 impl Projects {
     /// `names` のフォルダを一時フォルダの中に作り、その順にプロジェクトにする。先頭を選択中にする。
     fn start(name: &str, names: &[&str]) -> Self {
+        Self::start_with_listener(name, names, Arc::new(|_| {}))
+    }
+
+    /// `start` に、写しの受け取りの関数(`listener`)を足したもの。
+    fn start_with_listener(name: &str, names: &[&str], listener: SnapshotListener) -> Self {
         let home = TempHome::new(name);
         let roots: Vec<PathBuf> = names
             .iter()
@@ -304,7 +311,7 @@ impl Projects {
                 shell: PathBuf::from(ZSH),
                 locale: Some("ja_JP".to_owned()),
             }),
-            Arc::new(|_| {}),
+            listener,
             SessionConfig {
                 exit_poll: Duration::from_millis(50),
                 ..SessionConfig::default()
@@ -637,6 +644,70 @@ fn 前面で_sleep_を動かしたタブを閉じると_sleep_も終わる() {
         thread::sleep(Duration::from_millis(10));
     }
     p.assert_responsive(1, "after");
+
+    p.registry.shutdown();
+}
+
+// ---------------------------------------------------------------------------
+// アテンション(T48c。FR-055)
+// ---------------------------------------------------------------------------
+
+/// 写しのうち、`id` のタブにアテンションの印が立っているものの数。
+fn sent_with_attention(snapshots: &Mutex<Vec<AppSnapshot>>, id: &TerminalId) -> usize {
+    lock(snapshots)
+        .iter()
+        .filter(|s| s.terminals.iter().any(|t| &t.id == id && t.attention))
+        .count()
+}
+
+fn has_attention(registry: &SessionRegistry, id: &TerminalId) -> bool {
+    registry
+        .snapshot()
+        .terminals
+        .iter()
+        .any(|t| &t.id == id && t.attention)
+}
+
+#[test]
+fn 隠れたタブで_printf_bel_を実行すると印が立つ() {
+    // 計画書の名前は `隠れたタブで_printf_'\a'_を実行すると印が立つ`(Rust の名前に引用符と `\` を使えないので言い換えた)。
+    let _serial = serial();
+    let snapshots: Arc<Mutex<Vec<AppSnapshot>>> = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&snapshots);
+    let p = Projects::start_with_listener(
+        "attention",
+        &["alpha", "beta"],
+        Arc::new(move |snapshot| lock(&seen).push(snapshot)),
+    );
+    // A(選択中)が表示中で、B は隠れている。起動しただけでは印は立たない。
+    p.assert_responsive(1, "ready");
+    assert!(!has_attention(&p.registry, &p.terminals[1]));
+
+    // 表示中の A のベルでは立たない(目印が届いた時点で、ベルのチャンクの処理は済んでいる)。
+    p.write(0, b"printf '\\a'; echo BE''LL-A-E''ND\r");
+    p.wait_marked(0, "BELL-", "-END");
+    assert_eq!(sent_with_attention(&snapshots, &p.terminals[0]), 0);
+
+    // 隠れた B のベルで印が立ち、印の載った写しが 1 回送られる。
+    p.write(1, b"printf '\\a'; echo BE''LL-B-E''ND\r");
+    p.wait_marked(1, "BELL-", "-END");
+    let deadline = Instant::now() + WAIT;
+    while sent_with_attention(&snapshots, &p.terminals[1]) == 0 {
+        assert!(
+            Instant::now() < deadline,
+            "B のベルで印の載った写しが送られなかった。出力: {:?}",
+            p.output(1)
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(has_attention(&p.registry, &p.terminals[1]));
+    assert!(!has_attention(&p.registry, &p.terminals[0]));
+
+    // B を表示すると消える。
+    p.registry
+        .select_project(&p.project_ids[1])
+        .expect("B を選べなかった");
+    assert!(!has_attention(&p.registry, &p.terminals[1]));
 
     p.registry.shutdown();
 }
