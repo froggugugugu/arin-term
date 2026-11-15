@@ -1197,7 +1197,7 @@ T46〜T50 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 29b(逐次。T46a 完了後)
 
-- [ ] T46b — `Workspace` の表示の状態(表示モード・ページ・拡大・タイルへのフォーカス)と写し(変更ファイル: crates/arin-core/src/workspace/display.rs, crates/arin-core/src/workspace/mod.rs, crates/arin-core/src/workspace/state.rs, crates/arin-core/src/workspace/snapshot.rs, crates/arin-core/src/workspace/terminals.rs, crates/arin-core/tests/workspace_display.rs, crates/arin-core/tests/app_snapshot.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/ | 依存: T46a)
+- [x] T46b — `Workspace` の表示の状態(表示モード・ページ・拡大・タイルへのフォーカス)と写し(変更ファイル: crates/arin-core/src/workspace/display.rs, crates/arin-core/src/workspace/mod.rs, crates/arin-core/src/workspace/state.rs, crates/arin-core/src/workspace/snapshot.rs, crates/arin-core/src/workspace/terminals.rs, crates/arin-core/tests/workspace_display.rs, crates/arin-core/tests/app_snapshot.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/ | 依存: T46a)
   - 対応: FR-048(切替)、FR-051(並び)、FR-052(ページ)、FR-053(タイルとカードの連動)、FR-054(拡大と復帰)、NFR-009(表示中のページだけ)、設計書 §3.4、§6.1(`PaneSizes` の行の「表示モード、タイルのページ、拡大中か」)、§8「タイル表示」「タイルからの拡大」、ADR-011、前提 (a)(c)(d)、【仮定】1〜7
   - 置くもの: `Workspace` に表示の状態(モード・ページ・拡大中)を足す。口: `set_display_mode`・`toggle_display_mode`(変わったら `true`)、`focus_terminal`(そのタブのプロジェクトを選び、タブを表示中にする。持ち主の無いもの・無い ID は失敗)、`next_page`・`previous_page`(端では何もしない。先頭のタイルにフォーカス)、`toggle_maximize`(タイル表示のときだけ)、`visible_terminals`(表示中のターミナルの並び。T48b の判定と画面の表示に使う)。選択・タブの追加・閉じる・前後・プロジェクトの削除のあとに「ページはフォーカス中のタイルに付いていく」「ページ数が減ったら丸める」を当てる(既存の口の中から 1 つの関数を呼ぶ)。写しに `display`(モード、拡大中、ページ、ページ数、グリッド、表示中のページのタイルの ID の並び)を足す。写しの版は上げない(項目の追加)
   - 安全: 規則は `arin-core` の中だけ。画面からはモードと ID しか受けない

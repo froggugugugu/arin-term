@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
+use super::display::DisplayState;
 use super::outcome::{RemoveOutcome, RootResolution, RunningTerminal, Startup};
 use super::snapshot::{
     AppSnapshot, ProjectCardSnapshot, SNAPSHOT_SCHEMA_VERSION, TerminalTabSnapshot,
@@ -37,6 +38,8 @@ pub struct Workspace {
     pub(super) tabs: TerminalStore,
     pub(super) terminals: HashMap<TerminalId, TerminalEntry>,
     pub(super) layout: PaneSizes,
+    /// 表示モード・タイルのページ・拡大(`display.rs`)。起動のたびにタブ表示で始まる(保存は T46c)。
+    pub(super) display: DisplayState,
     pub(super) notice: Option<String>,
     /// 状態ファイルに保存するか(検証画面では保存しない)。
     pub(super) persist: bool,
@@ -155,6 +158,7 @@ impl Workspace {
             tabs: TerminalStore::new(exit_policy),
             terminals: HashMap::new(),
             layout: PaneSizes::default(),
+            display: DisplayState::default(),
             notice: None,
             persist,
         }
@@ -162,11 +166,17 @@ impl Workspace {
 
     /// プロジェクトを選択する(FR-002)。ターミナルとセッションには触れない(FR-042)。
     ///
+    /// タイル表示では、そのプロジェクトの最初のタイルのページへ移る(FR-053。表示中のタブがそのページに無ければ
+    /// 最初のタイルを表示中にする。タブが 0 枚ならページは変えない。【仮定】5)。
+    ///
     /// # Errors
     ///
     /// その ID のプロジェクトが無いとき(`ProjectError::NotFound`)。
     pub fn select_project(&mut self, id: &ProjectId) -> Result<(), ProjectError> {
-        self.projects.select(id)
+        self.projects.select(id)?;
+        self.align_selected_project_to_tiles();
+        self.sync_display();
+        Ok(())
     }
 
     /// プロジェクトを一覧から外す(FR-003。フォルダには触れない)。
@@ -201,6 +211,7 @@ impl Workspace {
             self.terminals.remove(terminal);
         }
         self.projects.remove(id)?;
+        self.sync_display();
         Ok(RemoveOutcome::Removed { terminals })
     }
 
@@ -302,6 +313,7 @@ impl Workspace {
             terminals,
             layout: self.layout,
             notice: self.notice.clone(),
+            display: self.display_snapshot(),
         }
     }
 
@@ -316,11 +328,12 @@ impl Workspace {
                 status: TerminalStatus::NotStarted,
             },
         );
+        self.sync_display();
         Some(id)
     }
 
     /// すべてのタブ。プロジェクトの並び順、その中はタブの順。持ち主の無いもの(検証画面)は最後。
-    fn ordered_tabs(&self) -> impl Iterator<Item = &TerminalTab> {
+    pub(super) fn ordered_tabs(&self) -> impl Iterator<Item = &TerminalTab> {
         self.projects
             .projects()
             .iter()

@@ -3,6 +3,7 @@
 //!
 //! 起動の仕様は cwd(プロジェクトのルート、検証画面ではホーム)と親の環境変数から組み立てる。
 //! シェルが終わったタブは、通常は閉じ、検証画面では残す(`ExitPolicy`。計画書 M2 の【仮定】5)。
+//! タブが増減・切り替わる口は、最後に表示の状態を合わせ直す(`sync_display`。ページはフォーカス中のタイルに付いていく。計画書 T46b)。
 
 use std::path::Path;
 
@@ -111,6 +112,7 @@ impl Workspace {
         let action = self.tabs.on_shell_exited(id).ok()?;
         if matches!(action, ExitAction::Closed(_)) {
             self.terminals.remove(id);
+            self.sync_display();
         }
         Some(action)
     }
@@ -201,6 +203,7 @@ impl Workspace {
     pub fn close_terminal(&mut self, id: &TerminalId) -> Result<TerminalTab, TerminalError> {
         let tab = self.tabs.close(id)?;
         self.terminals.remove(id);
+        self.sync_display();
         Ok(tab)
     }
 
@@ -210,19 +213,25 @@ impl Workspace {
     ///
     /// その ID のタブが無いとき(`TerminalError::NotFound`)。
     pub fn activate_terminal(&mut self, id: &TerminalId) -> Result<(), TerminalError> {
-        self.tabs.activate(id)
+        self.tabs.activate(id)?;
+        self.sync_display();
+        Ok(())
     }
 
     /// 選択中のプロジェクト(無ければ持ち主の無いタブ)の次のタブを表示中にし、その ID を返す。末尾の次は先頭。0 枚なら `None`。
     pub fn select_next_terminal(&mut self) -> Option<TerminalId> {
         let project = self.projects.selected().cloned();
-        self.tabs.select_next(project.as_ref())
+        let next = self.tabs.select_next(project.as_ref());
+        self.sync_display();
+        next
     }
 
     /// 選択中のプロジェクト(無ければ持ち主の無いタブ)の前のタブを表示中にし、その ID を返す。先頭の前は末尾。0 枚なら `None`。
     pub fn select_previous_terminal(&mut self) -> Option<TerminalId> {
         let project = self.projects.selected().cloned();
-        self.tabs.select_previous(project.as_ref())
+        let previous = self.tabs.select_previous(project.as_ref());
+        self.sync_display();
+        previous
     }
 }
 

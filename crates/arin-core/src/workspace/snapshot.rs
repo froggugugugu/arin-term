@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::layout::panes::PaneSizes;
+use crate::layout::tiles::{DisplayMode, TileGrid};
 use crate::project::{ProjectColor, ProjectId};
 use crate::terminal::{TerminalId, TerminalStatus};
 
@@ -34,6 +35,31 @@ pub struct AppSnapshot {
     pub layout: PaneSizes,
     /// 状態ファイルを退避したときの 1 行の知らせ。無ければ `null`。
     pub notice: Option<String>,
+    /// 右ペインの表示の状態(表示モード・ページ・拡大。計画書 T46b、ADR-011)。
+    pub display: DisplaySnapshot,
+}
+
+/// 写しに載せる右ペインの表示の状態(FR-048・FR-051〜054、ADR-011 の 1)。
+///
+/// グリッドとページは Rust が計算する。画面はこれを映すだけで、グリッドの規則を持たない。
+/// ページ・ページ数・グリッド・タイルの並びはタブ表示のときも計算して載せる(タイル表示にしたときに出すもの)。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct DisplaySnapshot {
+    /// 表示モード。
+    pub mode: DisplayMode,
+    /// タイルを拡大中か(タイル表示のときだけ真になる)。拡大しているのは `focused_terminal_id`。
+    pub maximized: bool,
+    /// 表示中のページ(0 から。画面の `1/2` は 1 を足して作る)。0 枚なら 0。
+    pub page: u32,
+    /// ページの数。0 枚なら 0。
+    pub page_count: u32,
+    /// 表示中のページのグリッド(列×行。最終ページはそのページの枚数で決める)。0 枚なら 0×0。
+    pub grid: TileGrid,
+    /// 表示中のページのタイル(並びの順=`terminals` の順)。
+    pub tile_ids: Vec<TerminalId>,
+    /// フォーカス中のタイル(=選択中のプロジェクトの表示中のタブ)。無ければ `null`。
+    pub focused_terminal_id: Option<TerminalId>,
 }
 
 /// 写しに載せるプロジェクト 1 件(カード 1 枚)。

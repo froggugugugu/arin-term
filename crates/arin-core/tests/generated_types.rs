@@ -24,7 +24,8 @@ use arin_core::project::ProjectColor;
 use arin_core::shortcuts::table::ShortcutTable;
 use arin_core::tree::{DirListing, TreeChange};
 use arin_core::workspace::{
-    AddProjectOutcome, AppSnapshot, ConnectOutcome, MenuCommand, QuitRequest, RemoveProjectOutcome,
+    AddProjectOutcome, AppSnapshot, ConnectOutcome, DisplaySnapshot, MenuCommand, QuitRequest,
+    RemoveProjectOutcome,
 };
 use ts_rs::{Config, TS, TypeVisitor};
 
@@ -56,6 +57,8 @@ fn collect_generated(cfg: &Config) -> BTreeMap<PathBuf, String> {
     // タイル表示の表示モードとグリッド(計画書 T46a)。
     collector.visit::<DisplayMode>();
     collector.visit::<TileGrid>();
+    // 写しの表示の状態(計画書 T46b。`AppSnapshot` からもたどれる)。
+    collector.visit::<DisplaySnapshot>();
     collector.files
 }
 

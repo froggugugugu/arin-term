@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 
+use arin_core::layout::tiles::DisplayMode;
 use arin_core::persistence::codec::PersistedState;
 use arin_core::project::{Project, ProjectColor, ProjectId, RootReference};
 use arin_core::workspace::{
@@ -86,6 +87,41 @@ fn 写しの_json_の形() {
             ],
             "layout": { "sidebarWidth": 260.0, "sidebarCollapsed": false, "cardAreaHeight": 200.0 },
             "notice": "退避した",
+            "display": {
+                "mode": "tabs",
+                "maximized": false,
+                "page": 0,
+                "pageCount": 1,
+                "grid": { "cols": 1, "rows": 1 },
+                "tileIds": ["terminal-1"],
+                "focusedTerminalId": "terminal-1",
+            },
+        })
+    );
+}
+
+#[test]
+fn 写しに表示の状態が載る() {
+    // 計画書 T46b。A に 10 枚(1 ページ目に 9 枚、2 ページ目に 1 枚)にしてタイル表示で拡大する
+    let mut ws = sample();
+    for _ in 1..10 {
+        ws.open_terminal(&id(1)).expect("開ける");
+    }
+    assert!(ws.set_display_mode(DisplayMode::Tiles));
+    assert!(ws.toggle_maximize());
+
+    let value = serde_json::to_value(ws.snapshot()).unwrap();
+
+    assert_eq!(
+        value["display"],
+        json!({
+            "mode": "tiles",
+            "maximized": true,
+            "page": 1,
+            "pageCount": 2,
+            "grid": { "cols": 1, "rows": 1 },
+            "tileIds": ["terminal-10"],
+            "focusedTerminalId": "terminal-10",
         })
     );
 }

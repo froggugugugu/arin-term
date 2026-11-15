@@ -68,6 +68,16 @@ export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapsho
     terminals: [],
     layout: { sidebarWidth: 260, sidebarCollapsed: false, cardAreaHeight: 200 },
     notice: null,
+    // 表示の状態の既定(タブ表示・拡大なし・0 枚)。タイル表示の振る舞いは T47d・T47e で扱う
+    display: {
+      mode: "tabs",
+      maximized: false,
+      page: 0,
+      pageCount: 0,
+      grid: { cols: 0, rows: 0 },
+      tileIds: [],
+      focusedTerminalId: null,
+    },
     ...overrides,
   };
 }
