@@ -184,6 +184,8 @@ interface MockControls {
   sendChannel(channelId: number, messages: unknown[]): boolean;
   /** イベントを、購読している受け取りの関数すべてに届ける。届けた数を返す。 */
   emit(event: string, payload: unknown): number;
+  /** コマンドの応答を差し替える(以後の呼び出しから効く。T35a)。 */
+  setReply(command: string, reply: { ok: unknown } | { error: string }): void;
 }
 
 /**
@@ -226,6 +228,9 @@ function injectTauriMock(replies: Record<string, { ok: unknown } | { error: stri
         delivered++;
       }
       return delivered;
+    },
+    setReply: (command, reply) => {
+      replies[command] = reply;
     },
   };
   w.__TAURI_INTERNALS__ = {
@@ -272,6 +277,21 @@ function injectTauriMock(replies: Record<string, { ok: unknown } | { error: stri
 export async function installTauriMock(page: Page, overrides: Partial<TauriMockConfig> = {}): Promise<void> {
   const replies: TauriMockConfig = { ...DEFAULT_REPLIES, ...overrides };
   await page.addInitScript(injectTauriMock, replies);
+}
+
+/**
+ * 差し込んだあとで、1 つのコマンドの応答を差し替える(T35a)。以後の呼び出しから効き、再読み込みすると
+ * installTauriMock に渡した応答へ戻る。同じコマンドが続けて違う結果を返す流れ(削除の確認のあとの確定など)に使う。
+ */
+export async function setMockReply<C extends CommandName>(page: Page, command: C, reply: MockReply<C>): Promise<void> {
+  await page.evaluate(
+    ({ command, reply }) => {
+      const controls = (window as unknown as MockWindow).__ARIN_E2E__;
+      if (controls === undefined) throw new Error("偽の Rust 側が差し込まれていない");
+      controls.setReply(command, reply);
+    },
+    { command, reply },
+  );
 }
 
 /** 画面から届いたコマンドを、届いた順に返す。 */
