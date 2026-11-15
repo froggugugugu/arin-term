@@ -20,7 +20,7 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
-use super::clipboard::{FileClipboard, PasteSource};
+use super::clipboard::{FileClipboard, PastePlan, PasteReport, PasteSource};
 use super::name::validate_name;
 use super::scope::{PathScopeGuard, ScopedEntry, ScopedFolder};
 use super::types::{ConflictResolution, FileOpOutcome, NewEntryKind, NotAllowedReason};
@@ -92,7 +92,7 @@ impl<'a> FileOperationService<'a> {
             NewEntryKind::File => (EntryKind::File, &|to| self.fs.create_file(to)),
             NewEntryKind::Folder => (EntryKind::Directory, &|to| self.fs.create_dir(to)),
         };
-        self.place(&folder, name, entry_kind, None, resolution, op)
+        self.place(&folder, name, entry_kind, None, None, resolution, op)
     }
 
     /// `root` の中の既存の項目 `target` の名前を `new_name` に変える(FR-026)。
@@ -139,6 +139,7 @@ impl<'a> FileOperationService<'a> {
             new_name,
             source.kind,
             Some(&source.path),
+            None,
             resolution,
             &|to| self.fs.move_entry(&from, to),
         )
@@ -240,9 +241,8 @@ impl<'a> FileOperationService<'a> {
     /// 変わっていれば、ペーストボードのファイル(ルートの外でもよい。読むだけ)を写す。
     /// ファイルが無ければ何もしない(ファイルシステムに触れない)。
     ///
-    /// 複数の項目で対処が無いときは、先に置く先の中の名前と比べ、1 つでも衝突すれば何も置かずに `Conflict` を返す。
-    /// 対処はすべての衝突に当てる。途中の項目で失敗したら、その前の項目は置いたまま、その応答を返す。
-    /// 移し終えたら切り取りの状態を捨てる。衝突のあいだは保つ(対処を付けて呼び直すと移動になる)。
+    /// 決める(`plan_paste`)・置く(`run_paste`)・片付ける(`FileClipboard::settle`)を続けて行う。
+    /// アプリは置くあいだ切り取りの状態のロックを持たないよう、3 つを分けて呼ぶ(T42c)。
     #[must_use]
     pub fn paste(
         &self,
@@ -253,16 +253,60 @@ impl<'a> FileOperationService<'a> {
         dest_dir: &RelPath,
         resolution: Option<ConflictResolution>,
     ) -> FileOpOutcome {
-        let source = match clipboard.source(pasteboard) {
-            Ok(source) => source,
-            Err(_) => return failed("ペーストボードを読めませんでした"),
+        let plan = match self.plan_paste(pasteboard, clipboard, resolution) {
+            Ok(plan) => plan,
+            Err(outcome) => return outcome,
         };
-        let (mode, sources) = match &source {
-            PasteSource::Nothing => return FileOpOutcome::Done { select: None },
+        let report = self.run_paste(&plan, project_root, dest_root, dest_dir, resolution);
+        clipboard.settle(&plan, &report);
+        report.outcome
+    }
+
+    /// ペーストで何をするかを決める(切り取りの状態とペーストボードを読むだけ。ファイルシステムに触れない)。
+    ///
+    /// # Errors
+    ///
+    /// ペーストボードを読めなかったときは、その応答。
+    pub fn plan_paste(
+        &self,
+        pasteboard: &dyn FilePasteboardPort,
+        clipboard: &mut FileClipboard,
+        resolution: Option<ConflictResolution>,
+    ) -> Result<PastePlan, FileOpOutcome> {
+        clipboard
+            .plan(pasteboard, resolution)
+            .map_err(|_| failed("ペーストボードを読めませんでした"))
+    }
+
+    /// 決めたペーストを行う(切り取りの状態には触れない。結果は `FileClipboard::settle` で映す)。
+    ///
+    /// 複数の項目で対処が無いときは、先に置く先の中の名前と、ペーストする項目どうしの名前を比べ
+    /// (大文字・小文字を区別しない。置く先に同じ名前があるかはファイルシステムにも問い合わせる)、
+    /// 1 つでも衝突すれば何も置かずに、衝突した数を付けた `Conflict` を返す。対処はすべての衝突に当てる。
+    /// ペーストする項目どうしで名前が同じときの「置き換える」は、同じペーストで置いた項目をゴミ箱に入れることになるので、
+    /// 何も置かずに失敗を返す。写せない種類(`EntryKind::Other`)の項目があるコピーも、何も置かずに失敗を返す。
+    ///
+    /// 途中の項目で衝突したら(事前の検査をすり抜けた衝突)、その前の項目は置いたまま、残りの衝突を数え直して返す。
+    /// 呼び直すと置き終えた項目は飛ばす(`PastePlan`)。それ以外の失敗も、その前の項目は置いたまま、その応答を返す。
+    #[must_use]
+    pub fn run_paste(
+        &self,
+        plan: &PastePlan,
+        project_root: &dyn Fn(&ProjectId) -> Option<PathBuf>,
+        dest_root: &Path,
+        dest_dir: &RelPath,
+        resolution: Option<ConflictResolution>,
+    ) -> PasteReport {
+        let (mode, sources) = match &plan.source {
+            PasteSource::Nothing => {
+                return PasteReport::nothing(FileOpOutcome::Done { select: None });
+            }
             PasteSource::Move { project, items } => {
                 let Some(source_root) = project_root(project) else {
-                    clipboard.clear();
-                    return FileOpOutcome::NotFound;
+                    return PasteReport {
+                        source_gone: true,
+                        ..PasteReport::nothing(FileOpOutcome::NotFound)
+                    };
                 };
                 (Transfer::Move, Sources::Cut(source_root, items))
             }
@@ -272,41 +316,72 @@ impl<'a> FileOperationService<'a> {
         let guard = PathScopeGuard::new(self.fs, dest_root);
         let folder = match guard.folder(dest_dir) {
             Ok(folder) => folder,
-            Err(error) => return error.into(),
+            Err(error) => return PasteReport::nothing(error.into()),
         };
-        let checked = match self.checked_sources(&sources) {
+        let skip = plan.skip_for(&folder.real);
+        let report = |outcome, placed: usize| PasteReport {
+            outcome,
+            done: skip + placed,
+            dest: Some(folder.real.clone()),
+            source_gone: false,
+        };
+        let checked = match self.checked_sources(&sources, skip) {
             Ok(checked) => checked,
-            Err(outcome) => return outcome,
+            Err(outcome) => return report(outcome, 0),
         };
         for source in &checked {
             if source.kind == EntryKind::Directory && folder.real.starts_with(&source.path) {
-                return FileOpOutcome::NotAllowed {
-                    reason: NotAllowedReason::IntoDescendant,
-                };
+                return report(
+                    FileOpOutcome::NotAllowed {
+                        reason: NotAllowedReason::IntoDescendant,
+                    },
+                    0,
+                );
+            }
+            if mode == Transfer::Copy
+                && let Some(outcome) = refuse_uncopyable(source)
+            {
+                return report(outcome, 0);
             }
         }
-        if checked.len() > 1
-            && resolution.is_none()
-            && let Some(outcome) = self.precheck_conflicts(&folder, &checked)
-        {
-            return outcome;
+        if checked.len() > 1 {
+            match resolution {
+                None => match self.count_conflicts(&folder, &checked, mode) {
+                    Ok(None) => {}
+                    Ok(Some(outcome)) | Err(outcome) => return report(outcome, 0),
+                },
+                Some(ConflictResolution::Replace) if has_duplicate_names(&checked) => {
+                    return report(
+                        failed(
+                            "ペーストする項目に同じ名前のものがあるため、置き換えられません(「両方残す」を選んでください)",
+                        ),
+                        0,
+                    );
+                }
+                Some(_) => {}
+            }
         }
 
         let mut first = None;
-        for source in &checked {
+        for (placed, source) in checked.iter().enumerate() {
             match self.transfer(source, &folder, mode, resolution) {
                 FileOpOutcome::Done { select } => {
                     if first.is_none() {
                         first = select;
                     }
                 }
-                other => return other,
+                FileOpOutcome::Conflict { name, total } => {
+                    // 事前の検査をすり抜けた衝突(正規化の違い・そのあいだに外で作られた)。残りを数え直す。
+                    let outcome = match self.count_conflicts(&folder, &checked[placed..], mode) {
+                        Ok(Some(recounted @ FileOpOutcome::Conflict { .. })) => recounted,
+                        _ => FileOpOutcome::Conflict { name, total },
+                    };
+                    return report(outcome, placed);
+                }
+                other => return report(other, placed),
             }
         }
-        if mode == Transfer::Move {
-            clipboard.clear();
-        }
-        FileOpOutcome::Done { select: first }
+        report(FileOpOutcome::Done { select: first }, checked.len())
     }
 
     // ---- 内側 ----
@@ -349,20 +424,37 @@ impl<'a> FileOperationService<'a> {
             };
         }
         let from = source.path.as_path();
-        let op: &PlaceOp<'_> = match mode {
-            Transfer::Move => &|to| self.fs.move_entry(from, to),
-            Transfer::Copy => &|to| self.fs.copy_entry(from, to),
+        let (op, moving): (&PlaceOp<'_>, Option<&Path>) = match mode {
+            Transfer::Move => (&|to| self.fs.move_entry(from, to), Some(from)),
+            Transfer::Copy => {
+                if let Some(outcome) = refuse_uncopyable(source) {
+                    return outcome;
+                }
+                (&|to| self.fs.copy_entry(from, to), None)
+            }
         };
-        self.place(folder, name, source.kind, Some(from), resolution, op)
+        self.place(
+            folder,
+            name,
+            source.kind,
+            Some(from),
+            moving,
+            resolution,
+            op,
+        )
     }
 
     /// `folder` の中に `name` で置く。衝突したら対処に従う。`source` は移す・写す元(置き換えで守る)。
+    /// `moving` は別のフォルダへ移すときの元。衝突したら、確認を出す前に同じボリュームかを確かめ、
+    /// 移せないと分かっていれば(既存をゴミ箱に入れずに)失敗を返す。
+    #[allow(clippy::too_many_arguments)]
     fn place(
         &self,
         folder: &ScopedFolder,
         name: &str,
         kind: EntryKind,
         source: Option<&Path>,
+        moving: Option<&Path>,
         resolution: Option<ConflictResolution>,
         op: &PlaceOp<'_>,
     ) -> FileOpOutcome {
@@ -378,6 +470,14 @@ impl<'a> FileOperationService<'a> {
             }
             Err(FsError::AlreadyExists(_)) => {}
             Err(error) => return fs_failure(error),
+        }
+        if let Some(from) = moving {
+            // 移動の失敗の順(衝突と別のボリュームのどちらが先に返るか)には頼らず、先に確かめる。
+            match self.fs.same_volume(from, &folder.real) {
+                Ok(true) => {}
+                Ok(false) => return fs_failure(FsError::CrossDevice(String::new())),
+                Err(error) => return fs_failure(error),
+            }
         }
         match resolution {
             None => conflict(name),
@@ -452,18 +552,25 @@ impl<'a> FileOperationService<'a> {
 
     /// ペーストの元を検査する。切り取ったものは元のルートで範囲を検査し直す。ペーストボードのファイルは
     /// 親の実パスを解決して存在を確かめる(読むだけなので範囲は問わない)。
-    fn checked_sources(&self, sources: &Sources<'_>) -> Result<Vec<Source>, FileOpOutcome> {
+    /// `skip` は先頭から飛ばす数(途中で衝突したコピーの呼び直しで、置き終えた項目)。
+    fn checked_sources(
+        &self,
+        sources: &Sources<'_>,
+        skip: usize,
+    ) -> Result<Vec<Source>, FileOpOutcome> {
         match sources {
             Sources::Cut(root, items) => {
                 let guard = PathScopeGuard::new(self.fs, root);
                 items
                     .iter()
+                    .skip(skip)
                     .map(|item| guard.entry(item).map(Source::from))
                     .collect::<Result<_, _>>()
                     .map_err(FileOpOutcome::from)
             }
             Sources::External(paths) => paths
                 .iter()
+                .skip(skip)
                 .map(|path| self.external_source(path))
                 .collect(),
         }
@@ -483,21 +590,51 @@ impl<'a> FileOperationService<'a> {
         Ok(Source { path, kind })
     }
 
-    /// 複数の項目を置く前に、置く先の中の名前と比べる(大文字・小文字を区別しない)。衝突があればその応答。
-    fn precheck_conflicts(
+    /// 複数の項目を置く前に、衝突する項目を数える。衝突があれば、最初の名前と数を付けた `Conflict`。
+    ///
+    /// 衝突とみなすもの: 置く先の中の名前と大文字・小文字を区別せずに同じ、置く先にその名前の項目がある
+    /// (ファイルシステムに問い合わせる。APFS は正規化の違いも同じ名前とみなすので、NFC と NFD の違いも見つかる)、
+    /// 先に置くペーストの項目と大文字・小文字を区別せずに同じ。同じフォルダへの移動(何もしない)は数えない。
+    /// 名前が正しくない項目は数えない(置くときに名前の失敗になる)。
+    fn count_conflicts(
         &self,
         folder: &ScopedFolder,
         sources: &[Source],
-    ) -> Option<FileOpOutcome> {
+        mode: Transfer,
+    ) -> Result<Option<FileOpOutcome>, FileOpOutcome> {
         let taken: Vec<String> = match self.fs.read_dir(&folder.real) {
             Ok(entries) => entries.into_iter().map(|e| e.name.to_lowercase()).collect(),
-            Err(error) => return Some(fs_failure(error)),
+            Err(error) => return Err(fs_failure(error)),
         };
-        sources
-            .iter()
-            .filter_map(|s| s.path.file_name().and_then(OsStr::to_str))
-            .find(|name| taken.contains(&name.to_lowercase()))
-            .map(conflict)
+        let mut seen: Vec<String> = Vec::new();
+        let mut first: Option<&str> = None;
+        let mut total: u32 = 0;
+        for source in sources {
+            let Some(name) = source.path.file_name().and_then(OsStr::to_str) else {
+                continue;
+            };
+            let folded = name.to_lowercase();
+            let stays =
+                mode == Transfer::Move && source.path.parent() == Some(folder.real.as_path());
+            if !stays && validate_name(name).is_ok() {
+                let clash = seen.contains(&folded)
+                    || taken.contains(&folded)
+                    || match self.fs.entry_kind(&folder.real.join(name)) {
+                        Ok(_) => true,
+                        Err(FsError::NotFound(_)) => false,
+                        Err(error) => return Err(fs_failure(error)),
+                    };
+                if clash {
+                    total = total.saturating_add(1);
+                    first.get_or_insert(name);
+                }
+            }
+            seen.push(folded);
+        }
+        Ok(first.map(|name| FileOpOutcome::Conflict {
+            name: name.to_owned(),
+            total,
+        }))
     }
 }
 
@@ -516,10 +653,45 @@ fn would_take_source(existing: &Path, source: &Path) -> bool {
     fold(source).starts_with(fold(existing))
 }
 
+/// 単一の項目の衝突(数は 1)。
 fn conflict(name: &str) -> FileOpOutcome {
     FileOpOutcome::Conflict {
         name: name.to_owned(),
+        total: 1,
     }
+}
+
+/// 写せない種類(FIFO・ソケット・デバイス・壊れたリンクなど)なら、その失敗。`copyfile(3)` が開いたまま
+/// 戻らない恐れがあるので写さない。
+fn refuse_uncopyable(source: &Source) -> Option<FileOpOutcome> {
+    if source.kind != EntryKind::Other {
+        return None;
+    }
+    let name = source
+        .path
+        .file_name()
+        .and_then(OsStr::to_str)
+        .unwrap_or("項目");
+    Some(FileOpOutcome::Failed {
+        message: format!(
+            "「{name}」はコピーできない種類の項目です(名前付きパイプ・ソケット・壊れたリンクなど)"
+        ),
+    })
+}
+
+/// ペーストする項目どうしに、大文字・小文字を区別せずに同じ名前があるか。
+fn has_duplicate_names(sources: &[Source]) -> bool {
+    let mut seen: Vec<String> = Vec::new();
+    for source in sources {
+        if let Some(name) = source.path.file_name().and_then(OsStr::to_str) {
+            let folded = name.to_lowercase();
+            if seen.contains(&folded) {
+                return true;
+            }
+            seen.push(folded);
+        }
+    }
+    false
 }
 
 fn failed(message: &str) -> FileOpOutcome {

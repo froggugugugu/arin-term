@@ -106,7 +106,9 @@ pub fn builder_with_project_ports<R: Runtime>(
         probe,
         ports,
         project_ports,
-        Arc::new(LocalFileSystem::new()),
+        Arc::new(LocalFileSystem::with_leftover_report(
+            fileops::report_staging_leftover,
+        )),
     )
 }
 
@@ -374,8 +376,32 @@ pub fn run() {
             std::process::exit(2);
         }
     };
-    builder::<tauri::Wry>(launch)
+    let app = builder::<tauri::Wry>(launch)
         .build(tauri::generate_context!())
-        .expect("Tauri のアプリを組み立てられなかった")
-        .run(lifecycle::on_run_event);
+        .expect("Tauri のアプリを組み立てられなかった");
+    apply_window_effects(&app);
+    app.run(lifecycle::on_run_event);
+}
+
+/// ウィンドウのラベル(`tauri.conf.json` の `app.windows[0].label`)。
+const MAIN_WINDOW_LABEL: &str = "main";
+
+/// ウィンドウの背景に macOS のサイドバーの素材(すりガラス)を重ねる(ADR-010)。
+///
+/// `tauri.conf.json` の `windowEffects` には書かず、本物のランタイムで起動したときだけここで付ける。
+/// 設定に書くと、模擬ランタイム(`src-tauri/tests/`)のウィンドウにも付けようとして落ちるため。
+/// 付けられなくても起動は続ける(見た目だけの機能)。
+fn apply_window_effects(app: &tauri::App) {
+    use tauri::window::{Effect, EffectState, EffectsBuilder};
+
+    let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+        return;
+    };
+    let effects = EffectsBuilder::new()
+        .effect(Effect::Sidebar)
+        .state(EffectState::FollowsWindowActiveState)
+        .build();
+    if let Err(e) = window.set_effects(effects) {
+        eprintln!("[arin:launch] ウィンドウの半透過を付けられなかった: {e}");
+    }
 }

@@ -11,4 +11,4 @@
 mod local;
 mod trash;
 
-pub use local::{LocalFileSystem, STAGING_PREFIX};
+pub use local::{LeftoverReport, LocalFileSystem, STAGING_PREFIX};

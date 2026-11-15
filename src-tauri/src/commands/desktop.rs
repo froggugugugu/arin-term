@@ -9,7 +9,8 @@
 //! 対象は `PathScopeGuard` を通す: ルートの外を指すリンクを経由する経路は拒否する。項目そのもののリンクはたどらない
 //! (Finder ではリンク自体を選んで表示する。「開く」はリンクを開かない【仮定】)。
 //! 「開く」はふつうのファイルだけ(フォルダは画面が開閉する。`.app` もフォルダなので起動しない)。実行できるファイル
-//! (実行の権限があるもの)は、既定のアプリ(ターミナル)で実行されうるので開かない【仮定】。
+//! (実行の権限があるもの)は、既定のアプリ(ターミナル)で実行されうるので開かない【仮定】。実行の権限が無くても
+//! 既定のアプリが実行・起動・インストールする種類(`UNOPENABLE_EXTENSIONS` の拡張子)も開かない。
 //!
 //! Finder・アプリへの受け渡し(`openURL:` は少し待つことがある)とペーストボードと PTY への書き込みは、待ってよいスレッドで行う。
 
@@ -90,6 +91,9 @@ impl Desktop {
                     return failed("リンクは開けません");
                 }
                 EntryKind::Other => return failed("この種類の項目は開けません"),
+            }
+            if has_unopenable_extension(&entry.path) {
+                return failed("この種類のファイルは開けません。Finder で表示から開いてください");
             }
             match is_executable(&entry.path) {
                 Ok(false) => {}
@@ -222,6 +226,42 @@ impl Desktop {
 
 const TERMINAL_NOT_FOUND: &str = "挿入先のターミナルが見つかりません";
 
+/// 実行の権限が無くても、既定のアプリが実行・起動・インストールする種類の拡張子(小文字。比べるときは大文字・小文字を
+/// 区別しない)。ターミナルのスクリプト・Java・アプリと配布物・AppleScript・Automator・URL を開く書類。
+pub const UNOPENABLE_EXTENSIONS: &[&str] = &[
+    "terminal",
+    "command",
+    "tool",
+    "jar",
+    "app",
+    "pkg",
+    "mpkg",
+    "dmg",
+    "scpt",
+    "scptd",
+    "applescript",
+    "workflow",
+    "action",
+    "webloc",
+    "inetloc",
+    "fileloc",
+    "url",
+];
+
+/// 名前の拡張子が `UNOPENABLE_EXTENSIONS` のどれかか。`.command` のように名前全体が `.` + 拡張子のものも含める。
+fn has_unopenable_extension(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    let extension = match name.rsplit_once('.') {
+        Some((_, extension)) => extension,
+        None => return false,
+    };
+    UNOPENABLE_EXTENSIONS
+        .iter()
+        .any(|unopenable| extension.eq_ignore_ascii_case(unopenable))
+}
+
 /// ルート(フォルダとして)か既存の項目かを検査し、操作に使う絶対パス(ルートは実パス、項目は親の実パス + 名前)を返す。
 fn scoped_any(guard: &PathScopeGuard<'_>, path: &RelPath) -> Result<PathBuf, ScopeError> {
     if path.is_root() {
@@ -235,6 +275,46 @@ fn scoped_any(guard: &PathScopeGuard<'_>, path: &RelPath) -> Result<PathBuf, Sco
 fn is_executable(path: &Path) -> std::io::Result<bool> {
     let meta = std::fs::symlink_metadata(path)?;
     Ok(meta.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn 実行につながる拡張子は大文字小文字を区別せずに見分ける() {
+        for name in [
+            "a.command",
+            "B.COMMAND",
+            "c.WebLoc",
+            ".command",
+            "x.tar.dmg",
+            "s.applescript",
+        ] {
+            assert!(
+                has_unopenable_extension(Path::new("/x").join(name).as_path()),
+                "{name}"
+            );
+        }
+        for name in ["a.md", "command", "a.command.md", "a.commands", "a.", "url"] {
+            assert!(
+                !has_unopenable_extension(Path::new("/x").join(name).as_path()),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn 一覧は小文字で重なりが無い() {
+        for (i, extension) in UNOPENABLE_EXTENSIONS.iter().enumerate() {
+            assert_eq!(*extension, extension.to_ascii_lowercase());
+            assert!(!extension.contains('.'));
+            assert!(
+                !UNOPENABLE_EXTENSIONS[..i].contains(extension),
+                "{extension}"
+            );
+        }
+    }
 }
 
 /// デスクトップのポートの結果を応答にする。失敗の文言(絶対パスを含む)は使わず、決まった文言にする。

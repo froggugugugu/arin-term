@@ -70,6 +70,7 @@ export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartA
       tree,
       app: store,
       isNameInputFocused: () => document.activeElement?.closest("[data-tree-name-input]") != null,
+      isTreeElementFocused: () => document.activeElement?.closest("[data-tree-root]") != null,
     }),
   );
   return startApp({

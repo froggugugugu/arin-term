@@ -181,7 +181,7 @@ describe("treeStore(ツリーの読み込みと保留)", () => {
 
   it("確認ダイアログとドラッグの間も保留する", () => {
     const t = setup();
-    t.ui.getState().openTreeConflict({ request: { op: "paste", projectId: "p1", destDir: "" }, name: "a.ts" });
+    t.ui.getState().openTreeConflict({ request: { op: "paste", projectId: "p1", destDir: "" }, name: "a.ts", total: 1 });
     t.ui.getState().setTreeDragging(true);
 
     expect([...t.tree.getState().gate.holds].sort()).toEqual(["dialog", "drag"]);
@@ -334,6 +334,26 @@ describe("treeStore(ツリーの読み込みと保留)", () => {
     expect(activeTreeModel(t.tree.getState())?.loading.has("src")).toBe(false);
   });
 
+  it("開いたフォルダの中身を読めなければ_知らせを出してフォルダを閉じる", async () => {
+    const t = setup();
+    t.fs.set("p1:", listed(dir("secret")));
+    t.show("p1");
+    await settle();
+    t.holdKeys.add("p1:secret");
+
+    t.controller.expand("secret");
+    expect(activeTreeModel(t.tree.getState())?.expanded.has("secret")).toBe(true);
+    t.held.get("p1:secret")?.[0]?.reject("権限がありません");
+    await settle();
+
+    const model = activeTreeModel(t.tree.getState());
+    expect(model?.expanded.has("secret")).toBe(false);
+    expect(model?.loading.has("secret")).toBe(false);
+    expect(t.ui.getState().treeNotice?.message).toBe("フォルダを読めませんでした");
+    // 診断への報告は今までどおり。
+    expect(t.errors).toEqual(["フォルダの中身を読めなかった: 権限がありません"]);
+  });
+
   it("隠しファイル表示の切替で読み直すと_切替の前に求めた応答は捨てる", async () => {
     const t = setup();
     t.fs.set("p1:", listed(file("a.ts")));
@@ -380,6 +400,98 @@ describe("treeStore(ツリーの読み込みと保留)", () => {
     t.show("p2");
 
     expect(t.tree.getState().gate.pending).toEqual([]);
+  });
+
+  /** p1 のツリーに、表示だけの状態(メニュー・入力・確認・ドラッグ・フォーカス)をすべて立てる。 */
+  const openEverything = (t: ReturnType<typeof setup>, projectId = "p1") => {
+    const s = t.ui.getState();
+    s.openTreeMenu(projectId, { kind: "blank" }, { x: 0, y: 0 });
+    s.startInlineEdit({ mode: "rename", projectId, path: "a.ts" });
+    s.openTreeConflict({ request: { op: "paste", projectId, destDir: "" }, name: "a.ts", total: 1 });
+    s.openMoveConfirmation({ projectId, source: "a.ts", destDir: "src" });
+    s.setTreeDragging(true);
+    s.setTreeFocused(true);
+  };
+  const leftovers = (t: ReturnType<typeof setup>) => {
+    const s = t.ui.getState();
+    return {
+      treeMenu: s.treeMenu,
+      inlineEdit: s.inlineEdit,
+      treeConflict: s.treeConflict,
+      moveConfirmation: s.moveConfirmation,
+      treeDragging: s.treeDragging,
+      treeFocused: s.treeFocused,
+    };
+  };
+  const NOTHING_LEFT = {
+    treeMenu: null,
+    inlineEdit: null,
+    treeConflict: null,
+    moveConfirmation: null,
+    treeDragging: false,
+    treeFocused: false,
+  };
+
+  it("表示中のプロジェクトが見つからなくなると_そのツリーの表示だけの状態を消し_保留を解く", async () => {
+    const t = setup();
+    t.fs.set("p1:", listed(file("a.ts")));
+    t.show("p1");
+    await settle();
+    openEverything(t);
+    expect([...t.tree.getState().gate.holds].sort()).toEqual(["contextMenu", "dialog", "drag", "nameInput"]);
+
+    t.show("p1", [project("p1", { missing: true }), project("p2")]);
+
+    expect(leftovers(t)).toEqual(NOTHING_LEFT);
+    expect([...t.tree.getState().gate.holds]).toEqual([]);
+  });
+
+  it("選択中のプロジェクトが変わると_前のプロジェクトの表示だけの状態を消す", async () => {
+    const t = setup();
+    t.fs.set("p1:", listed(file("a.ts")));
+    t.fs.set("p2:", listed());
+    t.show("p1");
+    await settle();
+    openEverything(t);
+
+    t.show("p2");
+
+    expect(leftovers(t)).toEqual(NOTHING_LEFT);
+  });
+
+  it("消えたプロジェクトの確認は_一覧から削除したあとの別のプロジェクトに出ない", async () => {
+    const t = setup();
+    t.fs.set("p1:", listed(file("a.ts")));
+    t.fs.set("p2:", listed());
+    t.show("p1");
+    await settle();
+    t.ui.getState().openTreeConflict({ request: { op: "paste", projectId: "p1", destDir: "" }, name: "a.ts", total: 1 });
+    t.show("p1", [project("p1", { missing: true }), project("p2")]);
+
+    // 一覧から削除すると、p2 が選ばれる。
+    t.show("p2", [project("p2")]);
+
+    expect(t.ui.getState().treeConflict).toBeNull();
+    expect(t.ui.getState().moveConfirmation).toBeNull();
+  });
+
+  it("表示中のプロジェクトが変わらない写しの更新では消さない", async () => {
+    const t = setup();
+    t.fs.set("p1:", listed(file("a.ts")));
+    t.show("p1");
+    await settle();
+    openEverything(t);
+
+    t.show("p1", [project("p1", { showHidden: true }), project("p2")]);
+
+    expect(leftovers(t)).toEqual({
+      treeMenu: expect.objectContaining({ projectId: "p1" }),
+      inlineEdit: expect.objectContaining({ projectId: "p1" }),
+      treeConflict: expect.objectContaining({ name: "a.ts" }),
+      moveConfirmation: expect.objectContaining({ projectId: "p1" }),
+      treeDragging: true,
+      treeFocused: true,
+    });
   });
 
   it("破棄したあとに届いた応答と変更では状態を変えない", async () => {

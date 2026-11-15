@@ -65,7 +65,7 @@ Rust から画面へ渡す状態の写し。画面は届いたもので丸ごと
 - ペイン: `set_pane_sizes`、`set_sidebar_collapsed`
 - ツリー: `list_directory`(応答 `DirListing`)、`set_show_hidden`
 - ファイル操作(応答 `FileOpOutcome`): `create_entry`、`rename_entry`、`move_entry`、`copy_entry`、`trash_entry`、`copy_entries`、`cut_entries`、`paste_entries`
-- デスクトップ: `reveal_entry`、`open_entry`(ふつうのファイルだけ。`src-tauri/src/commands/desktop.rs`)、`copy_entry_path`、`insert_entry_path`(ターミナルへ書く文字列は Rust の `insertion_text` が作る)
+- デスクトップ: `reveal_entry`、`open_entry`(ふつうのファイルだけ。実行の権限があるもの・`UNOPENABLE_EXTENSIONS` の拡張子は開かない。`src-tauri/src/commands/desktop.rs`)、`copy_entry_path`、`insert_entry_path`(ターミナルへ書く文字列は Rust の `insertion_text` が作る)
 - ショートカット: `get_shortcuts`(応答 `ShortcutTable`)
 - 引数のパスはプロジェクトの ID と `RelPath`(ルートからの相対パス)。絶対パスは画面に渡さない
 - イベント: `app-snapshot`(状態が変わるたびに `AppSnapshot` 全体)、`tree-changed`(`TreeChange { projectId, dirs, fullReload }`)、`menu-command`(`MenuCommand`。いまは `"select-all"` だけ)、`quit-requested`(`QuitRequest`。動作中のターミナルの一覧。画面が確認したら `confirm_quit`)。出力はイベントではなくチャネルで生のバイト列を送る

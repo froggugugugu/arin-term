@@ -23,10 +23,12 @@ use std::sync::{Barrier, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use arin_core::fileops::clipboard::FileClipboard;
 use arin_core::fileops::service::FileOperationService;
 use arin_core::fileops::{ConflictResolution, FileOpOutcome, NewEntryKind, NotAllowedReason};
 use arin_core::paths::RelPath;
 use arin_core::ports::fs::{DirEntry, EntryKind, FileSystemPort, FsError};
+use arin_core::ports::pasteboard::{FilePasteboardPort, PasteboardError};
 use arin_core::ports::watch::{WatchBatch, WatchSink, WatcherPort};
 use arin_core::tree::changes::summarize_changes;
 use arin_core::tree::exclusion::ExclusionRule;
@@ -208,9 +210,11 @@ fn done(select: &str) -> FileOpOutcome {
     }
 }
 
+/// 単一の項目の衝突(数は 1)。
 fn conflict(name: &str) -> FileOpOutcome {
     FileOpOutcome::Conflict {
         name: name.to_owned(),
+        total: 1,
     }
 }
 
@@ -310,6 +314,10 @@ impl FileSystemPort for RacyFs {
     fn copy_entry(&self, from: &Path, to: &Path) -> Result<(), FsError> {
         fire(&self.before_copy);
         self.inner.copy_entry(from, to)
+    }
+
+    fn same_volume(&self, path: &Path, dir: &Path) -> Result<bool, FsError> {
+        self.inner.same_volume(path, dir)
     }
 
     fn trash(&self, path: &Path) -> Result<Option<PathBuf>, FsError> {
@@ -821,7 +829,7 @@ fn 同時に両方残すで作ると別々の名前になるか衝突になり�
                     select: Some(select),
                 } => placed.push((i, select.clone())),
                 // 番号付きの名前も同時に取られた(もう一度確かめてもらう)
-                FileOpOutcome::Conflict { name } if name == "same.ts" => {}
+                FileOpOutcome::Conflict { name, .. } if name == "same.ts" => {}
                 other => panic!("{round} 回目: 思わぬ応答 {other:?}"),
             }
         }
@@ -925,7 +933,7 @@ fn コピーの途中で宛先に同名ができても上書きせず作業用�
                 );
                 assert!(inside.iter().all(|(_, c)| c == "copied"), "{round} 回目");
             }
-            (FileOpOutcome::Conflict { name }, true) if name == "data" => {
+            (FileOpOutcome::Conflict { name, .. }, true) if name == "data" => {
                 assert_eq!(
                     inside,
                     BTreeSet::from([("external.txt".to_owned(), "external".to_owned())]),
@@ -939,6 +947,65 @@ fn コピーの途中で宛先に同名ができても上書きせず作業用�
     eprintln!(
         "コピーの途中への割り込み: {COPY_RACE_ROUNDS} 回のうち作業用フォルダが見えた {window_hits} 回、コピーが勝った {copy_won} 回"
     );
+}
+
+// ---------------------------------------------------------------------------
+// 複数の項目のペーストの事前の検査(R2。実ファイルでの名前の正規化)
+// ---------------------------------------------------------------------------
+
+/// メモリの中のファイルのペーストボード(Finder でコピーしたことにする。本物のペーストボードに触れない)。
+#[derive(Default)]
+struct MemoryPasteboard(Mutex<(Vec<PathBuf>, i64)>);
+
+impl FilePasteboardPort for MemoryPasteboard {
+    fn write_file_urls(&self, paths: &[&Path]) -> Result<i64, PasteboardError> {
+        let mut inner = lock(&self.0);
+        inner.0 = paths.iter().map(|p| p.to_path_buf()).collect();
+        inner.1 += 1;
+        Ok(inner.1)
+    }
+
+    fn read_file_urls(&self) -> Result<Vec<PathBuf>, PasteboardError> {
+        Ok(lock(&self.0).0.clone())
+    }
+
+    fn change_count(&self) -> i64 {
+        lock(&self.0).1
+    }
+}
+
+#[test]
+fn 正規化だけが違う名前も事前の検査で衝突として数え何も置かない() {
+    let _g = serial();
+    let tmp = TempDir::new("paste-nfd");
+    let nfc = "\u{e9}.txt"; // é(合成済み)
+    let nfd = "e\u{301}.txt"; // e + 結合アクセント
+    fs::write(tmp.outside().join("b.txt"), "b").expect("作れなかった");
+    fs::write(tmp.outside().join(nfc), "新しい").expect("作れなかった");
+    tmp.write(&format!("dst/{nfd}"), "既存");
+    if fs::symlink_metadata(tmp.at("dst").join(nfc)).is_err() {
+        eprintln!("このボリュームは正規化の違いを区別するので確かめない");
+        return;
+    }
+    let before = snapshot(&tmp.at("dst"));
+    let fs_port = RacyFs::new(&tmp);
+    let board = MemoryPasteboard::default();
+    board
+        .write_file_urls(&[&tmp.outside().join("b.txt"), &tmp.outside().join(nfc)])
+        .expect("書けた");
+    let mut clipboard = FileClipboard::new();
+
+    let outcome = FileOperationService::new(&fs_port).paste(
+        &board,
+        &mut clipboard,
+        &|_| None,
+        &tmp.root(),
+        &rel("dst"),
+        None,
+    );
+
+    assert_eq!(outcome, conflict(nfc));
+    assert_eq!(snapshot(&tmp.at("dst")), before, "1 件目だけ置いた");
 }
 
 // ---------------------------------------------------------------------------

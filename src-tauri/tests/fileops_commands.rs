@@ -19,17 +19,21 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::{self, ThreadId};
+use std::time::Duration;
 
 use arin_core::fileops::{FileOpOutcome, NotAllowedReason};
 use arin_core::paths::RelPath;
 use arin_core::ports::fs::{DirEntry, EntryKind, FileSystemPort, FsError};
 use arin_core::ports::pasteboard::{FilePasteboardPort, PasteboardPort};
 use arin_core::ports::{PtyError, PtyPort, PtySize, SpawnedPty};
+use arin_core::project::ProjectId;
 use arin_core::terminal::ShellLaunchSpec;
 use arin_core::workspace::{AddProjectOutcome, AppSnapshot};
 use arin_lib::TreePorts;
+use arin_lib::fileops::FileOps;
 use arin_lib::persistence::PersistencePorts;
 use arin_lib::projects::{FolderPicker, FolderPurpose, ProjectPorts};
 use arin_lib::sessions::ShellDefaults;
@@ -107,6 +111,8 @@ struct Recorder {
     trashed: Mutex<Vec<(PathBuf, PathBuf)>>,
     /// ここまでに記録したすべての変更の口の呼び出し(`clear` で消さない。最後に一時フォルダの外を見るため)。
     all_ops: Mutex<Vec<Op>>,
+    /// 次のコピーの途中で 1 回だけ呼ぶ関数(長いコピーのあいだの別の操作を再現する)。
+    during_copy: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 
 impl Recorder {
@@ -166,7 +172,15 @@ impl FileSystemPort for RecordingFs {
     fn copy_entry(&self, from: &Path, to: &Path) -> Result<(), FsError> {
         self.rec
             .note(Op::Copy(from.to_path_buf(), to.to_path_buf()));
+        let hook = lock(&self.rec.during_copy).take();
+        if let Some(hook) = hook {
+            hook();
+        }
         self.inner.copy_entry(from, to)
+    }
+
+    fn same_volume(&self, path: &Path, dir: &Path) -> Result<bool, FsError> {
+        self.inner.same_volume(path, dir)
     }
 
     /// 本物のゴミ箱には入れず、一時フォルダの中の偽のゴミ箱フォルダへ移す。
@@ -429,7 +443,8 @@ fn 新規ファイルで空のファイルができ作った相対パスが返�
     assert_eq!(
         outcome,
         FileOpOutcome::Conflict {
-            name: "a.ts".into()
+            name: "a.ts".into(),
+            total: 1,
         }
     );
     assert_eq!(read(&created), "書いた", "既存を変えた");
@@ -583,7 +598,8 @@ fn 宛先に同名があると衝突を返し両方の中身が変わらない(
         assert_eq!(
             outcome,
             FileOpOutcome::Conflict {
-                name: "a.md".into()
+                name: "a.md".into(),
+                total: 1,
             },
             "{cmd}"
         );
@@ -612,7 +628,8 @@ fn 宛先に同名があると衝突を返し両方の中身が変わらない(
     assert_eq!(
         outcome,
         FileOpOutcome::Conflict {
-            name: "a.md".into()
+            name: "a.md".into(),
+            total: 1,
         }
     );
     fs::remove_file(alpha.join("docs/b.md")).expect("消せなかった");
@@ -1048,7 +1065,8 @@ fn ペーストボードのファイルをフォルダへペーストできる(
     assert_eq!(
         outcome,
         FileOpOutcome::Conflict {
-            name: "from-finder.txt".into()
+            name: "from-finder.txt".into(),
+            total: 1,
         }
     );
     let outcome = op(
@@ -1184,6 +1202,53 @@ fn 切り取ってペーストすると元の場所から無くなる(
     fs::remove_file(beta.join("cut.txt")).expect("消せなかった");
 }
 
+fn 長いコピーのあいだも切り取りの状態のロックを持ち続けない(
+    handle: &AppHandle<MockRuntime>,
+    window: &WebviewWindow<MockRuntime>,
+    ctx: &Ctx,
+) {
+    let id = alpha_id(handle, window);
+    let alpha = ctx.work.join("alpha");
+    let (finder, _) = ctx.folder("finder-slow");
+    fs::write(finder.join("slow.txt"), "ゆっくり").expect("作れなかった");
+    ctx.pasteboard
+        .write_file_urls(&[finder.join("slow.txt").as_path()])
+        .expect("ペーストボードに書けなかった");
+
+    // コピーの途中で、別のスレッドから切り取りの状態を使う操作(ツリーでのコピー)を呼ぶ。
+    // ペーストがロックを持ったままなら、上限の時間までに終わらない。
+    let (finished_tx, finished_rx) = mpsc::channel();
+    let app = handle.clone();
+    let project = ProjectId::parse(&id).expect("ID を読めなかった");
+    *lock(&ctx.rec.during_copy) = Some(Box::new(move || {
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let ops = app.state::<FileOps>();
+            let _ = tx.send(ops.copy_to_pasteboard(&project, &[rel("src/main.rs")]));
+        });
+        let _ = finished_tx.send(rx.recv_timeout(Duration::from_secs(5)));
+    }));
+
+    let outcome = op(
+        handle,
+        window,
+        ctx,
+        "paste_entries",
+        json!({ "projectId": id, "destDir": "docs" }),
+    );
+
+    assert_eq!(outcome, done(Some("docs/slow.txt")));
+    let during = finished_rx
+        .recv_timeout(Duration::from_secs(10))
+        .expect("コピーの途中の関数が呼ばれなかった");
+    assert_eq!(
+        during,
+        Ok(Ok(done(None))),
+        "コピーのあいだ、ほかの操作が切り取りの状態のロックを待たされた"
+    );
+    fs::remove_file(alpha.join("docs/slow.txt")).expect("消せなかった");
+}
+
 fn どの操作の前後でも一時フォルダの外が変わらない(
     _handle: &AppHandle<MockRuntime>,
     _window: &WebviewWindow<MockRuntime>,
@@ -1264,6 +1329,10 @@ const CHECKS: &[(&str, Check)] = &[
     (
         "切り取ってペーストすると元の場所から無くなる",
         切り取ってペーストすると元の場所から無くなる,
+    ),
+    (
+        "長いコピーのあいだも切り取りの状態のロックを持ち続けない",
+        長いコピーのあいだも切り取りの状態のロックを持ち続けない,
     ),
     (
         "どの操作の前後でも一時フォルダの外が変わらない",

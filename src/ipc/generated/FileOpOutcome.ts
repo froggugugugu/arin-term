@@ -12,9 +12,14 @@ export type FileOpOutcome = { "kind": "done",
  */
 select: RelPath | null, } | { "kind": "notFound" } | { "kind": "conflict", 
 /**
- * 衝突した名前。
+ * 衝突した名前(最初の 1 件)。
  */
-name: string, } | { "kind": "invalidName", 
+name: string, 
+/**
+ * 衝突した項目の数(1 以上)。単一の操作(作成・名称変更・移動・コピー)は 1。
+ * 複数の項目のペーストは、置く先の既存の名前と衝突した項目と、ペーストする項目どうしで名前が同じ項目の数。
+ */
+total: number, } | { "kind": "invalidName", 
 /**
  * 理由。
  */

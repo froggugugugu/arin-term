@@ -72,8 +72,10 @@ export type RetryableFileOp =
 export interface TreeConflict {
   /** 呼び直す操作。 */
   readonly request: RetryableFileOp;
-  /** 衝突した名前(Rust が返したもの。1 つの名前で、絶対パスではない)。 */
+  /** 衝突した名前(Rust が返したもの。最初の 1 件の名前で、絶対パスではない)。 */
   readonly name: string;
+  /** 衝突した項目の数(Rust が返したもの。1 以上)。2 以上なら確認の文面に数を出す。 */
+  readonly total: number;
 }
 
 /** 移動の確認(FR-029・C-05)。ツリー内のドロップでの移動にだけ出す(計画【仮定】12)。 */
@@ -165,6 +167,12 @@ export interface UiState {
    */
   readonly shortcuts: ShortcutTable;
   setShortcuts: (table: ShortcutTable) => void;
+  /**
+   * 表示中のツリーが替わった(別のプロジェクト、または無くなった)ときの片付け。projectId 以外のプロジェクトの
+   * メニュー・インライン編集・衝突の確認・移動の確認を閉じ、ドラッグ中とフォーカスの印を戻す(treeStore が呼ぶ)。
+   * 部品が外れても状態は残り、更新の保留が解けない・別のプロジェクトに確認が出る、を防ぐ。
+   */
+  resetTreeUi: (projectId: ProjectId | null) => void;
 }
 
 export type UiStore = StoreApi<UiState>;
@@ -207,5 +215,17 @@ export function createUiStore(): UiStore {
     setTreeFocused: (focused) => set({ treeFocused: focused }),
     shortcuts: DEFAULT_SHORTCUT_TABLE,
     setShortcuts: (table) => set({ shortcuts: table }),
+    resetTreeUi: (projectId) =>
+      set((s) => {
+        const other = (owner: ProjectId | undefined) => owner !== undefined && owner !== projectId;
+        const patch: { -readonly [K in keyof UiState]?: UiState[K] } = {};
+        if (other(s.treeMenu?.projectId)) patch.treeMenu = null;
+        if (other(s.inlineEdit?.projectId)) patch.inlineEdit = null;
+        if (other(s.treeConflict?.request.projectId)) patch.treeConflict = null;
+        if (other(s.moveConfirmation?.projectId)) patch.moveConfirmation = null;
+        if (s.treeDragging) patch.treeDragging = false;
+        if (s.treeFocused) patch.treeFocused = false;
+        return Object.keys(patch).length === 0 ? s : patch;
+      }),
   }));
 }

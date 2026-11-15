@@ -11,6 +11,11 @@
 // クリップボードを読むのはイベントの clipboardData だけで、navigator.clipboard は使わない
 // (WKWebView で貼り付けの許可を求める吹き出しを出さないため。設計書 §2.2)。ツリーの操作はクリップボードの中身を
 // 画面で読まない(ファイルのペーストボードは Rust が読み書きする)。
+//
+// WKWebView は「編集」の項目を有効にするかを、選択範囲や編集できる要素があるかで決め、無ければ beforecopy・beforecut・
+// beforepaste を出して、取り消されたら有効にする。ツリーは tabIndex を付けた div なので、ツリーの操作になるときだけ
+// それらを取り消す(ツリーの項目が無効のままで ⌘C・⌘X・⌘V が届かないのを防ぐ)。名前の入力中・ターミナル・操作に
+// ならないとき(ルートの切り取りなど)は何もせず、既定の判定に任せる。
 
 import { type ClipboardFocus, type ClipboardKind, routeClipboard } from "../../logic/keys/clipboard";
 import type { TerminalManager } from "../../terminal/TerminalManager";
@@ -56,9 +61,21 @@ export function installClipboardRouting(
     if (!terminals.handleClipboard(kind, data)) return;
     handled(event);
   };
-  const listeners = KINDS.map((kind) => [kind, listen(kind)] as const);
-  for (const [kind, listener] of listeners) target.addEventListener(kind, listener, { capture: true });
+  // 「編集」メニューの項目を有効にするかの問い合わせ(beforecopy など)。ツリーの操作になるときだけ取り消す。
+  const listenBefore = (kind: ClipboardKind) => (event: Event) => {
+    const focus = tree?.focus() ?? null;
+    if (focus?.kind !== "tree") return;
+    const action = routeClipboard(kind, focus);
+    if (action === "tree-copy" || action === "tree-cut" || action === "tree-paste") event.preventDefault();
+  };
+  const listeners: (readonly [string, (event: ClipboardEvent) => void])[] = [
+    ...KINDS.map((kind) => [kind, listen(kind)] as const),
+    ...KINDS.map((kind) => [`before${kind}`, listenBefore(kind)] as const),
+  ];
+  for (const [type, listener] of listeners) target.addEventListener(type, listener as EventListener, { capture: true });
   return () => {
-    for (const [kind, listener] of listeners) target.removeEventListener(kind, listener, { capture: true });
+    for (const [type, listener] of listeners) {
+      target.removeEventListener(type, listener as EventListener, { capture: true });
+    }
   };
 }

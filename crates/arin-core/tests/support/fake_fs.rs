@@ -7,6 +7,9 @@
 //! 作成・移動・コピーは宛先があれば `AlreadyExists` を返し、項目が消えるのは移動の元とゴミ箱だけ。
 //! 呼ばれた操作は順に記録し、テストが「どの操作が呼ばれたか」を確かめられる。
 //!
+//! ボリューム: `volume` で決めたフォルダの下は別のボリュームとみなす。ボリュームをまたぐ移動は `CrossDevice` で
+//! 何も変えずに失敗する(コピーはまたげる)。`same_volume` はこの区切りで答える。
+//!
 //! 同時操作の再現(T39b): `fail_on` で決めた呼び出しを 1 回だけ失敗させ(何も変えない)、`after_call_file` で
 //! 決めた呼び出しのあとに外からファイルが作られたことにする(メニューを開いたあとの変化や、置き換えの途中の変化)。
 //!
@@ -44,6 +47,7 @@ pub enum Call {
     CreateDir(PathBuf),
     Move(PathBuf, PathBuf),
     Copy(PathBuf, PathBuf),
+    SameVolume(PathBuf, PathBuf),
     Trash(PathBuf),
 }
 
@@ -56,6 +60,8 @@ struct Inner {
     failures: Vec<(Call, FsError)>,
     /// 呼び出しのあとに外から作られるファイル(1 回だけ)。
     triggers: Vec<(Call, PathBuf)>,
+    /// 別のボリュームの頂点のフォルダ(実パス)。
+    volumes: Vec<PathBuf>,
 }
 
 /// メモリの中のファイルシステム。`/` は最初からある。
@@ -139,6 +145,17 @@ impl FakeFs {
             }
         }
         insert_new(&mut inner.nodes, path.to_path_buf(), node);
+    }
+
+    /// `path` のフォルダ(無ければ作る)から下を、別のボリュームにする。
+    #[must_use]
+    pub fn volume(self, path: &str) -> Self {
+        let path = abs(path);
+        if !self.lock().nodes.contains_key(&path) {
+            self.add(&path, Node::Dir);
+        }
+        self.lock().volumes.push(path);
+        self
     }
 
     /// `call` と同じ呼び出しを 1 回だけ、何も変えずに `error` で失敗させる。
@@ -372,6 +389,9 @@ impl FakeFs {
         let mut inner = self.lock();
         let source = existing(&inner.nodes, from)?;
         let dest = free_place(&inner.nodes, to)?;
+        if volume_of(&inner.volumes, &source) != volume_of(&inner.volumes, &dest) {
+            return Err(FsError::CrossDevice(display(from)));
+        }
         if dest.starts_with(&source) {
             return Err(FsError::Io(format!(
                 "自分の中へは移せない: {} → {}",
@@ -412,6 +432,16 @@ impl FakeFs {
             insert_new(&mut inner.nodes, key, node);
         }
         Ok(())
+    }
+
+    fn same_volume_now(&self, path: &Path, dir: &Path) -> Result<bool, FsError> {
+        let inner = self.lock();
+        let item = existing(&inner.nodes, path)?;
+        let folder = resolve(&inner.nodes, dir)?;
+        if !inner.nodes.contains_key(&folder) {
+            return Err(FsError::NotFound(display(dir)));
+        }
+        Ok(volume_of(&inner.volumes, &item) == volume_of(&inner.volumes, &folder))
     }
 
     fn trash_now(&self, path: &Path) -> Result<Option<PathBuf>, FsError> {
@@ -463,6 +493,13 @@ impl FileSystemPort for FakeFs {
         })
     }
 
+    fn same_volume(&self, path: &Path, dir: &Path) -> Result<bool, FsError> {
+        self.run(
+            Call::SameVolume(path.to_path_buf(), dir.to_path_buf()),
+            |fs| fs.same_volume_now(path, dir),
+        )
+    }
+
     fn trash(&self, path: &Path) -> Result<Option<PathBuf>, FsError> {
         self.run(Call::Trash(path.to_path_buf()), |fs| fs.trash_now(path))
     }
@@ -475,6 +512,15 @@ impl FakeFs {
         insert_new(&mut inner.nodes, place, node);
         Ok(())
     }
+}
+
+/// 項目のあるボリューム(いちばん深い頂点のフォルダ。どれの下でもなければ `/` のボリューム)。
+/// ボリュームの頂点そのものは、そのボリュームの項目とみなす。
+fn volume_of<'v>(volumes: &'v [PathBuf], path: &Path) -> Option<&'v PathBuf> {
+    volumes
+        .iter()
+        .filter(|v| path.starts_with(v))
+        .max_by_key(|v| v.components().count())
 }
 
 /// 項目の種類(リンクは指す先で分ける。壊れたリンクは `Other`)。

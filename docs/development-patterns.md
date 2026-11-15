@@ -23,6 +23,7 @@
 | `[arin:verify]` | `verify_log.rs` | OSC 52 の回数と流量制御の集計。開発ビルド(`cfg(debug_assertions)`)だけ |
 | `[arin:launch]` | `launch.rs` | 起動時の指定の不正な値 |
 | `[arin:state]` | `persistence.rs` | 状態ファイルを読めずに退避した・退避できなかった・読み取りや保存に失敗した |
+| `[arin:fileops]` | `fileops.rs`(`report_staging_leftover`) | コピーの作業用フォルダ `.arin-copy-…` を片付けられずに残した(場所を出す。消す処理は無い) |
 | `[arin:watch]` | `tree_watch.rs` | ツリーの監視を張れなかった |
 
 ## 2. 状態管理
@@ -73,5 +74,5 @@
 | Finder に渡した日本語の名前が別物になる | `NSURL::fileURLWithPath` は名前を NFD に変える | パスを自前で百分率符号化して URL を作る(`desktop/workspace.rs` の `file_url_from_str`) |
 | 検査のあとに途中のフォルダをリンクへ差し替えられるとルートの外に書く | パスの検査と操作の間に隙がある | 親を `O_NOFOLLOW_ANY` で開き fd 相対で操作する(`fs/local.rs`) |
 | 大文字・小文字だけの名称変更が衝突にならない | APFS では `RENAME_EXCL` でも成功する(設計書の見込みと違った) | 前提にしない |
-| ツリーに `.arin-copy-…` が見える | コピーは宛先のフォルダに一時的な作業用フォルダを作る | ツリーの一覧と監視はこの名前を隠す |
+| ツリーに `.arin-copy-…` が見える | コピーは宛先のフォルダに一時的な作業用フォルダを作る | 監視はこの名前を隠す。一覧は隠しファイル表示が OFF のとき隠し、ON なら残ったものを出す(`[arin:fileops]` の行と合わせて本人が片付ける) |
 | `scripts/smoke.test.mjs` がときどき落ちる | 一時フォルダの数を数える検査が、ほかのテストと同時に動かすと乱れる | 単独で再実行して確かめる |

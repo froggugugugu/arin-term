@@ -8,6 +8,7 @@ import {
   type MouseEvent,
   type ReactNode,
   useCallback,
+  useEffect,
   useId,
   useLayoutEffect,
   useRef,
@@ -158,6 +159,16 @@ export function FileTreeView({ project, tree, ui, actions }: FileTreeViewProps) 
   const treeMenu = useStore(ui, (s) => (s.treeMenu?.projectId === projectId ? s.treeMenu : null));
   const shortcuts = useStore(ui, (s) => s.shortcuts);
   const inlineEdit = useStore(ui, (s) => (s.inlineEdit?.projectId === projectId ? s.inlineEdit : null));
+
+  // 部品が外れたら(プロジェクトの切替・見つからなくなったなど)、フォーカスとドラッグの印を戻す。WebKit は、フォーカスの
+  // ある要素を取り除いても blur を出さないことがある。
+  useEffect(
+    () => () => {
+      ui.getState().setTreeFocused(false);
+      ui.getState().setTreeDragging(false);
+    },
+    [ui],
+  );
 
   const baseId = useId();
   const rowId = (index: number) => `${baseId}-row-${index}`;
@@ -366,6 +377,28 @@ export function FileTreeView({ project, tree, ui, actions }: FileTreeViewProps) 
         : undefined;
   const empty = !rootPending && rows.length === 0 && slot === null;
 
+  // 入力欄の行(描く並びの番号)が窓の中にあるか。名称変更の行が並びから消えた(親を閉じた)ときは -1。
+  const renamingIndex = renamingPath === null ? -1 : rows.findIndex((r) => r.path === renamingPath);
+  const editItem = slot !== null ? slot.index : renamingIndex < 0 ? -1 : itemIndexOf(renamingIndex, slot);
+  const editShown = editItem >= win.start && editItem < win.end;
+  // 一度描いた入力欄が、スクロールで窓から外れた・並びから消えたら、入力を取り消す(フォーカスが外れたときと同じ)。
+  // 入力欄が消えると blur が届かないことがあり、編集の状態だけが残ってツリーの更新が保留のままになるため。
+  // 出した直後でまだ窓の外にあるとき(見えるようにスクロールする前)は取り消さない。
+  const shownEditRef = useRef<InlineEdit | null>(null);
+  useLayoutEffect(() => {
+    if (inlineEdit === null) {
+      shownEditRef.current = null;
+      return;
+    }
+    if (editShown) {
+      shownEditRef.current = inlineEdit;
+      return;
+    }
+    if (shownEditRef.current !== inlineEdit) return;
+    shownEditRef.current = null;
+    if (ui.getState().inlineEdit === inlineEdit) ui.getState().closeInlineEdit();
+  }, [inlineEdit, editShown, ui]);
+
   const visible: ReactNode[] = [];
   for (let item = win.start; item < win.end; item++) {
     if (slot !== null && createEdit !== null && item === slot.index) {
@@ -410,6 +443,7 @@ export function FileTreeView({ project, tree, ui, actions }: FileTreeViewProps) 
         aria-busy={rootPending ? true : undefined}
         tabIndex={0}
         data-testid="file-tree"
+        data-tree-root=""
         data-focused={focused ? "true" : "false"}
         data-has-selection={selected !== null ? "true" : "false"}
         data-menu-open={treeMenu !== null ? "true" : undefined}

@@ -10,6 +10,7 @@ import {
 } from "./clipboardRouting";
 
 type Listener = (event: ClipboardEvent) => void;
+type BeforeClipboardKind = "beforecopy" | "beforecut" | "beforepaste";
 
 /** 文書の偽物。付けた受け取り手を種類ごとに持つ(node の環境には DOM が無い)。 */
 function fakeDocument() {
@@ -25,7 +26,7 @@ function fakeDocument() {
       );
     },
   } as unknown as ClipboardEventTarget;
-  const dispatch = (type: ClipboardKind, clipboardData: ClipboardText | null) => {
+  const dispatch = (type: ClipboardKind | BeforeClipboardKind, clipboardData: ClipboardText | null) => {
     const event = {
       type,
       clipboardData,
@@ -235,5 +236,67 @@ describe("installClipboardRouting(ツリーへの振り分け。T43c)", () => {
     expect(seen).toEqual(["paste"]);
     expect(runs).toEqual([]);
     expect(paste.defaultPrevented).toBe(true);
+  });
+});
+
+describe("installClipboardRouting(「編集」メニューを有効にする受け口。beforecopy・beforecut・beforepaste)", () => {
+  const BEFORE = ["beforecopy", "beforecut", "beforepaste"] as const;
+  const setup = (focus: ClipboardFocus | null) => {
+    const doc = fakeDocument();
+    const { tree, runs } = fakeTree(focus);
+    let terminalCalls = 0;
+    installClipboardRouting(
+      doc.target,
+      {
+        handleClipboard: () => {
+          terminalCalls += 1;
+          return true;
+        },
+      },
+      tree,
+    );
+    return { doc, tree, runs, terminalCalls: () => terminalCalls };
+  };
+
+  it("ツリーにフォーカスがあり操作になるときは取り消して_メニューの項目を有効にする(操作はまだしない)", () => {
+    const { doc, runs, terminalCalls } = setup({ kind: "tree", selection: "entry" });
+
+    const events = BEFORE.map((kind) => doc.dispatch(kind, null));
+
+    expect(events.map((e) => e.defaultPrevented)).toEqual([true, true, true]);
+    expect(runs).toEqual([]);
+    expect(terminalCalls()).toBe(0);
+  });
+
+  it("ツリーで操作にならないもの(ルートの切り取り・選択の無いコピー)は取り消さない", () => {
+    const { doc, tree } = setup({ kind: "tree", selection: "root" });
+
+    const cut = doc.dispatch("beforecut", null);
+    tree.current = { kind: "tree", selection: "none" };
+    const copy = doc.dispatch("beforecopy", null);
+    const paste = doc.dispatch("beforepaste", null);
+
+    expect([cut.defaultPrevented, copy.defaultPrevented, paste.defaultPrevented]).toEqual([false, false, true]);
+  });
+
+  it("名前の入力中とターミナル(ツリーにフォーカスが無い)ときは何もしない", () => {
+    const input = setup({ kind: "name-input" });
+    const terminal = setup(null);
+
+    const events = [
+      ...BEFORE.map((kind) => input.doc.dispatch(kind, null)),
+      ...BEFORE.map((kind) => terminal.doc.dispatch(kind, null)),
+    ];
+
+    expect(events.map((e) => e.defaultPrevented)).toEqual([false, false, false, false, false, false]);
+    expect(terminal.terminalCalls()).toBe(0);
+  });
+
+  it("外す関数で beforecopy などの受け取りも外す", () => {
+    const { doc } = setup({ kind: "tree", selection: "entry" });
+    const uninstall = installClipboardRouting(doc.target, { handleClipboard: () => false });
+    uninstall();
+    // 2 つ目に付けた分だけが外れ、1 つ目の分は残る。
+    expect(BEFORE.map((kind) => doc.listeners.get(kind)?.length)).toEqual([1, 1, 1]);
   });
 });

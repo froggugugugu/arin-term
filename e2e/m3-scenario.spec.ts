@@ -295,7 +295,7 @@ test.describe("M3 のシナリオ(PRD §8 UI のツリーの操作)", () => {
       .toEqual(["docs", "docs/a.md", "docs/helper.ts", "src", "src/lib", "src/main.ts", "README.md", "a b.ts", "a.md"]);
 
     // --- 衝突(FR-030、AC-T18): 同名のある docs へ a.md を移すと 3 択が出て、両方残すで対処を付けて呼び直す ---
-    await setMockReply(page, "move_entry", { ok: { kind: "conflict", name: "a.md" } });
+    await setMockReply(page, "move_entry", { ok: { kind: "conflict", name: "a.md", total: 1 } });
     await dragAndDrop(page, row(page, "a.md"), row(page, "docs"));
     await dialog(page, "「a.md」を「docs」に移動しますか?").getByRole("button", { name: "移動", exact: true }).click();
     const conflict = dialog(page, "「a.md」という名前の項目がすでにあります");

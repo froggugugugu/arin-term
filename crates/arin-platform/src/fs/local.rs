@@ -11,7 +11,11 @@
 //!   フラグなしで名前を変える
 //! - コピー: 宛先と同じフォルダに作業用のフォルダを `mkdirat(2)` で作り、その中へ `copyfile(3)` で写してから、
 //!   `RENAME_EXCL` で宛先の名前に移す。宛先の名前に作りかけが現れることはなく、宛先が途中で作られても上書きしない。
-//!   失敗したら作業用のフォルダ(このコピーが作った物だけが入る)を片付け、片付けられなければ残った場所を文言に含める
+//!   失敗したら作業用のフォルダ(このコピーが作った物だけが入る)を片付け、片付けられなければ残った場所を文言に含め、
+//!   作るときに渡された知らせ先(`with_leftover_report`)にも渡す(アプリは標準エラーに出す。`[arin:fileops]`)。
+//!   `AlreadyExists` を返すのは、宛先の名前を調べたときと最後の `RENAME_EXCL` だけ。写している中で起きた
+//!   `EEXIST`(大文字・小文字を区別するボリュームの `A` と `a` を APFS へ写すときなど)は入出力の失敗にする
+//! - 同じボリュームか(`same_volume`): 項目(リンクはたどらない)とフォルダの `st_dev` を比べる。読むだけ
 //!
 //! **書き込む操作(作成・移動・コピー・ゴミ箱)はパスの途中のシンボリックリンクを拒否する**(FR-035。T44a の
 //! 差し替えのテスト)。渡されるパスは範囲の検査が解決した実パス + 名前なので、正しい呼び出しでは途中にリンクは無い。
@@ -48,7 +52,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use arin_core::ports::fs::{DirEntry, EntryKind, FileSystemPort, FsError};
 
 /// コピーの作業用フォルダの名前の頭。宛先と同じフォルダに一時的に現れる。
-/// ツリーの一覧はこの頭の名前を隠しファイル表示によらず出さない(`src-tauri/src/tree.rs`)。
+/// ツリーの一覧は、隠しファイル表示が OFF のときこの頭の名前を出さない(ON なら、片付けられずに残ったものを
+/// 本人が見つけられるよう出す。`src-tauri/src/tree.rs`)。
 pub const STAGING_PREFIX: &str = ".arin-copy-";
 /// 作業用フォルダの名前が既に使われていたときに、別の名前で作り直す回数。
 const STAGING_ATTEMPTS: usize = 16;
@@ -65,14 +70,29 @@ const OPEN_PARENT_FLAGS: libc::c_int =
 /// 作業用フォルダの名前の連番。
 static STAGING_SEQ: AtomicU64 = AtomicU64::new(0);
 
-/// 端末のファイルシステムを読み、上書きせずに作る・移す・写す。状態を持たない。
+/// 片付けられなかったコピーの作業用フォルダの場所を受け取る関数(絶対パス)。
+pub type LeftoverReport = fn(&Path);
+
+/// 端末のファイルシステムを読み、上書きせずに作る・移す・写す。状態を持たない
+/// (片付けられなかった作業用フォルダの知らせ先だけを持つ)。
 #[derive(Debug, Clone, Copy, Default)]
-pub struct LocalFileSystem;
+pub struct LocalFileSystem {
+    leftover_report: Option<LeftoverReport>,
+}
 
 impl LocalFileSystem {
+    /// 作業用フォルダが残っても、文言に含めるだけで知らせない。
     #[must_use]
     pub fn new() -> Self {
-        Self
+        Self::default()
+    }
+
+    /// 作業用フォルダを片付けられなかったとき、その場所を `report` に渡す(消す処理は足さない)。
+    #[must_use]
+    pub fn with_leftover_report(report: LeftoverReport) -> Self {
+        Self {
+            leftover_report: Some(report),
+        }
     }
 }
 
@@ -164,7 +184,7 @@ impl FileSystemPort for LocalFileSystem {
             reject_copy_into_itself(from, &dst.dir_path)?;
         }
 
-        let staging = Staging::create(&dst)?;
+        let staging = Staging::create(&dst, self.leftover_report)?;
         let staged = staging.path.join(dst.name_os());
         let result = copy_into(from, &staged, &staging, is_dir).and_then(|()| {
             rename_at(
@@ -187,8 +207,15 @@ impl FileSystemPort for LocalFileSystem {
                 };
                 Ok(())
             }
-            Err(error) => Err(clean_up_staging(&staging, error)),
+            Err(error) => Err(clean_up_staging(&staging, error, self.leftover_report)),
         }
+    }
+
+    fn same_volume(&self, path: &Path, dir: &Path) -> Result<bool, FsError> {
+        use std::os::unix::fs::MetadataExt;
+        let item = fs::symlink_metadata(path).map_err(|e| fs_error(path, &e))?;
+        let folder = fs::metadata(dir).map_err(|e| fs_error(dir, &e))?;
+        Ok(item.dev() == folder.dev())
     }
 
     fn trash(&self, path: &Path) -> Result<Option<PathBuf>, FsError> {
@@ -328,7 +355,8 @@ struct Staging {
 
 impl Staging {
     /// 宛先と同じフォルダ(`dst` の親)に、このコピーだけが使う作業用フォルダを作る。
-    fn create(dst: &ParentDir) -> Result<Self, FsError> {
+    /// 作ったあとに開けなかったら、残った場所を `report` に渡す。
+    fn create(dst: &ParentDir, report: Option<LeftoverReport>) -> Result<Self, FsError> {
         let parent_fd = dst.fd.as_raw_fd();
         for _ in 0..STAGING_ATTEMPTS {
             let n = STAGING_SEQ.fetch_add(1, Ordering::Relaxed);
@@ -347,7 +375,10 @@ impl Staging {
             let fd = unsafe { libc::openat(parent_fd, name.as_ptr(), flags) };
             if fd < 0 {
                 let e = io::Error::last_os_error();
-                // 作った直後に差し替えられた。作った物は消さずに残し、場所を文言に含める
+                // 作った直後に差し替えられた。作った物は消さずに残し、場所を文言に含めて知らせる
+                if let Some(report) = report {
+                    report(&path);
+                }
                 return Err(FsError::Io(format!(
                     "{}: 作業用のフォルダを開けなかった({e})。{} が残った可能性がある",
                     dst.dir_path.display(),
@@ -412,7 +443,7 @@ fn copy_into(from: &Path, to: &Path, staging: &Staging, is_dir: bool) -> Result<
     // 状態(copyfile_state_t)は渡さない(NULL は許されている)
     let rc = unsafe { libc::copyfile(from_c.as_ptr(), to_c.as_ptr(), std::ptr::null_mut(), flags) };
     if rc < 0 {
-        return Err(fs_error(from, &io::Error::last_os_error()));
+        return Err(copy_error(from, &io::Error::last_os_error()));
     }
     // 写した物が作業用フォルダ(fd)の中にあること。無ければ、写している間にパスの途中を差し替えられた
     let Some(name) = to.file_name() else {
@@ -429,24 +460,39 @@ fn copy_into(from: &Path, to: &Path, staging: &Staging, is_dir: bool) -> Result<
     }
 }
 
-/// 失敗したコピーの作業用フォルダを片付ける。片付けられなければ、残った場所を文言に足す。
+/// 失敗したコピーの作業用フォルダを片付ける。片付けられなければ、残った場所を文言に足し、`report` にも渡す。
 ///
 /// パスが作業用フォルダそのものを指していると確かめられたときだけ消す(途中を差し替えられていたら、
 /// 差し替えた先を消さないよう、触らずに残った場所を知らせる)。
-fn clean_up_staging(staging: &Staging, error: FsError) -> FsError {
+fn clean_up_staging(staging: &Staging, error: FsError, report: Option<LeftoverReport>) -> FsError {
+    let left = |error: FsError| {
+        if let Some(report) = report {
+            report(&staging.path);
+        }
+        error
+    };
     if !staging.path_is_still_here() {
-        return FsError::Io(format!(
+        return left(FsError::Io(format!(
             "{error}。作りかけが {} に残った可能性がある(パスの途中が変わったため片付けなかった)",
             staging.path.display()
-        ));
+        )));
     }
     match fs::remove_dir_all(&staging.path) {
         Ok(()) => error,
         Err(e) if e.kind() == io::ErrorKind::NotFound => error,
-        Err(e) => FsError::Io(format!(
+        Err(e) => left(FsError::Io(format!(
             "{error}。作りかけが {} に残った(片付けられなかった: {e})",
             staging.path.display()
-        )),
+        ))),
+    }
+}
+
+/// `copyfile(3)` の失敗を振り分ける。写している中で起きた `EEXIST`・`ENOTEMPTY` は宛先の名前の衝突ではない
+/// (宛先の名前は先に調べ、最後の `RENAME_EXCL` が衝突を受け持つ)ので、入出力の失敗にする。
+fn copy_error(from: &Path, e: &io::Error) -> FsError {
+    match fs_error(from, e) {
+        FsError::AlreadyExists(message) => FsError::Io(message),
+        other => other,
     }
 }
 
@@ -523,5 +569,98 @@ fn fs_error(path: &Path, e: &io::Error) -> FsError {
             io::ErrorKind::NotADirectory => FsError::NotADirectory(message),
             _ => FsError::Io(message),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    /// このテストだけが使う一時フォルダ(実パス)。抜けるときに消す。
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(name: &str) -> Self {
+            let base = fs::canonicalize(std::env::temp_dir()).expect("一時領域の実パス");
+            let dir = base.join(format!(
+                "arin-platform-local-unit-{name}-{}",
+                std::process::id()
+            ));
+            assert!(dir.starts_with(&base) && dir != base);
+            let _ = fs::remove_dir_all(&dir);
+            fs::create_dir(&dir).expect("一時フォルダを作れなかった");
+            Self(dir)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// 知らされた残りの場所(テストごとに名前で分ける)。
+    static REPORTED: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+    fn record(path: &Path) {
+        REPORTED
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(path.to_path_buf());
+    }
+
+    fn reported() -> Vec<PathBuf> {
+        REPORTED
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    #[test]
+    fn コピーの中で起きた同じ名前の失敗は宛先の衝突にしない() {
+        // 大文字・小文字を区別するボリュームの `A` と `a` を APFS へ写すと、copyfile の中で EEXIST になる。
+        let from = Path::new("/tmp/from");
+        for errno in [libc::EEXIST, libc::ENOTEMPTY] {
+            let error = copy_error(from, &io::Error::from_raw_os_error(errno));
+            assert!(matches!(error, FsError::Io(_)), "{errno}: {error:?}");
+        }
+        assert!(matches!(
+            copy_error(from, &io::Error::from_raw_os_error(libc::ENOENT)),
+            FsError::NotFound(_)
+        ));
+    }
+
+    #[test]
+    fn 片付けなかった作業用フォルダの場所を知らせる() {
+        let s = Scratch::new("leftover");
+        let dst = ParentDir::open(&s.0.join("dest")).expect("親を開けた");
+        let staging = Staging::create(&dst, None).expect("作業用フォルダを作れた");
+        // 作ったあとにパスを差し替えられた(片付けずに残す場合)。
+        let moved = s.0.join("moved-away");
+        fs::rename(&staging.path, &moved).expect("名前を変えられた");
+
+        let error = clean_up_staging(&staging, FsError::Io("写せなかった".into()), Some(record));
+
+        assert!(matches!(error, FsError::Io(_)));
+        assert!(
+            reported().contains(&staging.path),
+            "残った場所を知らせなかった: {:?}",
+            reported()
+        );
+        assert!(moved.is_dir(), "差し替えた先を消した");
+    }
+
+    #[test]
+    fn 片付けられた作業用フォルダは知らせない() {
+        let s = Scratch::new("cleaned");
+        let dst = ParentDir::open(&s.0.join("dest")).expect("親を開けた");
+        let staging = Staging::create(&dst, None).expect("作業用フォルダを作れた");
+
+        let error = clean_up_staging(&staging, FsError::Io("写せなかった".into()), Some(record));
+
+        assert!(matches!(error, FsError::Io(_)));
+        assert!(!staging.path.exists(), "片付けなかった");
+        assert!(!reported().contains(&staging.path));
     }
 }

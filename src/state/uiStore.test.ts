@@ -126,9 +126,9 @@ describe("uiStore(ツリーの表示だけの状態。M3)", () => {
     const ui = createUiStore();
     const request = { op: "move", projectId: "p1", source: "a.md", destDir: "docs" } as const;
 
-    ui.getState().openTreeConflict({ request, name: "a.md" });
+    ui.getState().openTreeConflict({ request, name: "a.md", total: 1 });
     ui.getState().openMoveConfirmation({ projectId: "p1", source: "a.md", destDir: "docs" });
-    expect(ui.getState().treeConflict).toEqual({ request, name: "a.md" });
+    expect(ui.getState().treeConflict).toEqual({ request, name: "a.md", total: 1 });
     expect(ui.getState().moveConfirmation).toEqual({ projectId: "p1", source: "a.md", destDir: "docs" });
 
     ui.getState().closeTreeConflict();
@@ -163,5 +163,37 @@ describe("uiStore(ツリーの表示だけの状態。M3)", () => {
     expect(ui.getState().treeFocused).toBe(true);
     expect(ui.getState().treeDragging).toBe(true);
     expect(ui.getState().shortcuts).toBe(table);
+  });
+
+  it("ツリーの片付けは_ほかのプロジェクトのメニュー_入力_確認を閉じ_ドラッグとフォーカスの印を戻す", () => {
+    const ui = createUiStore();
+    const s = ui.getState();
+    s.openTreeMenu("p1", { kind: "blank" }, { x: 0, y: 0 });
+    s.startInlineEdit({ mode: "create", projectId: "p2", parent: "", kind: "file" });
+    s.openTreeConflict({ request: { op: "paste", projectId: "p1", destDir: "" }, name: "a.ts", total: 1 });
+    s.openMoveConfirmation({ projectId: "p2", source: "a", destDir: "b" });
+    s.setTreeDragging(true);
+    s.setTreeFocused(true);
+
+    ui.getState().resetTreeUi("p2");
+
+    const after = ui.getState();
+    expect(after.treeMenu).toBeNull();
+    expect(after.treeConflict).toBeNull();
+    expect(after.inlineEdit).toEqual({ mode: "create", projectId: "p2", parent: "", kind: "file" });
+    expect(after.moveConfirmation).toEqual({ projectId: "p2", source: "a", destDir: "b" });
+    expect([after.treeDragging, after.treeFocused]).toEqual([false, false]);
+
+    ui.getState().resetTreeUi(null);
+    expect([ui.getState().inlineEdit, ui.getState().moveConfirmation]).toEqual([null, null]);
+  });
+
+  it("ツリーの片付けで消すものが無ければ状態を変えない", () => {
+    const ui = createUiStore();
+    const before = ui.getState();
+
+    ui.getState().resetTreeUi("p1");
+
+    expect(ui.getState()).toBe(before);
   });
 });

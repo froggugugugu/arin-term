@@ -571,6 +571,44 @@ fn コピーが途中で失敗したら作りかけを残さない() {
     assert_eq!(names_in(&from), vec!["a.txt", "z-unreadable.txt"]);
 }
 
+// ---- 同じボリュームか(「置き換える」の前の確かめ。R3) ----
+
+#[test]
+fn 同じボリュームの項目とフォルダは同じと答える() {
+    let tmp = TempDir::new("same-volume");
+    let file = tmp.write("src/a.txt", "a");
+    let dest = tmp.mkdir("dest");
+    assert_eq!(local().same_volume(&file, &dest), Ok(true));
+}
+
+#[test]
+fn 別のボリュームのフォルダは違うと答える() {
+    // /dev は devfs(一時領域とは別のボリューム)。読むだけで何も変えない。
+    let tmp = TempDir::new("other-volume");
+    let file = tmp.write("a.txt", "a");
+    assert_eq!(local().same_volume(&file, Path::new("/dev")), Ok(false));
+}
+
+#[test]
+fn リンクはリンク自体のボリュームで答える() {
+    // /dev を指すリンクでも、リンク自体は一時領域のボリュームにある。
+    let tmp = TempDir::new("same-volume-link");
+    let link = tmp.at("dev-link");
+    symlink("/dev", &link).expect("リンクを作れなかった");
+    let dest = tmp.mkdir("dest");
+    assert_eq!(local().same_volume(&link, &dest), Ok(true));
+}
+
+#[test]
+fn 同じボリュームかの問い合わせは無い項目に見つからないを返す() {
+    let tmp = TempDir::new("same-volume-missing");
+    let dest = tmp.mkdir("dest");
+    assert!(matches!(
+        local().same_volume(&tmp.at("missing"), &dest),
+        Err(FsError::NotFound(_))
+    ));
+}
+
 // ---- パスの途中のシンボリックリンク(書き込む操作は拒否する。FR-035、T44a) ----
 
 /// `tmp` の中に、フォルダ `target`(中に `sub/` と `a.txt`)と、それを指すリンク `link` を作る。

@@ -8,7 +8,9 @@
 //   メニュー・インライン編集・確認・ドラッグから決め(FR-037、【仮定】18)、すべて解けたら積んだフォルダをまとめて読み直す
 // - 遅れて届いた応答は捨てる: 中身の問い合わせ 1 件ごとに番号を振り、(プロジェクト, フォルダ) の最新の番号だけを受ける。
 //   届いた時点で、破棄済み・そのプロジェクトがもう表示中でない・同じフォルダをあとで求め直した、のどれかなら何も変えない
-// - 中身の問い合わせの失敗(コマンドの Err)は reportError(診断)に 1 行で報告し、そのフォルダの読み込み中の印だけを外す
+// - 中身の問い合わせの失敗(コマンドの Err)は reportError(診断)に 1 行で報告し、ツリーの知らせを出して、そのフォルダの
+//   読み込み中の印を外して閉じる(開いた印のまま空に見せない)
+// - 表示中のプロジェクトが替わったら、前のツリーの表示だけの状態(uiStore.resetTreeUi)を片付ける
 //
 // 部品(T43b〜T43d)は TreeStore を読み、開閉・選択は actions(./actions.ts)から呼ぶ(actions がここの TreeController を使う)。
 
@@ -117,6 +119,9 @@ const HOLDS: ReadonlyArray<readonly [HoldReason, (ui: UiState) => boolean]> = [
   ["drag", (ui) => ui.treeDragging],
 ];
 
+/** フォルダの中身を読めなかったときのツリーの知らせ。 */
+export const UNREADABLE_DIR_NOTICE = "フォルダを読めませんでした";
+
 /** 写しから、ツリーを出すプロジェクトを決める。 */
 function activeProjectOf(app: AppStore): ProjectId | null {
   const project = selectedProject(app.getState().snapshot);
@@ -183,11 +188,13 @@ export function createTreeController({ ipc, tree, app, ui, reportError }: TreeCo
         if (!isCurrent()) return;
         latest.delete(key);
         reportError(`フォルダの中身を読めなかった: ${describeError(cause)}`);
+        // 開いた印のまま空に見せない(権限の無いフォルダなど)。知らせを出してフォルダを閉じる。
+        ui.getState().showTreeNotice(UNREADABLE_DIR_NOTICE);
         updateActive(projectId, (model) => {
-          if (!model.loading.has(dir)) return model;
+          if (!model.loading.has(dir)) return collapseDir(model, dir);
           const loading = new Set(model.loading);
           loading.delete(dir);
-          return { ...model, loading };
+          return collapseDir({ ...model, loading }, dir);
         });
       },
     );
@@ -241,6 +248,9 @@ export function createTreeController({ ipc, tree, app, ui, reportError }: TreeCo
     const isNew = active !== null && !trees.has(active);
     if (isNew) trees = new Map(trees).set(active, createTreeModel());
     tree.setState({ activeProjectId: active, trees, gate: { ...state.gate, pending: [] } });
+    // 前のツリーのメニュー・入力・確認・ドラッグ・フォーカスの印を片付ける(部品が外れても状態は残るため)。
+    // 保留の理由はこの変更の購読(syncHolds)で外れる。
+    ui.getState().resetTreeUi(active);
     if (active !== null) reloadEverything(active);
   };
 

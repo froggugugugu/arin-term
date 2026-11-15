@@ -19,11 +19,7 @@
         "width": 1280,
         "height": 800,
         "backgroundThrottling": "disabled",
-        "transparent": true,
-        "windowEffects": {
-          "effects": ["sidebar"],
-          "state": "followsWindowActiveState"
-        }
+        "transparent": true
       }
     ],
     "security": {

@@ -496,6 +496,9 @@ impl arin_core::ports::fs::FileSystemPort for DotDotRealDir {
     fn copy_entry(&self, from: &Path, to: &Path) -> Result<(), FsError> {
         self.0.copy_entry(from, to)
     }
+    fn same_volume(&self, path: &Path, dir: &Path) -> Result<bool, FsError> {
+        self.0.same_volume(path, dir)
+    }
     fn trash(&self, path: &Path) -> Result<Option<PathBuf>, FsError> {
         self.0.trash(path)
     }

@@ -167,7 +167,7 @@ describe("runTreeShortcut(表のキーを選んでいる項目のメニューの
 });
 
 describe("createTreeClipboard(コピー・切り取り・ペーストのツリーの受け口)", () => {
-  const setup = (selected: string | null, nameInput = false) => {
+  const setup = (selected: string | null, nameInput = false, treeElementFocused = true) => {
     const { actions, calls } = fakeActions();
     const ui = createUiStore();
     const app = createAppStore();
@@ -178,6 +178,7 @@ describe("createTreeClipboard(コピー・切り取り・ペーストのツリ�
       tree: treeWith(selected),
       app,
       isNameInputFocused: () => nameInput,
+      isTreeElementFocused: () => treeElementFocused,
     });
     return { clipboard, calls, ui };
   };
@@ -197,6 +198,12 @@ describe("createTreeClipboard(コピー・切り取り・ペーストのツリ�
     const none = setup(null);
     none.ui.getState().setTreeFocused(true);
     expect(none.clipboard.focus()).toEqual({ kind: "tree", selection: "none" });
+  });
+
+  it("フォーカスの印が残っていても_実際のフォーカスがツリーに無ければ null(ターミナルの操作にする)", () => {
+    const { clipboard, ui } = setup("a.ts", false, false);
+    ui.getState().setTreeFocused(true);
+    expect(clipboard.focus()).toBeNull();
   });
 
   it("名前の入力中は name-input", () => {

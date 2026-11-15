@@ -243,7 +243,7 @@ test.describe("ツリー内の移動・コピー(FR-029)", () => {
 
   test("落とした先に同名があると衝突の確認が出る", async ({ page }) => {
     await open(page);
-    const conflict = { ok: { kind: "conflict", name: "a.md" } } as const;
+    const conflict = { ok: { kind: "conflict", name: "a.md", total: 1 } } as const;
 
     // 移動: 確認 → 衝突の確認(AC-T18)。中止ではどちらも変わらない(呼び直さない)。
     await setMockReply(page, "move_entry", conflict);

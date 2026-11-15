@@ -216,7 +216,9 @@ export function createActions({ ipc, ui, tree, treeController, reportError }: Ac
         treeController.refresh(projectId, [parentOf(target)]);
         return;
       case "conflict":
-        if (retry !== undefined) ui.getState().openTreeConflict({ request: retry, name: outcome.name });
+        if (retry !== undefined) {
+          ui.getState().openTreeConflict({ request: retry, name: outcome.name, total: outcome.total });
+        }
         else ui.getState().showTreeNotice(`「${outcome.name}」と同じ名前の項目があります`);
         return;
       case "invalidName":

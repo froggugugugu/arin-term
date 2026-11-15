@@ -145,6 +145,71 @@ fn 本物のフォルダの_url_を書いて読み戻すと元のパスに戻る
     assert_eq!(board.files.read_file_urls().unwrap(), vec![folder]);
 }
 
+/// 名前付きのペーストボードの最初の項目の、ファイルの URL の文字列(そのまま)。
+fn raw_file_url(name: &str) -> Option<String> {
+    use objc2_app_kit::{NSPasteboard, NSPasteboardTypeFileURL};
+    use objc2_foundation::NSString;
+    objc2::rc::autoreleasepool(|_| {
+        let board = NSPasteboard::pasteboardWithName(&NSString::from_str(name));
+        let items = board.pasteboardItems()?;
+        let item = items.to_vec().into_iter().next()?;
+        // SAFETY: AppKit が定義する変更されない定数の NSString
+        let kind = unsafe { NSPasteboardTypeFileURL };
+        item.stringForType(kind).map(|s| s.to_string())
+    })
+}
+
+#[test]
+fn フォルダへのリンクはリンク自体の_url_として書き読み戻すとリンクのパスに戻る() {
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let name = format!(
+        "com.froggugugugu.arin.test.files.dir-link.{}.{n}",
+        std::process::id()
+    );
+    let board = TestFileBoard {
+        files: MacFilePasteboard::named(name.clone()),
+        text: MacPasteboard::named(name.clone()),
+    };
+    let dir = TempDir::new("pasteboard-dir-link");
+    let target = dir.0.join("先のフォルダ");
+    std::fs::create_dir(&target).unwrap();
+    let link = dir.0.join("リンク");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    board.files.write_file_urls(&[link.as_path()]).unwrap();
+
+    let raw = raw_file_url(&name).expect("ファイルの URL が書かれていない");
+    assert!(
+        !raw.ends_with('/'),
+        "リンクの URL の末尾に / が付いた(リンクの先のフォルダとして書いた): {raw}"
+    );
+    assert_eq!(board.files.read_file_urls().unwrap(), vec![link]);
+}
+
+#[test]
+fn 本物のフォルダの_url_の末尾にはスラッシュが付く() {
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let name = format!(
+        "com.froggugugugu.arin.test.files.dir-slash.{}.{n}",
+        std::process::id()
+    );
+    let board = TestFileBoard {
+        files: MacFilePasteboard::named(name.clone()),
+        text: MacPasteboard::named(name.clone()),
+    };
+    let dir = TempDir::new("pasteboard-dir-slash");
+    let folder = dir.0.join("folder");
+    std::fs::create_dir(&folder).unwrap();
+
+    board.files.write_file_urls(&[folder.as_path()]).unwrap();
+
+    let raw = raw_file_url(&name).expect("ファイルの URL が書かれていない");
+    assert!(
+        raw.ends_with('/'),
+        "フォルダの URL の末尾に / が無い: {raw}"
+    );
+}
+
 #[test]
 fn 書き直すと前のファイルの_url_を置き換える() {
     let board = TestFileBoard::new("file-overwrite");

@@ -41,9 +41,23 @@ fn done(select: &str) -> FileOpOutcome {
     }
 }
 
+/// 単一の項目の衝突(数は 1)。
 fn conflict(name: &str) -> FileOpOutcome {
+    conflicts(name, 1)
+}
+
+/// 衝突(最初の名前と、衝突した項目の数)。
+fn conflicts(name: &str, total: u32) -> FileOpOutcome {
     FileOpOutcome::Conflict {
         name: name.to_owned(),
+        total,
+    }
+}
+
+fn failed_message(outcome: &FileOpOutcome) -> &str {
+    match outcome {
+        FileOpOutcome::Failed { message } => message,
+        other => panic!("失敗を返す: {other:?}"),
     }
 }
 
@@ -1014,5 +1028,420 @@ fn 切り取りの状態はペーストボードの変更番号で移動かコ�
     assert_eq!(
         clipboard.source(&board).expect("読める"),
         PasteSource::Nothing
+    );
+}
+
+// ---- 複数の項目のペーストの衝突(R1・R2) ----
+
+#[test]
+fn 複数のペーストは衝突したすべての項目を数えて返す() {
+    // docs には a.md と main.ts がある。3 つのうち 2 つが衝突する。
+    let fs = sample().file("/x/app/docs/main.ts");
+    let service = FileOperationService::new(&fs);
+    let board = FakePasteboard::default();
+    let mut clipboard = FileClipboard::new();
+    board.external_write(&[
+        "/x/app/notes/a.md",
+        "/x/outside/secret.txt",
+        "/x/app/src/main.ts",
+    ]);
+
+    let outcome = service.paste(&board, &mut clipboard, &roots, root(), &rel("docs"), None);
+
+    assert_eq!(outcome, conflicts("a.md", 2));
+    assert!(fs.mutations().is_empty(), "衝突したら何も置かない");
+}
+
+#[test]
+fn 単一の操作の衝突は数が1() {
+    let fs = sample();
+    let service = FileOperationService::new(&fs);
+    let board = FakePasteboard::default();
+    let mut clipboard = FileClipboard::new();
+    board.external_write(&["/x/app/notes/a.md"]);
+
+    assert_eq!(
+        service.paste(&board, &mut clipboard, &roots, root(), &rel("docs"), None),
+        conflicts("a.md", 1)
+    );
+    assert_eq!(
+        service.move_entry(root(), &rel("notes/a.md"), &rel("docs"), None),
+        conflicts("a.md", 1)
+    );
+    assert_eq!(
+        service.create(root(), &rel("docs"), "a.md", NewEntryKind::File, None),
+        conflicts("a.md", 1)
+    );
+}
+
+#[test]
+fn ペーストする項目どうしの同じ名前も事前の検査で衝突として数える() {
+    // 別のフォルダの同じ名前。置く先にはどちらも無い。
+    let fs = FakeFs::new()
+        .file("/x/app/a/x.txt")
+        .file("/x/app/b/x.txt")
+        .file("/x/app/c/y.txt")
+        .dir("/x/app/docs");
+    let service = FileOperationService::new(&fs);
+    let board = FakePasteboard::default();
+    let mut clipboard = FileClipboard::new();
+    board.external_write(&["/x/app/a/x.txt", "/x/app/b/x.txt", "/x/app/c/y.txt"]);
+
+    let outcome = service.paste(&board, &mut clipboard, &roots, root(), &rel("docs"), None);
+
+    assert_eq!(outcome, conflicts("x.txt", 1));
+    assert!(
+        fs.mutations().is_empty(),
+        "1 件目だけ置いて 2 件目で止まらない"
+    );
+
+    // 両方残すなら、2 件目は番号付きの名前になる。
+    let outcome = service.paste(
+        &board,
+        &mut clipboard,
+        &roots,
+        root(),
+        &rel("docs"),
+        Some(ConflictResolution::KeepBoth),
+    );
+    assert_eq!(outcome, done("docs/x.txt"));
+    assert!(fs.exists("/x/app/docs/x.txt"));
+    assert!(fs.exists("/x/app/docs/x 2.txt"));
+    assert!(fs.exists("/x/app/docs/y.txt"));
+    assert!(fs.trashed().is_empty());
+}
+
+#[test]
+fn ペーストする項目どうしで大文字小文字だけ違う名前も衝突として数える() {
+    // APFS(既定)は大文字・小文字を区別しないので、2 件目は 1 件目と衝突する。
+    let fs = FakeFs::new()
+        .file("/x/app/a/x.txt")
+        .file("/x/app/b/X.txt")
+        .dir("/x/app/docs");
+    let service = FileOperationService::new(&fs);
+    let board = FakePasteboard::default();
+    let mut clipboard = FileClipboard::new();
+    board.external_write(&["/x/app/a/x.txt", "/x/app/b/X.txt"]);
+
+    let outcome = service.paste(&board, &mut clipboard, &roots, root(), &rel("docs"), None);
+
+    assert_eq!(outcome, conflicts("X.txt", 1));
+    assert!(fs.mutations().is_empty());
+}
+
+#[test]
+fn ペーストする項目どうしの同じ名前を置き換えにすると何も変えずに失敗する() {
+    // 置き換えると、同じペーストで置いた 1 件目をゴミ箱に入れることになる。
+    let fs = FakeFs::new()
+        .file("/x/app/a/x.txt")
+        .file("/x/app/b/x.txt")
+        .dir("/x/app/docs");
+    let service = FileOperationService::new(&fs);
+    let board = FakePasteboard::default();
+    let mut clipboard = FileClipboard::new();
+    board.external_write(&["/x/app/a/x.txt", "/x/app/b/x.txt"]);
+
+    let outcome = service.paste(
+        &board,
+        &mut clipboard,
+        &roots,
+        root(),
+        &rel("docs"),
+        Some(ConflictResolution::Replace),
+    );
+
+    assert!(failed_message(&outcome).contains("同じ名前"), "{outcome:?}");
+    assert_no_absolute(&outcome);
+    assert!(fs.mutations().is_empty());
+}
+
+#[test]
+fn 同じフォルダへの切り取りのペーストは衝突に数えない() {
+    // docs/a.md を docs に戻すのは何もしない操作。src/main.ts だけが動く。
+    let fs = sample();
+    let service = FileOperationService::new(&fs);
+    let board = FakePasteboard::default();
+    let mut clipboard = FileClipboard::new();
+    let _ = service.cut(
+        &board,
+        &mut clipboard,
+        &project(1),
+        root(),
+        &[rel("docs/a.md"), rel("src/main.ts")],
+    );
+
+    let outcome = service.paste(&board, &mut clipboard, &roots, root(), &rel("docs"), None);
+
+    assert_eq!(outcome, done("docs/a.md"));
+    assert!(fs.exists("/x/app/docs/main.ts"));
+    assert!(fs.trashed().is_empty());
+}
+
+#[test]
+fn 事前の検査をすり抜けた衝突のあと切り取りの呼び直しは移し終えた項目を飛ばす() {
+    // 1 件目を移した直後に、外から docs/y.txt が作られる(事前の検査のあとの衝突)。
+    let fs = FakeFs::new()
+        .file("/x/app/a/x.txt")
+        .file("/x/app/c/y.txt")
+        .dir("/x/app/docs")
+        .after_call_file(
+            Call::Move(p("/x/app/a/x.txt"), p("/x/app/docs/x.txt")),
+            "/x/app/docs/y.txt",
+        );
+    let service = FileOperationService::new(&fs);
+    let board = FakePasteboard::default();
+    let mut clipboard = FileClipboard::new();
+    let _ = service.cut(
+        &board,
+        &mut clipboard,
+        &project(1),
+        root(),
+        &[rel("a/x.txt"), rel("c/y.txt")],
+    );
+
+    let outcome = service.paste(&board, &mut clipboard, &roots, root(), &rel("docs"), None);
+
+    assert_eq!(outcome, conflicts("y.txt", 1));
+    assert!(fs.exists("/x/app/docs/x.txt"), "1 件目は移したまま");
+    assert_eq!(
+        clipboard.cut_items().map(|c| c.items.clone()),
+        Some(vec![rel("c/y.txt")]),
+        "移し終えた項目は切り取りの状態から外す"
+    );
+
+    let outcome = service.paste(
+        &board,
+        &mut clipboard,
+        &roots,
+        root(),
+        &rel("docs"),
+        Some(ConflictResolution::KeepBoth),
+    );
+
+    assert_eq!(outcome, done("docs/y 2.txt"));
+    assert!(!fs.exists("/x/app/c/y.txt"));
+    assert!(
+        fs.exists("/x/app/docs/y.txt"),
+        "外から作られた y.txt は残る"
+    );
+    assert!(
+        clipboard.cut_items().is_none(),
+        "移し終えたら切り取りを消す"
+    );
+}
+
+#[test]
+fn 事前の検査をすり抜けた衝突のあとコピーの呼び直しは写し終えた項目を写し直さない() {
+    let fs = sample()
+        .file("/x/outside/p.txt")
+        .file("/x/outside/q.txt")
+        .after_call_file(
+            Call::Copy(p("/x/outside/p.txt"), p("/x/app/docs/p.txt")),
+            "/x/app/docs/q.txt",
+        );
+    let service = FileOperationService::new(&fs);
+    let board = FakePasteboard::default();
+    let mut clipboard = FileClipboard::new();
+    board.external_write(&["/x/outside/p.txt", "/x/outside/q.txt"]);
+
+    let outcome = service.paste(&board, &mut clipboard, &roots, root(), &rel("docs"), None);
+    assert_eq!(outcome, conflicts("q.txt", 1));
+    assert!(fs.exists("/x/app/docs/p.txt"));
+
+    let outcome = service.paste(
+        &board,
+        &mut clipboard,
+        &roots,
+        root(),
+        &rel("docs"),
+        Some(ConflictResolution::KeepBoth),
+    );
+
+    assert_eq!(outcome, done("docs/q 2.txt"));
+    assert!(
+        !fs.exists("/x/app/docs/p 2.txt"),
+        "写し終えた項目を写し直した"
+    );
+    let copies: Vec<Call> = fs
+        .mutations()
+        .into_iter()
+        .filter(|c| matches!(c, Call::Copy(from, _) if from == &p("/x/outside/p.txt")))
+        .collect();
+    assert_eq!(copies.len(), 1, "p.txt を 2 回写した: {copies:?}");
+}
+
+#[test]
+fn 途中の衝突のあと対処なしで新しくペーストすると最初から数え直す() {
+    // 確認を中止して(呼び直さずに)、もう一度ペーストした。写し終えた項目も衝突として数える。
+    let fs = sample()
+        .file("/x/outside/p.txt")
+        .file("/x/outside/q.txt")
+        .after_call_file(
+            Call::Copy(p("/x/outside/p.txt"), p("/x/app/docs/p.txt")),
+            "/x/app/docs/q.txt",
+        );
+    let service = FileOperationService::new(&fs);
+    let board = FakePasteboard::default();
+    let mut clipboard = FileClipboard::new();
+    board.external_write(&["/x/outside/p.txt", "/x/outside/q.txt"]);
+
+    let _ = service.paste(&board, &mut clipboard, &roots, root(), &rel("docs"), None);
+    let outcome = service.paste(&board, &mut clipboard, &roots, root(), &rel("docs"), None);
+
+    assert_eq!(outcome, conflicts("p.txt", 2));
+}
+
+#[test]
+fn ペーストのあいだに新しく切り取ったものは移し終えても消さない() {
+    // ロックの外で移している間に、別の切り取りが記録された(R6)。
+    let fs = sample();
+    let service = FileOperationService::new(&fs);
+    let board = FakePasteboard::default();
+    let mut clipboard = FileClipboard::new();
+    let _ = service.cut(
+        &board,
+        &mut clipboard,
+        &project(1),
+        root(),
+        &[rel("src/main.ts")],
+    );
+
+    let plan = match service.plan_paste(&board, &mut clipboard, None) {
+        Ok(plan) => plan,
+        Err(outcome) => panic!("計画を立てられなかった: {outcome:?}"),
+    };
+    // 移している間に、別の項目を切り取った。
+    let _ = service.cut(
+        &board,
+        &mut clipboard,
+        &project(1),
+        root(),
+        &[rel("notes/a.md")],
+    );
+    let report = service.run_paste(&plan, &roots, root(), &rel("docs"), None);
+    clipboard.settle(&plan, &report);
+
+    assert_eq!(report.outcome, done("docs/main.ts"));
+    assert_eq!(
+        clipboard.cut_items().map(|c| c.items.clone()),
+        Some(vec![rel("notes/a.md")]),
+        "あとから切り取ったものを消した"
+    );
+}
+
+// ---- 置き換えで、置けないと分かっている移動の前に既存をゴミ箱に入れない(R3) ----
+
+#[test]
+fn 別のボリュームへの切り取りのペーストは置き換えでも既存をゴミ箱に入れずに失敗する() {
+    let fs = sample().volume("/x/other").file("/x/other/main.ts");
+    let service = FileOperationService::new(&fs);
+    let board = FakePasteboard::default();
+    let mut clipboard = FileClipboard::new();
+    let _ = service.cut(
+        &board,
+        &mut clipboard,
+        &project(1),
+        root(),
+        &[rel("src/main.ts")],
+    );
+
+    for resolution in [None, Some(ConflictResolution::Replace)] {
+        let outcome = service.paste(
+            &board,
+            &mut clipboard,
+            &roots,
+            Path::new(OTHER_ROOT),
+            &RelPath::root(),
+            resolution,
+        );
+        assert_eq!(
+            outcome,
+            FileOpOutcome::Failed {
+                message: "別のディスクへは移動できません".to_owned()
+            },
+            "{resolution:?}"
+        );
+    }
+    assert!(fs.trashed().is_empty(), "置けない移動の前にゴミ箱に入れた");
+    assert!(fs.exists("/x/app/src/main.ts"));
+    assert!(fs.exists("/x/other/main.ts"));
+}
+
+#[test]
+fn ルートの中の別のボリュームへの移動は置き換えでも既存をゴミ箱に入れない() {
+    let fs = sample().volume("/x/app/mnt").file("/x/app/mnt/main.ts");
+    let service = FileOperationService::new(&fs);
+
+    let outcome = service.move_entry(
+        root(),
+        &rel("src/main.ts"),
+        &rel("mnt"),
+        Some(ConflictResolution::Replace),
+    );
+
+    assert!(
+        failed_message(&outcome).contains("別のディスク"),
+        "{outcome:?}"
+    );
+    assert!(fs.trashed().is_empty());
+    assert!(fs.exists("/x/app/src/main.ts"));
+}
+
+#[test]
+fn 別のボリュームでもコピーの置き換えはできる() {
+    let fs = sample().volume("/x/other").file("/x/other/main.ts");
+    let service = FileOperationService::new(&fs);
+    let board = FakePasteboard::default();
+    let mut clipboard = FileClipboard::new();
+    let _ = service.copy_to_pasteboard(&board, &mut clipboard, root(), &[rel("src/main.ts")]);
+
+    let outcome = service.paste(
+        &board,
+        &mut clipboard,
+        &roots,
+        Path::new(OTHER_ROOT),
+        &RelPath::root(),
+        Some(ConflictResolution::Replace),
+    );
+
+    assert_eq!(outcome, done("main.ts"));
+    assert_eq!(fs.trashed(), vec![p("/x/other/main.ts")]);
+}
+
+// ---- その他の種類はコピーしない(R6) ----
+
+#[test]
+fn ペーストの元にその他の種類があれば何も写さずに失敗する() {
+    // 壊れたリンクは偽のファイルシステムでの「その他」(FIFO・ソケット・デバイスと同じ扱い)。
+    let fs = sample().link("/x/outside/pipe", "/x/nowhere");
+    let service = FileOperationService::new(&fs);
+    let board = FakePasteboard::default();
+    let mut clipboard = FileClipboard::new();
+    board.external_write(&["/x/outside/secret.txt", "/x/outside/pipe"]);
+
+    let outcome = service.paste(&board, &mut clipboard, &roots, root(), &rel("docs"), None);
+
+    let message = failed_message(&outcome);
+    assert!(message.contains("pipe"), "どの項目か分かる: {message}");
+    assert!(message.contains("コピーできない"), "{message}");
+    assert_no_absolute(&outcome);
+    assert!(fs.mutations().is_empty());
+}
+
+#[test]
+fn ツリーの中のその他の種類はコピーしないが移動はできる() {
+    let fs = sample().link("/x/app/src/pipe", "/x/nowhere");
+    let service = FileOperationService::new(&fs);
+
+    let outcome = service.copy_entry(root(), &rel("src/pipe"), &rel("docs"), None);
+    assert!(
+        failed_message(&outcome).contains("コピーできない"),
+        "{outcome:?}"
+    );
+    assert!(fs.mutations().is_empty());
+
+    assert_eq!(
+        service.move_entry(root(), &rel("src/pipe"), &rel("docs"), None),
+        done("docs/pipe")
     );
 }

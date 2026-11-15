@@ -297,11 +297,11 @@ describe("プロジェクトの操作(T33c)", () => {
   it("衝突のあとの呼び直しは対処を resolution で渡し、衝突の応答はそのまま返す", async () => {
     const fake = createFakeIpc({
       move_entry: ({ resolution }) =>
-        resolution === undefined ? { kind: "conflict", name: "a.md" } : { kind: "done", select: "docs/a.md" },
+        resolution === undefined ? { kind: "conflict", name: "a.md", total: 1 } : { kind: "done", select: "docs/a.md" },
     });
     const ipc = createIpc(fake.transport);
 
-    await expect(ipc.moveEntry(PROJECT, "a.md", "docs")).resolves.toEqual({ kind: "conflict", name: "a.md" });
+    await expect(ipc.moveEntry(PROJECT, "a.md", "docs")).resolves.toEqual({ kind: "conflict", name: "a.md", total: 1 });
     await expect(ipc.moveEntry(PROJECT, "a.md", "docs", "replace")).resolves.toEqual({
       kind: "done",
       select: "docs/a.md",

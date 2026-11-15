@@ -2,6 +2,8 @@
 //! 設計書 §9.1。
 //!
 //! 書くときは 1 つのファイルにつき 1 つの項目(`NSURL` をそのまま `writeObjects:`)にする。Finder のコピーと同じ形。
+//! フォルダかどうか(URL の末尾の `/`)はリンクをたどらずに決める。フォルダへのリンクはリンク自体の URL にする
+//! (ゴミ箱の `fs/trash.rs` と同じ扱い。たどると、ペーストで写すのがリンクの先のフォルダになりうる)。
 //! URL は名前の文字を保ったまま作る(`fileURLWithPath` は NFD に変えるので使わない。`workspace::file_url_from_str`)。
 //! 読むときは項目ごとに `public.file-url`(`NSPasteboardTypeFileURL`)だけを見て、置かれた順に返す。
 //! 文字列だけの項目(`file://` で始まる文字列を含む)はファイルとみなさない。
@@ -90,7 +92,7 @@ impl FilePasteboardPort for MacFilePasteboard {
         // 中身を消す前に全部を確かめる(途中で失敗して、前の中身だけが消えることを避ける)
         let texts = paths
             .iter()
-            .map(|p| Ok((absolute_utf8(p)?, p.is_dir())))
+            .map(|p| Ok((absolute_utf8(p)?, is_folder_itself(p))))
             .collect::<Result<Vec<_>, PasteboardError>>()?;
         autoreleasepool(|_| {
             let objects = texts
@@ -148,6 +150,11 @@ fn absolute_utf8(path: &Path) -> Result<&str, PasteboardError> {
     }
     path.to_str()
         .ok_or_else(|| PasteboardError(format!("UTF-8 でないパス: {}", path.display())))
+}
+
+/// 項目そのものがフォルダか(リンクはたどらない。無い・調べられないものはフォルダでないとみなす)。
+fn is_folder_itself(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_dir())
 }
 
 fn count(board: &NSPasteboard) -> i64 {

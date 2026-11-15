@@ -148,6 +148,10 @@ impl FileSystemPort for RecordingFs {
         panic!("ツリーの読み込みでコピーしようとした")
     }
 
+    fn same_volume(&self, _path: &Path, _dir: &Path) -> Result<bool, FsError> {
+        panic!("ツリーの読み込みでボリュームを確かめようとした")
+    }
+
     fn trash(&self, _path: &Path) -> Result<Option<PathBuf>, FsError> {
         panic!("ツリーの読み込みでゴミ箱に入れようとした")
     }
@@ -282,7 +286,7 @@ fn make_alpha(alpha: &Path) {
     for dir in [".git", "node_modules", ".claude", "src", "Zeta"] {
         fs::create_dir(alpha.join(dir)).expect("フォルダを作れなかった");
     }
-    // コピーの作業用フォルダ(作りかけ)。どの設定でも出さない。
+    // コピーの作業用フォルダ(作りかけ・片付けられずに残ったもの)。隠しファイル表示が ON のときだけ出す。
     fs::create_dir(alpha.join(format!("{STAGING_PREFIX}123-0"))).expect("フォルダを作れなかった");
     for file in [".DS_Store", "B.md", "a.txt", "src/main.rs"] {
         fs::write(alpha.join(file), "x").expect("ファイルを作れなかった");
@@ -360,9 +364,11 @@ fn 隠しファイル表示をオンにすると_3_つも返り写しと状態�
         .find(|p| p.id.as_str() == id)
         .expect("プロジェクトが消えた");
     assert!(card.show_hidden, "写しに反映されていない");
+    let staging = format!("{STAGING_PREFIX}123-0");
     assert_eq!(
         names(list(handle, window, ctx, &id, "")),
         [
+            staging.as_str(),
             ".claude",
             ".git",
             "inside-link",
@@ -373,7 +379,7 @@ fn 隠しファイル表示をオンにすると_3_つも返り写しと状態�
             "a.txt",
             "B.md",
         ],
-        "3 つが返らないか、コピーの作業用フォルダが出た"
+        "3 つか、残ったコピーの作業用フォルダが返らない"
     );
 
     // 前面でなくなったときは待たずに書く(保存は写しを送ったときに予約されている)。

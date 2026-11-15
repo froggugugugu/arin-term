@@ -666,7 +666,7 @@ test.describe("見つからない・衝突(FR-030、FR-036)", () => {
   test("衝突が返ると置き換える_両方残す_中止が出て中止では何も呼ばない", async ({ page }) => {
     const errors = collectPageErrors(page);
     await open(page);
-    await setMockReply(page, "rename_entry", { ok: { kind: "conflict", name: "a b.ts" } });
+    await setMockReply(page, "rename_entry", { ok: { kind: "conflict", name: "a b.ts", total: 1 } });
 
     await chooseFromMenu(page, row(page, "README.md"), "名称変更…");
     await nameInput(page).fill("a b.ts");
@@ -698,7 +698,7 @@ test.describe("見つからない・衝突(FR-030、FR-036)", () => {
 
   test("両方残すと置き換えるは対処を付けて呼び直す", async ({ page }) => {
     await open(page);
-    const conflict = { ok: { kind: "conflict", name: "a.md" } } as const;
+    const conflict = { ok: { kind: "conflict", name: "a.md", total: 1 } } as const;
     const done = { ok: { kind: "done", select: "docs/a 2.md" } } as const;
 
     // Return は既定のボタン(両方残す)。
@@ -725,6 +725,35 @@ test.describe("見つからない・衝突(FR-030、FR-036)", () => {
         { projectId: APP.id, destDir: "docs" },
         { projectId: APP.id, destDir: "docs", resolution: "replace" },
       ]);
+  });
+});
+
+test.describe("複数項目の衝突(FR-030)", () => {
+  test("衝突した項目が_2_つ以上なら数が分かる文面になり_1_つなら今までどおり", async ({ page }) => {
+    await open(page);
+    await setMockReply(page, "paste_entries", { ok: { kind: "conflict", name: "a.md", total: 3 } });
+    await chooseFromMenu(page, row(page, "docs"), "ペースト");
+
+    const dialog = conflictDialog(page);
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("heading")).toHaveText("「a.md」ほか 2 項目がすでにあります");
+    await expect(dialog.locator("p")).toHaveText([
+      "置き換えると、いまある 3 項目はゴミ箱に入ります。",
+      "両方残すと、新しい方の名前に番号を付けます。",
+    ]);
+    // ボタンと既定のボタンは変わらない。
+    await expect(dialog.getByRole("button")).toHaveText(["置き換える", "中止", "両方残す"]);
+    await expect(dialog.getByRole("button", { name: "両方残す" })).toBeFocused();
+    await dialog.getByRole("button", { name: "中止" }).click();
+    await expect(dialog).toHaveCount(0);
+
+    await setMockReply(page, "paste_entries", { ok: { kind: "conflict", name: "a.md", total: 1 } });
+    await chooseFromMenu(page, row(page, "docs"), "ペースト");
+    await expect(dialog.getByRole("heading")).toHaveText("「a.md」という名前の項目がすでにあります");
+    await expect(dialog.locator("p")).toHaveText([
+      "置き換えると、いまある「a.md」はゴミ箱に入ります。",
+      "両方残すと、新しい方の名前に番号を付けます。",
+    ]);
   });
 });
 
@@ -796,5 +825,133 @@ test.describe("コピー・切り取り・ペーストの振り分け(C-04、FR-
     await expect.poll(async () => (await readCallArgs(page, "write_terminal")).map((w) => w.data).join("")).toBe("ls");
     expect(await readCallArgs(page, "paste_entries")).toEqual([]);
     expect(await readCallArgs(page, "copy_entries")).toEqual([]);
+  });
+});
+
+test.describe("表示だけの状態の片付け(部品が消えたとき・プロジェクトが変わったとき)", () => {
+  const LOG: SampleProject = { id: "p-log", name: "ribbitlog", color: "orange", displayPath: "~/dev/ribbitlog" };
+  const many = (count: number): Entries =>
+    Array.from({ length: count }, (_, i) => [`file-${String(i + 1).padStart(4, "0")}.txt`, "file"] as const);
+
+  test("名称変更中にスクロールして行が窓から外れると入力を取り消し_ツリーの更新が止まらない", async ({ page }) => {
+    const errors = collectPageErrors(page);
+    await open(page, projectsSnapshot([APP]), appListings({ [listingKey(APP.id, "big")]: listed(many(500)) }));
+    await setMockListing(page, listingKey(APP.id, ""), listed([["big", "directory"]]));
+    await emitEvent(page, "tree-changed", { projectId: APP.id, dirs: [""], fullReload: false });
+    await toggle(page, "big").click();
+    await expect(row(page, "big/file-0001.txt")).toBeVisible();
+
+    await chooseFromMenu(page, row(page, "big/file-0001.txt"), "名称変更…");
+    await expect(nameInput(page)).toBeFocused();
+    await scroller(page).evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+
+    await expect(row(page, "big/file-0500.txt")).toBeVisible();
+    await expect(nameInput(page)).toHaveCount(0);
+    // 入力を取り消したので、保留が解けて外からの変更が出る。
+    await setMockListing(page, listingKey(APP.id, ""), listed([["big", "directory"], ["zz-new.ts", "file"]]));
+    await emitEvent(page, "tree-changed", { projectId: APP.id, dirs: [""], fullReload: false });
+    await scroller(page).evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+    await expect(row(page, "zz-new.ts")).toBeVisible();
+    expect(await readCallArgs(page, "rename_entry")).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+
+  test("衝突の確認を出したまま見つからなくなり一覧から削除しても_別のプロジェクトに確認が出ない", async ({ page }) => {
+    const snapshot = projectsSnapshot([APP, LOG]);
+    await open(page, snapshot, { ...appListings(), [listingKey(LOG.id, "")]: listed([["Cargo.toml", "file"]]) });
+    await setMockReply(page, "paste_entries", { ok: { kind: "conflict", name: "a.md", total: 1 } });
+    await chooseFromMenu(page, row(page, "docs"), "ペースト");
+    await expect(conflictDialog(page)).toBeVisible();
+
+    // 確認の表示中にフォルダが見つからなくなる。
+    await emitEvent(page, "app-snapshot", {
+      ...snapshot,
+      projects: snapshot.projects.map((p) => (p.id === APP.id ? { ...p, missing: true } : p)),
+    });
+    await expect(page.getByTestId("tree-missing")).toBeVisible();
+    await expect(conflictDialog(page)).toHaveCount(0);
+
+    // 一覧から削除すると、残ったプロジェクトが選ばれる。
+    await emitEvent(page, "app-snapshot", {
+      ...snapshot,
+      projects: snapshot.projects.filter((p) => p.id !== APP.id),
+      terminals: snapshot.terminals.filter((t) => t.projectId !== APP.id),
+      selectedProjectId: LOG.id,
+    });
+    await expect(page.getByTestId("tree-header")).toHaveText("ribbitlog");
+    await expect(row(page, "Cargo.toml")).toBeVisible();
+    await page.waitForTimeout(200);
+    await expect(conflictDialog(page)).toHaveCount(0);
+    expect(await readCallArgs(page, "paste_entries")).toEqual([{ projectId: APP.id, destDir: "docs" }]);
+  });
+
+  test("ツリーにフォーカスがあるままプロジェクトが変わっても_ターミナルでのペーストはターミナルへ", async ({ page }) => {
+    const snapshot = projectsSnapshot([APP, LOG]);
+    await open(page, snapshot, { ...appListings(), [listingKey(LOG.id, "")]: listed([["Cargo.toml", "file"]]) });
+    await row(page, "README.md").click();
+    await expect(fileTree(page)).toBeFocused();
+
+    // Finder からのドロップでの登録などで、画面の操作なしに選択中のプロジェクトが変わる。
+    await emitEvent(page, "app-snapshot", { ...snapshot, selectedProjectId: LOG.id });
+    await expect(row(page, "Cargo.toml")).toBeVisible();
+    await page.getByTestId("terminal-host").locator(".xterm-screen").click();
+    await expect(page.locator(".xterm-helper-textarea:focus")).toHaveCount(1);
+
+    const paste = await fireClipboard(page, "paste", "ls");
+
+    expect(paste.prevented).toBe(true);
+    await expect.poll(async () => (await readCallArgs(page, "write_terminal")).map((w) => w.data).join("")).toBe("ls");
+    expect(await readCallArgs(page, "paste_entries")).toEqual([]);
+  });
+
+  test("読めないフォルダを開くと知らせが出て_フォルダは閉じたまま", async ({ page }) => {
+    await open(page, projectsSnapshot([APP]), appListings());
+    await setMockListing(page, listingKey(APP.id, ""), listed([...ROOT_ENTRIES, ["secret", "directory"]]));
+    await emitEvent(page, "tree-changed", { projectId: APP.id, dirs: [""], fullReload: false });
+    await expect(row(page, "secret")).toBeVisible();
+    // 表に無いフォルダの問い合わせは失敗する(権限の無いフォルダなど)。
+    await setMockReply(page, "list_directory", { error: "Permission denied" });
+
+    await toggle(page, "secret").click();
+
+    await expect(notice(page)).toHaveText("フォルダを読めませんでした");
+    await expect(row(page, "secret")).toHaveAttribute("aria-expanded", "false");
+    await expect(row(page, "secret")).not.toHaveAttribute("aria-busy", "true");
+    expect(await readCallArgs(page, "list_directory")).toContainEqual({ projectId: APP.id, path: "secret" });
+  });
+});
+
+test.describe("「編集」メニューの有効化(beforecopy・beforecut・beforepaste)", () => {
+  /** フォーカスのある要素へ beforecopy などを発火し、取り消されたかを返す。 */
+  const fireBefore = (page: Page, type: "beforecopy" | "beforecut" | "beforepaste") =>
+    page.evaluate((type) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      (document.activeElement ?? document.body).dispatchEvent(event);
+      return event.defaultPrevented;
+    }, type);
+
+  test("ツリーにフォーカスがあり操作になるときだけ取り消す", async ({ page }) => {
+    await open(page);
+    await row(page, "README.md").click();
+    await expect(fileTree(page)).toBeFocused();
+    expect([
+      await fireBefore(page, "beforecopy"),
+      await fireBefore(page, "beforecut"),
+      await fireBefore(page, "beforepaste"),
+    ]).toEqual([true, true, true]);
+
+    // ルートの切り取りは操作にならないので取り消さない。
+    await header(page).click();
+    expect(await fireBefore(page, "beforecut")).toBe(false);
+
+    // ターミナルでは何もしない。
+    await page.getByTestId("terminal-host").locator(".xterm-screen").click();
+    await expect(page.locator(".xterm-helper-textarea")).toBeFocused();
+    expect(await fireBefore(page, "beforecopy")).toBe(false);
+    expect(await fileCommands(page)).toEqual([]);
   });
 });

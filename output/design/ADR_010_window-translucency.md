@@ -24,15 +24,16 @@
 "app": {
   "macOSPrivateApi": true,
   "windows": [{
-    "transparent": true,
-    "windowEffects": { "effects": ["sidebar"], "state": "followsWindowActiveState" }
+    "transparent": true
   }]
 }
 ```
 
+すりガラスの素材は、設定の `windowEffects` には書かず、`src-tauri/src/lib.rs` の `apply_window_effects` が本物のランタイムで起動したときだけ付ける(`WebviewWindow::set_effects`。素材 `Effect::Sidebar`、状態 `EffectState::FollowsWindowActiveState`)。設定に書くと、模擬ランタイムを使う結合テスト(`src-tauri/tests/`)のウィンドウにも付けようとして落ちる(SIGSEGV。14 本)ため。
+
 `src-tauri/Cargo.toml`: `tauri = { workspace = true, features = ["macos-private-api"] }`(版は `=2.12.5` のまま)。
 
-- `transparent: true` でウィンドウと WKWebView の地を透明にし、`windowEffects` で `NSVisualEffectView`(素材 `sidebar`)をウィンドウの全面に敷く。`windowEffects` は透明なウィンドウでないと効かない
+- `transparent: true` でウィンドウと WKWebView の地を透明にし、`set_effects` で `NSVisualEffectView`(素材 `sidebar`)をウィンドウの全面に敷く。効果は透明なウィンドウでないと効かない
 - 状態は `followsWindowActiveState`(macOS の標準。ウィンドウが手前でないときは素材が落ち着いた灰色になる)。`radius` は付けない(ウィンドウの角は OS が丸める)
 - `macOSPrivateApi` は Tauri 2.12.1 以降は中身の無い設定(非公開 API は常に組み込まれる)。それでも、このアプリが非公開 API に頼ることを設定で明示するために書く。書くと `tauri-build` が `tauri` の機能 `macos-private-api` を要求する(設定と機能の一致の検査)ので、機能も足す。機能の中身も空で、`Cargo.lock` は変わらない(通信のクレートも増えない)
 - 画面(`tokens.css`): `html`・`body`・`#root` は地を塗らず、`.app-shell` に半透明の淡い色(`--color-window-bg`。ライト `rgba(238, 238, 240, 0.55)`、ダーク `rgba(30, 30, 32, 0.5)`)を重ねる。左ペインと上部の帯は地を塗らないので、この色とすりガラスがそのまま見える。タブバーはわずかに影を落とした色、ターミナルの置き場所は不透明の黒

@@ -223,7 +223,7 @@ async function treeSetup(handlers: Partial<FakeHandlers> = {}) {
   return { ...t, lists, ops, selected };
 }
 
-const conflict = (name: string): FileOpOutcome => ({ kind: "conflict", name });
+const conflict = (name: string): FileOpOutcome => ({ kind: "conflict", name, total: 1 });
 
 describe("actions(ツリーの開閉と選択)", () => {
   it("開閉と選択は表示中のツリーに効く", async () => {
@@ -318,7 +318,11 @@ describe("actions(ファイル操作の応答)", () => {
     t.fs.set("p1:src", listed(file("a 2.ts"), file("a.ts")));
 
     await t.actions.pasteEntries("p1", "src");
-    expect(t.ui.getState().treeConflict).toEqual({ request: { op: "paste", projectId: "p1", destDir: "src" }, name: "a.ts" });
+    expect(t.ui.getState().treeConflict).toEqual({
+      request: { op: "paste", projectId: "p1", destDir: "src" },
+      name: "a.ts",
+      total: 1,
+    });
     // 確認の間は更新を保留する。
     expect(t.tree.getState().gate.holds.has("dialog")).toBe(true);
 
@@ -360,6 +364,18 @@ describe("actions(ファイル操作の応答)", () => {
       ["copy_entry", undefined],
       ["copy_entry", "replace"],
     ]);
+  });
+
+  it("複数の項目が衝突したら_衝突した数を確認に載せる", async () => {
+    const t = await treeSetup({ paste_entries: () => ({ kind: "conflict", name: "a.md", total: 3 }) });
+
+    await t.actions.pasteEntries("p1", "docs");
+
+    expect(t.ui.getState().treeConflict).toEqual({
+      request: { op: "paste", projectId: "p1", destDir: "docs" },
+      name: "a.md",
+      total: 3,
+    });
   });
 
   it("衝突の確認で中止なら呼び直さない", async () => {

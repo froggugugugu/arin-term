@@ -143,18 +143,25 @@ export interface TreeClipboardDeps extends TreeCommandDeps {
   app: AppStore;
   /** フォーカスがツリーの名前の入力欄にあるか。 */
   isNameInputFocused: () => boolean;
+  /**
+   * いま実際にフォーカスがツリーの中にあるか(本物は document.activeElement で見る)。uiStore.treeFocused の印は、
+   * フォーカスのある要素が取り除かれたときに WebKit が blur を出さず残ることがあるため、振り分けの時点で確かめ直す。
+   */
+  isTreeElementFocused: () => boolean;
 }
 
 /**
  * 文書のコピー・切り取り・ペーストのイベントの入口(clipboardRouting.ts)に渡す、ツリーの受け口。
- * 名前の入力中は name-input(入力欄の文字の操作に任せる)、ツリーにフォーカスがあれば tree、どちらでもなければ null
+ * 名前の入力中は name-input(入力欄の文字の操作に任せる)、ツリーにフォーカスがあれば(印と実際のフォーカスの両方)tree、
+ * どちらでもなければ null
  * (ターミナルの振り分けに任せる)。
  */
 export function createTreeClipboard(deps: TreeClipboardDeps): TreeClipboardTarget {
   return {
     focus(): ClipboardFocus | null {
       if (deps.isNameInputFocused()) return { kind: "name-input" };
-      if (!deps.ui.getState().treeFocused) return null;
+      // 印と実際のフォーカスの両方がツリーにあるときだけ。印が残っていても、フォーカスがターミナルならターミナルの操作。
+      if (!deps.ui.getState().treeFocused || !deps.isTreeElementFocused()) return null;
       return { kind: "tree", selection: treeSelectionKind(deps.tree.getState()) };
     },
     run(action) {

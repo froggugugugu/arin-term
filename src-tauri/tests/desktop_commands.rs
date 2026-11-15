@@ -879,6 +879,73 @@ fn 開くはファイルだけでフォルダ_リンク_実行できるファイ
     }
 }
 
+fn 開くは実行につながる種類の拡張子のファイルを渡さない(
+    handle: &AppHandle<MockRuntime>,
+    window: &WebviewWindow<MockRuntime>,
+    ctx: &Ctx,
+) {
+    let id = project_id_by_name(&snapshot(handle, window), "alpha");
+    let alpha = alpha_root(ctx);
+    // 実行の権限が無くても、既定のアプリが実行・起動・インストールするもの。大文字・小文字は区別しない。
+    let names = [
+        "a.terminal",
+        "b.command",
+        "c.tool",
+        "d.jar",
+        "e.app",
+        "f.pkg",
+        "g.mpkg",
+        "h.dmg",
+        "i.scpt",
+        "j.scptd",
+        "k.applescript",
+        "l.workflow",
+        "m.action",
+        "n.webloc",
+        "o.inetloc",
+        "p.fileloc",
+        "q.url",
+        "Run.COMMAND",
+        "Site.WebLoc",
+    ];
+    for name in names {
+        let file = alpha.join(name);
+        fs::write(&file, "").expect("ファイルを作れなかった");
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o644))
+            .expect("権限を変えられなかった");
+    }
+    for name in names {
+        ctx.reset();
+        let outcome = op(
+            handle,
+            window,
+            ctx,
+            "open_entry",
+            json!({ "projectId": id, "path": name }),
+        );
+        assert_eq!(
+            outcome,
+            failed("この種類のファイルは開けません。Finder で表示から開いてください"),
+            "{name}"
+        );
+        ctx.assert_untouched(name);
+    }
+    // 似ているが一覧に無い拡張子は開く。
+    fs::write(alpha.join("notes.command.md"), "").expect("ファイルを作れなかった");
+    ctx.reset();
+    let outcome = op(
+        handle,
+        window,
+        ctx,
+        "open_entry",
+        json!({ "projectId": id, "path": "notes.command.md" }),
+    );
+    assert_eq!(outcome, done());
+    for name in names.iter().chain(&["notes.command.md"]) {
+        fs::remove_file(alpha.join(name)).expect("消せなかった");
+    }
+}
+
 fn ルートの外とドットドットは拒否する(
     handle: &AppHandle<MockRuntime>,
     window: &WebviewWindow<MockRuntime>,
@@ -984,6 +1051,10 @@ const CHECKS: &[(&str, Check)] = &[
     (
         "開くはファイルだけでフォルダ_リンク_実行できるファイルは渡さない",
         開くはファイルだけでフォルダ_リンク_実行できるファイルは渡さない,
+    ),
+    (
+        "開くは実行につながる種類の拡張子のファイルを渡さない",
+        開くは実行につながる種類の拡張子のファイルを渡さない,
     ),
     (
         "ルートの外とドットドットは拒否する",

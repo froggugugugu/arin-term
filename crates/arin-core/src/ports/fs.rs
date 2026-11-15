@@ -117,6 +117,15 @@ pub trait FileSystemPort: Send + Sync {
     /// `from` が無いとき(`FsError::NotFound`)、`to` があるとき(`FsError::AlreadyExists`)、それ以外(`FsError::Io`)。
     fn copy_entry(&self, from: &Path, to: &Path) -> Result<(), FsError>;
 
+    /// `path` の項目(リンクはたどらない)と、フォルダ `dir` が同じボリュームにあるか(移動が `CrossDevice` に
+    /// ならないか)。「置き換える」で、置けないと分かっている移動の前に既存をゴミ箱に入れないために使う。
+    /// 読むだけで、ファイルシステムを変えない。
+    ///
+    /// # Errors
+    ///
+    /// どちらかが無いとき(`FsError::NotFound`)、調べられないとき(`FsError::Io`)。
+    fn same_volume(&self, path: &Path, dir: &Path) -> Result<bool, FsError>;
+
     /// 項目をゴミ箱に入れる(Finder の「戻す」で戻せる方式。ADR-007 の (a))。
     /// ゴミ箱の中の場所が分かる方式ならそれを、分からなければ `None` を返す。
     /// ゴミ箱に入れられなかったときに、別の方式や削除に切り替えない。
