@@ -13,5 +13,6 @@
 | ADR-009 | [M2 で arin-platform に足す依存](ADR_009_m2-platform-deps.md) | Accepted | 2026-11-15 |
 | ADR-010 | [ウィンドウの地を macOS のすりガラス(vibrancy)にする](ADR_010_window-translucency.md) | Accepted(実機の見た目は確認待ち) | 2026-11-15 |
 | ADR-011 | [タイル表示の状態は Rust が持ち、画面は M2 のターミナルの置き場所の仕組みで複数枚を出す](ADR_011_tile-view.md) | Proposed(本人の了承は T50a) | 2026-11-15 |
+| ADR-012 | [ショートカットのキーを `settings.toml` の `[shortcuts]` で変えられるようにする(M4.5)](ADR_012_keybindings.md) | Proposed(【要確認】4 点。本人の了承は T66c) | 2026-11-16 |
 
 候補の出どころは `ARCH_multi-terminal.md` §14。

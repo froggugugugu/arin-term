@@ -1391,39 +1391,227 @@ T46〜T50 は親として残し、作業は子タスクで行う。親は子が�
 | タブの「+」の読み上げ用のキーの表示(`Meta+T`)が直書き(M3) | 扱わない | M4.5 のまま。M4 で足すツールチップのキーの表示は表から引く(T47f) |
 | それ以外(ゴミ箱の目視、競合の隙間、「開く」の範囲、NFR-005、読み込み中が残る、Dock の終了など) | 扱わない | タイル表示に関わらない |
 
-### M4.5 ショートカットの設定(粗い分解。T63 の着手時に分解し直す)
+### M4.5 ショートカットの設定(T63 の着手時に 1 セッション粒度に分解し直した。2026-11-16)
 
-**【要件の追加(本人。2026-11-15)】** 「ショートカットのキーを設定ファイル(`settings.toml`)で変えられるようにする」。PRD に無い要件なので、PRD への反映(FR の追加と AC)は本人の判断を待つ。M3・M4 のあとに実装し、設定ファイルの土台(M6 の T56 の一部)を前倒しする。M3 では、キーを「コマンドの ID → 既定のキーと受け口」の 1 つの表(`arin-core/shortcuts`)から引く形にしておく(T38d・T41b・T42e)。M4 で足すショートカット(タイル表示の切替やページ送りなど)も同じ表に足す。
+**【要件の追加(本人。2026-11-15)】** 「ショートカットのキーを設定ファイル(`settings.toml`)で変えられるようにする」(本人は「ショートカットの設定もしくは説明はあるの?」に対し、一覧の画面・⌘1〜⌘9 の切替・キーを変えられる設定のうち「キーを変えられる設定」を選んだ)。PRD に無い要件なので、PRD への反映(FR の追加と AC)は本人の判断を待つ。仮の受け入れ基準は ADR-012 の AC-K01〜K10。M3・M4 で、キーを「コマンドの ID → 既定のキーと受け口」の 1 つの表(`arin-core/shortcuts`)から引く形にしてある(T38d・T41b・T42e・T47a)。設定ファイルの土台(M6 の T56 の一部)を前倒しする。
 
-完了条件(案。T63 で確定する): `settings.toml` でコマンドの ID ごとにキーを変えると、メニューバーの項目とツリー(画面で受けるキー)の両方に反映される。不正な値・重なり・OS が予約するキーは既定に戻り、理由が画面に出る。本人が実機で確かめる。
+完了条件: ADR-012 の AC-K01〜K10(【要確認】の回答で外れたものを除く)が自動テストと T66c の本人の確認で合格し、下の「M4.5 の完了条件」をすべて満たす(対応表は節の末尾)。
 
-T56 から前倒しする範囲: 設定ファイルの置き場所と読み込み(`SettingsFilePort`、`arin-platform` の `SettingsFileStore`)、`SettingsStore` の最小(読んだ結果と読み込みエラー)、TOML を解析するクレートの選定とその置き場所(ADR-005 の「未定の点」)、読み直しの契機(設計書 §1.3 #10 は「保存を検知して読み直す」)、エラーの画面への出し方。T56 にはそれ以外の設定の項目(フォント・配色・スクロールバック・目印の時間・移動の確認の省略など)を足す作業が残る。
+#### M4.5 の前提
 
-#### Phase 31.5a(逐次。M4 完了後)
+設計の決定は ADR-012(`output/design/ADR_012_keybindings.md`。Proposed)にまとめた。【要確認】の 4 点は**推奨案で計画を組んだ**。本人の回答が推奨と違えば、下の「回答が推奨と違うとき」のとおりにタスクを直す。
 
-- [ ] T63 — M4.5 の着手時の確認と再分解、ADR(変更ファイル: output/tasks/PLAN_multi-terminal.md, output/tasks/PROGRESS.md, output/design/ADR_012_shortcut-settings.md, output/design/ADR_INDEX.md, output/design/ARCH_multi-terminal.md | 依存: T50)
-  - 決めること: (1) 設定ファイルの置き場所と読み込み(ADR-005、設計書 §6.2 の `settings.toml`・§7.2 の「設定ファイル」の行、FR-057 に合わせる)。(2) TOML を解析するクレートとその版(正確な版、公開から 2 週間未満を避ける。`arin-core` に足すか、`arin-platform` で解析して `arin-core` に値を渡すか)。(3) キーの書式(T38d の `Cmd+Shift+N` の形)と、設定の表の形(案: `[shortcuts]` の下に `"tree.trash" = "Cmd+Backspace"`)。(4) 重なり・不正な値・未知のコマンドの ID・OS が予約するキー(⌘Q を外す、⌘H・⌘⇥・⌘Space など)の扱い(既定に戻して理由を出すか、そのキーだけ無効にするか)。(5) 反映のタイミング(起動時だけか、保存を検知して読み直すか。メニューバーを作り直せるかを Tauri 2.12.5 のソースで確かめる)。(6) 既定に戻す方法(行を消す)。(7) M3 の T45 の (5) で分かった受け口(メニューの項目か画面か)との関係
-  - PRD への反映が要る点を本人に挙げる(FR の追加、AC、M4.5 という区切りの扱い)
-  - 検証: 文書だけ。`ls output/design/ADR_012_*.md` が 1 件(ADR-010 はウィンドウの半透過、ADR-011 はタイル表示で使ったため。2026-11-15 に番号を直した)
+- (a) **置き場所**: `<状態フォルダ>/settings.toml`(既定は `~/Library/Application Support/Arin/settings.toml`)。`ARIN_STATE_DIR` で差し替えたら差し替え先の `settings.toml` だけを読む。パスは `AppPaths::settings_file()`(ADR-012 の 1)
+- (b) **書式**: `[shortcuts]` の下に `"コマンドの ID" = "キーの文字列"`(`KeyChord` の書式)。変えたい行だけを書き、書かなかった行は既定。引用符の無い点つきの ID は 1 段だけつないで読む。M4.5 は `[shortcuts]` 以外の節を黙って無視する(ADR-012 の 2)
+- (c) **検査**: 問題のある行はその行だけ既定に戻し、残りは使い、画面に 1 行で知らせる。TOML として読めないときは、起動時は既定、動作中は直前の表のまま。受け口は変えさせない。予約のキー・修飾キーの条件・重なりの規則は ADR-012 の 3 の表(規則は `arin-core/shortcuts` の純粋な関数)
+- (d) **安全**: 設定ファイルは読むだけで、書き換えない・退避しない・消さない(例外は「設定ファイルを開く…」が**無いときだけ**見本を作ること。上書きしない)。知らせと標準エラー(`[arin:settings]`)に出すのはコマンドの ID・キーの文字列・行と列・理由の種類だけで、設定ファイルの行の全文・TOML のクレートの失敗の文言・絶対パスは出さない。テストとスモークは一時の状態フォルダ(`ARIN_STATE_DIR`)だけを使い、本物の設定ファイルを読み書きしない
+- (e) **TOML の解析**は `arin-platform` に置き、`arin-core` には文字列の対とファイル全体の結果だけを渡す(`arin-core` の依存を増やさない)。クレートは `toml`(`Cargo.lock` に `toml 1.2.1+spec-1.1.0` が `tauri-utils 2.10.2` の依存として載っている)。版・公開日・ライセンス・macOS の依存の木に入るかは T65a で確かめる(ADR-012 の 4)
+- (f) **メニューの差し替え**は、項目ごとの `set_accelerator` ではなく、`build_with_table` で作り直して `AppHandle::set_menu` で丸ごと替える(`set_accelerator` は読めない文字列を黙って捨て、macOS では `None` でキーを消さない。ADR-012 の 5 の「確かめたこと」)
+- (g) **画面への知らせ**: 新しい型を足さない。Rust は「設定が変わった」イベント(`settings-changed`。中身なし)を送り、画面は `get_shortcuts` と、新しいコマンド `get_settings_notice`(1 行の文字列か null)を呼び直す。設定の知らせは状態ファイルの知らせ(写しの `notice`)と別に出す【仮定】
+- (h) **T50b との順**: T50b(M4 の最後)は `src-tauri/src/lib.rs`・`src-tauri/src/commands/app.rs`・`src/ipc/client.ts`・`crates/arin-core/tests/generated_types.rs`・`src/ipc/generated/` を触る。M4.5 の実装(T64a 以降)は T50b の完了後に始める
 
-#### Phase 31.5b(逐次。T63 完了後。同じクレートを触るものは再分解のときに逐次にする)
+【要確認】の回答が推奨と違うとき:
+
+| 【要確認】 | 推奨(計画の前提) | 違う回答のときのタスクの直し |
+| ---------- | ------------------ | ---------------------------- |
+| 1. 割り当てを外す書き方 | A: 入れない(`""` は読めないキーとして既定に戻す) | B・C: 表の行のキーを「無し」を許す形にする。T64a(規則)・T64c(表と生成する型)・T65b(メニュー)・T65e(画面の振り分けとラベル)が広がる。T64a の前に型を変える子タスクを 1 つ足す |
+| 2. ⌘C・⌘X・⌘V(「編集」の標準の項目) | 変更の対象から外し、書かれたら無視して知らせる | 変えられるようにする: 標準の項目を自前の項目に替え、画面のコピー・切り取り・ペーストの振り分けを作り直すタスクを T65b のあとに足す(ターミナルとツリーのコピーの既存のテストを通し直す) |
+| 3. 反映のタイミング | B: 保存を検知して即時(T65c) | C: T65c を「メニューの『設定を読み直す』で読み直す」に替える(監視は作らない)。A: T65c を外す(AC-K07 も外す) |
+| 4. 説明の置き場所 | A: メニューに「設定ファイルを開く…」(⌘,)。無ければ見本を作って開く | B: T64c(表の 23 行目と見本)と T65d を外す。説明は T66b の `docs/` だけ。AC-K08 を外す |
+
+#### 現状のコードから分かった、M4.5 で足すところ・変えるところ
+
+- `arin-core/shortcuts` は、表の検査(`from_bindings`)まで。設定の値を当てる口・予約のキー・修飾キーの条件・問題の一覧が無い → T64a。表は 22 行 → 「設定ファイルを開く」で 23 行(T64c)
+- `arin-core` に `settings` が無い(`lib.rs` に `pub mod settings;` が無い)。`ports` に `SettingsFilePort` が無い。`AppPaths` は状態フォルダだけを返す → T64b
+- `arin-platform/src/storage/` は `ready_marker.rs`・`state_file.rs` だけ(`mod.rs` の説明は「設定ファイルの読み書きは M5 で足す」と古い)。TOML のクレートは `arin-platform` の依存に無い → T65a
+- `menu.rs` の `Shortcuts` は表を値で持ち、`lib.rs` が `.manage(Shortcuts::default())` で登録する。差し替える口が無い。メニューはアプリ名・ターミナル・編集・表示で、アプリ名のメニューは標準の「隠す」「ほかを隠す」「すべてを表示」と自前の「終了」 → T65b(読み込みと差し替えの口)、T65d(「設定ファイルを開く…」)
+- `get_shortcuts` は起動時に画面が 1 回呼ぶだけ(`src/state/startApp.ts`)。表が変わったことを画面に伝えるイベントが無い。`keyOwner` は `main.tsx` で `ui.getState().shortcuts` を毎回読むので、`uiStore` の表を替えれば追従する → T65e
+- 知らせは写しの `notice`(`Workspace` が持つ 1 つ。状態ファイルの退避用)だけで、`NoticeBar` は 1 行。設定の知らせを出す口が無い → T65b(Rust)、T65e(画面)
+- `src/ui/terminals/TabBar.tsx` の「+」の `aria-keyshortcuts="Meta+T"` と `title="新規ターミナル(⌘T)"` が直書き(M3 の残り。M4 の割当で M4.5 に回した)。表から読み上げ用の書式(`Meta+Shift+T`)を作る関数が無い → T65e
+- ツリーの監視(`tree_watch.rs`)は選択中のプロジェクトのルートに 1 本。状態フォルダの監視は無い。`WatcherPort`(`FsEventsWatcher`)はフォルダに再帰で張る口で、そのまま使える → T65c
+- 「既定のアプリで開く」「Finder で表示」は M3 の `DesktopPort`(`open_with_default_app`・`reveal_in_finder`)にある → T65d
+- スモーク(`scripts/smoke.mjs`)は一時の状態フォルダに `state.json` を置ける(`--tiles`)が、`settings.toml` を置く指定が無い → T66a
+
+#### 親タスクと子タスク
+
+T64〜T66 は親として残し、作業は子タスクで行う。親は子がすべて済んだら済みにする。
+
+| 親 | 子 |
+| -- | -- |
+| T64 — 規則(`arin-core`) | T64a(設定の値を表に当てる規則と問題の一覧)、T64b(設定ファイルの結果の型・ポート・置き場所)、T64c(表に「設定ファイルを開く」の行と見本の文) |
+| T65 — 読み込みとメニュー・画面への反映 | T65a(設定ファイルの読み込みと TOML の解析。`arin-platform`)、T65b(起動時に読んでメニューと `get_shortcuts` に反映し知らせる)、T65c(保存の検知と即時の反映)、T65d(「設定ファイルを開く…」)、T65e(画面: 届いた表と知らせへの追従、`TabBar` の直書き) |
+| T66 — 自動テストと M4.5 の完了確認 | T66a(シナリオの画面の自動テストと、設定ファイルを置いたスモーク)、T66b(文書の同期と設定の書き方の説明)、T66c(合否一覧と本人の確認)、T66d(本人の確認の反映と最終の検証) |
+
+粗い分解のときの親の行(内容は子に引き継いだ。消さずに残す):
 
 - [ ] T64 — 規則(`arin-core/settings` の最小と `arin-core/shortcuts` のマージ)(変更ファイル: crates/arin-core/src/settings/, crates/arin-core/src/shortcuts/, crates/arin-core/tests/ | 依存: T63)
-  - 対応: 【要件の追加】、FR-057 の土台(T56 から前倒し)、設計書 §7.2「設定ファイル」(未知のキーは無視、範囲外は既定値に戻して理由を出す、構文エラーは直前の値を保つ)
-  - 先に書くテスト(案): キーの文字列の解析と検査、既定の表とのマージ、重なりの検出、OS が予約するキーの拒否、未知のコマンドの ID の無視、構文エラーのときは直前の表を保つ
-  - 検証: `npm test && npm run test:coverage`
-- [ ] T65 — 読み込みとメニュー・画面への反映(変更ファイル: crates/arin-platform/src/storage/, src-tauri/src/menu.rs, src-tauri/src/lib.rs, src-tauri/src/commands/app.rs, src/ipc/client.ts, src/state/, src/ui/menu/ | 依存: T64)
-  - 対応: 【要件の追加】、FR-057 の土台(T56 から前倒し)、設計書 §1.3 #10
-  - 中身(案): `arin-platform` の設定ファイルの読み込み(と、T63 で決めたら変更の検知)。`menu.rs` のアクセラレータを、既定ではなく有効な表から作る(M3 の T42e の口)。`get_shortcuts` が有効な表を返し、変わったら画面へ知らせる。画面はメニューの項目のキーの表示とツリーの振り分けを、受け取った表で行う(M3 の T41b・T43c の口)。読み込みのエラーを画面に 1 行で出す
-  - 安全: 設定ファイルは読むだけで書き換えない(設計書 §1.3 #10)。テストは一時の状態フォルダ(`ARIN_STATE_DIR`)の中だけ
-  - 検証: `npm test && npm run lint && npm run app && npm run smoke`
-
-#### Phase 31.5c(逐次。人間ゲート)
-
+  - 対応: 【要件の追加】、FR-057 の土台(T56 から前倒し)、設計書 §7.2「設定ファイル」。検証: `npm test && npm run test:coverage` → **T64a〜T64c**
+- [ ] T65 — 読み込みとメニュー・画面への反映(変更ファイル: crates/arin-platform/src/storage/, src-tauri/src/menu.rs, src-tauri/src/lib.rs, src-tauri/src/commands/app.rs, src/ipc/client.ts, src/state/, src/ui/ | 依存: T64)
+  - 対応: 【要件の追加】、FR-057 の土台、設計書 §1.3 #10。安全: 設定ファイルは読むだけ、テストは一時の状態フォルダの中だけ。検証: `npm test && npm run lint && npm run app && npm run smoke` → **T65a〜T65e**
 - [ ] T66 — 自動テストと M4.5 の完了確認(変更ファイル: e2e/, scripts/smoke.mjs, output/tasks/PROGRESS.md, output/reports/test/, docs/, project-config.md | 依存: T65)
-  - AI がやること: 偽の Rust 側で変えた表を渡す画面の自動テスト、一時の状態フォルダに `settings.toml` を置いたスモーク。`docs/data-model.md`(`settings.toml` のショートカットの節)と `project-config.md` §2(TOML のクレート)を同期する
-  - **人間がやること**: `settings.toml` でキーを 1 つ変え、メニューバーとツリーの両方で効くこと、不正な値で理由が出て既定に戻ること、行を消すと既定に戻ることを確かめる
-  - 検証: `npm run build && npm test && npm run lint && npm run e2e && npm run app && npm run smoke`
+  - **人間**: `settings.toml` でキーを変え、メニューバーとツリーの両方で効くこと、不正な値で理由が出て既定に戻ること、行を消すと既定に戻ることを確かめる → **T66a〜T66d**
+
+#### 共有のファイルの持ち回り
+
+同じ Phase で 2 つのタスクが同じファイルを触らないように割り当てた。下のファイルは表の順に逐次で触る。同時に動かすタスクは、どの Phase も 2 件まで(このマシンは並行のビルドとテストでメモリが足りなくなったため)。`src-tauri` を触るタスク(T65b〜T65d)は同時に動かさない(`cargo` のビルドが重いため)。
+
+| ファイル | 触るタスク(この順) |
+| -------- | ------------------ |
+| `crates/arin-core/src/shortcuts/mod.rs`、`crates/arin-core/src/shortcuts/overrides.rs`、`crates/arin-core/src/shortcuts/reserved.rs`、`crates/arin-core/tests/shortcut_overrides.rs` | T64a → T64c(`mod.rs` の公開と、見本の検査のテストを足すだけ) |
+| `crates/arin-core/src/shortcuts/table.rs`、`crates/arin-core/src/shortcuts/sample.rs`、`crates/arin-core/tests/shortcuts.rs` | T64c だけ |
+| `crates/arin-core/src/lib.rs`、`crates/arin-core/src/settings/`、`crates/arin-core/src/ports/mod.rs`、`crates/arin-core/src/ports/settings_file.rs`、`crates/arin-core/tests/settings_load.rs` | T64b だけ |
+| `crates/arin-core/src/paths/app_paths.rs`、`crates/arin-core/tests/app_paths.rs` | T64b だけ |
+| `crates/arin-core/tests/generated_types.rs`、`src/ipc/generated/` | T50b(M4)→ T64c |
+| `Cargo.toml`(ワークスペースの依存)、`Cargo.lock`、`crates/arin-platform/Cargo.toml` | T65a だけ |
+| `crates/arin-platform/src/storage/`(`mod.rs`・`settings_file.rs`)、`crates/arin-platform/tests/settings_file.rs` | T65a だけ |
+| `src-tauri/src/settings.rs` | T65b → T65c → T65d |
+| `src-tauri/src/settings_watch.rs`、`src-tauri/tests/settings_watch.rs`、`src-tauri/src/lifecycle.rs` | T65c だけ |
+| `src-tauri/src/lib.rs`、`src-tauri/src/events.rs`、`src-tauri/src/commands/app.rs`、`src-tauri/src/commands/mod.rs`、`src-tauri/Cargo.toml`(`[[test]]`) | T50b(M4)→ T65b → T65c(`lib.rs`・`Cargo.toml` だけ) |
+| `src-tauri/src/menu.rs`、`src-tauri/tests/app_menu.rs` | T65b → T65d |
+| `src-tauri/tests/app_settings.rs` | T65b → T65d |
+| `src/logic/keys/`(`defaultShortcuts.ts`・`keyOwner.test.ts`・`shortcutTable.test.ts`) | T64c → T65e(`shortcutTable.ts`・`shortcutTable.test.ts`・`keyOwner.test.ts`) |
+| `src/ipc/client.ts`、`src/ipc/client.test.ts` | T50b(M4)→ T65e |
+| `src/state/`(`startApp.ts`・`uiStore.ts` とテスト) | T65e だけ |
+| `src/ui/terminals/TabBar.tsx`、`src/ui/shell/AppShell.tsx`、`src/ui/shell/NoticeBar.tsx`、`src/ui/shell/AppShell.css` | T50b(M4。`AppShell.tsx`)→ T65e |
+| `src/test/fakeIpc.ts` | T65e だけ |
+| `e2e/fixtures/tauriMock.ts` | T65e → T66a |
+| `e2e/settings.spec.ts` | T65e だけ |
+| `e2e/m45-scenario.spec.ts` | T66a だけ |
+| `scripts/smoke.mjs`、`scripts/smoke.test.mjs` | T50b(M4)→ T66a |
+| `scripts/check-boundaries.mjs` | M4.5 では触らない見込み(`arin-core` の依存は増やさない) |
+| `output/design/ADR_012_keybindings.md` | T63 → T65a(クレートの版と確かめた結果の追記)→ T66b → T66d(状態を本人の了承に合わせる) |
+| `output/design/ARCH_multi-terminal.md`、`output/design/ADR_005_settings-format.md`、`docs/`、`project-config.md` | T66b → T66d(本人の確認で変わった点だけ) |
+
+#### Phase 31.5a(逐次。文書だけなので T50b を待たずに行った)
+
+- [x] T63 — M4.5 の着手時の確認と再分解、ADR(変更ファイル: output/tasks/PLAN_multi-terminal.md, output/design/ADR_012_keybindings.md, output/design/ADR_INDEX.md | 依存: T50)
+  - 決めたこと(ADR-012): (1) 置き場所と名前(状態フォルダの `settings.toml`、`ARIN_STATE_DIR` の差し替えに付いていく、ほかの設定と同じファイルに節で分ける)。(2) TOML のクレートと置き場所(`arin-platform` で解析し `arin-core` には文字列の対を渡す。`toml` を推奨。版は T65a で確かめる)。(3) 書式(`[shortcuts]` の下に ID = キーの文字列。外す書き方は【要確認】)。(4) 検査と失敗の扱い(行ごとに既定に戻す、予約のキー、修飾キーの条件、重なり、⌘C・⌘X・⌘V は【要確認】、ファイル全体の問題、退避しない)。(5) 反映のタイミング(【要確認】。推奨は保存を検知して即時。メニューは `set_menu` で作り直す)。(6) 既定に戻す方法(行を消す)。(7) 受け口は設定で変えさせない。(8) キーを知る手段と説明の置き場所(【要確認】。推奨は「設定ファイルを開く…」と見本)。(9) T56 との分担。仮の受け入れ基準 AC-K01〜K10
+  - PRD への反映が要る点(本人の判断): FR の追加(例: FR-065「ショートカットのキーを設定ファイルで変えられる」)と AC-K01〜K10 の採否、M4.5 という区切りを PRD §9 に足すか
+  - 設計書(`ARCH_multi-terminal.md`)は T66b でまとめて直す(本人の回答を待ってから直すため)
+  - 検証: 文書だけ。`ls output/design/ADR_012_*.md` が 1 件(済み)
+
+#### Phase 31.5b(並行可能。T63・T50b 完了後)
+
+- [ ] T64a — 設定の値を表に当てる規則と問題の一覧(`arin-core/shortcuts`)(変更ファイル: crates/arin-core/src/shortcuts/mod.rs, crates/arin-core/src/shortcuts/overrides.rs, crates/arin-core/src/shortcuts/reserved.rs, crates/arin-core/tests/shortcut_overrides.rs | 依存: T63, T50b)
+  - 対応: 【要件の追加】、ADR-012 の 2・3、AC-K03・AC-K04・AC-K09 の規則の部分、設計書 §7.2「設定ファイル」
+  - 置くもの: 入力 `ShortcutOverride { id: String, value: OverrideValue }`(`OverrideValue` は文字列か「文字列でない」の印。`settings` の型に依存しない=機能モジュールどうしを直接つながない。変換は T65b)。`apply_overrides(既定の表, &[ShortcutOverride]) -> (ShortcutTable, Vec<ShortcutSettingProblem>)`: ADR-012 の 3 の表の #1〜#10 を当てる。重なりは「関わる設定の行をすべて既定に戻す」を無くなるまで繰り返す。結果の表は必ず `from_bindings` を通る。問題は表の順(知らない ID は書いた順で最後)に並べる。`reserved.rs` に予約のキーの一覧(ADR-012 の 3)。知らせの 1 行と、標準エラー用の問題ごとの 1 行を作る関数(ID とキーの文字列は制御文字を除き 64 文字で切る)。入出力・時計を持たない
+  - 安全: 知らせに出すのはコマンドの ID・キーの文字列・理由の種類だけ
+  - 並行: 可(T64b とファイルが重ならない)
+  - 先に書くテスト: `設定が空なら既定の表と同じで問題が無い`、`書いた行だけキーが替わり書かなかった行は既定のまま`(AC-K01・K03)、`正規の書式でない文字列も同じキーとして読む`(`shift+cmd+t`)、`読めないキーの行は既定に戻り理由の種類が残る`、`空の文字列は読めないキーとして既定に戻す`(【要確認】1 の A)、`文字列でない値の行は既定に戻す`、`知らないコマンドの_id_は無視し問題に残す`、`id_は大文字と小文字を区別する`、`切り取り_コピー_ペーストは変えずに問題に残す`(【要確認】2)、`予約のキーの行は既定に戻す`(一覧の全件を表で)、`既定の表は予約のキーを使わない`、`メニューの項目の行で_cmd_を含まないキーは既定に戻す`(`Ctrl+C`・`Alt+N`・`Shift+T`・`T` を表で)、`画面の行は修飾キーの無い_enter_space_backspace_delete_を許す`、`画面の行で修飾キーの無い文字_矢印_tab_escape_は既定に戻す`、`既定の行と重なる設定の行は既定に戻し相手のコマンドを問題に残す`、`設定の行どうしが重なると両方を既定に戻す`、`既定に戻したことで生じた重なりも解ける`、`両方を書けばキーを入れ替えられる`、`同じコマンドを_2_度書くと両方を既定に戻す`、`結果は書いた順によらない`(並べ替えのすべてで同じ)、`結果の表は必ず表の検査を通る`、`終了のキーは_cmd_を含めば変えられる`、`知らせは_1_行で_id_とキーの文字列と理由だけ`(AC-K09)、`知らせの_id_とキーは制御文字を除き_64_文字で切る`、`問題が無ければ知らせは無い`
+  - 検証: `cargo test -p arin-core --test shortcut_overrides --test shortcuts`
+- [ ] T64b — 設定ファイルの結果の型・ポート・置き場所(`arin-core/settings`・`ports`・`paths`)(変更ファイル: crates/arin-core/src/lib.rs, crates/arin-core/src/settings/mod.rs, crates/arin-core/src/settings/load.rs, crates/arin-core/src/ports/mod.rs, crates/arin-core/src/ports/settings_file.rs, crates/arin-core/src/paths/app_paths.rs, crates/arin-core/tests/settings_load.rs, crates/arin-core/tests/app_paths.rs | 依存: T63, T50b)
+  - 対応: FR-057 の土台(T56 から前倒し)、ADR-005、ADR-012 の 1・3(ファイル全体の問題)・7、設計書 §5.1(`SettingsFilePort`)、§6.1(`SettingsStore`)、§7.2、AC-K03・AC-K05・AC-K10 の規則の部分
+  - 置くもの: `SETTINGS_FILE_NAME = "settings.toml"`、`AppPaths::settings_file()`(状態フォルダの直下。差し替えたら差し替え先)。`SettingsFilePort`(読む口: 無い / 中身のバイト列 / 読めない理由。見本を**無いときだけ**作る口: 作った / もうある。上書きする口・改名する口・消す口は**作らない**)。読んだ結果の型 `SettingsLoad`(無い / 読めた=節ごとの「キーと値」の並び / 読めない理由=UTF-8 でない・大きすぎる・ファイルでない・入出力 / 構文エラー=行と列)。値は文字列か「文字列でない」の印。`SettingsStore` の最小(使っている内容と、いまの問題。起動時の構文エラーは空、動作中の構文エラーは直前の内容を保つ。ファイルが消えたら空)。ファイル全体の問題の知らせの 1 行(行と列・理由の種類だけ)。M4.5 で読む節は `shortcuts` だけで、ほかの節は持たない(黙って無視)
+  - 安全: 入出力を持たない。知らせに中身を出さない
+  - 並行: 可(T64a とファイルが重ならない。`lib.rs` を触るのは Phase 31.5b ではこのタスクだけ)
+  - 先に書くテスト: `状態フォルダの直下の_settings_toml_を指す`、`差し替えた状態フォルダでは差し替え先の_settings_toml_を指す`(AC-K10)、`ファイルが無いときは空で知らせが無い`(AC-K03)、`構文エラーの起動時は空で行と列を知らせる`(AC-K05)、`構文エラーの読み直しでは直前の内容を保つ`(設計書 §7.2)、`構文エラーを直して読み直すと新しい内容になり知らせが消える`、`ファイルが消えたら空に戻る`、`読めない理由ごとの知らせ`(表で)、`shortcuts_が表でないときはその節だけ空にして知らせる`、`知らない節は黙って無視する`、`知らせに中身の文字列が入らない`
+  - 検証: `cargo test -p arin-core --test settings_load --test app_paths`
+
+#### Phase 31.5c(並行可能。T64a・T64b 完了後)
+
+- [ ] T64c — 表に「設定ファイルを開く」の行と見本の文(変更ファイル: crates/arin-core/src/shortcuts/table.rs, crates/arin-core/src/shortcuts/sample.rs, crates/arin-core/src/shortcuts/mod.rs, crates/arin-core/tests/shortcuts.rs, crates/arin-core/tests/shortcut_overrides.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/logic/keys/defaultShortcuts.ts, src/logic/keys/keyOwner.test.ts, src/logic/keys/shortcutTable.test.ts | 依存: T64a)
+  - 対応: ADR-012 の 6(【要確認】4 の A)、AC-K08 の規則の部分
+  - 足す行: `app.open-settings` = `Cmd+,`(受け口は「メニューの項目」)。`ShortcutCommandId::ALL` は 23 行になる。生成物(`ShortcutCommandId.ts`・`defaultShortcuts.json`)と画面の見本(`defaultShortcuts.ts`)を作り直す
+  - 置くもの: `sample_settings_toml(既定の表) -> String`(見本の文。先頭に書き方の決まり・変えられないコマンド・予約のキー・効かないときの確かめ方・リンクの先の変更は拾えないことをコメントで書き、`[shortcuts]` の下に全コマンドの `# "ID" = "既定のキー"` をコメントで並べる)
+  - 並行: 可(T65a とファイルが重ならない。生成物を触るのは Phase 31.5c ではこのタスクだけ)
+  - 先に書くテスト: 既存の `すべてのコマンドの_id_が既定のキーを持つ`・`同じフォーカスで受けるキーに重なりが無い` が 23 行で通る、`設定ファイルを開くの既定は_cmd_カンマで受け口はメニューの項目`、`見本はすべてのコマンドの_id_と既定のキーをコメントで並べる`、`見本の行はコメントか_shortcuts_の見出しだけ`、`見本に変えられないコマンドと予約のキーが書いてある`、`見本の行のコメントを外しても検査で問題が出ない`(各行を `apply_overrides` に通す。`shortcut_overrides.rs`)、`表の_json_の形`(生成物が最新)。Vitest: `設定ファイルを開くキーはターミナルに渡さない`(`keyOwner.test.ts`)、`既定の表に_23_行がある`(`shortcutTable.test.ts`)
+  - 検証: `cargo test -p arin-core --test shortcuts --test shortcut_overrides --test generated_types && npx vitest run src/logic/keys && node --test scripts/default-shortcuts.test.mjs`
+- [ ] T65a — 設定ファイルの読み込みと TOML の解析(`arin-platform`)(変更ファイル: Cargo.toml, Cargo.lock, crates/arin-platform/Cargo.toml, crates/arin-platform/src/storage/mod.rs, crates/arin-platform/src/storage/settings_file.rs, crates/arin-platform/tests/settings_file.rs, output/design/ADR_012_keybindings.md | 依存: T64b)
+  - 対応: FR-057 の土台、ADR-005 の「未定の点」、ADR-012 の 1・2・4、AC-K05・AC-K09・AC-K10 の読み込みの部分
+  - 着手時に確かめる(ADR-012 の 4。結果を ADR-012 の末尾に追記する): `cargo tree -i toml --target aarch64-apple-darwin` で `toml 1.2.1+spec-1.1.0` が macOS の依存の木に入っているか、`cargo info toml` と crates.io でその版の公開日(公開から 2 週間未満を避ける)とライセンス、使う機能が `tauri-utils` の有効にしている範囲に収まるか。版は `=` で固定する(ワークスペースの依存に足す)。入っていない・2 週間未満なら、止めて報告する(別の版を推測で選ばない)
+  - 置くもの: `FsSettingsFile`(`SettingsFilePort` の実装。読む: シンボリックリンクの先を読む、ファイルでなければ「ファイルでない」、1 MiB を超えれば中身を読まずに「大きすぎる」、UTF-8 でなければ「UTF-8 でない」。見本を作る: `create_new`(同じ名前があれば作らない。シンボリックリンクがあっても作らない)・0600・`fsync`。改名・削除・上書きの口は持たない)。TOML の文字列を `SettingsLoad` にする関数: `[shortcuts]` の文字列の値はそのまま、入れ子の表は 1 段だけ `.` でつなぐ(`[shortcuts.terminal]` も同じ)、2 段以上と文字列でない値は「文字列でない」の印、ほかの節は持たない。構文エラーはクレートが返す位置から行と列を数え、クレートの失敗の文言は持たない。`storage/mod.rs` の古い説明(「設定ファイルの読み書きは M5 で足す」)を直す
+  - 安全: 読むだけ(見本は無いときだけ作る)。テストは一時フォルダの中だけで、本物の `~/Library/Application Support/Arin/` を読み書きしない
+  - 並行: 可(T64c とファイルが重ならない。`Cargo.lock` を触るのはこのタスクだけ)
+  - 先に書くテスト(一時フォルダ): `無いときは無いと返す`、`読んでも中身と更新日時が変わらない`(AC-K05)、`シンボリックリンクの先を読む`、`フォルダならファイルでないと返す`、`1_MiB_を超えると中身を読まずに大きすぎると返す`、`utf_8_でないと返す`、`読む権限が無いと入出力の失敗を返す`、`shortcuts_の文字列の行を書いた順に返す`、`引用符の無い点つきの_id_を_1_段つないで読む`、`shortcuts_terminal_の節の行も同じ_id_で読む`、`2_段以上の入れ子と文字列でない値は文字列でないの印になる`、`ほかの節は返さない`、`構文エラーは行と列だけを返し本文を含まない`(結果の `Debug` の文字列に該当行の文字列が入らない。AC-K09)、`同じキーを_2_度書くと構文エラー`、`無いときだけ見本を作り_0600`、`あるときは見本を作らず中身と更新日時を変えない`、`シンボリックリンクがあると見本を作らない`
+  - 検証: `cargo test -p arin-platform --test settings_file && cargo clippy -p arin-platform -- -D warnings && cargo tree -i reqwest --target aarch64-apple-darwin`(最後は空であること)
+
+#### Phase 31.5d(逐次。T64c・T65a 完了後。`src-tauri/src/lib.rs` と `menu.rs` を触る)
+
+- [ ] T65b — 起動時に読んでメニューと `get_shortcuts` に反映し、知らせる(変更ファイル: src-tauri/src/settings.rs, src-tauri/src/menu.rs, src-tauri/src/lib.rs, src-tauri/src/events.rs, src-tauri/src/commands/app.rs, src-tauri/src/commands/mod.rs, src-tauri/Cargo.toml, src-tauri/tests/app_settings.rs, src-tauri/tests/app_menu.rs | 依存: T64a, T64b, T64c, T65a)
+  - 対応: 【要件の追加】、AC-K01・K02・K03・K04・K05・K09・K10 の Rust 側、ADR-012 の 3・5(差し替えの口)、前提 (f)(g)
+  - 置くもの: `settings.rs`(`FsSettingsFile` で読み → `SettingsStore` → `[shortcuts]` の行を `ShortcutOverride` に直して `apply_overrides` → 表と知らせ。知らせはファイル全体の問題と行の問題をまとめて 1 行。標準エラーには `[arin:settings]` で問題ごとに 1 行)。起動時はメニューを作る前に読む(`lib.rs`。`.manage(Shortcuts::default())` を読んだ表に替える)。`Shortcuts` は表を差し替えられる形にする(`RwLock` など。`table()` は写しを返す)。`menu::rebuild(app)`(`build_with_table` で作り直して `set_menu`。メインスレッドで作る。T65c・T65d が使う)。コマンド `get_settings_notice`(1 行か null)、イベント名 `settings-changed`(中身なし。`events.rs`)
+  - 安全: 設定ファイルは読むだけ。知らせと標準エラーに中身・絶対パスを出さない。状態ファイルの退避の仕組み(`persistence.rs`)に設定ファイルを渡さない
+  - 並行: 不可(`lib.rs`・`menu.rs`)
+  - 先に書くテスト(模擬ランタイム。`harness = false` の `[[test]]` を足す。一時の状態フォルダ): `設定ファイルが無いと既定の表でメニューを作り知らせが無い`(AC-K03)、`設定で替えたキーがメニューの項目のアクセラレータと_get_shortcuts_の両方に出る`(AC-K01 の Rust 側。muda の項目のキーを読む既存の補助を使う)、`画面で受けるコマンドのキーも_get_shortcuts_に出る`(AC-K02 の Rust 側)、`問題のある行は既定に戻り_get_settings_notice_に_1_行出る`(AC-K04)、`構文エラーなら既定の表で行と列を知らせる`(AC-K05)、`起動しても設定ファイルの中身と更新日時が変わらず退避のファイルもできない`(AC-K05)、`差し替えた状態フォルダの設定だけを読む`(AC-K10)、`標準エラーの行は_arin_settings_で始まり設定の行の全文を含まない`(行を作る関数で。AC-K09)、`表を替えて作り直すとメニューのアクセラレータが替わり項目の_id_は変わらない`(`menu::rebuild`)。既存の `app_menu.rs`・`app_commands.rs` のテストがそのまま通る
+  - 検証: `cargo test -p arin --test app_settings --test app_menu --test app_commands`
+
+#### Phase 31.5e(並行可能。T65b 完了後。Rust と画面で 1 件ずつ)
+
+- [ ] T65c — 保存の検知と即時の反映(【要確認】3 の B)(変更ファイル: src-tauri/src/settings_watch.rs, src-tauri/src/settings.rs, src-tauri/src/lib.rs, src-tauri/src/lifecycle.rs, src-tauri/Cargo.toml, src-tauri/tests/settings_watch.rs | 依存: T65b)
+  - 対応: AC-K05(動作中の構文エラー)・AC-K07、設計書 §1.3 #10、ADR-012 の 5
+  - 置くもの: 専用のスレッド 1 本(`arin-settings-watch`)。`WatcherPort` で状態フォルダに張り(無ければ 0700 で作る。設定ファイルは作らない)、届いたパスの名前が `settings.toml` のときだけ読み直す(`state.json` などは捨てる)。結果の表と知らせが今と同じなら何もしない。違えば `Shortcuts` を差し替え、`menu::rebuild`、`settings-changed` を送る。構文エラーは直前の表のまま知らせだけ替える(`SettingsStore`)。終了のとき(`lifecycle.rs`)にスレッドを止めて待つ。`Workspace` のロックは取らない
+  - 安全: 読むだけ。張れなかったときは落とさず、標準エラーに `[arin:settings]` で 1 行(パスを出さない)
+  - 並行: 可(T65e とファイルが重ならない)
+  - 先に書くテスト(偽の監視のポート + 一時フォルダ。`harness = false`): `settings_toml_の変更でキーが替わり_settings_changed_が届く`(AC-K07 の Rust 側)、`state_json_の変更では読み直さない`、`同じ内容で保存し直しても送らない`、`構文エラーに直すと直前の表のまま知らせだけが替わる`(AC-K05)、`ファイルを消すと既定の表に戻る`(AC-K03)、`状態フォルダが無ければ_0700_で作ってから張り設定ファイルは作らない`、`終了のときにスレッドが抜ける`。実 FSEvents(上限時間を付ける): `一時ファイルに書いて改名して保存しても読み直す`(エディタの保存の形)
+  - 検証: `cargo test -p arin --test settings_watch --test app_settings`
+- [ ] T65e — 画面: 届いた表と知らせへの追従、`TabBar` の直書き(変更ファイル: src/ipc/client.ts, src/ipc/client.test.ts, src/state/startApp.ts, src/state/startApp.test.ts, src/state/uiStore.ts, src/state/uiStore.test.ts, src/logic/keys/shortcutTable.ts, src/logic/keys/shortcutTable.test.ts, src/logic/keys/keyOwner.test.ts, src/ui/terminals/TabBar.tsx, src/ui/shell/AppShell.tsx, src/ui/shell/AppShell.css, src/ui/shell/NoticeBar.tsx, src/test/fakeIpc.ts, e2e/fixtures/tauriMock.ts, e2e/settings.spec.ts | 依存: T65b)
+  - 対応: AC-K01・K02(画面の表示)・K04(知らせ)・K06・K07(画面側)、M3 の残り「タブの『+』の読み上げ用のキーの表示(`Meta+T`)が直書き」
+  - 置くもの: 包み `getSettingsNotice`・`onSettingsChanged`。起動時に表と設定の知らせを受け取り、`settings-changed` が届いたら両方を取り直して `uiStore` を置き換える(取り直せなければ今の表のまま)。`ariaKeyShortcuts(表, コマンド)`(`Cmd+Shift+T` → `Meta+Shift+T`。`Alt` → `Alt`、`Ctrl` → `Control`)。`TabBar` の「+」の `aria-keyshortcuts` と `title` を表から引く(`shortcutLabel`)。設定の知らせを状態の知らせとは別の 1 行で出す(閉じるのも別)。偽の Rust 側に `get_settings_notice` と `settings-changed` を足す
+  - **デザイン**(本人の指示): 「AI にありがちなデザインを避け、Apple のデザインらしく、ハイセンスに」。知らせの 2 行目は今の `NoticeBar` と同じ控えめな形(システムフォント 13px、細い区切り線、閉じるのはアイコンのボタン)。Playwright の画像(ライトとダーク、知らせ 1 行と 2 行)を撮り、自分の目で確かめてから終える(画像は `testreport/`)
+  - 安全: 知らせの文は文字として差し込む
+  - 並行: 可(T65c とファイルが重ならない)
+  - 先に書くテスト: Vitest: `設定が変わったと届くと表と知らせを取り直して置き換える`、`取り直せないときは今の表のまま`、`読み上げ用のキーの表示は_meta_の形`(表で)、`設定の知らせは状態の知らせと別に持ち別に閉じられる`、`表を替えると新しいメニューのキーはターミナルに渡さず古いキーは渡す`(AC-K06。`keyOwner.test.ts`)。Playwright(`e2e/settings.spec.ts`): `タブバーの新規のボタンのツールチップと読み上げのキーが表から出る`(AC-K02)、`表が替わったと届くとツールチップが替わる`(AC-K07 の画面側)、`状態の知らせと設定の知らせが_2_行出て別々に閉じられる`、`設定で替えたツリーのキーで新規ファイルの入力が開き古いキーでは開かない`(AC-K02)。既存の `e2e/tabs.spec.ts`・`e2e/tree-ops.spec.ts` が通る
+  - 検証: `npx tsc -b && npx vitest run src/ipc src/state src/logic/keys && npx playwright test e2e/settings.spec.ts e2e/tabs.spec.ts e2e/tree-ops.spec.ts`
+
+#### Phase 31.5f(逐次。T65c・T65e 完了後。T65 の節目)
+
+- [ ] T65d — 「設定ファイルを開く…」(【要確認】4 の A)(変更ファイル: src-tauri/src/menu.rs, src-tauri/src/settings.rs, src-tauri/tests/app_menu.rs, src-tauri/tests/app_settings.rs | 依存: T65c, T65e)
+  - 対応: AC-K08、ADR-012 の 6
+  - 置くもの: アプリ名のメニューの先頭に「設定ファイルを開く…」(項目の ID は `app.open-settings`、キーは表から)と区切り線。選ばれたら待ってよいスレッドで、`settings.toml` が無ければ見本(`sample_settings_toml`)を作り(無いときだけ)、`DesktopPort::open_with_default_app` で開く。開けなければ `reveal_in_finder` で Finder に出し、設定の知らせで 1 行知らせる(「設定ファイルを開けるアプリが無いため、Finder で表示しました」【仮定】)。見本を作れなければ開かずに知らせる
+  - 安全: 既にある設定ファイルの中身を変えない。見本は上書きしない
+  - 並行: 不可
+  - 先に書くテスト(模擬ランタイム、偽の `DesktopPort`、一時の状態フォルダ): `アプリ名のメニューの先頭に設定ファイルを開くがあり表のキーが付く`、`見出しの並びと既存の項目は変わらない`、`無いときは見本を作って開く`(AC-K08)、`あるときは中身と更新日時を変えずに開く`(AC-K08)、`開けないと_finder_で表示し知らせる`、`見本を作れないときは開かず知らせる`
+  - 検証: `cargo test -p arin --test app_menu --test app_settings`。節目として続けて `npm run lint && npm test`(並行のタスクを動かさずに 1 件で回す)
+
+#### Phase 31.5g(並行可能。T65d 完了後)
+
+- [ ] T66a — M4.5 のシナリオの画面の自動テストと、設定ファイルを置いたスモーク(変更ファイル: e2e/m45-scenario.spec.ts, e2e/fixtures/tauriMock.ts, scripts/smoke.mjs, scripts/smoke.test.mjs | 依存: T65d)
+  - 対応: AC-K01〜K07・K09 の通し、【要件の追加】
+  - 置くもの: スモークに `--settings`(一時の状態フォルダに、正しい変更の行と問題のある行を 1 つずつ含む `settings.toml` を置いて起動する)。準備完了とターミナルの出力を確かめ、標準エラーの `[arin:settings]` の行がコマンドの ID とキーの文字列だけであること、`[arin:frontend-error]` が無いこと、終わったあと設定ファイルの中身(ハッシュ)と更新日時が同じで `settings.toml` の名前の付いた別のファイルができていないことを確かめる
+  - 先に書くテスト(このタスク自体がテスト): Playwright: `替えた表で起動し_メニューのキーの表示とツリーのキーとタブのツールチップがそろう`、`設定が変わったと届くと全部が新しい表に追従する`、`問題のある行の知らせが_1_行出て閉じられる`。`scripts/smoke.test.mjs`: `設定の指定で一時の状態フォルダに_settings_toml_を置く`、`終わったあと設定ファイルの中身と更新日時が同じか確かめる`、`設定の診断の行に設定の行の全文が無いか確かめる`
+  - 並行: 可(T66b とファイルが重ならない)
+  - 検証: `npx playwright test e2e/m45-scenario.spec.ts`(3 回続けて合格)`&& node --test scripts/smoke.test.mjs && npm run app && node scripts/smoke.mjs --settings && npm run smoke`
+- [ ] T66b — 文書の同期と設定の書き方の説明(変更ファイル: docs/data-model.md, docs/development-patterns.md, docs/project.md, docs/architecture.md, project-config.md, output/design/ARCH_multi-terminal.md, output/design/ADR_005_settings-format.md, output/design/ADR_012_keybindings.md | 依存: T65d)
+  - 対応: ADR-012 の 6(開発者向けの仕様の置き場所)、ドキュメント更新計画
+  - 書くもの: `docs/data-model.md` に `settings.toml` の節(置き場所、`[shortcuts]` の書式、コマンドの ID の一覧は生成物 `defaultShortcuts.json` を正とする旨、検査の規則、ファイル全体の問題の扱い、読むだけ・見本は無いときだけ)。`docs/development-patterns.md` に標準エラーの頭 `[arin:settings]`、落とし穴(`set_accelerator(None)` は macOS でキーを消さない、引用符の無い点つきの ID は TOML では入れ子の表になる、リンクの先の変更は監視で拾えない)。`docs/project.md`・`project-config.md` §2 に TOML のクレートの版、`docs/architecture.md` に新しいファイル。設計書: §5.1(`SettingsFileStore` → `FsSettingsFile`、`SettingsStore` は M4.5)、§5.2(`get_settings_notice`・`settings-changed`)、§6.1、§6.2(設定ファイルのキーの表に `[shortcuts]`)、§7.1「起動」の 2(設定ファイルは M4.5)、§7.2、§9.1(アプリ名のメニューの「設定ファイルを開く…」)。ADR-005 の「未定の点」に ADR-012 で決めたと追記
+  - 並行: 可(T66a とファイルが重ならない)
+  - 検証: 文書だけ。`git diff --stat` が上の変更ファイルだけであること
+
+#### Phase 31.5h(逐次。人間ゲート)
+
+- [ ] T66c — M4.5 の合否一覧と本人の確認(変更ファイル: output/reports/test/M4.5_acceptance.md, output/tasks/PROGRESS.md | 依存: T66a, T66b)
+  - AI がやること: `npm run build && npm test && npm run lint && npm run test:coverage && npm run e2e && npm run app && npm run smoke && node scripts/smoke.mjs --tiles && node scripts/smoke.mjs --settings` を 1 件で通し、下の対応表に沿って AC-K の合否一覧を `output/reports/test/M4.5_acceptance.md` と `testreport/` に出す。本人に渡す確かめ方(設定ファイルの置き場所、見本の開き方、書き換えの例 3 つ)を書く。fresh context の `/code-review` と `verifier` を 1 回ずつ回す
+  - **人間がやること**(`npm run app` で作った `.app` を Finder から開く): (1) ⌘, で見本が開き、書き方が読んで分かる(AC-K08)。(2) `"terminal.new-tab" = "Cmd+Shift+T"` を書いて保存すると、メニューバーの表示とキーが替わり、⌘T では開かない(AC-K01・K07)。(3) ツリーのキー(例 `"tree.new-file" = "Cmd+Alt+N"`)を替えると、ツリーのメニューの表示とキーが替わる(AC-K02)。(4) 保存しても動いているシェル(Claude Code など)が続いている(AC-K07)。(5) 読めない行・予約のキー(⌘H など)・重なりを書くと、その行だけ既定に戻り、知らせが 1 行で読める(AC-K04)。(6) 構文を壊して保存すると直前のキーのまま、行と列が出る(AC-K05)。(7) 行を消すと既定に戻る(AC-K03)。(8) 替えたキーが US と JIS の配列で効き、ターミナルに渡らない。替える前のキーはターミナルに渡る(AC-K06)。(9) 知らせの見た目(ライトとダーク、すりガラスの上。デザインの方針)。(10) ADR-012 の【要確認】の回答と、PRD への反映(FR の追加・AC-K の採否・M4.5 の区切り)の判断
+  - 完了条件: AC-K の合否一覧ができ、本人が (1)〜(10) を確かめた
+- [ ] T66d — 本人の確認の反映と最終の検証(変更ファイル: output/design/ADR_012_keybindings.md, output/design/ADR_INDEX.md, output/prd/PRD_multi-terminal.md(本人が了承した場合だけ), output/reports/test/M4.5_acceptance.md, output/tasks/PROGRESS.md, docs/(変わった点だけ) | 依存: T66c)
+  - 変えるもの: ADR-012 の状態を本人の了承に合わせる。T66c で直すと決めた点(既定のキー・予約のキーの一覧・知らせの文言)を直す(ソースを直すときは、そのタスクの先に書くテストを足してから)。PRD への反映は本人が了承した内容だけを書く
+  - 検証: `npm run build && npm test && npm run lint && npm run e2e && npm run app && npm run smoke && node scripts/smoke.mjs --settings`
+  - 完了条件: 下の「M4.5 の完了条件」をすべて満たす
+
+#### M4.5 の完了条件
+
+- 下の対応表の AC-K が、自動テストと T66c の本人の確認で全件合格している(【要確認】の回答で外したものを除く)
+- `npm run build`・`npm test`・`npm run lint`・`npm run test:coverage`(`arin-core` と `src/logic` のそれぞれで行 80%)・`npm run e2e`(`e2e/m45-scenario.spec.ts` は 3 回続けて合格)・`npm run smoke`・`node scripts/smoke.mjs --tiles`・`node scripts/smoke.mjs --settings` が終了コード 0
+- テストとスモークが、本物の `~/Library/Application Support/Arin/`(`settings.toml` を含む)と一時フォルダの外のファイルを作っていない・変えていない。どのテストでも、既にある設定ファイルの中身と更新日時が変わっていない
+- `arin-core` の依存が `serde`・`serde_json`・`thiserror`・`ts-rs` のまま(`npm run lint` の境界検査)。`cargo tree -i reqwest --target aarch64-apple-darwin` が空。TOML のクレートの版と確かめた結果が ADR-012 にある
+- `src-tauri/src/menu.rs` と `src/ui/` にキーの文字列の直書きが無い(`TabBar` の `Meta+T`・`⌘T` を含む。表の 23 行から引く)
+- 本人が T66c の (1)〜(10) を確かめた。ADR-012 が本人の了承に合わせて直っている
+
+#### 要件と受け入れ基準の対応(漏れの確認用。PRD に FR が無いので、ADR-012 の仮の受け入れ基準 AC-K で対応を取る。PRD への反映は本人の了承が要る)
+
+| AC | 受け入れ基準(要約。全文は ADR-012) | 規則(`arin-core`) | 読み込み・メニュー(Rust) | 画面 | 人間(T66c) |
+| -- | ---------------------------------- | ------------------ | ------------------------ | ---- | ---------- |
+| AC-K01 | `terminal.new-tab` を替えるとメニューの表示とキーが替わり、元のキーでは開かない | T64a | T65a、T65b | T65e、T66a | (2) |
+| AC-K02 | 画面で受けるコマンドを替えるとツリーで効き、メニューの表示・タブの「+」のツールチップと読み上げのキーも表から出る | T64a | T65b | T65e、T66a | (3) |
+| AC-K03 | 書かなかった行は既定。行を消すと既定。ファイルが無ければ既定で知らせなし | T64a、T64b | T65b、T65c | T66a | (7) |
+| AC-K04 | 問題のある行はその行だけ既定に戻り、残りは効き、ID と理由が 1 行で出る | T64a | T65b | T65e、T66a | (5) |
+| AC-K05 | TOML として読めないと起動時は既定、動作中は直前のまま、行と列が出る。設定ファイルは変わらず退避もされない | T64b | T65a、T65b、T65c | T66a(スモーク) | (6) |
+| AC-K06 | 替えたあとのメニューのキーはターミナルに渡らず、替える前のキーは渡る | T64c(既存の `keyOwner`) | — | T65e、T66a | (8) |
+| AC-K07 | 動作中に保存すると再起動せずに替わり、シェルが続く(【要確認】3 の B) | — | T65c | T65e、T66a | (2)、(4) |
+| AC-K08 | 「設定ファイルを開く…」で、無ければ見本を作って開き、あれば変えずに開く(【要確認】4 の A) | T64c | T65a、T65d | — | (1) |
+| AC-K09 | 知らせと標準エラーに ID・キーの文字列・行と列・理由だけが出る | T64a、T64b | T65a、T65b | T66a(スモーク) | (5)、(6) |
+| AC-K10 | `ARIN_STATE_DIR` の差し替え先の `settings.toml` だけを読む | T64b | T65b | T66a(スモーク) | — |
+| M3 の残り | タブの「+」の `Meta+T` の直書きを表から引く | — | — | T65e | (3) |
 
 ### M5 公証・配布(粗い分解。秘密情報を扱う作業は人間)
 
@@ -1462,6 +1650,7 @@ T56 から前倒しする範囲: 設定ファイルの置き場所と読み込�
 - [ ] T56 — 設定ファイルと破損時の回復(変更ファイル: crates/arin-core/src/settings/, crates/arin-core/src/persistence/, crates/arin-platform/src/storage/, src/terminal/xterm/, src/ui/design/ | 依存: T55)
   - 対応: FR-049、057、058、062。`settings.toml` の読み込みと検証、保存の検知と読み直し、`state.json` の退避、ライト・ダークでのコントラスト(人間が両モードを確認)
   - 注記(2026-11-15): 設定ファイルの土台(置き場所と読み込み、`SettingsFilePort`、`SettingsStore` の最小、TOML のクレート、読み直しの契機、エラーの出し方)は M4.5(T63〜T65)に前倒しした。T56 では、その土台に設定の項目(フォント・配色・スクロールバック・目印の時間)を足す。M3 で後回しにした FR-029 の「設定で移動の確認を省略できる」(`tree.confirm_move_on_drop`)もここで足す(本人の判断で M4.5 に寄せることもできる)
+  - 注記(2026-11-16、T63): 分担は ADR-012 の 7。M4.5 が作るもの: `AppPaths::settings_file()`、`SettingsFilePort` と `FsSettingsFile`(設計書の `SettingsFileStore` はこの名前にした。読むだけと、見本を無いときだけ作る口)、TOML の解析(`arin-platform`)、`SettingsLoad` と `SettingsStore` の最小(`arin-core/settings`)、`[shortcuts]` の節、状態フォルダの監視と読み直し(`settings-changed`)、設定の知らせ(`get_settings_notice`・`[arin:settings]`)、見本(`sample_settings_toml`)。T56 が足すもの: `[terminal]`・`[tree]`・`[notifications]` の節と項目ごとの検査(`SettingsValidator`)、項目が変わったときの反映(同じイベントに足す)、見本への項目の節。M4.5 の版は `[shortcuts]` 以外の節を黙って無視するので、T56 の節を先に書いた設定ファイルも読める
 - [ ] T57 — アテンション、実行中の印、タブ名、ブランチ名(変更ファイル: crates/arin-core/src/terminal/, crates/arin-platform/src/process/, crates/arin-platform/src/git/, crates/arin-platform/src/desktop/, src/ui/projects/, src/ui/terminals/ | 依存: T55)
   - 対応: FR-011、012、045、046
 - [ ] T58 — プロジェクトの操作の磨き(変更ファイル: crates/arin-core/src/project/, crates/arin-core/src/workspace/, src/ui/projects/, src/logic/keys/, src-tauri/src/menu.rs | 依存: T55)
@@ -1558,11 +1747,21 @@ T47g・T48c ──┬──→ T49a(シナリオ)──┐
 
 細かい依存(図は省略して書いた): T46c ← T46b。T47a ← T46b。T48b ← T46c・T48a。T47b ← T46c・T47a・T48b。T47d ← T48b。T47c ← T47b。T48c ← T47b。T47e ← T47b・T47d。T47f ← T47c・T47e。T47g ← T47f。T49a・T49b ← T47g・T48c。
 
-M4.5〜M6(粗い。M4.5 は 2026-11-15 の要件の追加):
+M4.5(T63 で分解し直した。T64〜T66 は親で、矢印は子タスクの間に引いた。同時に動かすのは 2 件まで。2026-11-15 の要件の追加):
 
 ```text
-T50b ──→ T63 ──→ T64 ──→ T65 ──→ T66(人間)
+T63(文書。済み)──┐
+T50b ──────────────┴──┬──→ T64a(規則)──────→ T64c(23 行目と見本)──┐
+                      └──→ T64b(結果の型)──→ T65a(読み込み)───────┴──→ T65b(起動時の反映)──┬──→ T65c(監視)──┐
+                                                                                             └──→ T65e(画面)──┴──→ T65d(開く)──┬──→ T66a(シナリオ・スモーク)──┐
+                                                                                                                                  └──→ T66b(文書)───────────────┴──→ T66c(人間)──→ T66d
+```
 
+細かい依存(図は省略して書いた): T64a・T64b ← T63・T50b。T64c ← T64a。T65a ← T64b。T65b ← T64a・T64b・T64c・T65a。T65c・T65e ← T65b。T65d ← T65c・T65e。T66a・T66b ← T65d。T66c ← T66a・T66b。T66d ← T66c。【要確認】3 が A なら T65c を外し、4 が B なら T64c と T65d を外す(前提の表)。
+
+M5〜M6(粗い):
+
+```text
 T66 ──┬──→ T51 ──→ T53(人間) ──┐
       └──→ T52 ────────────────┴──→ T54(人間)
 
@@ -1575,7 +1774,7 @@ T54 ──→ T55 ──→ T56 / T57 / T58 / T59 / T60 / T61 ──→ T62(人�
 
 ### ユニットテスト
 
-- Rust(`cargo test`、`arin-core`): 起動の仕様(T14)、OSC の走査(T23、T48)、プロジェクトと色(T29)、状態の読み書きと保存のまとめ(T30)、ストアをまたぐ操作(T32)、パス整形とシェルエスケープと除外(T38)、ファイル操作の手順(T39。偽のポート)、タイルのグリッドとページ(T46)、設定の検証と破損時の回復(T56)
+- Rust(`cargo test`、`arin-core`): 起動の仕様(T14)、OSC の走査(T23、T48)、プロジェクトと色(T29)、状態の読み書きと保存のまとめ(T30)、ストアをまたぐ操作(T32)、パス整形とシェルエスケープと除外(T38)、ファイル操作の手順(T39。偽のポート)、タイルのグリッドとページ(T46)、ショートカットの設定の規則と設定ファイルの結果(T64a・T64b・T64c)、設定の検証と破損時の回復(T56)
 - TypeScript(Vitest、`src/logic` と `src/ipc`): 通信の包みとストアの置き換え(T8)、ターミナルの管理(T16、T18)、キーの振り分け(T20)、ツリーの差分・保留・ドラッグ・メニュー(T41)
 - 検査スクリプト(`node --test`): 境界検査(T6)
 - カバレッジ: 80% を `arin-core` と `src/logic` のそれぞれで見る(T9 で仕組みを入れる)。`arin-platform`、`src-tauri`、`src/ui` は対象外
@@ -1607,7 +1806,7 @@ T54 ──→ T55 ──→ T56 / T57 / T58 / T59 / T60 / T61 ──→ T62(人�
 | M2 | 実機の体感確認 | T36 |
 | M3 | ゴミ箱の「戻す」の目視(T37)。1 週間のドッグフーディング(T45) | T37、T45 |
 | M4 | 9 枚同時表示の体感の判定、描画方式と全角幅の方式の選択 | T50a |
-| M4.5 | 設定ファイルでキーを変え、メニューバーとツリーの両方で効くことの確認 | T66 |
+| M4.5 | 設定ファイルでキーを変え、メニューバーとツリーの両方で効くこと・保存ですぐ替わりシェルが続くことの確認。ADR-012 の【要確認】と PRD への反映の判断 | T66c |
 | M5 | 証明書と API キーの用意、署名・公証の実行、別アカウントでの起動確認 | T53、T54 |
 | M6 | ライト・ダークのコントラストの確認。不満リストが空になったことの確認 | T56、T62 |
 
@@ -1639,14 +1838,14 @@ T54 ──→ T55 ──→ T56 / T57 / T58 / T59 / T60 / T61 ──→ T62(人�
 - 本計画では変更していない。下の同期は `/implementing-features` が行う
 - `docs/project.md`: コマンドと技術スタック(T13)、ストア一覧(T27、T36、T45)
 - `docs/architecture.md`: ディレクトリ構成とテスト構成(T13 で初版、以降は各マイルストーンの完了時)
-- `docs/data-model.md`: `state.json` 版 1(T36)、`settings.toml`(T62)
+- `docs/data-model.md`: `state.json` 版 1(T36)、`settings.toml`(`[shortcuts]` は T66b、ほかの節は T62)
 - `docs/development-patterns.md`: 実装中に見つけた規約と落とし穴
 - `docs/release-notarization.md`: T51 で新規作成
 
 ### output/design/
 
 - `ARCH_multi-terminal.md` §4: T1 で React 前提に直す
-- ADR-003(T1)、ADR-002・004・005・006(T2)、ADR-001(T27。M4 の実測は T49b、決定は T50b)、ADR-007(T37)、ADR-011(T46 の再分解。状態は T50b で本人の了承に合わせる)
+- ADR-003(T1)、ADR-002・004・005・006(T2)、ADR-001(T27。M4 の実測は T49b、決定は T50b)、ADR-007(T37)、ADR-011(T46 の再分解。状態は T50b で本人の了承に合わせる)、ADR-012(T63。クレートの版の追記は T65a、状態は T66d で本人の了承に合わせる)
 
 ## リスク・懸念事項
 
@@ -1671,3 +1870,8 @@ T54 ──→ T55 ──→ T56 / T57 / T58 / T59 / T60 / T61 ──→ T62(人�
 | 15 | WebGL 描画で 9 枚を同時に出すと、WebView のコンテキストの数の上限に近づく(ADR-001) | 中 | 隠したページは `setVisible(false)` でコンテキストを手放す(T47d)。T49b でコンテキストの数を記録し、本人が T50a で比べてから方式を決める |
 | 16 | タイル表示では写しを送る回数が増える(フォーカス・ページ・アテンション)。写しに通し番号が無く、順が入れ替わると表示が前に戻りうる(M2 の残りの問題) | 低 | T48c は印が立ったときだけ送る。症状が T49a・T50a で出たら通し番号を足すタスクを起こす |
 | 17 | 9 枚の検証画面は `src-tauri/tests/` の多くの結合テストの足場になっている | 中 | 撤去を画面(T49c)と Rust(T49d)に分け、T49d で足場を「一時フォルダのプロジェクト」に置き換える。テストの数が減らないことを前後で比べる |
+| 18 | M4.5 は PRD に無い要件で、ADR-012 に【要確認】が 4 つある(割り当てを外す書き方、⌘C・⌘X・⌘V、反映のタイミング、説明の置き場所) | 【要確認】 | 推奨案で計画を組んだ。回答が違えばタスクを直す(M4.5 の前提の表)。T64a の着手までに回答をもらえると手戻りが無い。PRD への反映(FR と AC-K)は T66c で本人が判断する |
+| 19 | 予約のキーの一覧(ADR-012 の 3)は手で持つので網羅できない。本人が「システム設定」で足した OS のショートカットも検査できない | 低 | 一覧に無いキーは割り当てても効かないことがある。見本に確かめ方を書く(T64c)。T66c で本人が足し引きする |
+| 20 | `toml` が macOS 向けの依存の木に入っていない、またはその版が公開から 2 週間未満の可能性(この計画の作成ではコマンドを動かしていない) | 中 | T65a の着手時に `cargo tree`・`cargo info` で確かめ、合わなければ止めて報告する(別の版を推測で選ばない。ADR-003・ADR-009) |
+| 21 | 状態フォルダの監視(T65c)は、シンボリックリンクの `settings.toml` のリンクの先の変更を拾えない。状態フォルダには `state.json` の書き込みの知らせも届く | 低 | 名前で `settings.toml` だけを読み直す。リンクの先を変えたときの対処(リンクを触る・再起動)を見本と `docs/` に書く |
+| 22 | T50b(M4 の最後)が済んでいない時点で T63 を行った。T50b は M4.5 と同じファイル(`lib.rs`・`commands/app.rs`・`src/ipc/client.ts`・生成物・スモーク)を触る | 中 | T64a・T64b の依存に T50b を入れた(前提 (h))。T50b で描画方式を設定ファイルの項目に回すと決めた場合は、その項目を T56 に置き、M4.5 には足さない |
