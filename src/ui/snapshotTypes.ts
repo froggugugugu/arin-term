@@ -1,6 +1,7 @@
 // 部品が使う写しの型。src/ui は src/ipc を import しない(境界の規則)ので、ストアの型から取り出す。
 
 import type { AppState } from "../state/appStore";
+import type { QuitConfirmation } from "../state/uiStore";
 
 /** 状態の写し。 */
 export type Snapshot = NonNullable<AppState["snapshot"]>;
@@ -12,3 +13,9 @@ export type ProjectId = ProjectCard["id"];
 export type ProjectColor = ProjectCard["color"];
 /** ペインの寸法(保存値)。 */
 export type LayoutSizes = Snapshot["layout"];
+/** タブ 1 枚ぶんのターミナル。 */
+export type TerminalTab = Snapshot["terminals"][number];
+/** ターミナルの識別子。 */
+export type TerminalTabId = TerminalTab["id"];
+/** 動作中のターミナル(削除・終了の確認に出す)。 */
+export type RunningTerminal = QuitConfirmation["running"][number];

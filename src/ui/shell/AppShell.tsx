@@ -8,12 +8,12 @@ import { DEFAULT_PANE_SIZES } from "../../logic/panes/paneLayout";
 import type { Actions } from "../../state/actions";
 import type { AppStore } from "../../state/appStore";
 import { selectedProject, shownTerminal } from "../../state/selectors";
-import { describeTerminalStatus } from "../../state/terminalStatus";
 import type { UiStore } from "../../state/uiStore";
 import type { TerminalManager } from "../../terminal/TerminalManager";
+import { QuitDialog } from "../dialogs/QuitDialog";
 import { RemoveProjectDialog } from "../dialogs/RemoveProjectDialog";
 import { ProjectCardList } from "../projects/ProjectCardList";
-import { TerminalHost } from "../terminals/TerminalHost";
+import { TerminalArea } from "../terminals/TerminalArea";
 import { VerificationGrid } from "../terminals/VerificationGrid";
 import { NoticeBar } from "./NoticeBar";
 import { PaneSplit } from "./PaneSplit";
@@ -34,17 +34,16 @@ interface AppShellProps {
 
 /**
  * ウィンドウ全体の枠(設計書 §8・§9.1)。上から順に、見出し(アプリ名・写しの版・左ペインの折りたたみ・描画方式(検証用)・
- * 起動の失敗)、知らせ(1 行)、ペインの分割(左: カード一覧とツリーのヘッダ、右: ターミナル)。削除の確認もここに置く。
- * 右ペインは表示中のターミナル(選択中のプロジェクトの表示中のタブ)を 1 枚だけ描く。タブバーとタブ 0 枚の表示は T34d。
+ * 起動の失敗)、知らせ(1 行)、ペインの分割(左: カード一覧とツリーのヘッダ、右: ターミナル領域)。削除と終了の確認もここに置く。
+ * 右ペインはタブバーと表示中のターミナル(選択中のプロジェクトの表示中のタブ)を 1 枚だけ描く(TerminalArea)。
  * 他のタブ・他のプロジェクトのターミナルは TerminalManager が隠したまま取り込みを続ける。
- * 9 枚の検証画面の指定があるときは、M1 と同じく検証画面(写しにある全部のターミナル)だけを描く。
+ * 9 枚の検証画面の指定があるときは、M1 と同じく検証画面(写しにある全部のターミナル)だけを描く。終了の確認はどちらでも出す。
  */
 export function AppShell({ store, ui, actions, terminals, verifyGrid = false }: AppShellProps) {
   const snapshot = useStore(store, (s) => s.snapshot);
   const startupError = useStore(store, (s) => s.startupError);
   const panes = usePaneSizes(snapshot?.layout ?? DEFAULT_PANE_SIZES, actions);
   const terminal = shownTerminal(snapshot) ?? undefined;
-  const status = terminal === undefined ? null : describeTerminalStatus(terminal.status);
   const collapsed = panes.sizes.sidebarCollapsed;
 
   return (
@@ -85,22 +84,12 @@ export function AppShell({ store, ui, actions, terminals, verifyGrid = false }: 
                 panes={panes}
                 cards={<ProjectCardList store={store} ui={ui} actions={actions} />}
                 tree={<TreePane project={selectedProject(snapshot)} actions={actions} />}
-                terminal={
-                  terminal !== undefined && (
-                    <div className="app-shell__terminal">
-                      {status !== null && (
-                        <p role="status" className="terminal-status" data-testid="terminal-status">
-                          {status}
-                        </p>
-                      )}
-                      <TerminalHost manager={terminals} terminalId={terminal.id} />
-                    </div>
-                  )
-                }
+                terminal={<TerminalArea store={store} actions={actions} terminals={terminals} />}
               />
               <RemoveProjectDialog store={store} ui={ui} actions={actions} />
             </>
           )}
+      <QuitDialog ui={ui} actions={actions} />
     </main>
   );
 }

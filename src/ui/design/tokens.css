@@ -21,6 +21,13 @@
   --color-notice: #fdf3d0;
   --color-notice-fg: #3d2e00;
   --shadow-popup: 0 6px 24px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.08);
+  /*
+   * ターミナルの置き場所の地。xterm.js の既定の配色(背景 #000000・文字 #ffffff)に合わせる。置き場所は行の高さの倍数とは
+   * 限らず下端に 1 行に満たない余りが出るので、余りがターミナルと違う色の帯に見えないようにする。
+   * 外観で変えない(xterm.js の配色は外観に追従しない。配色の設定は M6 の FR-049 で、そのときここも合わせる)。
+   */
+  --color-terminal-bg: #000000;
+  --color-terminal-fg: #ffffff;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -57,7 +64,7 @@
   }
 }
 
-/* プロジェクト色で薄く着色する箇所(カードのタイトル部、ツリーのヘッダ。タブは T34d)。値は palette.ts の CSS の変数。 */
+/* プロジェクト色で薄く着色する箇所(カードのタイトル部、ツリーのヘッダ、タブ)。値は palette.ts の CSS の変数。 */
 .project-tinted {
   --project-accent: var(--project-accent-light);
   background-color: var(--project-tint-light);

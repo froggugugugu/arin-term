@@ -1,0 +1,144 @@
+/* 右ペインのターミナル領域: 上にタブバー(1 行)、下に表示中のターミナルの置き場所。 */
+.terminal-area {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* タブバー。タブの列だけが横にスクロールし、「+」は右端に見えたまま。 */
+.tab-bar {
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  /* タブ 0 枚でもタブがあるときと同じ高さにする(切り替えでターミナルの位置が跳ねない)。 */
+  min-height: 26px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-pane);
+}
+
+.tab-bar__list {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+/*
+ * タブ 1 つぶん(タブと閉じるボタン)。地はプロジェクト色(.project-tinted)。
+ * 縮めずに並べ(タブ名が読めなくならないように)、入りきらない分はタブの列の横スクロールで見る。長い名前は省略する。
+ */
+.tab-bar__item {
+  display: flex;
+  flex: none;
+  align-items: center;
+  max-width: 200px;
+  border-right: 1px solid var(--color-border);
+}
+
+/* 表示中: 色だけでなく、太字と下の帯(プロジェクト色の目印)でも分かる。 */
+.tab-bar__item--selected {
+  box-shadow: inset 0 -3px 0 var(--project-accent);
+}
+
+.tab-bar__tab {
+  flex: 1;
+  min-width: 0;
+  padding: 5px var(--space-1) 5px var(--space-3);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--font-size-m);
+  text-align: left;
+  cursor: default;
+}
+
+.tab-bar__item--selected .tab-bar__tab {
+  font-weight: 600;
+}
+
+.tab-bar__label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-bar__close,
+.tab-bar__new {
+  flex: none;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+}
+
+.tab-bar__close {
+  width: 20px;
+  height: 20px;
+  margin-right: var(--space-1);
+  padding: 0;
+  font-size: var(--font-size-l);
+  opacity: 0.7;
+}
+
+.tab-bar__close:hover {
+  background: rgba(127, 127, 127, 0.25);
+  opacity: 1;
+}
+
+.tab-bar__new {
+  min-width: 32px;
+  padding: 0 var(--space-2);
+  border-left: 1px solid var(--color-border);
+  border-radius: 0;
+  font-size: var(--font-size-xl);
+}
+
+.tab-bar__new:disabled {
+  opacity: 0.4;
+}
+
+.tab-bar__tab:focus-visible,
+.tab-bar__close:focus-visible,
+.tab-bar__new:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+/* 表示中のターミナル。地はターミナルの背景色(下端の 1 行に満たない余りを目立たせない)。 */
+.terminal-area__panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--color-terminal-bg);
+  color: var(--color-terminal-fg);
+}
+
+/* タブ 0 枚・プロジェクト 0 件・選択なしの案内。 */
+.terminals-empty {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-4);
+  overflow-y: auto;
+  color: var(--color-muted);
+  font-size: var(--font-size-l);
+}
+
+.terminals-empty__title {
+  margin: 0 0 var(--space-2);
+  color: var(--color-fg);
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+}
+
+.terminals-empty__body p {
+  margin: 0;
+}

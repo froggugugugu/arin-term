@@ -31,6 +31,7 @@ import type { CommandMap, CommandName, EventMap, EventName } from "../../src/ipc
 import type { AppSnapshot } from "../../src/ipc/generated/AppSnapshot";
 import type { ProjectCardSnapshot } from "../../src/ipc/generated/ProjectCardSnapshot";
 import type { ProjectColor } from "../../src/ipc/generated/ProjectColor";
+import type { RunningTerminal } from "../../src/ipc/generated/RunningTerminal";
 import type { TerminalStatus } from "../../src/ipc/generated/TerminalStatus";
 import type { TerminalTabSnapshot } from "../../src/ipc/generated/TerminalTabSnapshot";
 
@@ -133,6 +134,16 @@ export function projectsSnapshot(projects: readonly SampleProject[], overrides: 
     });
   }
   return sampleSnapshot({ projects: cards, selectedProjectId: projects[0]?.id ?? null, terminals, ...overrides });
+}
+
+/** 終了・削除の確認に載せる動作中のターミナル 1 枚(quit-requested のイベントの中身などに使う。T34d)。 */
+export function sampleRunningTerminal(
+  projectId: string,
+  projectName: string,
+  terminalId: string,
+  label: string,
+): RunningTerminal {
+  return { terminalId, projectId, projectName, label };
 }
 
 const DEFAULT_REPLIES: TauriMockConfig = {

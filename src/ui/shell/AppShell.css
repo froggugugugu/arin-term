@@ -228,21 +228,16 @@ body {
   min-height: 0;
 }
 
-.app-shell__terminal {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-}
-
 .terminal-status {
   margin: 0;
   padding: 4px 12px;
   font-size: 12px;
 }
 
+/* ターミナルの置き場所(タブ表示と検証画面)。地はターミナルの背景色(下端の 1 行に満たない余りを目立たせない)。 */
 .terminal-host {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  background: var(--color-terminal-bg);
 }
