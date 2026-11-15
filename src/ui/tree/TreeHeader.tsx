@@ -8,6 +8,8 @@ export interface TreeHeaderRoot {
   selected: boolean;
   /** クリックでルートを選ぶ。 */
   onSelect: () => void;
+  /** ドラッグ中で、ルートへ落とせる(T43d)。 */
+  dropActive?: boolean;
 }
 
 interface TreeHeaderProps {
@@ -23,6 +25,7 @@ interface TreeHeaderProps {
  * ツリーを出しているときはルートの行(WAI-ARIA の treeitem、1 段目、常に開いている)になり、クリックでルートが選ばれる
  * (計画【仮定】1)。選択は内側の角の丸い塗りで示す(地のプロジェクト色は変えない)。
  * 右クリック(フォルダの上のメニュー。名称変更・切り取り・ゴミ箱は無効)はツリー(FileTreeView)が受ける。
+ * ドラッグ中にルートへ落とせるときは data-drop-active で強調する(TreeDrag.css)。
  */
 export function TreeHeader({ name, color, root }: TreeHeaderProps) {
   if (root === undefined) {
@@ -34,6 +37,7 @@ export function TreeHeader({ name, color, root }: TreeHeaderProps) {
   }
   const classes = ["tree-header", "tree-header--root", "project-tinted"];
   if (root.selected) classes.push("tree-header--selected");
+  if (root.dropActive === true) classes.push("tree-header--drop-target");
   return (
     <div
       id={root.id}
@@ -43,6 +47,7 @@ export function TreeHeader({ name, color, root }: TreeHeaderProps) {
       aria-level={1}
       aria-expanded={true}
       aria-selected={root.selected}
+      data-drop-active={root.dropActive === true ? "true" : undefined}
       title={name}
       style={projectColorStyle(color)}
       onClick={root.onSelect}

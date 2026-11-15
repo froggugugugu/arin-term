@@ -20,6 +20,8 @@ export interface TreeRowProps {
   renaming?: boolean;
   /** 名称変更の入力を閉じた(renaming のときだけ呼ばれる)。 */
   onRenameEnd?: ((end: InlineEditEnd, name: string) => void) | undefined;
+  /** ドラッグ中で、ここに落とせる(このフォルダへ移す・写す。T43d)。 */
+  dropActive?: boolean;
 }
 
 /** フォルダとして描く種類(フォルダへのリンクもフォルダのアイコン。開閉はしない)。 */
@@ -31,7 +33,8 @@ const isLinkKind = (kind: TreeRowValue["kind"]) => kind === "directoryLink" || k
  * (HTML として解釈させない。設計書 §12)。高さは --tree-row-height で固定(仮想スクロールの窓の計算と同じ値)。
  * 同じ props なら描き直さない(memo)。スクロールで窓が動いても、窓に残った行は描き直さない。
  * 選択の塗りの色(フォーカスの有無)は、ツリーの data-focused を CSS が見て決める(行の props にしない)。
- * 右クリックはツリー(FileTreeView)が data-path と data-kind で対象を引いて受ける。T43d はこの行に pointer のイベントを足す。
+ * 右クリックとドラッグ(pointer のイベント。T43d)はツリー(FileTreeView)が data-path と data-kind で対象を引いて受ける。
+ * ドラッグ中に落とせる先のフォルダの行は data-drop-active で強調する(TreeDrag.css)。
  * 名称変更の入力中は、名前の代わりに入力欄を出す(行の高さは変えない。T43c)。
  */
 export const TreeRow = memo(function TreeRow({
@@ -43,6 +46,7 @@ export const TreeRow = memo(function TreeRow({
   onActivate,
   renaming = false,
   onRenameEnd,
+  dropActive = false,
 }: TreeRowProps) {
   const onToggleClick = (event: MouseEvent) => {
     event.stopPropagation();
@@ -56,6 +60,7 @@ export const TreeRow = memo(function TreeRow({
   const classes = ["tree-row"];
   if (selected) classes.push("tree-row--selected");
   if (renaming) classes.push("tree-row--editing");
+  if (dropActive) classes.push("tree-row--drop-target");
 
   return (
     <div
@@ -65,6 +70,7 @@ export const TreeRow = memo(function TreeRow({
       data-testid="tree-row"
       data-path={row.path}
       data-kind={row.kind}
+      data-drop-active={dropActive ? "true" : undefined}
       aria-level={row.depth + 2}
       aria-selected={selected}
       aria-expanded={row.expandable ? row.expanded : undefined}

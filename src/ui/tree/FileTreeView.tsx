@@ -1,4 +1,5 @@
 import "./TreeView.css";
+import "./TreeDrag.css";
 
 import {
   type CSSProperties,
@@ -14,6 +15,7 @@ import {
 } from "react";
 import { useStore } from "zustand";
 
+import type { DropResult } from "../../logic/dnd/dropTarget";
 import { routeShortcutKey } from "../../logic/keys/routeShortcutKey";
 import { buildTreeMenu, type TreeMenuTarget } from "../../logic/menu/treeMenu";
 import type { TreeRow as TreeRowValue } from "../../logic/tree/treeModel";
@@ -32,17 +34,20 @@ import {
   treeMenuContextOf,
 } from "../menu/runTreeMenuCommand";
 import type { ProjectCard } from "../snapshotTypes";
+import { requestTerminalFocus } from "./dropZones";
 import { FileIcon, FolderIcon } from "./icons";
 import { type InlineEditEnd, InlineNameInput } from "./InlineNameInput";
 import { TreeHeader } from "./TreeHeader";
+import { TreeDragGhost } from "./TreeDragGhost";
 import { TreeRow } from "./TreeRow";
+import { useTreeDrag } from "./useTreeDrag";
 
 interface FileTreeViewProps {
   /** ツリーを出すプロジェクト(選択中で「見つからない」でないもの)。切り替えたら key で作り直す(スクロールを戻すため)。 */
   project: ProjectCard;
   tree: TreeStore;
   ui: UiStore;
-  actions: TreeMenuActions & Pick<Actions, "selectTreePath" | "toggleDir" | "commitInlineEdit">;
+  actions: TreeMenuActions & Pick<Actions, "selectTreePath" | "toggleDir" | "commitInlineEdit" | "dropEntry">;
 }
 
 /** 見える範囲の上下に余分に描く行の数。 */
@@ -134,7 +139,10 @@ function menuLabel(target: TreeMenuTarget, projectName: string): string {
  *   (作る先のフォルダが閉じていれば開く)。確定と Esc ではツリーにフォーカスを戻す
  * - メニュー・入力中の更新の保留(FR-037)は uiStore の状態から treeStore が決める(ここでは立てない)
  *
- * T43d は行の pointer のイベントを足す。
+ * - ドラッグ(T43d。./useTreeDrag.ts): 行を押して 4px を超えて動かすと、項目の写しをカーソルに付けて動かし、落とせる先
+ *   (フォルダの行・ヘッダ・ターミナルの置き場所)を強調する。フォルダとヘッダに落とすと移す(確認を開く)か、⌥ で写す。
+ *   ターミナルに落とすとパスを挿入し(Enter は送らない。文字列は Rust が作る)、そのターミナルにフォーカスを移す。
+ *   ドラッグ中は uiStore.setTreeDragging でツリーの更新を保留する(FR-037)
  */
 export function FileTreeView({ project, tree, ui, actions }: FileTreeViewProps) {
   const projectId = project.id;
@@ -244,6 +252,33 @@ export function FileTreeView({ project, tree, ui, actions }: FileTreeViewProps) 
     [actions, projectId],
   );
   const onSelectRoot = useCallback(() => actions.selectTreePath(""), [actions]);
+
+  const onDrop = useCallback(
+    (result: DropResult, terminalElement: HTMLElement | null) => {
+      switch (result.type) {
+        case "move":
+        case "copy":
+          void actions.dropEntry(projectId, result.source, result.destination, result.type === "copy");
+          return;
+        case "insert":
+          void actions.insertEntryPath(projectId, [result.source], result.terminalId);
+          // 続けて入力できるよう、落としたターミナルにフォーカスを移す。次の描画のフレームで移す
+          // (同じ処理の中で移すと、WebKit が押下の続きの処理でフォーカスを戻すことがある。TerminalArea と同じ)。
+          if (terminalElement !== null) requestAnimationFrame(() => requestTerminalFocus(terminalElement));
+          return;
+        case "none":
+          return;
+      }
+    },
+    [actions, projectId],
+  );
+  const drag = useTreeDrag({
+    treeRef,
+    onDragStart: onSelect,
+    onDrop,
+    setDragging: ui.getState().setTreeDragging,
+  });
+  const dropTarget = drag.view?.target ?? null;
 
   /**
    * インライン編集を閉じる。edit は入力欄を出したときの編集(別の編集に置き換わっていたら何もしない)。
@@ -359,6 +394,7 @@ export function FileTreeView({ project, tree, ui, actions }: FileTreeViewProps) 
         onActivate={onActivate}
         renaming={renaming}
         onRenameEnd={renaming ? onRenameEnd : undefined}
+        dropActive={dropTarget !== null && dropTarget === row.path}
       />,
     );
   }
@@ -381,11 +417,12 @@ export function FileTreeView({ project, tree, ui, actions }: FileTreeViewProps) 
         onBlur={onBlur}
         onKeyDown={onKeyDown}
         onContextMenu={onContextMenu}
+        onPointerDown={drag.onPointerDown}
       >
         <TreeHeader
           name={project.name}
           color={project.color}
-          root={{ id: rootId, selected: selected === "", onSelect: onSelectRoot }}
+          root={{ id: rootId, selected: selected === "", onSelect: onSelectRoot, dropActive: dropTarget === "" }}
         />
         <div
           ref={scrollerRef}
@@ -406,6 +443,9 @@ export function FileTreeView({ project, tree, ui, actions }: FileTreeViewProps) 
           )}
         </div>
       </div>
+      {drag.view !== null && (
+        <TreeDragGhost view={drag.view} ghostRef={drag.ghostRef} positionRef={drag.ghostPositionRef} />
+      )}
       {treeMenu !== null && (
         <ContextMenu
           key={`${treeMenu.x}:${treeMenu.y}:${JSON.stringify(treeMenu.target)}`}

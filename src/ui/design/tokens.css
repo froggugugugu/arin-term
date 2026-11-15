@@ -44,12 +44,26 @@
   --color-focus-ring-soft: rgba(10, 100, 216, 0.22);
   --color-text-selection: rgba(10, 100, 216, 0.25);
   /*
+   * ツリーのドラッグ(Finder にならう)。落とせる先はアクセント色の淡い塗りと細い輪、掴んだ項目の写しは半透明の札と
+   * 控えめな影、⌥ のコピーの印は小さな緑の丸に白い「+」。
+   */
+  --color-drop-target-bg: rgba(10, 100, 216, 0.1);
+  --color-drop-target-ring: rgba(10, 100, 216, 0.75);
+  --color-drag-ghost-bg: rgba(255, 255, 255, 0.82);
+  --color-drag-ghost-fg: #1d1d1f;
+  --shadow-drag-ghost: 0 3px 10px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.14);
+  --color-copy-badge: #2fb350;
+  --color-copy-badge-fg: #ffffff;
+  /*
    * ターミナルの置き場所の地。xterm.js の既定の配色(背景 #000000・文字 #ffffff)に合わせる。置き場所は行の高さの倍数とは
    * 限らず下端に 1 行に満たない余りが出るので、余りがターミナルと違う色の帯に見えないようにする。
    * 外観で変えない(xterm.js の配色は外観に追従しない。配色の設定は M6 の FR-049 で、そのときここも合わせる)。
    */
   --color-terminal-bg: #000000;
   --color-terminal-fg: #ffffff;
+  /* ターミナルの置き場所へ落とせるときの重ね(地が外観によらず黒なので、外観で変えない明るめのアクセント色)。 */
+  --color-terminal-drop-overlay: rgba(76, 155, 255, 0.1);
+  --color-terminal-drop-ring: rgba(76, 155, 255, 0.7);
 
   --space-1: 4px;
   --space-2: 8px;
@@ -109,6 +123,13 @@
     --color-field-fg: #f5f5f7;
     --color-focus-ring-soft: rgba(76, 155, 255, 0.28);
     --color-text-selection: rgba(76, 155, 255, 0.4);
+    --color-drop-target-bg: rgba(76, 155, 255, 0.16);
+    --color-drop-target-ring: rgba(76, 155, 255, 0.8);
+    --color-drag-ghost-bg: rgba(58, 58, 62, 0.82);
+    --color-drag-ghost-fg: #f5f5f7;
+    --shadow-drag-ghost: 0 3px 12px rgba(0, 0, 0, 0.45), 0 0 0 0.5px rgba(255, 255, 255, 0.16);
+    --color-copy-badge: #30d158;
+    --color-copy-badge-fg: #ffffff;
   }
 }
 
