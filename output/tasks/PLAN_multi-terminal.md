@@ -502,7 +502,7 @@ T29〜T35 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 不可
   - 先に書くテスト(偽 PTY): `タブを閉じるとそのセッションのスレッドが抜け一覧から消える`、`シェルが終わるとタブが閉じセッションが解放される`、`書き込みが止まったままのタブを閉じても他のコマンドが止まらず_書き込みが戻ったら終わる`、`終了の処理のあとの接続はシェルを起動しない`、`再接続で寸法を反映できなかったら応答でそう返す`、`バイト列の入力がそのまま書かれる`、`動作中の一覧は前面がシェル以外のものだけ`、`0_枚のプロジェクトに新しいタブを開ける`。実 PTY(`session_pty.rs`): `2_つのプロジェクトで_1_枚ずつ動かし片方を閉じてももう片方が入出力を続ける`(NFR-006)。Vitest: 新しいコマンドの包みが正しい名前と引数で届く
   - 検証: `npm test && npm run lint && npm run app && npm run smoke`
-- [ ] T33c — プロジェクトのコマンド(登録、選択、削除、色、再リンク、パスのコピー)(変更ファイル: src-tauri/src/commands/project.rs, src-tauri/src/commands/mod.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, Cargo.toml, Cargo.lock, src-tauri/tests/project_commands.rs, crates/arin-core/src/workspace/, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/ipc/client.ts, src/ipc/client.test.ts, output/design/ADR_009_m2-platform-deps.md | 依存: T33b)
+- [x] T33c — プロジェクトのコマンド(登録、選択、削除、色、再リンク、パスのコピー)(変更ファイル: src-tauri/src/commands/project.rs, src-tauri/src/commands/mod.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, Cargo.toml, Cargo.lock, src-tauri/tests/project_commands.rs, crates/arin-core/src/workspace/, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/ipc/client.ts, src/ipc/client.test.ts, output/design/ADR_009_m2-platform-deps.md | 依存: T33b)
   - 対応: FR-001(ダイアログ、ドロップ)、FR-002、FR-003、FR-007(再リンク)、FR-010、FR-059(色の変更)、FR-064、【仮定】6・7・8
   - ダイアログ: `tauri-plugin-dialog`(正確な版。公開から 2 週間未満を避ける)を Rust から呼ぶ。【要確認】このプラグインが `tauri-plugin-fs` を引き込むかを `cargo tree` で確かめる。引き込むなら、画面に何の権限も与えないこと(`capabilities/default.json` を変えない)を確かめて ADR-009 に書く。設計書 §12 は「ファイル操作のプラグインを入れない」としているので、`objc2-app-kit` の `NSOpenPanel` を直接呼ぶ案と並べて本人に選んでもらう
   - ドロップ: ウィンドウのドラッグ・ドロップのイベント(Rust)で、フォルダだけを登録する

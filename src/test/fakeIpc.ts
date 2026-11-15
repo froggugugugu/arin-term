@@ -99,6 +99,12 @@ export function createFakeIpc(handlers: Partial<FakeHandlers> = {}): FakeIpc {
     new_terminal: () => "terminal-new",
     close_terminal: () => null,
     select_terminal: () => null,
+    add_project_by_dialog: () => ({ kind: "cancelled" }),
+    select_project: () => null,
+    remove_project: () => ({ kind: "removed" }),
+    relink_project: () => false,
+    set_project_color: () => null,
+    copy_project_path: () => null,
     ...handlers,
   };
   const calls: RecordedCall[] = [];

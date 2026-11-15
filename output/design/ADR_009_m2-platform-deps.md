@@ -59,3 +59,36 @@ M1 までの `arin-platform` の依存は `portable-pty` だけだった。外�
 - Tauri を上げたら、上の 5 つが同じ版のままか(`Cargo.lock` に 2 つの版が載らないか)を確かめ、ずれたら Tauri の版に合わせて上げる
 - 版の公開日はこの ADR では確かめていない。どれも M0(2026-11-14)の時点で Tauri の依存として `Cargo.lock` に入っていた版
 - 見直す条件: ブックマークや `F_GETPATH` の動作が OS の更新で変わったとき、外付け・ネットワーク・iCloud Drive のフォルダで問題が出たとき(未確認)
+
+## 追記(T33c、2026-11-15): フォルダ選択のダイアログは `NSOpenPanel` を直接呼ぶ
+
+### 調べたこと
+
+- `tauri-plugin-dialog` の Tauri 2 系の最新は 2.8.4(2026-10-28 公開。今日 2026-11-15 から 2 週間以上たつ。3.0.0 は alpha だけ)。crates.io の依存の一覧(`/api/v1/crates/tauri-plugin-dialog/2.8.4/dependencies`)では、**`tauri-plugin-fs` ^2.7.1 が optional でない通常の依存**で、macOS では `rfd` ^0.17 も通常の依存だった。プラグインを足すとファイル操作のプラグインが必ず組み込まれる
+- 設計書 §12 は「Tauri のファイル操作のプラグインを入れない」としているので、司令塔の決定どおりプラグインは使わない(`cargo tree` での一時の追加はしていない。依存の一覧で結論が出たため)
+- Tauri(wry)は `objc2-app-kit` 0.3.2 の `NSOpenPanel`・`NSSavePanel`・`NSPanel`・`NSWindow`・`NSResponder`・`NSApplication` の feature をすでに有効にしていた(`cargo tree -e features -i objc2-app-kit --target aarch64-apple-darwin` で確認)
+
+### 判断
+
+| クレート | 版 | 足した feature | 使うところ | 理由 | タスク |
+| -------- | -- | -------------- | ---------- | ---- | ------ |
+| `objc2-app-kit` | =0.3.2(変えない) | `NSOpenPanel`・`NSSavePanel`・`NSPanel`・`NSWindow`・`NSResponder`・`NSApplication` | `desktop/folder_panel.rs` | フォルダ選択のダイアログ(FR-001 の登録、FR-007 の再リンク)。`runModal` は `NSApplication`、`NSModalResponseOK` は `NSWindow` の feature にある | T33c |
+
+- ダイアログはアプリ全体のモーダル(`runModal`)で、フォルダだけ・1 つだけ選べる。メインスレッドでなければ開かずに失敗する(`NotMainThread`)。`src-tauri` はコマンドを待ってよいスレッドで受け、`run_on_main_thread` で開いて結果を待つ
+- 選んだパスは画面を経由させず、Rust の中で正規化・ブックマークの作成・登録まで行う(設計書 §12)。画面のコマンドは「ダイアログを開いて」と頼むだけで、パスを受け取らない。capabilities は変えていない
+- `unsafe` は増えていない(使ったメソッドはどれも objc2-app-kit が安全な関数として包んでいる)
+- `src-tauri` の開発用の依存に `serde`(=1.0.229。ワークスペースにすでにある)を足した(テストでコマンドの戻り値を型で読み戻すため)
+
+### 確かめたこと(依存)
+
+- `git diff Cargo.lock` は `arin`(`src-tauri`)の依存の一覧に `serde` の 1 行が増えただけで、新しい `[[package]]` は 0 件
+- `cargo tree -i reqwest --target aarch64-apple-darwin` は該当なし
+- ダイアログそのものは GUI を出すので自動テストでは開いていない(メインスレッドの外で失敗することだけを確かめた)。実機での確認は T36(人間)
+
+### 検討した代替案
+
+| 案 | 採らなかった理由 |
+| -- | ---------------- |
+| `tauri-plugin-dialog` 2.8.4 を Rust から呼び、画面には権限を与えない | `tauri-plugin-fs` と `rfd` が必ず組み込まれ、設計書 §12 に反する。権限を与えなくても、ファイル操作のコマンドがアプリに入る |
+| `rfd` を直接使う | `Cargo.lock` に無く、新しいクレートが増える。中身は同じ `NSOpenPanel` |
+| 画面の `<input type="file" webkitdirectory>` | 選んだパスが画面を経由する(設計書 §12)。WKWebView では絶対パスが得られない |

@@ -1,9 +1,13 @@
 // Rust との通信の型付きの包み(設計書 §4・§5.2)。
 // 通信の実体(IpcTransport)は外から受け取る。本物は ./tauri.ts、テストでは src/test/fakeIpc.ts を渡す。
 
+import type { AddProjectOutcome } from "./generated/AddProjectOutcome";
 import type { AppSnapshot } from "./generated/AppSnapshot";
 import type { ConnectOutcome } from "./generated/ConnectOutcome";
 import type { LaunchOptions } from "./generated/LaunchOptions";
+import type { ProjectColor } from "./generated/ProjectColor";
+import type { ProjectId } from "./generated/ProjectId";
+import type { RemoveProjectOutcome } from "./generated/RemoveProjectOutcome";
 import type { TerminalId } from "./generated/TerminalId";
 
 /**
@@ -33,6 +37,12 @@ export interface CommandMap {
   select_terminal: { args: { terminalId: TerminalId }; result: null };
   ack_terminal_output: { args: { terminalId: TerminalId; bytes: number }; result: null };
   resize_terminal: { args: { terminalId: TerminalId; rows: number; cols: number }; result: null };
+  add_project_by_dialog: { args: undefined; result: AddProjectOutcome };
+  select_project: { args: { projectId: ProjectId }; result: null };
+  remove_project: { args: { projectId: ProjectId; confirmed: boolean }; result: RemoveProjectOutcome };
+  relink_project: { args: { projectId: ProjectId }; result: boolean };
+  set_project_color: { args: { projectId: ProjectId; color: ProjectColor }; result: null };
+  copy_project_path: { args: { projectId: ProjectId }; result: null };
 }
 
 export type CommandName = keyof CommandMap;
@@ -120,6 +130,24 @@ export interface ArinIpc {
   ackTerminalOutput(id: TerminalId, bytes: number): Promise<void>;
   /** 寸法(行・桁)を変える。 */
   resizeTerminal(id: TerminalId, rows: number, cols: number): Promise<void>;
+  /**
+   * Rust がフォルダ選択のダイアログを開き、選ばれたフォルダを登録して選び、タブを 1 枚開く。
+   * 選んだパスは画面に届かない。登録済みのフォルダなら増やさずそれを選ぶ(alreadyRegistered)。取り消しは cancelled。
+   */
+  addProjectByDialog(): Promise<AddProjectOutcome>;
+  /** プロジェクトを選ぶ。ターミナルには触れない。 */
+  selectProject(id: ProjectId): Promise<void>;
+  /**
+   * プロジェクトを一覧から外す(フォルダは消さない)。動作中のターミナルがあり confirmed が false なら、
+   * 何も変えずに needsConfirmation と一覧を返す(確認したら confirmed を true にして呼び直す)。
+   */
+  removeProject(id: ProjectId, confirmed: boolean): Promise<RemoveProjectOutcome>;
+  /** Rust がフォルダ選択のダイアログを開き、選ばれたフォルダにつなぎ直す。つなぎ直したら true、取り消しは false。 */
+  relinkProject(id: ProjectId): Promise<boolean>;
+  /** プロジェクトの色を変える。 */
+  setProjectColor(id: ProjectId, color: ProjectColor): Promise<void>;
+  /** ルートの絶対パスを Rust がクリップボードに書く。選択は変えない。パスは画面に届かない。 */
+  copyProjectPath(id: ProjectId): Promise<void>;
 }
 
 /**
@@ -184,5 +212,11 @@ export function createIpc(transport: IpcTransport): ArinIpc {
       done(invoke("ack_terminal_output", { terminalId, bytes })),
     resizeTerminal: (terminalId, rows, cols) =>
       done(invoke("resize_terminal", { terminalId, rows, cols })),
+    addProjectByDialog: () => invoke("add_project_by_dialog", undefined),
+    selectProject: (projectId) => done(invoke("select_project", { projectId })),
+    removeProject: (projectId, confirmed) => invoke("remove_project", { projectId, confirmed }),
+    relinkProject: (projectId) => invoke("relink_project", { projectId }),
+    setProjectColor: (projectId, color) => done(invoke("set_project_color", { projectId, color })),
+    copyProjectPath: (projectId) => done(invoke("copy_project_path", { projectId })),
   };
 }

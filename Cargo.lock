@@ -53,6 +53,7 @@ version = "0.1.0"
 dependencies = [
  "arin-core",
  "arin-platform",
+ "serde",
  "serde_json",
  "tauri",
  "tauri-build",

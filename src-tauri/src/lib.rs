@@ -2,7 +2,8 @@
 //!
 //! ここでは部品を生成して渡すことだけを行い、規則を書かない。
 //! 置き場所と起動の通知先を管理状態に登録し、起動時に状態ファイルを読んで(`persistence.rs`)`Workspace` と
-//! セッション管理と保存のスレッドを作って登録し、コマンドとメニューバー(`menu.rs`)を登録して tauri.conf.json のウィンドウを 1 枚出す。
+//! セッション管理と保存のスレッドとプロジェクトの操作(`projects.rs`)を作って登録し、コマンドとメニューバー(`menu.rs`)を登録して
+//! tauri.conf.json のウィンドウを 1 枚出す。Finder からのドロップは `lifecycle.rs` が受ける。
 
 mod commands;
 pub mod diagnostics;
@@ -10,6 +11,7 @@ pub mod launch;
 pub mod lifecycle;
 pub mod menu;
 pub mod persistence;
+pub mod projects;
 pub mod sessions;
 pub mod verify_log;
 
@@ -26,6 +28,7 @@ pub use crate::commands::app::SNAPSHOT_EVENT;
 use crate::launch::LaunchConfig;
 use crate::lifecycle::{FirstOutputNotice, ReadyNotice};
 use crate::persistence::{Persistence, PersistencePorts, load_startup};
+use crate::projects::{FolderPicker, NativeFolderPicker, ProjectPorts, Projects};
 use crate::sessions::{SessionConfig, SessionRegistry, ShellDefaults, ShellProbe};
 
 /// アプリの組み立て。ランタイムを型引数で受け取り、テストでは模擬ランタイムに差し替える。
@@ -60,6 +63,18 @@ pub fn builder_with_ports<R: Runtime>(
     pty: Arc<dyn PtyPort>,
     probe: ShellProbe,
     ports: PersistencePorts,
+) -> Builder<R> {
+    builder_with_project_ports(launch, pty, probe, ports, ProjectPorts::native())
+}
+
+/// `builder_with_ports` に加えて、プロジェクトの操作のポート(乱数・ペーストボード・フォルダ選択のダイアログ)も
+/// 差し替えて組み立てる(テスト用)。フォルダの正規化とブックマークは `ports` のものを使う。
+pub fn builder_with_project_ports<R: Runtime>(
+    launch: LaunchConfig,
+    pty: Arc<dyn PtyPort>,
+    probe: ShellProbe,
+    ports: PersistencePorts,
+    project_ports: ProjectPorts,
 ) -> Builder<R> {
     let ready = ReadyNotice::new(launch.ready_marker().map(ToOwned::to_owned));
     let first_output = FirstOutputNotice::new(launch.terminal_marker().map(ToOwned::to_owned));
@@ -121,6 +136,18 @@ pub fn builder_with_ports<R: Runtime>(
             if needs_save {
                 persistence.mark_changed();
             }
+            let picker: Arc<dyn FolderPicker> = project_ports
+                .picker
+                .clone()
+                .unwrap_or_else(|| Arc::new(NativeFolderPicker::new(app.handle().clone())));
+            app.manage(Projects::new(
+                sessions.clone(),
+                Arc::clone(&ports.roots),
+                Arc::clone(&ports.bookmarks),
+                Arc::clone(&project_ports.ids),
+                Arc::clone(&project_ports.pasteboard),
+                picker,
+            ));
             app.manage(sessions);
             app.manage(persistence);
             Ok(())
@@ -138,6 +165,12 @@ pub fn builder_with_ports<R: Runtime>(
             commands::terminal::new_terminal,
             commands::terminal::close_terminal,
             commands::terminal::select_terminal,
+            commands::project::add_project_by_dialog,
+            commands::project::select_project,
+            commands::project::remove_project,
+            commands::project::relink_project,
+            commands::project::set_project_color,
+            commands::project::copy_project_path,
         ])
 }
 

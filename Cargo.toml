@@ -34,7 +34,9 @@ base64 = "=0.23.1"
 libc = "=0.2.191"
 # ペーストボードに文字列を書く(NSPasteboard。FR-064、設計書 §1.4 #19)。使うのは arin-platform/src/desktop/ だけ。
 # Tauri がすでに同じ版・同じ feature で使っているので、Cargo.lock に新しいクレートは増えない。
-objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSPasteboard"] }
+# フォルダ選択のダイアログ(NSOpenPanel。FR-001・FR-007)の feature も、Tauri(wry)がすでに同じものを有効にしている(ADR-009)。
+# tauri-plugin-dialog は tauri-plugin-fs を外せない依存に持つので使わない(設計書 §12)。
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSPasteboard", "NSOpenPanel", "NSSavePanel", "NSPanel", "NSWindow", "NSResponder", "NSApplication"] }
 
 # リリースのプロファイルに panic = "abort" を書かない。
 # 1 本のスレッドの異常でアプリ全体を落とさないため(NFR-006)。

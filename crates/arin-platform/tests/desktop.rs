@@ -60,3 +60,14 @@ fn スレッドをまたいで書ける() {
     });
     assert_eq!(board.0.read_text(), Some("from thread".to_owned()));
 }
+
+/// フォルダ選択のダイアログ(T33c)。ダイアログそのものは GUI を出すので自動テストでは開かない。
+/// メインスレッドの外からは開かずに失敗することだけを確かめる(別のスレッドを明示的に起こして呼ぶ)。
+#[test]
+fn フォルダ選択のダイアログはメインスレッドの外では開かずに失敗する() {
+    let result = std::thread::spawn(|| arin_platform::desktop::choose_folder("追加"))
+        .join()
+        .expect("スレッドが panic した");
+
+    assert_eq!(result, Err(arin_platform::desktop::NotMainThread));
+}

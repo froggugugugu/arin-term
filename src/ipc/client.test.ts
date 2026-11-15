@@ -130,6 +130,71 @@ describe("タブの操作とバイト列の入力(T33b)", () => {
   });
 });
 
+describe("プロジェクトの操作(T33c)", () => {
+  const PROJECT = "3f2b8c1e-4d5a-4b6c-8d7e-9f0a1b2c3d4e";
+
+  it("フォルダの追加は add_project_by_dialog を引数なしで呼び、結果をそのまま返す(パスは受け取らない)", async () => {
+    const fake = createFakeIpc({ add_project_by_dialog: () => ({ kind: "added", projectId: PROJECT }) });
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.addProjectByDialog()).resolves.toEqual({ kind: "added", projectId: PROJECT });
+
+    expect(fake.calls).toEqual([{ command: "add_project_by_dialog", args: undefined }]);
+  });
+
+  it("選択・色の変更・パスのコピーはそれぞれのコマンドに camelCase の引数で届く", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.selectProject(PROJECT)).resolves.toBeUndefined();
+    await expect(ipc.setProjectColor(PROJECT, "teal")).resolves.toBeUndefined();
+    await expect(ipc.copyProjectPath(PROJECT)).resolves.toBeUndefined();
+
+    expect(fake.calls).toEqual([
+      { command: "select_project", args: { projectId: PROJECT } },
+      { command: "set_project_color", args: { projectId: PROJECT, color: "teal" } },
+      { command: "copy_project_path", args: { projectId: PROJECT } },
+    ]);
+  });
+
+  it("削除は remove_project に確認の有無を渡し、確認が要るときは動作中の一覧を返す", async () => {
+    const running = [{ terminalId: "terminal-1", projectId: PROJECT, projectName: "app", label: "ターミナル 1" }];
+    const fake = createFakeIpc({
+      remove_project: ({ confirmed }) =>
+        confirmed ? { kind: "removed" } : { kind: "needsConfirmation", running },
+    });
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.removeProject(PROJECT, false)).resolves.toEqual({ kind: "needsConfirmation", running });
+    await expect(ipc.removeProject(PROJECT, true)).resolves.toEqual({ kind: "removed" });
+
+    expect(fake.calls).toEqual([
+      { command: "remove_project", args: { projectId: PROJECT, confirmed: false } },
+      { command: "remove_project", args: { projectId: PROJECT, confirmed: true } },
+    ]);
+  });
+
+  it("再リンクは relink_project を呼び、つなぎ直したか(取り消しなら false)を返す", async () => {
+    const fake = createFakeIpc({ relink_project: () => false });
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.relinkProject(PROJECT)).resolves.toBe(false);
+
+    expect(fake.calls).toEqual([{ command: "relink_project", args: { projectId: PROJECT } }]);
+  });
+
+  it("プロジェクトの操作の失敗はそのまま呼び出し元に返す", async () => {
+    const fake = createFakeIpc({
+      relink_project: () => {
+        throw "このフォルダはプロジェクト x として登録済み";
+      },
+    });
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.relinkProject(PROJECT)).rejects.toBe("このフォルダはプロジェクト x として登録済み");
+  });
+});
+
 describe("connectTerminal", () => {
   it("接続の応答(寸法を反映したか)を connected で返す", async () => {
     const fake = createFakeIpc({ connect_terminal: () => ({ sizeApplied: false }) });

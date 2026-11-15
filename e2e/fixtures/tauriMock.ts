@@ -83,6 +83,12 @@ const DEFAULT_REPLIES: TauriMockConfig = {
   new_terminal: { ok: "terminal-new" },
   close_terminal: { ok: null },
   select_terminal: { ok: null },
+  add_project_by_dialog: { ok: { kind: "cancelled" } },
+  select_project: { ok: null },
+  remove_project: { ok: { kind: "removed" } },
+  relink_project: { ok: false },
+  set_project_color: { ok: null },
+  copy_project_path: { ok: null },
 };
 
 /** 画面のページの中で、偽の Rust 側が記録を置く場所(テストの側からだけ読む)。 */

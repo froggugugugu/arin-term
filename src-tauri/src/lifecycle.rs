@@ -1,18 +1,22 @@
 //! 起動まわり(設計書 §4 の `lifecycle.rs`)。
 //!
-//! 画面からの準備完了の通知を受けたときの処理と、ウィンドウが前面でなくなったときの保存、アプリの終了時の後片付けを置く。
+//! 画面からの準備完了の通知を受けたときの処理と、ウィンドウが前面でなくなったときの保存、Finder からのドロップでの登録、
+//! アプリの終了時の後片付けを置く。
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use tauri::{AppHandle, Manager, RunEvent, Runtime, WindowEvent};
+use tauri::{AppHandle, DragDropEvent, Manager, RunEvent, Runtime, WindowEvent};
 
 use crate::persistence::Persistence;
+use crate::projects::Projects;
 use crate::sessions::SessionRegistry;
 
 /// アプリのイベントループのイベントを受ける(`run` に渡す)。
 ///
 /// - ウィンドウが前面でなくなったら、保存できていない変更を待たずに書く(設計書 §6.2「書き込みの契機」)
+/// - ウィンドウに Finder から落とされたら、フォルダだけを登録する(FR-001、計画書 M2 の【仮定】7)。
+///   フォルダを調べるのに待つことがあるので、メインスレッドの外で行う
 /// - 終了するときは、状態を書き終えてから、全ターミナルのシェルを終わらせる(PTY を残さない)
 pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
     match event {
@@ -20,6 +24,13 @@ pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
             event: WindowEvent::Focused(focused),
             ..
         } => on_window_focus_changed(app, focused),
+        RunEvent::WindowEvent {
+            event: WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }),
+            ..
+        } => {
+            let app = app.clone();
+            tauri::async_runtime::spawn_blocking(move || on_paths_dropped(&app, paths));
+        }
         RunEvent::Exit => {
             if let Some(persistence) = app.try_state::<Persistence>() {
                 persistence.shutdown();
@@ -36,6 +47,14 @@ pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
 pub fn on_window_focus_changed<R: Runtime>(app: &AppHandle<R>, focused: bool) {
     if !focused && let Some(persistence) = app.try_state::<Persistence>() {
         persistence.flush();
+    }
+}
+
+/// ウィンドウに落とされたパスのうち、フォルダだけを順に登録する(ファイル・無いものは無視する。FR-001、【仮定】7)。
+/// 最後に登録した(または既存を選んだ)ものが選択中になる。フォルダを調べるのに待つことがあるので、メインスレッドから呼ばない。
+pub fn on_paths_dropped<R: Runtime>(app: &AppHandle<R>, paths: Vec<PathBuf>) {
+    if let Some(projects) = app.try_state::<Projects>() {
+        projects.add_dropped(&paths);
     }
 }
 

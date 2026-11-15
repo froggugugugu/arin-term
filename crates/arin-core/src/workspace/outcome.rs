@@ -40,6 +40,52 @@ pub enum RemoveOutcome {
     },
 }
 
+/// 削除のコマンド(`remove_project`)の応答(FR-003)。閉じたタブの ID は画面に返さない(写しで届く)。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum RemoveProjectOutcome {
+    /// 動作中のターミナルがあるので確認が要る。何も変えていない。画面が確認を出し、確認したら `confirmed` を真にして呼び直す。
+    NeedsConfirmation {
+        /// そのプロジェクトの動作中のターミナル(タブの順)。
+        running: Vec<RunningTerminal>,
+    },
+    /// 一覧から外した(フォルダには触れていない)。
+    Removed,
+}
+
+impl From<&RemoveOutcome> for RemoveProjectOutcome {
+    fn from(outcome: &RemoveOutcome) -> Self {
+        match outcome {
+            RemoveOutcome::NeedsConfirmation(running) => Self::NeedsConfirmation {
+                running: running.clone(),
+            },
+            RemoveOutcome::Removed { .. } => Self::Removed,
+        }
+    }
+}
+
+/// フォルダを登録するコマンド(`add_project_by_dialog`)の応答(FR-001・FR-010)。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum AddProjectOutcome {
+    /// 登録して選び、タブを 1 枚開いた。
+    Added {
+        /// 登録したプロジェクト。
+        project_id: ProjectId,
+    },
+    /// 同じフォルダが登録済みだったので、増やさずにそれを選んだ(失敗ではない)。
+    AlreadyRegistered {
+        /// 選んだ既存のプロジェクト。
+        project_id: ProjectId,
+    },
+    /// ダイアログが取り消された。何も変えていない。
+    Cancelled,
+}
+
 /// 動作中のターミナル 1 枚(削除と終了の確認に出す。FR-003・FR-063)。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]

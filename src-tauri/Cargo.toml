@@ -28,6 +28,8 @@ tauri = { workspace = true }
 tauri = { workspace = true, features = ["test"] }
 # コマンドの引数(JSON)を組み立てる。arin-core が既に使っている版と同じ。
 serde_json = { workspace = true }
+# コマンドの戻り値を型で読み戻す(DeserializeOwned)。arin-core が既に使っている版と同じ。
+serde = { workspace = true }
 
 # macOS ではメニューの部品をメインスレッドでしか作れない。標準のテストハーネスは
 # テストを別スレッドで走らせるため、このテストは自前の main で(メインスレッドで)走らせる。
@@ -73,4 +75,10 @@ name = "perf_sessions"
 # 1 つのプロセスで模擬のアプリを順に組み立てて走らせる(テストごとに一時の状態フォルダを分ける)。
 [[test]]
 name = "app_persistence"
+harness = false
+
+# プロジェクトのコマンド(登録・選択・削除・色・再リンク・パスのコピー、ドロップ。T33c)。理由は app_builder と同じ。
+# ダイアログは偽物、ペーストボードは名前付きのもの(ユーザーのクリップボードに触れない)を使う。
+[[test]]
+name = "project_commands"
 harness = false

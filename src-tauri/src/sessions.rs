@@ -30,12 +30,14 @@ use std::time::{Duration, Instant};
 
 use arin_core::persistence::codec::PersistedState;
 use arin_core::ports::{Foreground, PtyError, PtyPort, PtySession, SpawnedPty};
+use arin_core::project::{ProjectColor, ProjectError, ProjectId, RootReference};
 use arin_core::terminal::{
     ExitAction, FlowControl, OUTPUT_BATCH_MAX_BYTES, OUTPUT_BATCH_WINDOW_MS, OUTPUT_HIGH_WATER,
     OUTPUT_LOW_WATER, OscScanner, OutputBatch, TerminalError, TerminalId, validate_size,
 };
 use arin_core::workspace::{
-    AppSnapshot, ConnectOutcome, ConnectPlan, RunningTerminal, Workspace, WorkspaceError,
+    AddProjectOutcome, AppSnapshot, ConnectOutcome, ConnectPlan, RemoveOutcome,
+    RemoveProjectOutcome, RunningTerminal, Workspace, WorkspaceError,
 };
 
 use crate::verify_log::{FlowRecorder, VerifyConfig, VerifyRecord};
@@ -143,6 +145,12 @@ impl From<TerminalError> for SessionError {
 impl From<WorkspaceError> for SessionError {
     fn from(e: WorkspaceError) -> Self {
         Self::Workspace(e)
+    }
+}
+
+impl From<ProjectError> for SessionError {
+    fn from(e: ProjectError) -> Self {
+        Self::Workspace(WorkspaceError::Project(e))
     }
 }
 
@@ -552,6 +560,103 @@ impl SessionRegistry {
             .map(|(id, _)| id)
             .collect();
         lock(&self.inner.workspace).running_terminals(&running)
+    }
+
+    /// フォルダをプロジェクトとして登録し、選んでタブを 1 枚開く(FR-001。T33c)。同じフォルダが登録済みなら増やさず
+    /// それを選ぶ(FR-010)。`root` のパスは正規化したもの、`id` は乱数から作ったものを渡す。
+    ///
+    /// # Errors
+    ///
+    /// パスが使えないとき、ゴミ箱の中のとき、同じ ID があるとき(`ProjectError::DuplicateId`。呼び出し側が取り直す)。
+    pub fn register_project(
+        &self,
+        id: ProjectId,
+        root: RootReference,
+    ) -> Result<AddProjectOutcome, SessionError> {
+        let outcome = lock(&self.inner.workspace).register_project(id, root)?;
+        self.notify();
+        Ok(outcome)
+    }
+
+    /// プロジェクトを選ぶ(FR-002)。ターミナルとセッションには触れない(FR-042)。
+    ///
+    /// # Errors
+    ///
+    /// その ID のプロジェクトが無いとき。
+    pub fn select_project(&self, id: &ProjectId) -> Result<(), SessionError> {
+        lock(&self.inner.workspace).select_project(id)?;
+        self.notify();
+        Ok(())
+    }
+
+    /// 色を変える(FR-059)。
+    ///
+    /// # Errors
+    ///
+    /// その ID のプロジェクトが無いとき。
+    pub fn set_project_color(
+        &self,
+        id: &ProjectId,
+        color: ProjectColor,
+    ) -> Result<(), SessionError> {
+        lock(&self.inner.workspace).set_project_color(id, color)?;
+        self.notify();
+        Ok(())
+    }
+
+    /// 本人が選んだフォルダにつなぎ直す(FR-007)。タブは開かない。
+    ///
+    /// # Errors
+    ///
+    /// その ID が無いとき、パスが使えないとき、別のプロジェクトのフォルダと同じとき。何も変えない。
+    pub fn relink_project(&self, id: &ProjectId, root: RootReference) -> Result<(), SessionError> {
+        lock(&self.inner.workspace).relink_project(id, root)?;
+        self.notify();
+        Ok(())
+    }
+
+    /// ルートの絶対パス(FR-064 のコピー用)。選択は変えない。
+    ///
+    /// # Errors
+    ///
+    /// その ID のプロジェクトが無いとき。
+    pub fn project_root_path(&self, id: &ProjectId) -> Result<PathBuf, SessionError> {
+        Ok(lock(&self.inner.workspace).project_root_path(id)?)
+    }
+
+    /// プロジェクトを一覧から外す(FR-003。フォルダには触れない)。そのプロジェクトに動作中のターミナル
+    /// (`running_terminals`)があり `confirmed` が偽なら、何も変えずに確認を求める。外したらそのタブのセッションを終わらせる。
+    ///
+    /// シェルを終わらせるのに 1 枚につき最大でおよそ 200ms 待つことがある。メインスレッドから呼ばない。
+    ///
+    /// # Errors
+    ///
+    /// その ID のプロジェクトが無いとき。
+    pub fn remove_project(
+        &self,
+        id: &ProjectId,
+        confirmed: bool,
+    ) -> Result<RemoveProjectOutcome, SessionError> {
+        let running: Vec<TerminalId> = self
+            .running_terminals()
+            .into_iter()
+            .map(|t| t.terminal_id)
+            .collect();
+        let outcome = lock(&self.inner.workspace).remove_project(id, &running, confirmed)?;
+        let reply = RemoveProjectOutcome::from(&outcome);
+        if let RemoveOutcome::Removed { terminals } = outcome {
+            self.end_sessions(&terminals);
+        }
+        Ok(reply)
+    }
+
+    /// Workspace から外したタブのセッションを一覧から外し、写しを送ってから終わらせる(待つのはロックの外)。
+    fn end_sessions(&self, terminals: &[TerminalId]) {
+        let detached: Vec<Arc<Session>> = terminals.iter().filter_map(|t| self.detach(t)).collect();
+        self.notify();
+        for session in &detached {
+            end_session(session);
+        }
     }
 
     /// 未処理の量と、読み取りを止めているか。セッションが無ければ `None`。
