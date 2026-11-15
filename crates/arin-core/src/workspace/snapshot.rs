@@ -60,6 +60,10 @@ pub struct DisplaySnapshot {
     pub tile_ids: Vec<TerminalId>,
     /// フォーカス中のタイル(=選択中のプロジェクトの表示中のタブ)。無ければ `null`。
     pub focused_terminal_id: Option<TerminalId>,
+    /// アテンションの印(`TerminalTabSnapshot::attention`)のあるタイルのページ(0 から。昇順で重なりなし。計画書 T48b)。
+    /// 画面はページ表示の前後のボタンの印に使う(`page` より小さいものがあれば前、大きいものがあれば次。FR-055)。
+    /// タブ表示・拡大中は表示中のページにも印のあるタイルがありうるので、`page` が含まれることもある。
+    pub attention_pages: Vec<u32>,
 }
 
 /// 写しに載せるプロジェクト 1 件(カード 1 枚)。
@@ -96,4 +100,6 @@ pub struct TerminalTabSnapshot {
     pub label: String,
     /// 状態。
     pub status: TerminalStatus,
+    /// アテンションの印(表示していないあいだに BEL・OSC 9・OSC 777 があった。表示されると消える。FR-055、計画書 T48b)。
+    pub attention: bool,
 }

@@ -34,7 +34,9 @@ impl Workspace {
                 Ok(AddProjectOutcome::Added { project_id })
             }
             Err(ProjectError::AlreadyRegistered(project_id)) => {
-                // `ProjectStore::register` が既存を選んでいる。
+                // `ProjectStore::register` が既存を選んでいる。選択が変わるので表示を合わせ直す
+                // (見えたタブのアテンションの印を消す。計画書 T48b)。
+                self.sync_display();
                 Ok(AddProjectOutcome::AlreadyRegistered { project_id })
             }
             Err(e) => Err(e.into()),

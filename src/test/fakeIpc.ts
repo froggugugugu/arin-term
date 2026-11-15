@@ -77,6 +77,7 @@ export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapsho
       grid: { cols: 0, rows: 0 },
       tileIds: [],
       focusedTerminalId: null,
+      attentionPages: [],
     },
     ...overrides,
   };
@@ -88,7 +89,7 @@ export function sampleTerminal(
   status: TerminalStatus,
   overrides: Partial<TerminalTabSnapshot> = {},
 ): TerminalTabSnapshot {
-  return { id, projectId: null, label: "ターミナル 1", status, ...overrides };
+  return { id, projectId: null, label: "ターミナル 1", status, attention: false, ...overrides };
 }
 
 /** 外から解決・失敗させられる Promise(遅れて届く応答を作るため)。 */

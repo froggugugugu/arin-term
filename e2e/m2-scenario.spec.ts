@@ -51,7 +51,13 @@ function snapshotOf(
     })),
     selectedProjectId: selected,
     terminals: projects.flatMap((p) =>
-      p.tabs.map((t) => ({ id: t.id, projectId: p.id, label: t.label, status: { kind: "running" as const } })),
+      p.tabs.map((t) => ({
+        id: t.id,
+        projectId: p.id,
+        label: t.label,
+        status: { kind: "running" as const },
+        attention: false,
+      })),
     ),
     ...overrides,
   });

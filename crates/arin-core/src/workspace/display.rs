@@ -8,6 +8,8 @@
 //! 不変条件(どの口のあとも成り立つ):
 //! - ページは範囲内(0 枚なら 0)。フォーカス中のタイルがあれば、ページはそのタイルのページ
 //! - 拡大中はタイル表示で、拡大しているのはフォーカス中のタイル。拡大していたターミナルが消えたら拡大を解く
+//! - 表示中のターミナルにアテンションの印は無い(計画書 T48b。`note_attention` は表示中なら立てず、
+//!   `sync_display` が表示中になったものの印を消す)
 //!
 //! 読み取りは `resolve` で保存値から毎回計算するので、`sync_display` を呼び忘れた口があっても範囲の外を指さない。
 //! `sync_display` は計算した結果を保存値に戻す(フォーカスが無くなったときのページと、拡大の付いていく先を覚える)。
@@ -16,7 +18,7 @@ use super::snapshot::DisplaySnapshot;
 use super::state::Workspace;
 use crate::layout::tiles::{DisplayMode, TileLayout, page_of};
 use crate::project::ProjectId;
-use crate::terminal::{TerminalError, TerminalId};
+use crate::terminal::{AttentionPolicy, TerminalError, TerminalId};
 
 /// 表示の保存値。ページと拡大は状態ファイルに保存しない(設計書 §6.1。表示モードの保存は T46c)。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -137,9 +139,25 @@ impl Workspace {
         }
     }
 
+    /// アテンションの契機があった(FR-055。読み取りスレッドが `AttentionScanner` の契機のあとに呼ぶ。計画書 T48c)。
+    ///
+    /// そのターミナルが表示中でなければ印を立てる(`AttentionPolicy`。§15.2 #10 の A)。印が立ったら `true`
+    /// (このときだけ写しを送る)。表示中のとき・既に立っているとき・その ID のタブが無いとき(閉じたあとに届いた契機)は
+    /// 何もせず `false`。
+    pub fn note_attention(&mut self, id: &TerminalId) -> bool {
+        AttentionPolicy::should_mark(id, &self.visible_terminals()) && self.tabs.set_attention(id)
+    }
+
     /// 写しの `display`。
     pub(super) fn display_snapshot(&self) -> DisplaySnapshot {
         let view = self.resolve();
+        let mut attention_pages: Vec<u32> = Vec::new();
+        for (index, tab) in self.ordered_tabs().enumerate() {
+            let page = to_u32(page_of(index));
+            if tab.attention && attention_pages.last() != Some(&page) {
+                attention_pages.push(page);
+            }
+        }
         DisplaySnapshot {
             mode: view.mode,
             maximized: view.maximized.is_some(),
@@ -148,6 +166,7 @@ impl Workspace {
             grid: view.layout.grid,
             tile_ids: view.tiles[view.layout.range].to_vec(),
             focused_terminal_id: view.focused,
+            attention_pages,
         }
     }
 
@@ -179,10 +198,14 @@ impl Workspace {
     }
 
     /// 保存値を、いまのタブから決まる表示に合わせ直す(選択・タブの追加・閉じる・切替・削除・シェルの終了のあとに呼ぶ)。
+    /// 表示中になったターミナルのアテンションの印を消す(設計書 §7.1「アテンション」の 5)。
     pub(super) fn sync_display(&mut self) {
         let view = self.resolve();
         self.display.page = view.layout.page;
         self.display.maximized = view.maximized;
+        for id in self.visible_terminals() {
+            self.tabs.clear_attention(&id);
+        }
     }
 
     fn resolve(&self) -> DisplayView {

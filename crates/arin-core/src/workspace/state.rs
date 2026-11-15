@@ -308,6 +308,7 @@ impl Workspace {
                     .terminals
                     .get(&tab.id)
                     .map_or(TerminalStatus::NotStarted, |entry| entry.status.clone()),
+                attention: tab.attention,
             })
             .collect();
         AppSnapshot {

@@ -5,6 +5,9 @@
 //! 計画書 M2 の【仮定】9)。タブを閉じたら右隣(無ければ左)が表示中になり、前後の切替は端で回り込む(【仮定】17)。
 //! シェルが終わったタブは自動で閉じる。検証画面の設定では閉じない(【仮定】5)。
 //!
+//! アテンションの印(FR-055。設計書 §7.1「アテンション」の 3)をタブごとに持つ。印はタブと一緒に消える
+//! (閉じる・プロジェクトの削除)。立てるか・消すかの判定は `Workspace` が行う(計画書 T48b)。
+//!
 //! 起動の仕様・状態(`TerminalStatus`)・cwd は持たない(`Workspace` が持つ。T32b)。保存もしない(§6.1)。
 
 use super::{TerminalError, TerminalId};
@@ -40,6 +43,9 @@ pub struct TerminalTab {
     pub number: u32,
     /// 表示名(「ターミナル N」)。
     pub label: String,
+    /// アテンションの印(表示していないあいだに BEL・OSC 9・OSC 777 があった)。新しいタブでは偽。
+    /// 変えるのは `set_attention`・`clear_attention` だけ。
+    pub attention: bool,
 }
 
 /// 1 つの持ち主(プロジェクト、または持ち主なし)のタブの並び。
@@ -98,6 +104,7 @@ impl TerminalStore {
             project: project.cloned(),
             number: group.last_number,
             label: format!("ターミナル {}", group.last_number),
+            attention: false,
         });
         group.active = Some(id.clone());
         id
@@ -164,6 +171,26 @@ impl TerminalStore {
     /// 前のタブを表示中にし、表示中の ID を返す。先頭の前は末尾。0 枚なら `None`。
     pub fn select_previous(&mut self, project: Option<&ProjectId>) -> Option<TerminalId> {
         self.step(project, -1)
+    }
+
+    /// そのタブにアテンションの印を立てる。立ったら `true`。既に立っている・その ID のタブが無いときは `false`。
+    pub fn set_attention(&mut self, id: &TerminalId) -> bool {
+        self.set_attention_to(id, true)
+    }
+
+    /// そのタブのアテンションの印を消す。消えたら `true`。立っていない・その ID のタブが無いときは `false`。
+    pub fn clear_attention(&mut self, id: &TerminalId) -> bool {
+        self.set_attention_to(id, false)
+    }
+
+    fn set_attention_to(&mut self, id: &TerminalId, value: bool) -> bool {
+        let Ok((g, t)) = self.locate(id) else {
+            return false;
+        };
+        let tab = &mut self.groups[g].tabs[t];
+        let changed = tab.attention != value;
+        tab.attention = value;
+        changed
     }
 
     /// `project` のタブ(順のとおり)。タブを持ったことが無ければ空。

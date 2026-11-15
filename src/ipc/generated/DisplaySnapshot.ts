@@ -37,4 +37,10 @@ tileIds: Array<TerminalId>,
 /**
  * フォーカス中のタイル(=選択中のプロジェクトの表示中のタブ)。無ければ `null`。
  */
-focusedTerminalId: TerminalId | null, };
+focusedTerminalId: TerminalId | null, 
+/**
+ * アテンションの印(`TerminalTabSnapshot::attention`)のあるタイルのページ(0 から。昇順で重なりなし。計画書 T48b)。
+ * 画面はページ表示の前後のボタンの印に使う(`page` より小さいものがあれば前、大きいものがあれば次。FR-055)。
+ * タブ表示・拡大中は表示中のページにも印のあるタイルがありうるので、`page` が含まれることもある。
+ */
+attentionPages: Array<number>, };

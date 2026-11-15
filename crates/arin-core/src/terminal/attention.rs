@@ -14,7 +14,11 @@
 //!
 //! 走査は `OscScanner` の 1 バイトずつの状態機械に任せる。チャンクの切れ目がどこにあっても同じ結果になり、
 //! 状態の大きさは一定(終わらない OSC が続いてもメモリは増えない)。確保をしない。
+//!
+//! 契機のあとに印を立てるかは `AttentionPolicy`(§7.1「アテンション」の 2。計画書 T48b)が決める。
+//! 印そのものは `TerminalStore` が持ち、表示中になったら `Workspace` が消す。
 
+use super::TerminalId;
 use super::osc::{OscEvent, OscScanner};
 
 /// アテンションの走査器。ターミナル 1 枚につき 1 個、読み取りスレッドだけが持つ。
@@ -40,5 +44,21 @@ impl AttentionScanner {
             }
         });
         seen
+    }
+}
+
+/// 契機があったターミナルに印を立てるかの判定(設計書 §7.1「アテンション」の 2、§15.2 #10 の A、計画書 T48b)。
+///
+/// 表示中のターミナルには立てない。アプリが背面にあっても同じ(画面上で表示中なら立てない)。
+/// 表示中の並びは `Workspace::visible_terminals`(タブ表示=選択中のプロジェクトの表示中のタブ、
+/// タイル表示=表示中のページのタイル、拡大中=拡大した 1 枚)。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AttentionPolicy;
+
+impl AttentionPolicy {
+    /// `terminal` が `visible`(表示中のターミナルの並び)に無ければ `true`(印を立てる)。
+    #[must_use]
+    pub fn should_mark(terminal: &TerminalId, visible: &[TerminalId]) -> bool {
+        !visible.contains(terminal)
     }
 }

@@ -163,6 +163,24 @@ fn check_invariants(ws: &Workspace) {
             "実在しないターミナルが見えている: {id:?}"
         );
     }
+
+    // 表示中のターミナルにアテンションの印は残らない(計画書 T48b)。ページの番号は印のあるタイルのページ
+    let visible = ws.visible_terminals();
+    let mut pages: Vec<u32> = Vec::new();
+    for (index, terminal) in snapshot.terminals.iter().enumerate() {
+        if terminal.attention {
+            assert!(
+                !visible.contains(&terminal.id),
+                "表示中の {:?} に印が残っている",
+                terminal.id
+            );
+            let page = u32::try_from(index / TILES_PER_PAGE).unwrap();
+            if !pages.contains(&page) {
+                pages.push(page);
+            }
+        }
+    }
+    assert_eq!(display.attention_pages, pages);
 }
 
 // ---------------------------------------------------------------------------
@@ -847,7 +865,7 @@ fn どの操作の列のあとも不変条件が成り立つ() {
     for _ in 0..600 {
         let all = all_ids(&ws);
         let projects: Vec<ProjectId> = ws.snapshot().projects.into_iter().map(|p| p.id).collect();
-        match next(11) {
+        match next(13) {
             0 => {
                 ws.toggle_display_mode();
             }
@@ -880,6 +898,18 @@ fn どの操作の列のあとも不変条件が成り立つ() {
             10 if projects.len() > 1 && next(8) == 0 => {
                 ws.remove_project(&projects[next(projects.len())], &[], true)
                     .unwrap();
+            }
+            // アテンションの契機(計画書 T48b)。表示中なら立たない
+            11 if !all.is_empty() => {
+                let id = all[next(all.len())].clone();
+                let visible = ws.visible_terminals().contains(&id);
+                let changed = ws.note_attention(&id);
+                assert!(!(visible && changed), "表示中の {id:?} に印が立った");
+            }
+            // 登録済みのフォルダを登録し直す(既存が選ばれる。FR-010)
+            12 if !projects.is_empty() => {
+                let n = u8::try_from(next(4) + 1).unwrap();
+                let _ = ws.register_project(pid(200), RootReference::new(root_path(n), None));
             }
             _ => {}
         }

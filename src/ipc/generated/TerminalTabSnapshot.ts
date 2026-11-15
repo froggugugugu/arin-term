@@ -22,4 +22,8 @@ label: string,
 /**
  * 状態。
  */
-status: TerminalStatus, };
+status: TerminalStatus, 
+/**
+ * アテンションの印(表示していないあいだに BEL・OSC 9・OSC 777 があった。表示されると消える。FR-055、計画書 T48b)。
+ */
+attention: boolean, };

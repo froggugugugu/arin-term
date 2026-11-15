@@ -1223,7 +1223,7 @@ T46〜T50 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 29d(逐次。T46c・T48a 完了後)
 
-- [ ] T48b — 表示中かの判定とアテンションの印(`Workspace` と写し)(変更ファイル: crates/arin-core/src/terminal/attention.rs, crates/arin-core/src/terminal/mod.rs, crates/arin-core/src/terminal/store.rs, crates/arin-core/src/workspace/display.rs, crates/arin-core/src/workspace/state.rs, crates/arin-core/src/workspace/snapshot.rs, crates/arin-core/tests/workspace_attention.rs, crates/arin-core/tests/app_snapshot.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/ | 依存: T46c, T48a)
+- [x] T48b — 表示中かの判定とアテンションの印(`Workspace` と写し)(変更ファイル: crates/arin-core/src/terminal/attention.rs, crates/arin-core/src/terminal/mod.rs, crates/arin-core/src/terminal/store.rs, crates/arin-core/src/workspace/display.rs, crates/arin-core/src/workspace/state.rs, crates/arin-core/src/workspace/snapshot.rs, crates/arin-core/tests/workspace_attention.rs, crates/arin-core/tests/app_snapshot.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/ | 依存: T46c, T48a)
   - 対応: FR-055、設計書 §7.1「アテンション」の 2・3・5、§15.2 #10 の A、【仮定】13・14
   - 置くもの: `AttentionPolicy`(ターミナルが表示中か。`visible_terminals` を使う)。`Workspace::note_attention(id)`(表示中でなければ印を立て、立ったら `true`。既に立っていれば `false`)。表示が変わる口(モード・ページ・拡大・選択・フォーカス・タブの切替)のあとに、表示中になったターミナルの印を消す。写しの `terminals[]` に `attention`、`display` にアテンションのあるページの番号の並びを足す(画面のページ表示の印に使う)
   - 並行: 不可(`workspace/` と生成物を触る)

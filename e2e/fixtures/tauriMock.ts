@@ -77,6 +77,7 @@ export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapsho
       grid: { cols: 0, rows: 0 },
       tileIds: [],
       focusedTerminalId: null,
+      attentionPages: [],
     },
     ...overrides,
   };
@@ -88,7 +89,7 @@ export function sampleTerminal(
   status: TerminalStatus,
   overrides: Partial<TerminalTabSnapshot> = {},
 ): TerminalTabSnapshot {
-  return { id, projectId: null, label: "ターミナル 1", status, ...overrides };
+  return { id, projectId: null, label: "ターミナル 1", status, attention: false, ...overrides };
 }
 
 /** テスト用のプロジェクトの ID(projectSnapshot が使う)。 */
@@ -150,7 +151,13 @@ export function projectsSnapshot(projects: readonly SampleProject[], overrides: 
       activeTerminalId: ids[0] ?? null,
     });
     tabs.forEach((label, index) => {
-      terminals.push({ id: ids[index] ?? "", projectId: project.id, label, status: { kind: "running" } });
+      terminals.push({
+        id: ids[index] ?? "",
+        projectId: project.id,
+        label,
+        status: { kind: "running" },
+        attention: false,
+      });
     });
   }
   return sampleSnapshot({ projects: cards, selectedProjectId: projects[0]?.id ?? null, terminals, ...overrides });

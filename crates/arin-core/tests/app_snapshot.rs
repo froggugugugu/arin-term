@@ -83,6 +83,7 @@ fn 写しの_json_の形() {
                     "projectId": id(1).as_str(),
                     "label": "ターミナル 1",
                     "status": { "kind": "notStarted" },
+                    "attention": false,
                 },
             ],
             "layout": { "sidebarWidth": 260.0, "sidebarCollapsed": false, "cardAreaHeight": 200.0 },
@@ -95,6 +96,7 @@ fn 写しの_json_の形() {
                 "grid": { "cols": 1, "rows": 1 },
                 "tileIds": ["terminal-1"],
                 "focusedTerminalId": "terminal-1",
+                "attentionPages": [],
             },
         })
     );
@@ -122,8 +124,40 @@ fn 写しに表示の状態が載る() {
             "grid": { "cols": 1, "rows": 1 },
             "tileIds": ["terminal-10"],
             "focusedTerminalId": "terminal-10",
+            "attentionPages": [],
         })
     );
+}
+
+#[test]
+fn 写しのターミナルにアテンションの印が載る() {
+    // 計画書 T48b。A に 2 枚(表示中は 2 枚目)。隠れた 1 枚目に印が立つ
+    let mut ws = sample();
+    ws.open_terminal(&id(1)).expect("開ける");
+    assert!(ws.note_attention(&arin_core::terminal::TerminalId::new("terminal-1")));
+
+    let value = serde_json::to_value(ws.snapshot()).unwrap();
+
+    assert_eq!(value["terminals"][0]["attention"], json!(true));
+    assert_eq!(value["terminals"][1]["attention"], json!(false));
+}
+
+#[test]
+fn 写しにアテンションのあるページの番号が載る() {
+    // 計画書 T48b。A に 10 枚でタイル表示。1 ページ目を出したまま 2 ページ目の 1 枚に印が立つ
+    let mut ws = sample();
+    for _ in 1..10 {
+        ws.open_terminal(&id(1)).expect("開ける");
+    }
+    ws.activate_terminal(&arin_core::terminal::TerminalId::new("terminal-1"))
+        .unwrap();
+    assert!(ws.set_display_mode(DisplayMode::Tiles));
+    assert!(ws.note_attention(&arin_core::terminal::TerminalId::new("terminal-10")));
+
+    let value = serde_json::to_value(ws.snapshot()).unwrap();
+
+    assert_eq!(value["display"]["page"], json!(0));
+    assert_eq!(value["display"]["attentionPages"], json!([1]));
 }
 
 #[test]
@@ -167,6 +201,7 @@ fn 検証画面の写しのターミナルはプロジェクトを持たない()
             "projectId": null,
             "label": "ターミナル 1",
             "status": { "kind": "notStarted" },
+            "attention": false,
         })
     );
 }
