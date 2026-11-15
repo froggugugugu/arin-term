@@ -557,7 +557,7 @@ T29〜T35 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 可(T35b とファイルが重ならない)
   - 先に書くテスト(このタスク自体がテスト): `起動_追加_切替_タブ操作_削除の確認_終了の確認を通す`、`A_で_1_秒ごとに出力を流し_B_に切り替えて_10_秒後に_A_へ戻ると途切れず進んでいる`(偽のチャネルで流す。【仮定】間隔は短くしてよい)、`届いた写しのとおり同じ順_同じ選択_同じペイン配分で描かれる`
   - 検証: `npm run e2e`(3 回続けて合格)
-- [ ] T35b — 実物の結合テストと計測の準備(変更ファイル: src-tauri/tests/session_pty.rs, crates/arin-platform/tests/pty.rs, scripts/perf/, scripts/perf-run.test.mjs | 依存: T34d)
+- [x] T35b — 実物の結合テストと計測の準備(変更ファイル: src-tauri/tests/session_pty.rs, crates/arin-platform/tests/pty.rs, scripts/perf/, scripts/perf-run.test.mjs | 依存: T34d)
   - 対応: FR-042(AC-M04 の Rust 側)、NFR-006、M1 の見送り(終了の合図をシェルの pid にだけ送るので子孫が残らないか)、NFR-001〜003 の計測の準備
   - 計測: 5 プロジェクト・各 1 タブの状態を作れるようにする(一時フォルダを 5 つ作り、`bookmark: null` の `state.json` を渡す。【仮定】13)。数値で失敗させない
   - 並行: 可

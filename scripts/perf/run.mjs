@@ -105,9 +105,10 @@ const ROWS = {
   app: [
     { label: "起動→準備完了の印", unit: "ms", get: (r) => r.startup_ready_ms, digits: 0, guide: "NFR-002(コールドスタートから操作可能まで 1 秒以内)の参考。画面が準備完了を通知するまで" },
     { label: "起動→ターミナルの印", unit: "ms", get: (r) => r.startup_terminal_ms, digits: 0, guide: "NFR-002 の参考。シェルの出力が画面に取り込まれ、処理済みが Rust に戻るまで" },
-    { label: "アプリ本体(footprint)", unit: "MiB", get: (r) => r.app_footprint / MIB, guide: "NFR-001: 本体 200MB 以下(5 プロジェクト・各 1 タブ。いまは 1 枚)" },
+    { label: "アプリ本体(footprint)", unit: "MiB", get: (r) => r.app_footprint / MIB, guide: "NFR-001: 本体 200MB 以下(5 プロジェクト・各 1 タブ)" },
     { label: "WebKit の補助プロセスの合計(footprint)", unit: "MiB", get: (r) => r.webkit_footprint / MIB },
     { label: "本体 + WebKit(footprint)", unit: "MiB", get: (r) => r.total_footprint / MIB, guide: "設計書 §7.3 の仮定(§15.2 #11)の記録方法" },
+    { label: "シェルの数(アプリの子プロセス)", unit: "個", get: (r) => r.shell_count, digits: 0, guide: "5 プロジェクト・各 1 タブ。画面が接続したタブだけシェルを起動する" },
     { label: "シェル(子プロセス。footprint)", unit: "MiB", get: (r) => r.shell_footprint / MIB, guide: "NFR-001 では除く" },
     { label: "アプリ本体(ps の RSS)", unit: "MiB", get: (r) => r.app_rss / MIB },
     { label: "WebKit の補助プロセスの数", unit: "個", get: (r) => r.webkit_count, digits: 0, guide: "WebContent・GPU・Networking" },
@@ -119,7 +120,7 @@ const SECTION_TITLES = {
   pty_read: "1. PTY の読み取り(arin-platform、実 PTY、10 万行の cat)",
   session_ack: "2a. PTY から送り先まで: 処理済みをすぐ返す送り先(SessionRegistry)",
   session_stall: "2b. PTY から送り先まで: 処理済みを返さない送り先(流量制御)",
-  app: "3. 起動中のアプリ(.app、スモークと同じ起動)",
+  app: "3. 起動中のアプリ(.app、スモークと同じ起動、5 プロジェクト・各 1 タブ)",
 };
 
 /** 計測の結果を、種類ごとの 1 回分の一覧にする。 */
@@ -252,7 +253,7 @@ export const CONDITIONS = [
   "送り先までの計測は製品の既定値(上限 512 KiB・下限 128 KiB、まとめ 4ms/64 KiB、読み取り 16 KiB)のまま。偽の送り先は受け取った中身を貯めない。送った回数と量は目印を含む送信の単位で数えるので、最大 1 回分ずれる",
   "未処理の量の最大値は、送り先が受け取った時点(処理済みを返す直前)の値の最大",
   "処理済みを返さない送り先では、読み取りが止まり未処理の量と受け取った量が 1 秒変わらなくなった時点を頭打ちとする",
-  "アプリはスモークと同じ起動(一時の状態フォルダ、ARIN_SMOKE=1)で 3 回。印が揃ってから 3 秒置いて測る。起動の時間はファイルの印を 10ms ごとに見た値で、ディスクのキャッシュが効いた起動(コールドスタートではない)",
+  "アプリはスモークと同じ起動(一時の状態フォルダ、ARIN_SMOKE=1)で 3 回。状態は 5 プロジェクト・各 1 タブ(一時フォルダに作ったプロジェクトのフォルダ 5 つと、bookmark が null の state.json を置く)。印が揃ってから 3 秒置いて測る。起動の時間はファイルの印を 10ms ごとに見た値で、ディスクのキャッシュが効いた起動(コールドスタートではない)",
   "WebKit の補助プロセスは launchd の子なので、起動の前後で増えたものをこのアプリのものとみなす(同時に別のアプリが WebKit を起動すると混ざる。JSON の webkit_exited_with_app が true なら、アプリの終了と一緒に消えた)",
   "メモリは footprint の phys_footprint(アクティビティモニタの「メモリ」と同じ)。MiB は 1024×1024 バイト",
 ];

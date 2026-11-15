@@ -510,6 +510,52 @@ fn sleep_が終わるとシェルに戻る() {
     assert_eq!(shell.query("after"), "after", "シェルが入力を受け付ける");
 }
 
+/// プロセスが動いているか(`ps`。回収待ちのゾンビは終わったものとみなす)。
+fn process_running(pid: &str) -> bool {
+    let out = Command::new("/bin/ps")
+        .args(["-o", "stat=", "-p", pid])
+        .output()
+        .expect("ps を起動できなかった");
+    let stat = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    out.status.success() && !stat.is_empty() && !stat.starts_with('Z')
+}
+
+#[test]
+fn kill_すると前面の_sleep_も終わる() {
+    let _serial = serial();
+    let sandbox = Sandbox::new("kill-sleep");
+    let mut shell = Shell::spawn(&sandbox.spec(), SIZE);
+    let pid = shell.query("\"$$\"");
+    let _guard = SleepGuard(pid.clone());
+
+    shell.send("/bin/sleep 300\n");
+    shell.wait_foreground(Foreground::Other);
+    let found = Command::new("/usr/bin/pgrep")
+        .args(["-x", "-P", &pid, "sleep"])
+        .output()
+        .expect("pgrep を起動できなかった");
+    let sleep_pid = String::from_utf8_lossy(&found.stdout).trim().to_owned();
+    assert!(
+        !sleep_pid.is_empty() && sleep_pid.chars().all(|c| c.is_ascii_digit()),
+        "前面の sleep の pid を引けなかった: {sleep_pid:?}"
+    );
+
+    shell.session.kill().expect("シェルを終了させられなかった");
+    shell.wait_exit();
+
+    let deadline = Instant::now() + WAIT;
+    while process_running(&sleep_pid) {
+        if Instant::now() >= deadline {
+            // シェルが先に終わると `SleepGuard` は子として引けないので、ここで終わらせてから落とす。
+            let _ = Command::new("/bin/kill")
+                .args(["-KILL", &sleep_pid])
+                .status();
+            panic!("シェルの kill のあとも前面の sleep {sleep_pid} が残っている");
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
 #[test]
 fn シェルが終わったあとは不明を返す() {
     let _serial = serial();

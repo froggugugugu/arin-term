@@ -3,12 +3,14 @@
 // scripts/perf/ の下ではなくここに置く(グロブの * は / をまたがない)。
 
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 
+import { PERF_PROJECT_COUNT, measureAppMemory, perfStateFixture, preparePerfState } from "./perf/app-memory.mjs";
 import { parsePerfLines, runPerf, stats } from "./perf/run.mjs";
+import { STATE_FILE_NAME, describeDir, stateFixture } from "./smoke.mjs";
 
 let root;
 
@@ -111,5 +113,56 @@ describe("parsePerfLines と stats", () => {
     assert.deepEqual(stats([3, 1, 2]), { median: 2, min: 1, max: 3, n: 3 });
     assert.deepEqual(stats([4, 1]), { median: 2.5, min: 1, max: 4, n: 2 });
     assert.equal(stats([]), null);
+  });
+});
+
+describe("5 プロジェクト・各 1 タブの状態(T35b)", () => {
+  it("一時フォルダの中にプロジェクトのフォルダ 5 つと、bookmark が null の state.json を置く", async () => {
+    const work = path.join(root, "state-5");
+    await mkdir(work);
+    const { stateDir, projectDirs, fixture } = await preparePerfState(work);
+    assert.equal(PERF_PROJECT_COUNT, 5);
+    assert.equal(stateDir, path.join(work, "state"));
+    assert.equal(projectDirs.length, 5);
+    for (const dir of projectDirs) {
+      assert.ok(dir.startsWith(`${work}${path.sep}`), dir);
+      assert.deepEqual(await readdir(dir), [], "プロジェクトのフォルダは空");
+    }
+    assert.deepEqual(await readdir(stateDir), [STATE_FILE_NAME]);
+    assert.equal(await readFile(path.join(stateDir, STATE_FILE_NAME), "utf8"), fixture);
+
+    const state = JSON.parse(fixture);
+    assert.equal(state.schemaVersion, 1);
+    assert.deepEqual(
+      state.projects.map((p) => p.lastKnownPath),
+      projectDirs,
+    );
+    assert.ok(state.projects.every((p) => p.bookmark === null));
+    const ids = state.projects.map((p) => p.id);
+    assert.equal(new Set(ids).size, 5, "ID が重ならない");
+    for (const id of ids) assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    assert.equal(state.ui.selectedProjectId, ids[0]);
+  });
+
+  it("プロジェクトの形はスモークの state.json(アプリが読めると確かめたもの)と同じキーと型", () => {
+    const smoke = JSON.parse(stateFixture("project", "/tmp/arin-x"));
+    const perf = JSON.parse(perfStateFixture(["/tmp/arin-a", "/tmp/arin-b"]));
+    const shape = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v === null ? "null" : typeof v]));
+    assert.deepEqual(Object.keys(perf).sort(), Object.keys(smoke).sort());
+    assert.deepEqual(Object.keys(perf.ui).sort(), Object.keys(smoke.ui).sort());
+    for (const p of perf.projects) assert.deepEqual(shape(p), shape(smoke.projects[0]));
+    const colors = ["red", "orange", "yellow", "green", "teal", "blue", "purple", "pink"];
+    assert.ok(perf.projects.every((p) => colors.includes(p.colorId)));
+    assert.throws(() => perfStateFixture([]));
+  });
+
+  it(".app が無ければ起動も状態フォルダの読み書きもせず未計測を返す", async () => {
+    const realStateDir = path.join(root, "real-state");
+    const before = await describeDir(realStateDir);
+    const r = await measureAppMemory({ appPath: path.join(root, "no-such", "Arin.app"), realStateDir, log: quiet });
+    assert.equal(r.status, "skipped");
+    assert.deepEqual(r.runs, []);
+    assert.deepEqual(await describeDir(realStateDir), before);
+    assert.equal(before, null, "本物の代わりのフォルダを作っていない");
   });
 });

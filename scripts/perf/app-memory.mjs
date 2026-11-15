@@ -3,6 +3,9 @@
 //
 // 起動のしかたはスモーク(scripts/smoke.mjs)と同じ: 一時の状態フォルダ(ARIN_STATE_DIR)と ARIN_SMOKE=1 を付けて
 // .app の実行ファイルを起動し、準備完了とターミナルの印を待つ。印が揃ってから少し置いて、次のプロセスを測る。
+// 状態は NFR-001 の条件の「5 プロジェクト・各 1 タブ」(計画書 T35b): 一時フォルダの中にプロジェクトのフォルダを 5 つ作り、
+// bookmark が null の state.json(計画書 M2 の【仮定】13。形はスモークの stateFixture と同じ)を一時の状態フォルダに置く。
+// 本物の ~/Library/Application Support/Arin/ は読み書きしない(前後で変わっていないことを確かめる)。
 //
 // - アプリ本体(起動した実行ファイル)
 // - WebKit の補助プロセス(com.apple.WebKit.WebContent・GPU・Networking)。launchd が起動するので
@@ -18,7 +21,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -28,6 +31,7 @@ import {
   ENV_SMOKE,
   ENV_STATE_DIR,
   MARKER_FILE_NAME,
+  STATE_FILE_NAME,
   TERMINAL_MARKER_FILE_NAME,
   childPids,
   describeDir,
@@ -36,6 +40,10 @@ import {
 } from "../smoke.mjs";
 
 export const TEMP_PREFIX = "arin-perf-app-";
+/** 計測のときのプロジェクトの数(各 1 タブ。NFR-001 の条件)。 */
+export const PERF_PROJECT_COUNT = 5;
+/** プロジェクトに割り当てる色(crates/arin-core/src/project/color.rs のパレットの先頭から)。 */
+const PERF_COLORS = ["red", "orange", "yellow", "green", "teal", "blue", "purple", "pink"];
 const WEBKIT_RE = /\/(com\.apple\.WebKit\.[A-Za-z]+)$/;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -47,6 +55,45 @@ async function exists(p) {
   } catch {
     return false;
   }
+}
+
+/** 計測用のプロジェクトの ID(UUID v4 の形。n は 1 から)。 */
+export function perfProjectId(n) {
+  return `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+}
+
+/**
+ * 計測用の state.json の中身。projectDirs の順にプロジェクトにし(bookmark は null、各 1 タブはアプリが開く)、先頭を選択中にする。
+ */
+export function perfStateFixture(projectDirs) {
+  if (projectDirs.length === 0) throw new Error("プロジェクトのフォルダが 1 つも無い");
+  const projects = projectDirs.map((dir, i) => ({
+    id: perfProjectId(i + 1),
+    bookmark: null,
+    lastKnownPath: dir,
+    customName: null,
+    colorId: PERF_COLORS[i % PERF_COLORS.length],
+  }));
+  const state = { schemaVersion: 1, projects, ui: { selectedProjectId: projects[0].id } };
+  return `${JSON.stringify(state, null, 2)}\n`;
+}
+
+/**
+ * root の下に状態フォルダ(state/)とプロジェクトのフォルダ(projects/p1〜)を作り、state.json を置く。
+ * @returns {Promise<{ stateDir: string, projectDirs: string[], fixture: string }>}
+ */
+export async function preparePerfState(root, count = PERF_PROJECT_COUNT) {
+  const stateDir = path.join(root, "state");
+  await mkdir(stateDir, { mode: 0o700 });
+  const projectDirs = [];
+  for (let i = 1; i <= count; i += 1) {
+    const dir = path.join(root, "projects", `p${i}`);
+    await mkdir(dir, { recursive: true });
+    projectDirs.push(dir);
+  }
+  const fixture = perfStateFixture(projectDirs);
+  await writeFile(path.join(stateDir, STATE_FILE_NAME), fixture, { mode: 0o600 });
+  return { stateDir, projectDirs, fixture };
 }
 
 /** いま動いている WebKit の補助プロセス(PID → 種類)。 */
@@ -116,17 +163,19 @@ async function waitGone(pids, ms) {
 async function measureOnce({ executable, settleMs, timeoutMs, log }) {
   const before = webkitProcesses();
   const base = tmpdir();
-  const stateDir = await mkdtemp(path.join(base, TEMP_PREFIX));
-  const ownsStateDir = path.dirname(stateDir) === base && path.basename(stateDir).startsWith(TEMP_PREFIX);
+  const tempRoot = await mkdtemp(path.join(base, TEMP_PREFIX));
+  // 自分が mkdtemp で作ったフォルダか(消してよいか)。
+  const ownsTempRoot = path.dirname(tempRoot) === base && path.basename(tempRoot).startsWith(TEMP_PREFIX);
   let child;
   let shells = [];
   const killOnExit = () => {
     child?.kill("SIGKILL");
     for (const pid of shells) if (isAlive(pid)) process.kill(pid, "SIGKILL");
-    if (ownsStateDir) rmSync(stateDir, { recursive: true, force: true });
+    if (ownsTempRoot) rmSync(tempRoot, { recursive: true, force: true });
   };
   process.on("exit", killOnExit);
   try {
+    const { stateDir, projectDirs } = await preparePerfState(tempRoot);
     const started = performance.now();
     child = spawn(executable, [], {
       env: { ...process.env, [ENV_STATE_DIR]: stateDir, [ENV_SMOKE]: "1" },
@@ -157,7 +206,7 @@ async function measureOnce({ executable, settleMs, timeoutMs, log }) {
     const webkit = [...after.keys()].filter((pid) => !before.has(pid));
     shells = childPids(child.pid);
     const all = [child.pid, ...webkit, ...shells];
-    const fp = await footprintOf(all, stateDir);
+    const fp = await footprintOf(all, tempRoot);
     const rss = rssOf(all);
     const proc = (pid, kind) => ({ pid, kind, footprint: fp.bytes.get(pid) ?? null, rss: rss.get(pid) ?? null });
     const processes = [
@@ -182,6 +231,8 @@ async function measureOnce({ executable, settleMs, timeoutMs, log }) {
     }
     log?.(`  アプリ ${child.pid}: ターミナルの印まで ${times.terminal.toFixed(0)} ms`);
     return {
+      projects: projectDirs.length,
+      shell_count: shells.length,
       startup_ready_ms: times.ready,
       startup_terminal_ms: times.terminal,
       settle_ms: settleMs,
@@ -196,7 +247,7 @@ async function measureOnce({ executable, settleMs, timeoutMs, log }) {
       await waitExit(child, 5_000);
     }
     process.off("exit", killOnExit);
-    if (ownsStateDir) await rm(stateDir, { recursive: true, force: true });
+    if (ownsTempRoot) await rm(tempRoot, { recursive: true, force: true });
   }
 }
 
