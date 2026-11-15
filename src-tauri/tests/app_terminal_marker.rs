@@ -97,11 +97,13 @@ fn main() {
     let received: Arc<Mutex<Vec<u8>>> = Arc::default();
     let sink = Arc::clone(&received);
     let app = arin_lib::builder_with_pty::<MockRuntime>(
-        support::launch_in(&state_dir, true).with_terminal_env(arin_lib::launch::TerminalEnv {
-            home: Some(PathBuf::from("/Users/someone")),
-            user: None,
-            vars: vec![("HOME".into(), "/Users/someone".into())],
-        }),
+        support::launch_verify_grid_in(&state_dir, true).with_terminal_env(
+            arin_lib::launch::TerminalEnv {
+                home: Some(PathBuf::from("/Users/someone")),
+                user: None,
+                vars: vec![("HOME".into(), "/Users/someone".into())],
+            },
+        ),
         Arc::new(FakePty(Mutex::default())),
         Arc::new(|| ShellDefaults {
             shell: PathBuf::from("/bin/zsh"),

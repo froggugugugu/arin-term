@@ -18,6 +18,7 @@ import {
   readCallArgs,
   type RecordedArgs,
   sampleSnapshot,
+  sampleTerminal,
   sendChannelBytes,
 } from "./fixtures/tauriMock";
 
@@ -26,7 +27,7 @@ const TERMINAL_ID = "t-e2e-1";
 const SCROLLBACK_LINES = 10_000;
 
 function snapshotWith(status: TerminalStatus) {
-  return sampleSnapshot({ terminals: [{ id: TERMINAL_ID, status }] });
+  return sampleSnapshot({ terminals: [sampleTerminal(TERMINAL_ID, status)] });
 }
 
 interface StartedTerminal {

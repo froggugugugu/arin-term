@@ -1,9 +1,17 @@
-//! ストアをまたぐ操作の入口と、画面へ渡す状態の写しの生成(設計書 §5.1・§5.2)。
+//! ストアをまたぐ操作の入口と、画面へ渡す状態の写しの生成(設計書 §5.1・§5.2・§6.3)。
 //!
-//! M1 はターミナル 1 枚だけを持つ。プロジェクトの項目は M2 で足す。
+//! `Workspace` が `ProjectStore`(プロジェクトの一覧と選択)・`TerminalStore`(タブの並び)・ペインの寸法と、
+//! ターミナルごとの cwd と状態を持つ。入出力はしない。起動時に読んだ状態とルートの解決の結果、
+//! 削除と終了の確認に使う「動作中のターミナル」は呼び出し側(`src-tauri`)が調べて引数で渡す。
 
+mod outcome;
 mod snapshot;
 mod state;
+mod terminals;
 
-pub use snapshot::{AppSnapshot, SNAPSHOT_SCHEMA_VERSION};
-pub use state::{ConnectPlan, Workspace};
+pub use outcome::{RemoveOutcome, RootResolution, RunningTerminal, Startup, WorkspaceError};
+pub use snapshot::{
+    AppSnapshot, ProjectCardSnapshot, SNAPSHOT_SCHEMA_VERSION, TerminalTabSnapshot,
+};
+pub use state::Workspace;
+pub use terminals::ConnectPlan;

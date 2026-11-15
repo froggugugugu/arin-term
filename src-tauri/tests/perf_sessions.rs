@@ -212,7 +212,8 @@ fn start(home: &TempHome, sink: &Arc<Sink>) -> (SessionRegistry, TerminalId) {
         .filter_map(|n| std::env::var_os(n).map(|v| (n.into(), v)))
         .collect();
     vars.push(("HOME".into(), home.path().as_os_str().to_owned()));
-    let workspace = Workspace::new("0.0.0-perf", home.path().to_path_buf(), vars);
+    // 9 枚の検証画面の形で作り、1 枚目だけを使う(起動しないターミナルは計測に影響しない)。
+    let workspace = Workspace::for_verify_grid("0.0.0-perf", home.path().to_path_buf(), vars);
     // しきい値とまとめは製品の既定値のまま測る。
     let registry = SessionRegistry::new(
         workspace,

@@ -20,7 +20,7 @@ use tauri::test::{MockRuntime, get_ipc_response};
 use tauri::{AppHandle, Manager, RunEvent, WebviewWindow};
 
 /// この組み立てに渡す起動時の指定。既定と違う値にして、組み立てからコマンドまで通ることを見る。
-/// 9 枚の検証画面(T22)も有効にする(既定の 1 枚は `terminal_commands.rs` が確かめる)。
+/// 9 枚の検証画面(T22)も有効にする(既定の起動=プロジェクト 0 件・ターミナル 0 枚は `app_builder.rs` が確かめる)。
 const LAUNCH_OPTIONS: LaunchOptions = LaunchOptions {
     renderer: RendererKind::Webgl,
     unicode: UnicodeWidth::Graphemes,

@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use arin_core::ports::PtyPort;
-use arin_core::workspace::{AppSnapshot, Workspace};
+use arin_core::workspace::{AppSnapshot, Startup, Workspace};
 use arin_platform::pty::{FALLBACK_SHELL, NativePty, default_shell, system_locale};
 use tauri::{Builder, Emitter, Manager, Runtime};
 
@@ -49,7 +49,7 @@ pub fn builder_with_pty<R: Runtime>(
     let ready = ReadyNotice::new(launch.ready_marker().map(ToOwned::to_owned));
     let first_output = FirstOutputNotice::new(launch.terminal_marker().map(ToOwned::to_owned));
     let terminal = launch.terminal().clone();
-    let terminal_count = launch.options().terminal_count();
+    let verify_grid = launch.options().verify_grid;
     Builder::<R>::new()
         .manage(launch.paths().clone())
         .manage(launch.options())
@@ -57,13 +57,15 @@ pub fn builder_with_pty<R: Runtime>(
         .manage(first_output)
         .menu(menu::build)
         .setup(move |app| {
-            // 9 枚の検証画面(`ARIN_VERIFY_GRID`。M1 の検証用、M4 の T49 で外す)なら 9 枚、そうでなければ 1 枚。
-            let workspace = Workspace::new(
-                app.package_info().version.to_string(),
-                terminal.home.unwrap_or_default(),
-                terminal.vars,
-            )
-            .with_terminal_count(terminal_count);
+            let version = app.package_info().version.to_string();
+            let home = terminal.home.unwrap_or_default();
+            let workspace = if verify_grid {
+                // 9 枚の検証画面(`ARIN_VERIFY_GRID`。M1 の検証用、M4 の T49 で外す)。プロジェクトを持たず、保存しない。
+                Workspace::for_verify_grid(version, home, terminal.vars)
+            } else {
+                // 状態ファイルの読み込みとルートの解決は T33a で足す。それまではプロジェクト 0 件・ターミナル 0 枚で始める。
+                Workspace::restore(version, home, terminal.vars, Startup::default())
+            };
             let handle = app.handle().clone();
             let listener = Arc::new(move |snapshot: AppSnapshot| {
                 // 画面がまだ無いときなどは送れない。写しは画面が取得のコマンドでも取れるので捨ててよい。

@@ -175,14 +175,15 @@ fn error_text(result: Result<InvokeResponseBody, serde_json::Value>) -> String {
     }
 }
 
-fn 写しにまだ起動していないターミナルが_1_枚載る(
+fn 写しにまだ起動していないターミナルが載る(
     handle: &AppHandle<MockRuntime>,
     window: &WebviewWindow<MockRuntime>,
     ctx: &Ctx,
 ) {
     let snapshot = snapshot(handle, window);
 
-    assert_eq!(snapshot.terminals.len(), 1);
+    // 9 枚の検証画面の指定で組み立てた(support::launch_verify_grid_in)。
+    assert_eq!(snapshot.terminals.len(), 9);
     assert_eq!(snapshot.terminals[0].status, TerminalStatus::NotStarted);
     assert!(lock(&ctx.control.spawned).is_empty(), "接続の前に起動した");
 }
@@ -349,8 +350,8 @@ fn 終了の処理でシェルを終わらせる(
 
 const CHECKS: &[(&str, Check)] = &[
     (
-        "写しにまだ起動していないターミナルが_1_枚載る",
-        写しにまだ起動していないターミナルが_1_枚載る,
+        "写しにまだ起動していないターミナルが載る",
+        写しにまだ起動していないターミナルが載る,
     ),
     (
         "存在しない_id_や寸法が_0_の接続は失敗して起動しない",
@@ -381,12 +382,13 @@ fn main() {
     let received: Arc<Mutex<HashMap<u32, Vec<u8>>>> = Arc::default();
     let sink = Arc::clone(&received);
 
-    let launch =
-        support::launch_in(&state_dir, false).with_terminal_env(arin_lib::launch::TerminalEnv {
+    let launch = support::launch_verify_grid_in(&state_dir, false).with_terminal_env(
+        arin_lib::launch::TerminalEnv {
             home: Some(PathBuf::from("/Users/someone")),
             user: None,
             vars: vec![("HOME".into(), "/Users/someone".into())],
-        });
+        },
+    );
     let app = arin_lib::builder_with_pty::<MockRuntime>(
         launch,
         Arc::new(FakePty(Arc::clone(&control))),

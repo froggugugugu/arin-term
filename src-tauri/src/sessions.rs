@@ -672,7 +672,10 @@ impl Pump {
                 Ok(None) | Err(_) => return false,
             }
         };
-        let changed = lock(&self.registry.inner.workspace).mark_exited(&self.id, Some(status));
+        // タブを閉じた(`ExitAction::Closed`)ときのセッションの後片付けは T33b で足す。それまではアプリの終了で終わらせる。
+        let changed = lock(&self.registry.inner.workspace)
+            .mark_exited(&self.id, Some(status))
+            .is_some();
         if changed {
             self.registry.notify();
         }

@@ -303,7 +303,9 @@ impl Fixture {
         let probes = Arc::new(AtomicUsize::new(0));
         let seen = Arc::clone(&snapshots);
         let probe_count = Arc::clone(&probes);
-        let workspace = Workspace::new("0.0.0-test", PathBuf::from(HOME), [("HOME", HOME)]);
+        // シェルが終わってもタブを残す 9 枚の検証画面の形で作り、1 枚目だけを使う(タブを閉じる形のテストは T33b)。
+        let workspace =
+            Workspace::for_verify_grid("0.0.0-test", PathBuf::from(HOME), [("HOME", HOME)]);
         let registry = SessionRegistry::with_verify(
             workspace,
             Arc::new(FakePty(Arc::clone(&control))),
@@ -373,10 +375,10 @@ fn exited(code: u32) -> TerminalStatus {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn 状態の写しにはまだ起動していないターミナルが_1_枚載り_接続で_running_になる() {
+fn 状態の写しにはまだ起動していないターミナルが載り_接続で_running_になる() {
     let f = Fixture::new(OutputMode::Scripted);
     let snapshot = f.registry.snapshot();
-    assert_eq!(snapshot.terminals.len(), 1);
+    assert_eq!(snapshot.terminals.len(), 9);
     assert_eq!(snapshot.terminals[0].status, TerminalStatus::NotStarted);
     assert_eq!(f.control.spawn_count(), 0, "接続の前に PTY を起動した");
 
@@ -981,8 +983,8 @@ impl GridFixture {
         for &i in fail_spawn {
             controls[i].fail_spawn.store(true, Ordering::SeqCst);
         }
-        let workspace = Workspace::new("0.0.0-test", PathBuf::from(HOME), [("HOME", HOME)])
-            .with_terminal_count(9);
+        let workspace =
+            Workspace::for_verify_grid("0.0.0-test", PathBuf::from(HOME), [("HOME", HOME)]);
         let registry = SessionRegistry::new(
             workspace,
             Arc::new(GridPty {

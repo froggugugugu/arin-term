@@ -13,6 +13,8 @@ import type {
   OutputChannel,
 } from "../ipc/client";
 import type { AppSnapshot } from "../ipc/generated/AppSnapshot";
+import type { TerminalStatus } from "../ipc/generated/TerminalStatus";
+import type { TerminalTabSnapshot } from "../ipc/generated/TerminalTabSnapshot";
 
 export interface RecordedCall {
   command: CommandName;
@@ -51,9 +53,27 @@ export interface FakeIpc {
   failListen: unknown;
 }
 
-/** テスト用の写し。 */
+/** テスト用の写し。既定はプロジェクト 0 件・ターミナル 0 枚で、ペインの寸法は Rust の初期値と同じ。 */
 export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapshot {
-  return { schemaVersion: 1, appVersion: "0.0.0-test", terminals: [], ...overrides };
+  return {
+    schemaVersion: 1,
+    appVersion: "0.0.0-test",
+    projects: [],
+    selectedProjectId: null,
+    terminals: [],
+    layout: { sidebarWidth: 260, sidebarCollapsed: false, cardAreaHeight: 200 },
+    notice: null,
+    ...overrides,
+  };
+}
+
+/** テスト用の写しのターミナル 1 枚。既定はプロジェクトを持たない(検証画面と同じ形)。 */
+export function sampleTerminal(
+  id: string,
+  status: TerminalStatus,
+  overrides: Partial<TerminalTabSnapshot> = {},
+): TerminalTabSnapshot {
+  return { id, projectId: null, label: "ターミナル 1", status, ...overrides };
 }
 
 /** 偽の通信を作る。渡さなかったコマンドは既定の応答を返す。応答の中で投げた例外は失敗として返す。 */

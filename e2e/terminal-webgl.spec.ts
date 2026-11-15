@@ -17,6 +17,7 @@ import {
   readCallArgs,
   type RecordedArgs,
   sampleSnapshot,
+  sampleTerminal,
   sendChannelBytes,
 } from "./fixtures/tauriMock";
 
@@ -32,7 +33,7 @@ interface StartedTerminal {
 async function openTerminal(page: Page, options: LaunchOptions = WEBGL): Promise<StartedTerminal> {
   await installTauriMock(page, {
     get_launch_options: { ok: options },
-    get_app_snapshot: { ok: sampleSnapshot({ terminals: [{ id: TERMINAL_ID, status: { kind: "running" } }] }) },
+    get_app_snapshot: { ok: sampleSnapshot({ terminals: [sampleTerminal(TERMINAL_ID, { kind: "running" })] }) },
   });
   await page.goto("/");
   await expect(page.getByTestId("terminal-host")).toBeVisible();

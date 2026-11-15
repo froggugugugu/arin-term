@@ -8,7 +8,14 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import type { LaunchOptions } from "../src/ipc/generated/LaunchOptions";
-import { installTauriMock, parseChannelId, readCallArgs, sampleSnapshot, sendChannelBytes } from "./fixtures/tauriMock";
+import {
+  installTauriMock,
+  parseChannelId,
+  readCallArgs,
+  sampleSnapshot,
+  sampleTerminal,
+  sendChannelBytes,
+} from "./fixtures/tauriMock";
 
 const IDS = Array.from({ length: 9 }, (_, i) => `terminal-${i + 1}`);
 const DOM: LaunchOptions = { renderer: "dom", unicode: "unicode11", verifyGrid: true };
@@ -19,7 +26,7 @@ async function openGrid(page: Page, options: LaunchOptions): Promise<Map<string,
   await installTauriMock(page, {
     get_launch_options: { ok: options },
     get_app_snapshot: {
-      ok: sampleSnapshot({ terminals: IDS.map((id) => ({ id, status: { kind: "running" } })) }),
+      ok: sampleSnapshot({ terminals: IDS.map((id, i) => sampleTerminal(id, { kind: "running" }, { label: `ターミナル ${i + 1}` })) }),
     },
   });
   await page.goto("/");

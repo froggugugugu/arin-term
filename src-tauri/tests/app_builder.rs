@@ -27,6 +27,18 @@ fn アプリを組み立てて起動するとメインのウィンドウがで�
     app.run_return(move |handle, event| {
         if let RunEvent::Ready = event {
             seen.set(handle.get_webview_window("main").is_some());
+            // 状態ファイルの読み込みは T33a。それまで通常の起動はプロジェクト 0 件・ターミナル 0 枚で始まる。
+            let snapshot = handle
+                .state::<arin_lib::sessions::SessionRegistry>()
+                .snapshot();
+            assert!(
+                snapshot.projects.is_empty(),
+                "プロジェクトがある: {snapshot:?}"
+            );
+            assert!(
+                snapshot.terminals.is_empty(),
+                "ターミナルがある: {snapshot:?}"
+            );
             // 模擬ランタイムのループは、ウィンドウが全部無くなると終わる。
             // 1 枚も無いと終わらないので、その場合はここで失敗させる。
             let windows = handle.webview_windows();

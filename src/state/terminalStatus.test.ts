@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { TerminalStatus } from "../ipc/generated/TerminalStatus";
-import { sampleSnapshot } from "../test/fakeIpc";
+import { sampleSnapshot, sampleTerminal } from "../test/fakeIpc";
 import { createAppStore } from "./appStore";
 import { describeTerminalStatus, forwardTerminalStatuses } from "./terminalStatus";
 
@@ -30,7 +30,7 @@ describe("describeTerminalStatus(シェルの状態を画面に出す文にす�
 });
 
 describe("forwardTerminalStatuses(写しの状態をターミナルの送信側へ伝える。S-3)", () => {
-  const terminal = (id: string, status: TerminalStatus) => ({ id, status });
+  const terminal = (id: string, status: TerminalStatus) => sampleTerminal(id, status);
 
   it("いまの写しと、届いた写しごとに、全ターミナルの状態を伝える。外したら伝えない", () => {
     const store = createAppStore();

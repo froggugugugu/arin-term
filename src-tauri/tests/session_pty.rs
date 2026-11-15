@@ -89,7 +89,8 @@ impl Shell {
             .filter_map(|n| std::env::var_os(n).map(|v| (n.into(), v)))
             .collect();
         vars.push(("HOME".into(), home.path().as_os_str().to_owned()));
-        let workspace = Workspace::new("0.0.0-test", home.path().to_path_buf(), vars);
+        // シェルが終わってもタブを残す 9 枚の検証画面の形で作り、1 枚目だけを使う(タブを閉じる形のテストは T33b)。
+        let workspace = Workspace::for_verify_grid("0.0.0-test", home.path().to_path_buf(), vars);
         let registry = SessionRegistry::new(
             workspace,
             Arc::new(NativePty),

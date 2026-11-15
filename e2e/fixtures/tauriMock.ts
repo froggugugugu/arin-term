@@ -29,6 +29,8 @@ import type { Page } from "@playwright/test";
 
 import type { CommandMap, CommandName, EventMap, EventName } from "../../src/ipc/client";
 import type { AppSnapshot } from "../../src/ipc/generated/AppSnapshot";
+import type { TerminalStatus } from "../../src/ipc/generated/TerminalStatus";
+import type { TerminalTabSnapshot } from "../../src/ipc/generated/TerminalTabSnapshot";
 
 /**
  * 1 つのコマンドへの偽の応答。ok なら値を返し、error なら Rust のコマンドの失敗と同じく文字列で失敗させる。
@@ -45,9 +47,27 @@ export interface RecordedCall {
   args: unknown;
 }
 
-/** テスト用の写し。 */
+/** テスト用の写し。既定はプロジェクト 0 件・ターミナル 0 枚で、ペインの寸法は Rust の初期値と同じ。 */
 export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapshot {
-  return { schemaVersion: 1, appVersion: "0.0.0-e2e", terminals: [], ...overrides };
+  return {
+    schemaVersion: 1,
+    appVersion: "0.0.0-e2e",
+    projects: [],
+    selectedProjectId: null,
+    terminals: [],
+    layout: { sidebarWidth: 260, sidebarCollapsed: false, cardAreaHeight: 200 },
+    notice: null,
+    ...overrides,
+  };
+}
+
+/** テスト用の写しのターミナル 1 枚。既定はプロジェクトを持たない(検証画面と同じ形)。 */
+export function sampleTerminal(
+  id: string,
+  status: TerminalStatus,
+  overrides: Partial<TerminalTabSnapshot> = {},
+): TerminalTabSnapshot {
+  return { id, projectId: null, label: "ターミナル 1", status, ...overrides };
 }
 
 const DEFAULT_REPLIES: TauriMockConfig = {
