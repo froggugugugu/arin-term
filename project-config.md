@@ -85,12 +85,13 @@ flowchart LR
 | フレームワーク   | Tauri 2.12 系（Rust 1.98.1 + TypeScript 6.0 系）。画面は React 19.3.1 + zustand 5.0.16。Electron は不採用 |
 | ビルド           | Cargo ワークスペース（`arin-core` / `arin-platform` / `src-tauri`）と Vite 8 系。パッケージ管理は npm |
 | ターミナルエンジン | xterm.js 6.0.0（第一候補。M1 の Go/No-Go で最終判断し ADR-001 に残す）。描画方式（DOM / WebGL）は M1 の Go/No-Go で決める（切り替え用に `@xterm/addon-webgl` 0.19.0 を入れてある）。アドオンは `addon-fit` 0.11.0、`addon-unicode11` 0.9.0、`addon-unicode-graphemes` 0.4.0。PTY は Rust 側の `portable-pty` 0.9.0 |
+| macOS の API     | `arin-platform` だけが使う: `objc2` 0.6.5、`objc2-foundation` 0.3.2、`objc2-app-kit` 0.3.2、`libc` 0.2.191、`base64` 0.23.1（どれも Tauri と同じ版。ADR-009）。フォルダ選択は `NSOpenPanel` を直接呼ぶ（`tauri-plugin-dialog` は使わない） |
 | スタイリング     | 素の CSS とカスタムプロパティ（システムのライト／ダークに追従） |
 | 状態管理         | Rust の `arin-core` が正本。画面側は zustand のストアに写しを持つ。永続化は JSON ファイル、設定ファイルは TOML |
 | バリデーション   | なし                                           |
 | ルーティング     | なし（単一ウィンドウ）                         |
 | アイコン         | 自作の少数の SVG（仮定）                       |
-| コード品質       | `tsc` の厳格オプション、`cargo clippy -- -D warnings`、`cargo fmt --check`、境界検査スクリプト |
+| コード品質       | `tsc` の厳格オプション、`cargo clippy -- -D warnings`、`cargo fmt --check`、境界検査スクリプト、Biome 2.6.4（React のフックの 2 規則だけ。ADR-008） |
 | 依存方向チェック | Cargo のクレート依存と TypeScript のプロジェクト参照で強制（UI → ロジック の一方向） |
 | Git Hooks        | なし                                           |
 | テスト           | `cargo test` と Vitest（単体・結合）。画面は Playwright のブラウザ方式（WebKit）と実アプリの起動スモーク |
@@ -106,9 +107,10 @@ flowchart LR
 
 ```bash
 npm run build          # 画面の型検査とビルド + Rust のビルド
-npm test               # 単体・結合テスト（vitest run + cargo test）
+npm test               # 単体・結合テスト（vitest run + cargo test + node --test）
 npm run test:coverage  # カバレッジ付きテスト（出力先 testreport/coverage/）
-npm run lint           # tsc + cargo clippy + cargo fmt --check + 境界検査
+npm run lint           # tsc + biome lint + cargo clippy + cargo fmt --check + 境界検査
+npm run gen:types      # Rust の型から src/ipc/generated/ を再生成
 npm run app            # .app バンドルを生成（tauri build。署名なし）
 npm run app:debug      # デバッグ版の .app（検証用の記録 [arin:verify] が出る）
 npm run dev            # 開発用に起動（tauri dev。人間が体感確認するとき）

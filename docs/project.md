@@ -3,7 +3,7 @@
 ## 概要
 
 macOS 向けのライト・マルチターミナル「Arin」(Tauri 2、arm64、最低 OS 15.0)。M0(骨格)と M1(ターミナル 1 枚。ログインシェル・PTY・xterm.js・コピー/ペースト)の実装が済み、M1 は本人が Go と判定した(`output/design/ADR_001_terminal-engine.md`)。
-プロジェクト管理・タブ・ファイルツリー・設定ファイルは未実装(M2 以降)。設計は `output/design/ARCH_multi-terminal.md`、進捗は `output/tasks/PROGRESS.md`。
+M2(プロジェクトの登録・カード一覧・タブ・ペインの分割・`state.json` の保存・ルートへの追従・終了の確認)の実装が済み、本人の完了確認待ち。ツリーの中身・タイル表示・設定ファイルは未実装。設計は `output/design/ARCH_multi-terminal.md`、進捗は `output/tasks/PROGRESS.md`。
 
 ## コマンド
 
@@ -34,6 +34,8 @@ npm run perf           # 性能の計測(記録だけで失敗しない。結果
 | アプリ基盤 | Tauri 2.12.5(Rust 1.98.1、edition 2024) |
 | 画面 | React 19.3.1、zustand 5.0.16(vanilla ストア)、Vite 8.3.5、TypeScript 6.0.3 |
 | ターミナル | @xterm/xterm 6.0.0(addon-fit 0.11.0、addon-unicode11 0.9.0、addon-unicode-graphemes 0.4.0、addon-webgl 0.19.0)、portable-pty 0.9.0 |
+| macOS の API(`arin-platform` だけ) | objc2 0.6.5、objc2-foundation 0.3.2、objc2-app-kit 0.3.2、libc 0.2.191、base64 0.23.1(どれも Tauri と同じ版。ADR-009) |
+| フックの検査 | @biomejs/biome 2.6.4(`useExhaustiveDependencies`・`useHookAtTopLevel` だけ。ADR-008) |
 | 型の生成 | ts-rs 12.0.1(Rust → `src/ipc/generated/`) |
 | テスト | Vitest 5.0.5、cargo test、node --test、Playwright 1.64.1(WebKit)、cargo-llvm-cov |
 | 実行環境 | Node 24 以上 |
@@ -47,6 +49,7 @@ npm run perf           # 性能の計測(記録だけで失敗しない。結果
 | ストア | 責務 |
 | ------ | ---- |
 | `appStore`(`src/state/appStore.ts`) | Rust から届いた `AppSnapshot` を丸ごと置き換えて持つ。起動失敗の原因も持つ |
+| `uiStore`(`src/state/uiStore.ts`) | 表示だけの状態(終了の確認・削除の確認・カードのメニュー・閉じた知らせ)。Rust には送らない |
 
 ## 制約事項
 

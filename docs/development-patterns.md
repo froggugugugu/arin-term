@@ -34,12 +34,15 @@
 ## 4. 依存の版
 
 - 版は正確に固定する(npm は `^` なし、Cargo は `=`)。新しく選ぶ版は公開から 2 週間未満のものを避ける(ADR-003)
+- OS 連携のクレート(objc2 系・libc・base64)は Tauri が引き込む版と同じにする。Tauri を上げたら `Cargo.lock` に 2 つの版が載っていないか確かめ、ずれたら合わせる(ADR-009)
+- Biome は React のフックの 2 規則だけを見る。わざと依存を外すときは `biome-ignore` に理由を書く。後片付けで `ref.current` を読む誤りは検出されないのでレビューで見る(ADR-008)
 
 ## 5. テスト
 
 - 状態フォルダは `ARIN_STATE_DIR`(絶対パス)で差し替える。テストとスモークは本物の `~/Library/Application Support/Arin/` を読み書きしない。`ARIN_SMOKE=1` は差し替え時だけ有効
 - Tauri のアプリ(模擬ランタイム)を作る `src-tauri/tests/` は `harness = false`(macOS ではメニューの部品をメインスレッドでしか作れず、標準ハーネスの別スレッドでは panic する)。テストを足すときは `src-tauri/Cargo.toml` に `[[test]]` を足す
 - 実 PTY のテスト(`crates/arin-platform/tests/pty.rs` にならう): シェルは `/bin/zsh` 固定、`HOME` を一時フォルダに向ける、出力は目印の文字列で囲ませて取り出す、共通のロックで直列にする、どの待ちにも上限時間を付ける
+- ペーストボードのテストは一般のペーストボード(利用者のクリップボード)に触れず、名前付きのペーストボードに書いて終わったら解放する(ADR-009)
 - 性能の計測テストは `#[ignore]` にし、`npm run perf` が `--release -- --ignored` で動かす
 - `npm run e2e` は実アプリではなく Vite の画面を WebKit で開き、Rust との通信は `e2e/fixtures/tauriMock.ts` が差し替える(出力は `sendChannelBytes`、イベントは `emitEvent` で流す)。製品のソースに差し込み口は置かない。1420 番を使うので `npm run dev` を動かしたままだと失敗する
 - DOM 描画の要素から表示を読むテストは、WebGL 描画ではそのまま使えない
@@ -57,4 +60,6 @@
 | xterm.js が CSP で止められる | 実行時に `<style>` 要素を作り、truecolor の文字に style 属性を書く | `style-src-elem 'self' 'unsafe-inline'` と `style-src-attr 'unsafe-inline'` を足す(`style-src`・`script-src` は変えない) |
 | Tauri の既定のメニューが ⌘W などを持つ | メニューを指定しないと macOS で既定のメニューが付く | `menu.rs` で「Arin」と「編集」だけのメニューに置き換えた。⌘C・⌘V はメニュー経由で画面の `copy`・`paste` イベントになる |
 | `footprint` が別のプロセスを測る | PID を位置引数で渡すと名前の部分一致になる | 必ず `-p <pid>` で渡す(`scripts/perf/app-memory.mjs`) |
+| フォルダを削除しても「見つからない」にならない | `F_GETPATH` は削除後も消える前のパスを返す(macOS 26、APFS) | 記述子の `fstat` が `ENOENT` かと、返ったパスの装置番号・inode が一致するかで判定する(`arin-platform/src/watch/`) |
+| `tauri-plugin-dialog` を足すとファイル操作のプラグインが入る | `tauri-plugin-fs` が optional でない依存 | `NSOpenPanel` を直接呼ぶ(`desktop/folder_panel.rs`)。メインスレッドでしか開けないので `run_on_main_thread` で開いて待つ |
 | `scripts/smoke.test.mjs` がときどき落ちる | 一時フォルダの数を数える検査が、ほかのテストと同時に動かすと乱れる | 単独で再実行して確かめる |
