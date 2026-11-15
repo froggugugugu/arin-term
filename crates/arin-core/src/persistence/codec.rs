@@ -2,11 +2,14 @@
 //!
 //! 設計書 §6.2 のスキーマのうち M2 で使う分(`projects[]` の `id`・`bookmark`・`lastKnownPath`・`customName`・`colorId`、
 //! `ui` の `selectedProjectId`・`sidebarWidth`・`sidebarCollapsed`・`cardAreaHeight`)と、M3 で足した
-//! `projects[].tree.showHidden`(計画書 T38e)を読み書きする。`tree.expanded` は M6 まで読まず書かない。
+//! `projects[].tree.showHidden`(計画書 T38e)、M4 で足した `ui.displayMode`(計画書 T46c)を読み書きする。
+//! `tree.expanded` は M6 まで読まず書かない。
 //! 入出力はしない。読んだバイト列(無ければ `None`)を受けて結果を返し、書く文字列を返すだけ。
 //!
 //! - 欠けたキーは既定値で補い、未知のキーは無視する(キーの追加では版を上げない)。M2 が書いた `tree` の無いファイルもそのまま読む
 //! - `tree` の形が違うときは、退避せずにそのプロジェクトのツリーの設定だけを既定値にする(計画書 T38e の【仮定】)
+//! - `ui.displayMode` が無い・知らない値・型が違うときは、退避せずにタブ表示にする(計画書 M4 の【仮定】16)。
+//!   タブ表示(既定)のあいだは書かない(M3 までの `state.json` と同じ形のまま。ページと拡大中は保存しない)
 //! - JSON として読めない・版が正しくない・新しすぎる・形が違うときは「退避する」を返す(決定 (d))。
 //!   退避の名前は [`broken_file_name`] が時計の値から作る(【仮定】3)
 //! - ブックマークは base64 の文字列のまま扱い、中身は解釈しない(【仮定】2)。null のものは作り直しの指示にする(【仮定】13)
@@ -14,10 +17,11 @@
 
 use std::collections::HashSet;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+use crate::layout::tiles::DisplayMode;
 use crate::project::{Project, ProjectId};
 
 /// 状態ファイルの名前。正本はポート側の定数(同じ名前を 2 か所に持たない)。
@@ -29,7 +33,7 @@ pub const STATE_SCHEMA_VERSION: u32 = 1;
 /// 1 日の秒数。
 const SECONDS_PER_DAY: u64 = 86_400;
 
-/// 保存する左ペインの寸法(CSS ピクセル)。読んだ値をそのまま持つ。
+/// 保存する左ペインの寸法(CSS ピクセル)と右ペインの表示モード。読んだ値をそのまま持つ。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PersistedLayout {
     /// 左ペインの幅(`ui.sidebarWidth`)。無い・null なら `None`。
@@ -38,6 +42,8 @@ pub struct PersistedLayout {
     pub sidebar_collapsed: bool,
     /// 左ペイン上段(カード領域)の高さ(`ui.cardAreaHeight`)。無い・null なら `None`。
     pub card_area_height: Option<f64>,
+    /// 右ペインの表示モード(`ui.displayMode`)。無い・知らない値ならタブ表示。
+    pub display_mode: DisplayMode,
 }
 
 /// `state.json` に保存する内容。表示値(見つからない・表示用のパス)を持たない。
@@ -125,6 +131,27 @@ struct UiSection {
     sidebar_collapsed: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     card_area_height: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "lenient_display_mode",
+        skip_serializing_if = "is_tabs"
+    )]
+    display_mode: DisplayMode,
+}
+
+/// `ui.displayMode` を読む。知らない値・型の違う値(null を含む)は、状態ファイルを退避せずにタブ表示にする
+/// (1 つの値のためにプロジェクトの一覧を退避しない。【仮定】16)。
+fn lenient_display_mode<'de, D>(deserializer: D) -> Result<DisplayMode, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
+/// タブ表示(既定)なら書かない(serde の `skip_serializing_if` は参照を渡す)。
+fn is_tabs(mode: &DisplayMode) -> bool {
+    *mode == DisplayMode::Tabs
 }
 
 /// 状態ファイルを読む。`contents` は読んだバイト列、ファイルが無ければ `None`。
@@ -153,6 +180,7 @@ pub fn encode(state: &PersistedState) -> Result<String, EncodeError> {
             sidebar_width: state.layout.sidebar_width,
             sidebar_collapsed: state.layout.sidebar_collapsed,
             card_area_height: state.layout.card_area_height,
+            display_mode: state.layout.display_mode,
         },
     };
     let mut text = serde_json::to_string_pretty(&file)
@@ -227,6 +255,7 @@ fn tidy(file: StateFile) -> LoadedState {
                 sidebar_width: file.ui.sidebar_width,
                 sidebar_collapsed: file.ui.sidebar_collapsed,
                 card_area_height: file.ui.card_area_height,
+                display_mode: file.ui.display_mode,
             },
         },
         rebuild_bookmarks,

@@ -38,7 +38,7 @@ pub struct Workspace {
     pub(super) tabs: TerminalStore,
     pub(super) terminals: HashMap<TerminalId, TerminalEntry>,
     pub(super) layout: PaneSizes,
-    /// 表示モード・タイルのページ・拡大(`display.rs`)。起動のたびにタブ表示で始まる(保存は T46c)。
+    /// 表示モード・タイルのページ・拡大(`display.rs`)。表示モードだけを保存し、ページと拡大中は起動のたびに初めから。
     pub(super) display: DisplayState,
     pub(super) notice: Option<String>,
     /// 状態ファイルに保存するか(検証画面では保存しない)。
@@ -52,6 +52,8 @@ impl Workspace {
     /// (PTY は最初の接続で起動する。cwd はルート)。解決できなかったもの・`startup.roots` に無いもの・ゴミ箱の中や
     /// 別のプロジェクトと同じフォルダに解決されたものは「見つからない」にしてタブを作らない(保存値は読んだまま)。
     /// ペインの寸法は保存値に規則(`PaneSizes::sanitized`)を当て、無い項目は初期値にする。
+    /// 表示モードは保存値のまま(FR-048。無ければタブ表示)。ページはフォーカス中のタイル(選択中のプロジェクトの
+    /// 表示中のタブ)のページになり、拡大はしていない(前提 (b))。
     ///
     /// - `app_version`: アプリの版
     /// - `home`: ホームフォルダ。分からなければ空のパスを渡す
@@ -75,6 +77,7 @@ impl Workspace {
         let mut ws = Self::empty(app_version, home, parent_env, ExitPolicy::CloseTab, true);
         ws.projects = ProjectStore::restore(state.projects, state.selected_project_id);
         ws.layout = pane_sizes(&state.layout);
+        ws.display.mode = state.layout.display_mode;
         ws.notice = notice;
 
         let ids: Vec<ProjectId> = ws
@@ -261,6 +264,8 @@ impl Workspace {
                 sidebar_width: Some(self.layout.sidebar_width),
                 sidebar_collapsed: self.layout.sidebar_collapsed,
                 card_area_height: Some(self.layout.card_area_height),
+                // ページと拡大中は保存しない(設計書 §6.1)
+                display_mode: self.display.mode,
             },
         })
     }

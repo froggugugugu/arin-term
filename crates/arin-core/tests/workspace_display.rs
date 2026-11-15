@@ -715,11 +715,119 @@ fn 表示モードを変えると変わったと返し同じなら返さない()
 
 #[test]
 fn 起動時はタブ表示で始まる() {
-    // 表示モードの保存と復元は T46c。それまでは起動のたびにタブ表示
+    // 保存値に表示モードが無ければ(既定)タブ表示
     let ws = workspace(&[2]);
     let display = ws.snapshot().display;
     assert_eq!(display.mode, DisplayMode::Tabs);
     assert!(!display.maximized);
+}
+
+// ---------------------------------------------------------------------------
+// 表示モードの保存と復元(FR-048、FR-056、設計書 §6.2 の `ui.displayMode`、計画書 T46c、前提 (b))
+
+/// プロジェクト 1〜`count` を 1 枚ずつのタブで復元する(起動時の形)。`mode` と `selected` は保存値。
+fn restore_saved(count: u8, selected: u8, mode: DisplayMode) -> Workspace {
+    let projects: Vec<(ProjectId, RootReference)> = (1..=count)
+        .map(|n| (pid(n), RootReference::new(root_path(n), None)))
+        .collect();
+    let mut state = PersistedState {
+        projects: projects
+            .iter()
+            .map(|(id, root)| Project::restore(id.clone(), root.clone(), None, ProjectColor::Green))
+            .collect(),
+        selected_project_id: Some(pid(selected)),
+        ..PersistedState::default()
+    };
+    state.layout.display_mode = mode;
+    let ws = Workspace::restore(
+        "1.2.3",
+        PathBuf::from(HOME),
+        [("HOME", HOME)],
+        Startup {
+            state,
+            roots: projects
+                .iter()
+                .map(|(id, root)| (id.clone(), RootResolution::Found(root.clone())))
+                .collect(),
+            notice: None,
+        },
+    );
+    check_invariants(&ws);
+    ws
+}
+
+#[test]
+fn 表示モードは保存する内容に入り復元すると同じモードに戻る() {
+    for mode in [DisplayMode::Tabs, DisplayMode::Tiles] {
+        let mut ws = workspace(&[2, 1]);
+        ws.set_display_mode(mode);
+        let saved = ws.persisted_state().expect("保存する");
+        assert_eq!(saved.layout.display_mode, mode);
+
+        let again = restore_saved(2, 1, saved.layout.display_mode);
+        assert_eq!(again.display_mode(), mode);
+        assert_eq!(again.snapshot().display.mode, mode);
+    }
+}
+
+#[test]
+fn 保存値に表示モードが無ければタブ表示で始まる() {
+    // `PersistedState::default()` の表示モード(=状態ファイルに `ui.displayMode` が無いとき)はタブ表示
+    assert_eq!(
+        PersistedState::default().layout.display_mode,
+        DisplayMode::Tabs
+    );
+    let ws = restore_saved(3, 1, PersistedState::default().layout.display_mode);
+    assert_eq!(ws.display_mode(), DisplayMode::Tabs);
+}
+
+#[test]
+fn ページと拡大中は保存する内容に入らない() {
+    let mut ws = workspace(&[10]);
+    ws.set_display_mode(DisplayMode::Tiles);
+    let first = tabs_of(&ws, &pid(1))[0].clone();
+    ws.focus_terminal(&first).unwrap();
+    assert_eq!(page(&ws), 0);
+    let before = ws.persisted_state().expect("保存する");
+
+    // ページを送り、拡大しても保存する内容は変わらない
+    assert!(ws.next_page());
+    assert_eq!(page(&ws), 1);
+    assert_eq!(ws.persisted_state().as_ref(), Some(&before));
+    assert!(ws.toggle_maximize());
+    assert!(ws.snapshot().display.maximized);
+    assert_eq!(ws.persisted_state().as_ref(), Some(&before));
+
+    // 復元すると拡大はしていない
+    let again = restore_saved(1, 1, before.layout.display_mode);
+    assert_eq!(again.display_mode(), DisplayMode::Tiles);
+    assert!(!again.snapshot().display.maximized);
+}
+
+#[test]
+fn タイル表示で保存して復元するとタイル表示の_1_ページ目でフォーカス中のタイルのページを出す() {
+    // 10 プロジェクト × 1 枚。選択がプロジェクト 1 なら 1 ページ目
+    let first = restore_saved(10, 1, DisplayMode::Tiles);
+    let display = first.snapshot().display;
+    assert_eq!(display.mode, DisplayMode::Tiles);
+    assert!(!display.maximized);
+    assert_eq!(display.page, 0);
+    assert_eq!(display.page_count, 2);
+    assert_eq!(display.tile_ids.len(), TILES_PER_PAGE);
+    assert_eq!(display.focused_terminal_id, active_of(&first, &pid(1)));
+
+    // 選択がプロジェクト 10(10 枚目のタイル)なら、そのタイルのページ(2 ページ目)を出す
+    let tenth = restore_saved(10, 10, DisplayMode::Tiles);
+    let display = tenth.snapshot().display;
+    assert_eq!(display.page, 1);
+    assert_eq!(display.grid, TileGrid { cols: 1, rows: 1 });
+    let focused = active_of(&tenth, &pid(10));
+    assert!(focused.is_some());
+    assert_eq!(
+        display.tile_ids,
+        focused.clone().into_iter().collect::<Vec<_>>()
+    );
+    assert_eq!(display.focused_terminal_id, focused);
 }
 
 // ---------------------------------------------------------------------------

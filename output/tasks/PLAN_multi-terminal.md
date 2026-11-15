@@ -1207,7 +1207,7 @@ T46〜T50 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 29c(並行可能。T46b 完了後)
 
-- [ ] T46c — 表示モードの保存と復元(変更ファイル: crates/arin-core/src/persistence/codec.rs, crates/arin-core/src/workspace/state.rs, crates/arin-core/tests/persistence_codec.rs, crates/arin-core/tests/workspace_display.rs | 依存: T46b)
+- [x] T46c — 表示モードの保存と復元(変更ファイル: crates/arin-core/src/persistence/codec.rs, crates/arin-core/src/workspace/state.rs, crates/arin-core/tests/persistence_codec.rs, crates/arin-core/tests/workspace_display.rs | 依存: T46b)
   - 対応: FR-048(再起動後に終了時の表示モードで開く)、FR-056、設計書 §6.2 の `ui.displayMode`、前提 (b)、【仮定】16
   - 置くもの: `PersistedLayout` に表示モード。`state.json` の `ui.displayMode`(`"tabs"` / `"tiles"`)。無い・知らない値はタブ表示(退避しない)。`persisted_state` と `restore` でモードだけを往復させる(ページと拡大中は保存しない)
   - 並行: 可(T47a とファイルが重ならない。生成物は触らない)

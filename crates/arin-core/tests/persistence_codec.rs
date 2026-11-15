@@ -4,6 +4,7 @@
 
 use std::path::PathBuf;
 
+use arin_core::layout::tiles::DisplayMode;
 use arin_core::persistence::codec::{
     EncodeError, LoadOutcome, LoadedState, PersistedLayout, PersistedState, QuarantineReason,
     STATE_FILE_NAME, STATE_SCHEMA_VERSION, broken_file_name, decode, encode,
@@ -59,6 +60,7 @@ fn sample_state() -> PersistedState {
             sidebar_width: Some(312.5),
             sidebar_collapsed: true,
             card_area_height: Some(240.0),
+            display_mode: DisplayMode::Tabs,
         },
     }
 }
@@ -234,6 +236,7 @@ fn 欠けたキーは既定値で補う() {
                 sidebar_width: Some(200.0),
                 sidebar_collapsed: false,
                 card_area_height: None,
+                display_mode: DisplayMode::Tabs,
             },
         }
     );
@@ -271,7 +274,7 @@ fn 未知のキーは無視する() {
             "colorId": "green",
             "tree": { "expanded": ["src"], "showHidden": true },
         }],
-        "ui": { "displayMode": "tiles", "selectedProjectId": ID_A },
+        "ui": { "futureUiKey": "x", "selectedProjectId": ID_A },
     })));
 
     // `tree.showHidden` は読む(計画書 T38e)。`tree.expanded` は M6 まで読まない
@@ -369,6 +372,7 @@ fn tree_キーの無い状態ファイルも読める() {
                 sidebar_width: Some(280.0),
                 sidebar_collapsed: false,
                 card_area_height: Some(220.0),
+                display_mode: DisplayMode::Tabs,
             },
         }
     );
@@ -435,6 +439,158 @@ fn 保存する内容に展開状態を含めない() {
 
     assert_eq!(value["projects"][0]["tree"], json!({ "showHidden": true }));
     assert!(!value.to_string().contains("expanded"), "{value}");
+}
+
+// ---- 表示モード(計画書 T46c、設計書 §6.2 の `ui.displayMode`、ADR-011 の 2、【仮定】16) ----
+
+/// M3 のアプリが書いた `state.json`(版 1。`tree` はあるが `ui.displayMode` が無い)。利用者の手元にあるものをそのまま読めること。
+const M3_STATE_JSON: &str = r#"{
+  "schemaVersion": 1,
+  "projects": [
+    {
+      "id": "0123abcd-89ab-4def-8123-456789abcdef",
+      "bookmark": "Ym9va21hcmstYQ==",
+      "lastKnownPath": "/Users/me/dev/app",
+      "customName": null,
+      "colorId": "red",
+      "tree": {
+        "showHidden": true
+      }
+    },
+    {
+      "id": "11111111-2222-4333-8444-555555555555",
+      "bookmark": "Ym9va21hcmstYg==",
+      "lastKnownPath": "/Users/me/notes",
+      "customName": "メモ",
+      "colorId": "teal"
+    }
+  ],
+  "ui": {
+    "selectedProjectId": "0123abcd-89ab-4def-8123-456789abcdef",
+    "sidebarWidth": 300.0,
+    "sidebarCollapsed": true,
+    "cardAreaHeight": 180.0
+  }
+}
+"#;
+
+fn m3_state() -> PersistedState {
+    PersistedState {
+        projects: vec![
+            project(
+                ID_A,
+                "/Users/me/dev/app",
+                Some("Ym9va21hcmstYQ=="),
+                None,
+                ProjectColor::Red,
+            )
+            .with_show_hidden(true),
+            project(
+                ID_B,
+                "/Users/me/notes",
+                Some("Ym9va21hcmstYg=="),
+                Some("メモ"),
+                ProjectColor::Teal,
+            ),
+        ],
+        selected_project_id: Some(id(ID_A)),
+        layout: PersistedLayout {
+            sidebar_width: Some(300.0),
+            sidebar_collapsed: true,
+            card_area_height: Some(180.0),
+            display_mode: DisplayMode::Tabs,
+        },
+    }
+}
+
+#[test]
+fn 表示モードを書いて読むと同じモードに戻る() {
+    for mode in [DisplayMode::Tabs, DisplayMode::Tiles] {
+        let mut state = sample_state();
+        state.layout.display_mode = mode;
+
+        let back = loaded(decode_str(&encode(&state).expect("書ける")));
+
+        assert_eq!(back.state.layout.display_mode, mode);
+        assert_eq!(back.state, state);
+    }
+}
+
+#[test]
+fn display_mode_が無い状態ファイルはタブ表示で始まる() {
+    // M3 までの `state.json`(文字列のまま)を退避せずに読め、表示モードはタブ表示になる。ほかの内容はそのまま
+    let m3 = loaded(decode_str(M3_STATE_JSON));
+    assert_eq!(m3.state, m3_state());
+    assert_eq!(m3.state.layout.display_mode, DisplayMode::Tabs);
+    assert!(m3.rebuild_bookmarks.is_empty());
+
+    // M2 の `state.json`(`tree` も無い)も同じ
+    let m2 = loaded(decode_str(M2_STATE_JSON));
+    assert_eq!(m2.state.layout.display_mode, DisplayMode::Tabs);
+
+    // `ui` が丸ごと無いときもタブ表示
+    let bare = loaded(decode_value(&json!({ "schemaVersion": 1 })));
+    assert_eq!(bare.state.layout.display_mode, DisplayMode::Tabs);
+}
+
+#[test]
+fn 知らない値はタブ表示にし退避しない() {
+    let unknown = [
+        json!("grid"),
+        json!("Tiles"),
+        json!("TILES"),
+        json!(""),
+        json!(1),
+        json!(0),
+        json!(true),
+        json!(null),
+        json!([]),
+        json!(["tiles"]),
+        json!({}),
+        json!({ "mode": "tiles" }),
+    ];
+    for bad in unknown {
+        let mut value: Value = serde_json::from_str(M3_STATE_JSON).unwrap();
+        value["ui"]["displayMode"] = bad.clone();
+
+        // 退避せずに読め、表示モードだけがタブ表示になる。プロジェクト一覧・選択・ペインの寸法は保つ
+        let outcome = loaded(decode_value(&value));
+        assert_eq!(outcome.state, m3_state(), "{bad}");
+    }
+}
+
+#[test]
+fn タブ表示のあいだは_display_mode_を書かない() {
+    // 【仮定】(計画書の「タブ表示のときも書く」と違う): 既定のあいだは書かず、M3 までの `state.json` と同じ形のまま残す
+    // (`tree` の既定値を書かないのと同じ。読むときは無ければタブ表示)
+    let outcome = loaded(decode_str(M3_STATE_JSON));
+    let rewritten: Value = serde_json::from_str(&encode(&outcome.state).expect("書ける")).unwrap();
+    let original: Value = serde_json::from_str(M3_STATE_JSON).unwrap();
+
+    assert_eq!(rewritten, original);
+    assert!(rewritten["ui"].get("displayMode").is_none(), "{rewritten}");
+    // 版は 1 のまま
+    assert_eq!(rewritten["schemaVersion"], json!(1));
+}
+
+#[test]
+fn タイル表示のときは_display_mode_に_tiles_を書く() {
+    let mut state = m3_state();
+    state.layout.display_mode = DisplayMode::Tiles;
+
+    let value: Value = serde_json::from_str(&encode(&state).expect("書ける")).unwrap();
+
+    assert_eq!(value["schemaVersion"], json!(1));
+    assert_eq!(
+        value["ui"],
+        json!({
+            "selectedProjectId": ID_A,
+            "sidebarWidth": 300.0,
+            "sidebarCollapsed": true,
+            "cardAreaHeight": 180.0,
+            "displayMode": "tiles",
+        })
+    );
 }
 
 // ---- 無い・退避 ----
