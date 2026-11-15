@@ -932,7 +932,7 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 不可
   - 先に書くテスト(模擬ランタイム、偽 PTY、名前付きのペーストボード、偽のデスクトップのポート): `相対パスのコピーで_src/a_b.ts_がペーストボードに入る`(AC-T03)、`絶対パスのコピーでルートとつないだパスが入る`、`ルートの絶対パスをコピーできる`、`挿入で偽_pty_に_src/a\_b.ts_と空白が書かれ改行が書かれない`(AC-T04 の Rust 側)、`別のプロジェクトのターミナルへは絶対パスが書かれる`、`finder_で表示と開くは偽のポートに正しいパスで届く`、`ルートの外とドットドットは拒否する`。Vitest: 新しいコマンドの包み
   - 検証: `npm test && npm run lint && npm run app && npm run smoke`
-- [ ] T42e — メニューバーとショートカットの表(変更ファイル: src-tauri/src/menu.rs, src-tauri/src/commands/app.rs, src-tauri/src/lib.rs, src-tauri/tests/app_menu.rs, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T38d, T42d)
+- [x] T42e — メニューバーとショートカットの表(変更ファイル: src-tauri/src/menu.rs, src-tauri/src/commands/app.rs, src-tauri/src/lib.rs, src-tauri/tests/app_menu.rs, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T38d, T42d)
   - 対応: 【要件の追加】、FR-024(ショートカット)、FR-027(切り取り)、FR-044(M2 のタブ操作を壊さない)、C-04、前提 (e)、【仮定】21
   - 変えるもの: `menu.rs` の項目のアクセラレータを T38d の表から作る(ID とキーの文字列を `menu.rs` に直書きしない。文言は `menu.rs` に残す)。表の受け口が「メニューの項目」のものだけをメニューに載せる。「編集」に標準の「切り取り」(⌘X)を足す(画面の `cut` イベントになる)。`get_shortcuts` で表を画面へ渡す(起動時に 1 回。M4.5 で設定の値を混ぜる口)
   - 並行: 不可

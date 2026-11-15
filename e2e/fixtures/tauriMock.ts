@@ -34,6 +34,9 @@ import type { ProjectColor } from "../../src/ipc/generated/ProjectColor";
 import type { RunningTerminal } from "../../src/ipc/generated/RunningTerminal";
 import type { TerminalStatus } from "../../src/ipc/generated/TerminalStatus";
 import type { TerminalTabSnapshot } from "../../src/ipc/generated/TerminalTabSnapshot";
+// 既定の表の見本。生成した src/ipc/generated/defaultShortcuts.json と同じ中身であることを
+// scripts/default-shortcuts.test.mjs が確かめる(e2e/ の tsconfig は JSON を対象に含めないので見本を使う)。
+import { DEFAULT_SHORTCUT_TABLE } from "../../src/logic/keys/defaultShortcuts";
 
 /**
  * 1 つのコマンドへの偽の応答。ok なら値を返し、error なら Rust のコマンドの失敗と同じく文字列で失敗させる。
@@ -151,6 +154,7 @@ export function sampleRunningTerminal(
 const DEFAULT_REPLIES: TauriMockConfig = {
   get_app_snapshot: { ok: sampleSnapshot() },
   get_launch_options: { ok: { renderer: "dom", unicode: "unicode11", verifyGrid: false } },
+  get_shortcuts: { ok: DEFAULT_SHORTCUT_TABLE.map((binding) => ({ ...binding })) },
   notify_app_ready: { ok: null },
   report_frontend_error: { ok: null },
   confirm_quit: { ok: null },

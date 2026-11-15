@@ -68,10 +68,12 @@ const MODIFIERS: Readonly<Record<string, keyof Omit<ParsedAccelerator, "key">>> 
   control: "ctrl",
 };
 
-/** 名前のキー(小文字 → KeyboardEvent の key の名前)。 */
+/**
+ * 名前のキー(小文字 → KeyboardEvent の key の名前)。Rust の `KeyChord::parse`(`arin-core/shortcuts/key.rs`)が読む名前だけ
+ * (`Return` は muda が読めないので読まない)。
+ */
 const NAMED_KEYS: Readonly<Record<string, string>> = {
   enter: "Enter",
-  return: "Enter",
   backspace: "Backspace",
   delete: "Delete",
   escape: "Escape",
@@ -113,7 +115,10 @@ const NAMED_KEY_LABELS: Readonly<Record<string, string>> = {
   ArrowRight: "→",
 };
 
-/** キーの文字列を修飾キーとキーに分けて読む。読めなければ null(未知の修飾キー・キーが無い・2 つ以上・同じ修飾キーの重なり)。 */
+/**
+ * キーの文字列を修飾キーとキーに分けて読む。受け付ける範囲は Rust の `KeyChord::parse` と同じ。
+ * 読めなければ null(未知の修飾キー・キーが無い・2 つ以上・同じ修飾キーの重なり・キーの後ろの修飾キー)。
+ */
 export function parseAccelerator(accelerator: string): ParsedAccelerator | null {
   const parts = accelerator.split("+");
   // 「Cmd++」のような + のキーは表に無いので扱わない
@@ -123,7 +128,8 @@ export function parseAccelerator(accelerator: string): ParsedAccelerator | null 
   for (const part of parts) {
     const modifier = MODIFIERS[part.toLowerCase()];
     if (modifier !== undefined) {
-      if (mods[modifier]) return null;
+      // 修飾キーを先に、キーを最後に書く(`A+Cmd` は読まない)
+      if (key !== null || mods[modifier]) return null;
       mods[modifier] = true;
       continue;
     }

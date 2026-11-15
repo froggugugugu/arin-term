@@ -52,6 +52,19 @@ describe("parseAccelerator(キーの文字列を修飾キーとキーに分け�
     expect(parseAccelerator("Cmd+A+B")).toBeNull();
     expect(parseAccelerator("Cmd+Foo")).toBeNull();
   });
+
+  it("Rust_の_KeyChord_と同じく_Return_は読まない", () => {
+    // muda は Return を読めない(Tauri が黙って捨てる)ので、Rust の KeyChord::parse も拒否する。名前は Enter だけ
+    expect(parseAccelerator("Return")).toBeNull();
+    expect(parseAccelerator("Cmd+Return")).toBeNull();
+    expect(parseAccelerator("Cmd+Enter")?.key).toBe("Enter");
+  });
+
+  it("Rust_の_KeyChord_と同じくキーの後ろに修飾キーを書いた形は読まない", () => {
+    expect(parseAccelerator("A+Cmd")).toBeNull();
+    expect(parseAccelerator("Cmd+N+Shift")).toBeNull();
+    expect(parseAccelerator("Enter+Cmd")).toBeNull();
+  });
 });
 
 describe("matchesAccelerator(押されたキーと表のキーを比べる)", () => {

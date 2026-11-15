@@ -27,6 +27,31 @@ describe("src/ipc の包み", () => {
     expect(result).toEqual({ renderer: "webgl", unicode: "graphemes", verifyGrid: true });
   });
 
+  it("ショートカットの表の取得は_get_shortcuts_を引数なしで呼び_届いた表をそのまま返す", async () => {
+    const table = [{ command: "tree.trash", accelerator: "Cmd+Backspace", receiver: "screen" }] as const;
+    const fake = createFakeIpc({ get_shortcuts: () => [...table] });
+    const ipc = createIpc(fake.transport);
+
+    const result = await ipc.getShortcuts();
+
+    expect(fake.calls).toEqual([{ command: "get_shortcuts", args: undefined }]);
+    expect(result).toEqual(table);
+  });
+
+  it("偽の通信の_get_shortcuts_の既定の応答は既定の表_18_行", async () => {
+    const ipc = createIpc(createFakeIpc().transport);
+
+    const result = await ipc.getShortcuts();
+
+    expect(result).toHaveLength(18);
+    expect(result[0]).toEqual({ command: "terminal.new-tab", accelerator: "Cmd+T", receiver: "menu-item" });
+    expect(result.find((b) => b.command === "edit.cut")).toEqual({
+      command: "edit.cut",
+      accelerator: "Cmd+X",
+      receiver: "edit-item",
+    });
+  });
+
   it("準備完了の通知は notify_app_ready を引数なしで 1 回だけ呼ぶ", async () => {
     const fake = createFakeIpc();
     const ipc = createIpc(fake.transport);

@@ -5,6 +5,7 @@
 //! セッション管理と保存のスレッドとプロジェクトの操作(`projects.rs`)とルートへの追従の見回り(`patrol.rs`)を作って登録し、
 //! ツリーの操作(`tree.rs`)とファイル操作(`fileops.rs`。切り取りの状態をアプリに 1 つ持つ)と、選択中のプロジェクトのツリーの監視の張り替え(`tree_watch.rs`。写しを送るたびに張り替えを頼む)を登録し、
 //! デスクトップとパスの操作(`commands/desktop.rs`。Finder で表示・開く・パスのコピー・ターミナルへの挿入)を登録し、
+//! ショートカットの表(`menu::Shortcuts`。メニューバーと `get_shortcuts` が同じものを見る)を登録し、
 //! コマンドとメニューバー(`menu.rs`。項目が選ばれたときも `menu.rs`)と終了の確認の状態(`lifecycle.rs`)を登録して
 //! tauri.conf.json のウィンドウを 1 枚出す。Finder からのドロップは `lifecycle.rs` が受ける。
 
@@ -46,6 +47,7 @@ use crate::events::TREE_CHANGED_EVENT;
 use crate::fileops::FileOps;
 use crate::launch::LaunchConfig;
 use crate::lifecycle::{FirstOutputNotice, QuitGate, ReadyNotice};
+use crate::menu::Shortcuts;
 use crate::patrol::{PATROL_INTERVAL, PatrolThread, RootPatrol};
 use crate::persistence::{Persistence, PersistencePorts, load_startup};
 use crate::projects::{FolderPicker, NativeFolderPicker, ProjectPorts, Projects};
@@ -213,6 +215,9 @@ pub fn builder_with_desktop<R: Runtime>(
         .manage(ready)
         .manage(first_output)
         .manage(QuitGate::default())
+        // ショートカットの表(T42e)。メニュー(`menu::build`)と `get_shortcuts` がこれを見る。
+        // M4.5 では、ここで設定ファイルの値とまとめた表を渡す。
+        .manage(Shortcuts::default())
         .menu(menu::build)
         .on_menu_event(|app, event| menu::on_menu_event(app, event.id().as_ref()))
         .setup(move |app| {
@@ -322,6 +327,7 @@ pub fn builder_with_desktop<R: Runtime>(
         .invoke_handler(tauri::generate_handler![
             commands::app::get_app_snapshot,
             commands::app::get_launch_options,
+            commands::app::get_shortcuts,
             commands::app::notify_app_ready,
             commands::app::report_frontend_error,
             commands::app::confirm_quit,

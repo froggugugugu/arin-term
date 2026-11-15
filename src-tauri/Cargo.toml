@@ -30,6 +30,9 @@ tauri = { workspace = true, features = ["test"] }
 serde_json = { workspace = true }
 # コマンドの戻り値を型で読み戻す(DeserializeOwned)。arin-core が既に使っている版と同じ。
 serde = { workspace = true }
+# メニューのアクセラレータの文字列を、Tauri が使う muda の読み方で確かめる(app_menu。T42e)。Tauri が既に引き込んでいる版と同じ。
+# 機能は Tauri が有効にしたものに任せる(足さない)。
+muda = { version = "=0.20.0", default-features = false }
 
 # macOS ではメニューの部品をメインスレッドでしか作れない。標準のテストハーネスは
 # テストを別スレッドで走らせるため、このテストは自前の main で(メインスレッドで)走らせる。

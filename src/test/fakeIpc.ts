@@ -15,6 +15,9 @@ import type {
 import type { AppSnapshot } from "../ipc/generated/AppSnapshot";
 import type { TerminalStatus } from "../ipc/generated/TerminalStatus";
 import type { TerminalTabSnapshot } from "../ipc/generated/TerminalTabSnapshot";
+// 既定の表の見本。生成した src/ipc/generated/defaultShortcuts.json と同じ中身であることを
+// scripts/default-shortcuts.test.mjs が確かめる(src/ の tsconfig は JSON を対象に含めないので見本を使う)。
+import { DEFAULT_SHORTCUT_TABLE } from "../logic/keys/defaultShortcuts";
 
 export interface RecordedCall {
   command: CommandName;
@@ -83,6 +86,7 @@ export function createFakeIpc(handlers: Partial<FakeHandlers> = {}): FakeIpc {
   const all: FakeHandlers = {
     get_app_snapshot: () => sampleSnapshot(),
     get_launch_options: () => ({ renderer: "dom", unicode: "unicode11", verifyGrid: false }),
+    get_shortcuts: () => DEFAULT_SHORTCUT_TABLE.map((binding) => ({ ...binding })),
     notify_app_ready: () => null,
     report_frontend_error: () => null,
     confirm_quit: () => null,

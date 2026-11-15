@@ -16,6 +16,7 @@ import type { ProjectId } from "./generated/ProjectId";
 import type { QuitRequest } from "./generated/QuitRequest";
 import type { RelPath } from "./generated/RelPath";
 import type { RemoveProjectOutcome } from "./generated/RemoveProjectOutcome";
+import type { ShortcutTable } from "./generated/ShortcutTable";
 import type { TerminalId } from "./generated/TerminalId";
 import type { TreeChange } from "./generated/TreeChange";
 
@@ -32,6 +33,8 @@ export type ChannelToken = { readonly __channelToken: unique symbol };
 export interface CommandMap {
   get_app_snapshot: { args: undefined; result: AppSnapshot };
   get_launch_options: { args: undefined; result: LaunchOptions };
+  /** ショートカットの表(T42e)。メニューバーと同じ表。行はコマンドの ID の順。 */
+  get_shortcuts: { args: undefined; result: ShortcutTable };
   notify_app_ready: { args: undefined; result: null };
   report_frontend_error: { args: { message: string }; result: null };
   confirm_quit: { args: undefined; result: null };
@@ -153,6 +156,11 @@ export interface ArinIpc {
   getAppSnapshot(): Promise<AppSnapshot>;
   /** 起動時の指定(描画方式と全角幅の方式。M1 の検証用)を取得する。起動時に 1 回だけ呼ぶ。 */
   getLaunchOptions(): Promise<LaunchOptions>;
+  /**
+   * ショートカットの表(コマンドの ID → キーと受け口)を取得する。起動時に 1 回だけ呼ぶ。
+   * メニューバーのアクセラレータと同じ表(M4.5 では設定ファイルの値をまとめたもの)。
+   */
+  getShortcuts(): Promise<ShortcutTable>;
   /** 画面の準備ができたことを Rust へ知らせる。 */
   notifyAppReady(): Promise<void>;
   /** 状態の写しが変わるたびに listener を呼ぶ。購読が済んだら、やめる関数で解決する。 */
@@ -342,6 +350,7 @@ export function createIpc(transport: IpcTransport): ArinIpc {
   return {
     getAppSnapshot: () => invoke("get_app_snapshot", undefined),
     getLaunchOptions: () => invoke("get_launch_options", undefined),
+    getShortcuts: () => invoke("get_shortcuts", undefined),
     notifyAppReady: () => done(invoke("notify_app_ready", undefined)),
     onAppSnapshot: (listener) => transport.listen("app-snapshot", listener),
     reportFrontendError: (message) => done(invoke("report_frontend_error", { message })),

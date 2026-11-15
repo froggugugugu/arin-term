@@ -3,11 +3,13 @@
 //! 画面側の呼び出しは `src/ipc/client.ts` の `CommandMap` と名前を合わせる。
 
 use arin_core::launch_options::LaunchOptions;
+use arin_core::shortcuts::table::ShortcutTable;
 use arin_core::workspace::AppSnapshot;
 use tauri::{AppHandle, Runtime, State};
 
 use crate::diagnostics::frontend_error_line;
 use crate::lifecycle::{self, ReadyNotice};
+use crate::menu::Shortcuts;
 use crate::sessions::SessionRegistry;
 
 /// 状態の写しが変わったときに送るイベントの名前。中身は `AppSnapshot`(設計書 §5.2)。
@@ -25,6 +27,14 @@ pub fn get_app_snapshot(sessions: State<'_, SessionRegistry>) -> AppSnapshot {
 #[tauri::command]
 pub fn get_launch_options(options: State<'_, LaunchOptions>) -> LaunchOptions {
     *options
+}
+
+/// ショートカットの表を返す(T42e)。画面は起動時に 1 回だけ呼び、キーの振り分けとメニューのキーの表示に使う(T43a)。
+///
+/// メニューバー(`menu.rs`)と同じ管理状態の表(`Shortcuts`)を返す。M4.5 では設定ファイルの値とまとめた表になる。
+#[tauri::command]
+pub fn get_shortcuts(shortcuts: State<'_, Shortcuts>) -> ShortcutTable {
+    shortcuts.table().clone()
 }
 
 /// 画面の準備ができたことを受け取る。
