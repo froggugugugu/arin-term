@@ -1,5 +1,6 @@
-// ツリーの小さなアイコン(設計書 §15.2 #12: 自作の少数の SVG)。どれも 16×16 の単色の線画で、色は currentColor
-// (CSS で控えめな色を付ける)。飾りなので読み上げない(aria-hidden。意味は行の役割と名前が伝える)。
+// 画面の小さなアイコン(設計書 §15.2 #12: 自作の少数の SVG。ツリーのほか、上部の帯とサイドバーの道具のボタンも使う)。
+// どれも 16×16 の単色の線画で、色は currentColor(CSS で控えめな色を付ける)。
+// 飾りなので読み上げない(aria-hidden。意味はボタンの aria-label や行の役割と名前が伝える)。
 
 interface IconProps {
   className?: string;
@@ -96,6 +97,26 @@ export function CloseIcon({ className }: IconProps) {
   return (
     <svg {...common} className={className}>
       <path d="m4.5 4.5 7 7m0-7-7 7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** サイドバーの開閉(macOS のツールバーのサイドバーの印: 角の丸い枠と、左に寄せた仕切り)。 */
+export function SidebarIcon({ className }: IconProps) {
+  return (
+    <svg {...common} className={className}>
+      <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2.25" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M6.25 2.75v10.5" stroke="currentColor" strokeWidth="1.1" />
+      <path d="M3.5 5.25h1.25M3.5 7h1.25M3.5 8.75h1.25" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** 追加(+。フォルダを追加)。 */
+export function PlusIcon({ className }: IconProps) {
+  return (
+    <svg {...common} className={className}>
+      <path d="M8 3.25v9.5M3.25 8h9.5" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
     </svg>
   );
 }

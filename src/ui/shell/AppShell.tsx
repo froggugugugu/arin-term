@@ -16,6 +16,7 @@ import { RemoveProjectDialog } from "../dialogs/RemoveProjectDialog";
 import { ProjectCardList } from "../projects/ProjectCardList";
 import { TerminalArea } from "../terminals/TerminalArea";
 import { VerificationGrid } from "../terminals/VerificationGrid";
+import { SidebarIcon } from "../tree/icons";
 import { NoticeBar } from "./NoticeBar";
 import { PaneSplit } from "./PaneSplit";
 import { RendererLabel } from "./RendererLabel";
@@ -36,8 +37,10 @@ interface AppShellProps {
 }
 
 /**
- * ウィンドウ全体の枠(設計書 §8・§9.1)。上から順に、見出し(アプリ名・写しの版・左ペインの折りたたみ・描画方式(検証用)・
- * 起動の失敗)、知らせ(1 行)、ペインの分割(左: カード一覧とファイルツリー、右: ターミナル領域)。削除と終了の確認もここに置く。
+ * ウィンドウ全体の枠(設計書 §8・§9.1)。上から順に、上部の帯(左にサイドバーの開閉のアイコンのボタンと起動の失敗、
+ * 右端にアプリ名・写しの版・描画方式(検証用)を小さく控えめに)、知らせ(1 行)、ペインの分割(左: カード一覧とファイルツリー、
+ * 右: ターミナル領域)。削除と終了の確認もここに置く。
+ * 地はウィンドウのすりガラス(ADR-010)に半透明の淡い色を重ねたもので、ターミナルの置き場所だけが不透明。
  * 右ペインはタブバーと表示中のターミナル(選択中のプロジェクトの表示中のタブ)を 1 枚だけ描く(TerminalArea)。
  * 他のタブ・他のプロジェクトのターミナルは TerminalManager が隠したまま取り込みを続ける。
  * 9 枚の検証画面の指定があるときは、M1 と同じく検証画面(写しにある全部のターミナル)だけを描く。終了の確認はどちらでも出す。
@@ -55,28 +58,36 @@ export function AppShell({ store, ui, tree, actions, terminals, verifyGrid = fal
         {!verifyGrid && snapshot !== null && (
           <button
             type="button"
-            className="app-shell__sidebar-toggle"
+            className="icon-button app-shell__sidebar-toggle"
             aria-controls="pane-sidebar"
             aria-expanded={!collapsed}
+            aria-label={collapsed ? "左ペインを表示" : "左ペインを隠す"}
+            title={collapsed ? "左ペインを表示" : "左ペインを隠す"}
             onClick={() => panes.setCollapsed(!collapsed)}
           >
-            {collapsed ? "左ペインを表示" : "左ペインを隠す"}
+            <SidebarIcon />
           </button>
         )}
-        <h1>{APP_NAME}</h1>
-        {snapshot !== null && <p data-testid="app-version">{snapshot.appVersion}</p>}
-        {verifyGrid ? (
-          <p className="app-shell__renderer" data-testid="verify-grid-label">
-            検証画面(M1)
-          </p>
-        ) : (
-          terminal !== undefined && <RendererLabel terminals={terminals} terminalId={terminal.id} />
-        )}
         {startupError !== null && (
-          <p role="alert" data-testid="startup-error">
+          <p role="alert" className="app-shell__error" data-testid="startup-error">
             {startupError}
           </p>
         )}
+        <div className="app-shell__meta">
+          <h1 className="app-shell__name">{APP_NAME}</h1>
+          {snapshot !== null && (
+            <p className="app-shell__version" data-testid="app-version">
+              {snapshot.appVersion}
+            </p>
+          )}
+          {verifyGrid ? (
+            <p className="app-shell__renderer" data-testid="verify-grid-label">
+              検証画面(M1)
+            </p>
+          ) : (
+            terminal !== undefined && <RendererLabel terminals={terminals} terminalId={terminal.id} />
+          )}
+        </div>
       </header>
       {verifyGrid
         ? snapshot !== null && <VerificationGrid terminals={terminals} items={snapshot.terminals} />

@@ -46,10 +46,12 @@ async function box(locator: Locator) {
 const tabList = (page: Page) => page.getByRole("tablist", { name: "ターミナルのタブ" });
 const tabs = (page: Page) => tabList(page).getByRole("tab");
 const tab = (page: Page, name: string) => tabList(page).getByRole("tab", { name, exact: true });
-/** タブ 1 つぶんの枠(タブと閉じるボタンを囲む。着色と表示中の下線はここに付く)。 */
+/** タブ 1 つぶんの枠(タブと閉じるボタンを囲む。表示中の明るい地はここに付く)。 */
 const tabItem = (page: Page, name: string) =>
   tabList(page).getByTestId("tab-item").filter({ has: page.getByRole("tab", { name, exact: true }) });
 const background = (locator: Locator) => locator.evaluate((el) => getComputedStyle(el).backgroundColor);
+/** プロジェクト色の印(カード・タブの名前の前の小さな丸)の色。 */
+const dotColor = (locator: Locator) => background(locator.locator(".project-dot"));
 
 /** 指定のターミナルの接続(connect_terminal の引数)。届くまで待つ。 */
 async function connectOf(page: Page, terminalId: string) {
@@ -77,14 +79,14 @@ test.describe("タブバー(FR-039・FR-044・FR-061)", () => {
     await expect(tabs(page)).toHaveText(["ターミナル 1", "ターミナル 2"]);
     await expect(tab(page, "ターミナル 1")).toHaveAttribute("aria-selected", "true");
     await expect(tab(page, "ターミナル 2")).toHaveAttribute("aria-selected", "false");
-    // 色だけでなく、太字と下線でも分かる。
+    // 文字の色だけでなく、太字と明るい地でも分かる。
     const style = async (name: string) => ({
       weight: await tab(page, name).evaluate((el) => getComputedStyle(el).fontWeight),
-      border: await tabItem(page, name).evaluate((el) => getComputedStyle(el).boxShadow),
+      fill: await background(tabItem(page, name)),
     });
     const [shown, other] = [await style("ターミナル 1"), await style("ターミナル 2")];
     expect(shown.weight).not.toBe(other.weight);
-    expect(shown.border).not.toBe(other.border);
+    expect(shown.fill).not.toBe(other.fill);
     // 表示中のタブとターミナルの置き場所がつながっている(tabpanel の名前は表示中のタブ)。
     await expect(page.getByRole("tabpanel", { name: "ターミナル 1" })).toBeVisible();
     await expect(page.getByTestId("terminal-host")).toHaveCount(1);
@@ -195,14 +197,14 @@ test.describe("タブバー(FR-039・FR-044・FR-061)", () => {
   });
 
   for (const colorScheme of ["light", "dark"] as const) {
-    test(`タブがプロジェクト色で着色されタブ名の文字がある(${colorScheme})`, async ({ page }) => {
+    test(`タブにプロジェクト色の印がありタブ名の文字がある(${colorScheme})`, async ({ page }) => {
       await page.emulateMedia({ colorScheme });
       await open(page, projectsSnapshot([APP, LOG]));
       const card = page.getByTestId("project-card").filter({ hasText: "app" });
-      const cardColor = await background(card);
+      const cardColor = await dotColor(card);
       expect(cardColor).not.toBe("rgba(0, 0, 0, 0)");
       for (const name of ["ターミナル 1", "ターミナル 2"]) {
-        expect(await background(tabItem(page, name)), name).toBe(cardColor);
+        expect(await dotColor(tabItem(page, name)), name).toBe(cardColor);
         await expect(tab(page, name)).toHaveText(name);
       }
       // ツールチップで「プロジェクト名: タブ名」も読める。
@@ -250,7 +252,8 @@ test.describe("タブバー(FR-039・FR-044・FR-061)", () => {
     await expect(tabs(page)).toHaveText(["ターミナル 1", "ターミナル 2", "ターミナル 3"]);
     await expect(tab(page, "ターミナル 1")).toHaveAttribute("title", "ribbitlog: ターミナル 1");
     const card = page.getByTestId("project-card").filter({ hasText: "ribbitlog" });
-    expect(await background(tabItem(page, "ターミナル 1"))).toBe(await background(card));
+    // タブのプロジェクト色の印も、切り替えたプロジェクトの色になる。
+    expect(await dotColor(tabItem(page, "ターミナル 1"))).toBe(await dotColor(card));
   });
 
   test("プロジェクトを切り替えても前のプロジェクトのターミナルに出力が取り込まれ続ける", async ({ page }) => {

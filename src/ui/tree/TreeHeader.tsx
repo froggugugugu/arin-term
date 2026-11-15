@@ -20,22 +20,23 @@ interface TreeHeaderProps {
 }
 
 /**
- * ツリーのヘッダ(左ペイン下段の上端。Presentational)。選択中のプロジェクトの名前を、カードのタイトル部と同じ
- * プロジェクト色で出す(FR-060。色は M2 のまま)。
+ * ツリーのヘッダ(左ペイン下段の上端。Presentational)。選択中のプロジェクトの名前の前に、カードと同じプロジェクト色の
+ * 小さな丸い印を出す(FR-060。地は塗らない)。
  * ツリーを出しているときはルートの行(WAI-ARIA の treeitem、1 段目、常に開いている)になり、クリックでルートが選ばれる
- * (計画【仮定】1)。選択は内側の角の丸い塗りで示す(地のプロジェクト色は変えない)。
+ * (計画【仮定】1)。選択はツリーの行と同じ、内側の角の丸い塗りで示す。
  * 右クリック(フォルダの上のメニュー。名称変更・切り取り・ゴミ箱は無効)はツリー(FileTreeView)が受ける。
  * ドラッグ中にルートへ落とせるときは data-drop-active で強調する(TreeDrag.css)。
  */
 export function TreeHeader({ name, color, root }: TreeHeaderProps) {
   if (root === undefined) {
     return (
-      <h2 className="tree-header project-tinted" data-testid="tree-header" style={projectColorStyle(color)}>
-        {name}
+      <h2 className="tree-header project-colored" data-testid="tree-header" style={projectColorStyle(color)}>
+        <span className="project-dot" aria-hidden="true" />
+        <span className="tree-header__label">{name}</span>
       </h2>
     );
   }
-  const classes = ["tree-header", "tree-header--root", "project-tinted"];
+  const classes = ["tree-header", "tree-header--root", "project-colored"];
   if (root.selected) classes.push("tree-header--selected");
   if (root.dropActive === true) classes.push("tree-header--drop-target");
   return (
@@ -52,6 +53,7 @@ export function TreeHeader({ name, color, root }: TreeHeaderProps) {
       style={projectColorStyle(color)}
       onClick={root.onSelect}
     >
+      <span className="project-dot" aria-hidden="true" />
       <span className="tree-header__label">{name}</span>
     </div>
   );

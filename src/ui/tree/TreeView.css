@@ -12,22 +12,19 @@
   outline: none;
 }
 
-/* ツリーのヘッダ(ルートの行)。地のプロジェクト色は M2 のまま(.tree-header・.project-tinted)。 */
+/* ツリーのヘッダ(ルートの行)。形は AppShell.css の .tree-header(プロジェクト色の印と名前。地は塗らない)。 */
 .tree-header--root {
   position: relative;
   cursor: default;
   user-select: none;
 }
 
-.tree-header__label {
+/* 印と名前は選択の塗り(::before)の上に重ねる。 */
+.tree-header--root > * {
   position: relative;
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-/* ルートの選択は、地の色を変えずに内側の角の丸い塗りで示す。 */
+/* ルートの選択は、ツリーの行と同じ内側の角の丸い塗りで示す。 */
 .tree-header--selected::before {
   position: absolute;
   inset: 2px var(--space-1);
@@ -42,6 +39,11 @@
 
 .file-tree[data-focused="true"] .tree-header--selected {
   color: var(--color-selection-active-fg);
+}
+
+/* アクセント色の塗りの上では、プロジェクト色の印に白い細い輪を付けて見分けられるようにする。 */
+.file-tree[data-focused="true"] .tree-header--selected .project-dot {
+  box-shadow: 0 0 0 1px var(--color-selection-active-fg);
 }
 
 .file-tree__scroller {
@@ -258,7 +260,7 @@
   align-items: center;
   gap: var(--space-1);
   padding: 2px var(--space-1) 2px var(--space-3);
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--color-separator);
   background: var(--color-notice);
   color: var(--color-notice-fg);
   font-size: var(--font-size-m);
@@ -283,7 +285,7 @@
   box-sizing: border-box;
   height: var(--tree-toolbar-height);
   padding: 0 var(--space-1);
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--color-separator);
 }
 
 .tree-toolbar__button,
@@ -291,8 +293,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 20px;
+  width: var(--icon-button-width);
+  height: var(--icon-button-height);
   padding: 0;
   border: 0;
   border-radius: var(--radius-s);
@@ -315,6 +317,6 @@
 
 .tree-toolbar__button:focus-visible,
 .tree-notice__close:focus-visible {
-  outline: 2px solid var(--color-focus);
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: -1px;
 }

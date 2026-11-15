@@ -1,16 +1,35 @@
 /*
  * 画面の色・余白・文字サイズのトークン(設計書 §9.2・§9.3)。部品の CSS はここのカスタムプロパティを使い、値を直接書かない。
  * OS のライト・ダークに追従する(prefers-color-scheme。アプリ独自の切替は持たない)。
- * プロジェクト色の値は palette.ts が持ち、部品が要素に CSS の変数として付ける(.project-tinted が外観で使い分ける)。
+ * プロジェクト色の値は palette.ts が持ち、部品が要素に CSS の変数として付ける(.project-colored が外観で使い分ける)。
+ *
+ * ウィンドウの地はすりガラス(ADR-010): 実アプリではウィンドウを透明にし、macOS の vibrancy(サイドバーの素材)を
+ * 窓の全面に敷く。画面は --color-window-bg(半透明の淡い色)を重ねるだけで、ターミナルの置き場所だけを不透明にする。
+ * ブラウザ(Playwright)では窓の向こうが無く、半透明の色がページの地(白・黒)に重なって不透明の淡いグレーに見える
+ * (どちらでも破綻しない色にしてある。Tauri の中かどうかで分けない)。
  */
 :root {
   color-scheme: light dark;
 
-  --color-bg: #ffffff;
-  --color-pane: #f5f5f7;
+  /* 左ペインの見かけの地(ブラウザで .app-shell の半透明の色が白に重なった色)。小さな印の下地(リンクの印)に使う。 */
+  --color-pane: #f6f6f7;
+  /*
+   * ウィンドウの地(左ペインと上部の帯。半透明)。すりガラスの上で文字のコントラストを保つため、淡い色を半分ほど重ねる。
+   * ブラウザでは白に重なって #f6f6f7 ほどに見える。
+   */
+  --color-window-bg: rgba(238, 238, 240, 0.55);
+  /* 細い区切り線(ペインの境目、帯の下端)。すりガラスの上でも馴染む半透明の黒。 */
+  --color-separator: rgba(0, 0, 0, 0.11);
+  /* タブバーの地(すりガラスの上に少しだけ影を落とす)と、表示中のタブの地(明るく浮かせる)。 */
+  --color-tabbar-bg: rgba(0, 0, 0, 0.05);
+  --color-tab-selected-bg: rgba(255, 255, 255, 0.78);
+  /* 押しボタン(macOS のボタンにならう。白い地に細い輪郭と控えめな影)。 */
+  --color-button-bg: #ffffff;
+  --shadow-control: 0 0 0 0.5px rgba(0, 0, 0, 0.16), 0 0.5px 1.5px rgba(0, 0, 0, 0.12);
+  /* 小見出し(サイドバーの「プロジェクト」。Finder のサイドバーの見出しにならう)。 */
+  --color-section-title: rgba(0, 0, 0, 0.45);
   --color-fg: #1d1d1f;
   --color-muted: #6e6e73;
-  --color-border: #d2d2d7;
   --color-focus: #0a64d8;
   --color-surface: #ffffff;
   --color-highlight: #0a64d8;
@@ -77,8 +96,24 @@
   --font-size-l: 13px;
   --font-size-xl: 15px;
   --font-family: system-ui, -apple-system, sans-serif;
+  --font-weight-strong: 600;
 
   --divider-hit: 6px;
+
+  /* 上部の帯とタブバーの高さ。 */
+  --header-height: 30px;
+  --tab-bar-height: 28px;
+  /* 小さなアイコンのボタン(サイドバーの開閉、フォルダを追加、ツリーの下端の帯。Xcode の帯のボタンにならう)。 */
+  --icon-button-width: 24px;
+  --icon-button-height: 20px;
+  /* サイドバーの項目(プロジェクト)。macOS のサイドバーの行に近い高さと、小見出しの高さ。 */
+  --sidebar-item-height: 28px;
+  --sidebar-section-height: 26px;
+  /* プロジェクト色の印(丸)。サイドバーとツリーのヘッダは 8px、タブは少し小さく。 */
+  --project-dot-size: 8px;
+  --project-dot-size-s: 7px;
+  /* 押しボタンの高さ(macOS の標準の大きさ)。 */
+  --button-height: 22px;
 
   /* ツリー(ADR-007 の (c)、計画【仮定】5)。行の高さは仮想スクロールの窓の計算にも使う(FileTreeView が読む)。 */
   --tree-row-height: 22px;
@@ -92,11 +127,16 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-bg: #1e1e1e;
-    --color-pane: #262628;
+    --color-pane: #1f1f21;
+    --color-window-bg: rgba(30, 30, 32, 0.5);
+    --color-separator: rgba(255, 255, 255, 0.1);
+    --color-tabbar-bg: rgba(0, 0, 0, 0.28);
+    --color-tab-selected-bg: rgba(255, 255, 255, 0.12);
+    --color-button-bg: rgba(255, 255, 255, 0.12);
+    --shadow-control: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 0.5px 1.5px rgba(0, 0, 0, 0.4);
+    --color-section-title: rgba(255, 255, 255, 0.45);
     --color-fg: #f5f5f7;
     --color-muted: #a1a1a6;
-    --color-border: #3a3a3c;
     --color-focus: #4c9bff;
     --color-surface: #2c2c2e;
     --color-highlight: #2f6fde;
@@ -133,17 +173,26 @@
   }
 }
 
-/* プロジェクト色で薄く着色する箇所(カードのタイトル部、ツリーのヘッダ、タブ)。値は palette.ts の CSS の変数。 */
-.project-tinted {
+/*
+ * プロジェクト色を持つ要素(カード、ツリーのヘッダ、タブ)。値は palette.ts の CSS の変数で、外観で使い分ける。
+ * 色は小さな丸い印(.project-dot)だけに使い、地は塗らない(FR-060 の「同じ色相で分かる」は印の色でそろえる)。
+ */
+.project-colored {
   --project-accent: var(--project-accent-light);
-  background-color: var(--project-tint-light);
-  color: var(--project-ink-light);
 }
 
 @media (prefers-color-scheme: dark) {
-  .project-tinted {
+  .project-colored {
     --project-accent: var(--project-accent-dark);
-    background-color: var(--project-tint-dark);
-    color: var(--project-ink-dark);
   }
+}
+
+/* プロジェクト色の印(飾り。名前と同じ情報を持つので読み上げない)。 */
+.project-dot {
+  flex: none;
+  box-sizing: border-box;
+  width: var(--project-dot-size);
+  height: var(--project-dot-size);
+  border-radius: 50%;
+  background-color: var(--project-accent);
 }

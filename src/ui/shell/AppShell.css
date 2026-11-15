@@ -1,9 +1,14 @@
-/* ウィンドウ全体の枠。色・余白・文字サイズは src/ui/design/tokens.css のトークンを使う。 */
+/*
+ * ウィンドウ全体の枠。色・余白・文字サイズは src/ui/design/tokens.css のトークンを使う。
+ * html・body・#root は地を塗らない(実アプリではウィンドウが透明で、向こうに macOS のすりガラスがある。ADR-010)。
+ * 地は .app-shell の半透明の淡い色だけで、ターミナルの置き場所は不透明(.terminal-host・.terminal-area__panel)。
+ */
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
+  background: transparent;
 }
 
 body {
@@ -14,71 +19,121 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--color-bg);
+  background: var(--color-window-bg);
   color: var(--color-fg);
   font-family: var(--font-family);
+  -webkit-font-smoothing: antialiased;
 }
 
+/* 上部の帯(macOS のツールバーにならう)。左に道具のボタン、右端にアプリ名・版・描画方式を小さく控えめに。 */
 .app-shell__header {
   display: flex;
   flex: none;
-  align-items: baseline;
-  gap: var(--space-3);
-  padding: var(--space-1) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.app-shell__header h1 {
-  margin: 0;
-  font-size: 14px;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  height: var(--header-height);
+  padding: 0 var(--space-3) 0 var(--space-2);
+  border-bottom: 1px solid var(--color-separator);
 }
 
 .app-shell__header p {
   margin: 0;
+}
+
+/* 起動の失敗(帯の中で読めるように警告の色で 1 行。長い文は省略しない: 折り返して帯を広げる)。 */
+.app-shell__error {
+  min-width: 0;
+  color: var(--color-danger);
   font-size: var(--font-size-m);
 }
 
-.app-shell__sidebar-toggle {
-  padding: 0 var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-s);
-  background: transparent;
-  color: inherit;
-  font: inherit;
+.app-shell__meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  margin-left: auto;
+  color: var(--color-muted);
   font-size: var(--font-size-s);
+  white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-.app-shell__sidebar-toggle:focus-visible,
-.button:focus-visible,
-.notice-bar__close:focus-visible {
-  outline: 2px solid var(--color-focus);
+.app-shell__name {
+  margin: 0;
+  font-size: var(--font-size-s);
+  font-weight: var(--font-weight-strong);
+}
+
+.app-shell__version {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 描画方式の表示(検証用。M4 で外す。ADR-001)。さらに薄く、等幅の小さな文字で。 */
+.app-shell__renderer {
+  padding-left: var(--space-1);
+  border-left: 1px solid var(--color-separator);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  opacity: 0.75;
+}
+
+/*
+ * 小さなアイコンのボタン(サイドバーの開閉、フォルダを追加。ツリーの下端の帯のボタンと同じ寸法と作法)。
+ * 地は塗らず、押せる場所は押したときの淡い塗りで示す。
+ */
+.icon-button {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-button-width);
+  height: var(--icon-button-height);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--color-muted);
+}
+
+.icon-button:hover {
+  background: var(--color-control-hover);
+}
+
+.icon-button:active {
+  background: var(--color-selection-inactive);
+}
+
+.icon-button:focus-visible,
+.button:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 1px;
 }
 
-/* 描画方式の表示(検証用。M4 で外す。ADR-001)。 */
-.app-shell__renderer {
-  opacity: 0.6;
+.icon-button:focus-visible {
+  outline-offset: -1px;
 }
 
-/* ボタン(カード一覧の「フォルダを追加」、ダイアログ、見つからないときの案内)。 */
+/* 押しボタン(ダイアログ、空の状態の主操作、見つからないときの案内)。macOS の標準のボタンにならう。 */
 .button {
-  padding: 3px var(--space-3);
-  border: 1px solid var(--color-border);
+  box-sizing: border-box;
+  min-height: var(--button-height);
+  padding: 0 var(--space-3);
+  border: 0;
   border-radius: var(--radius-m);
-  background: var(--color-surface);
+  background: var(--color-button-bg);
+  box-shadow: var(--shadow-control);
   color: var(--color-fg);
   font: inherit;
   font-size: var(--font-size-l);
 }
 
 .button--primary {
-  border-color: var(--color-highlight);
   background: var(--color-highlight);
   color: var(--color-highlight-fg);
 }
 
 .button--danger {
-  border-color: var(--color-danger);
   background: var(--color-danger);
   color: var(--color-danger-fg);
 }
@@ -89,7 +144,8 @@ body {
   flex: none;
   align-items: center;
   gap: var(--space-2);
-  padding: 2px var(--space-3);
+  padding: 2px var(--space-1) 2px var(--space-3);
+  border-bottom: 1px solid var(--color-separator);
   background: var(--color-notice);
   color: var(--color-notice-fg);
   font-size: var(--font-size-m);
@@ -105,13 +161,7 @@ body {
 }
 
 .notice-bar__close {
-  flex: none;
-  padding: 0 var(--space-2);
-  border: 1px solid currentColor;
-  border-radius: var(--radius-s);
-  background: transparent;
   color: inherit;
-  font: inherit;
 }
 
 /* ペインの分割。左ペインの幅とカード領域の高さは PaneSplit が表示値(computePaneLayout)を書き、残りは flex で埋める。 */
@@ -129,8 +179,8 @@ body {
   flex: none;
   flex-direction: column;
   box-sizing: border-box;
-  border-right: 1px solid var(--color-border);
-  background: var(--color-pane);
+  /* 地は塗らない(ウィンドウのすりガラスと .app-shell の淡い色がそのまま見える)。 */
+  border-right: 1px solid var(--color-separator);
 }
 
 .card-area {
@@ -145,18 +195,34 @@ body {
   flex-direction: column;
   box-sizing: border-box;
   min-height: 0;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--color-separator);
 }
 
+/*
+ * ツリーのヘッダ(選択中のプロジェクトの名前。ルートの行)。地は塗らず、カードと同じプロジェクト色の小さな丸い印を名前の前に置く。
+ * 印は下の行の開閉の印の列に、名前はアイコンの列にそろえる(TreeView.css の行の字下げと同じ幅)。
+ */
 .tree-header {
+  display: flex;
   flex: none;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  height: var(--sidebar-item-height);
   margin: 0;
-  padding: 5px var(--space-3);
+  padding: 0 var(--space-3) 0 11px;
   overflow: hidden;
-  font-size: var(--font-size-m);
-  font-weight: 600;
-  text-overflow: ellipsis;
+  color: var(--color-fg);
+  font-size: var(--font-size-l);
+  font-weight: var(--font-weight-strong);
   white-space: nowrap;
+}
+
+.tree-header__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tree-area__body {
@@ -230,8 +296,8 @@ body {
 
 .terminal-status {
   margin: 0;
-  padding: 4px 12px;
-  font-size: 12px;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-size-m);
 }
 
 /* ターミナルの置き場所(タブ表示と検証画面)。地はターミナルの背景色(下端の 1 行に満たない余りを目立たせない)。 */

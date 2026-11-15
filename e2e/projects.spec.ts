@@ -66,6 +66,8 @@ async function drag(page: Page, handle: Locator, dx: number, dy: number, command
 
 /** 計算済みの背景色。 */
 const background = (locator: Locator) => locator.evaluate((el) => getComputedStyle(el).backgroundColor);
+/** プロジェクト色の印(カード・ツリーのヘッダ・タブの名前の前の小さな丸)の色。 */
+const dotColor = (locator: Locator) => background(locator.locator(".project-dot"));
 
 test.describe("カード一覧(FR-008)", () => {
   test("1_プロジェクトに_1_枚のカードが出て選択中が強調される", async ({ page }) => {
@@ -75,7 +77,7 @@ test.describe("カード一覧(FR-008)", () => {
     await expect(cards(page)).toHaveCount(2);
     await expect(cards(page).nth(0)).toContainText("app");
     await expect(cards(page).nth(1)).toContainText("ribbitlog");
-    // 選択中は aria-current と、色以外の形(太字と枠)でも分かる。
+    // 選択中は aria-current と、色以外の形(太字)でも分かる。
     await expect(card(page, "ribbitlog")).toHaveAttribute("aria-current", "true");
     await expect(card(page, "app")).not.toHaveAttribute("aria-current", "true");
     const style = (locator: Locator) =>
@@ -522,26 +524,26 @@ test.describe("レイアウトの崩れ(要素の位置と大きさ)", () => {
 
 test.describe("色(FR-060)", () => {
   for (const colorScheme of ["light", "dark"] as const) {
-    test(`カードのタイトル部とツリーのヘッダが同じ色相(${colorScheme})`, async ({ page }) => {
+    test(`カードとツリーのヘッダのプロジェクト色の印が同じ色相(${colorScheme})`, async ({ page }) => {
       await page.emulateMedia({ colorScheme });
       await open(page, projectsSnapshot([APP, LOG]));
 
-      const cardColor = await background(card(page, "app"));
-      expect(cardColor).toBe(await background(page.getByTestId("tree-header")));
+      const cardColor = await dotColor(card(page, "app"));
+      expect(cardColor).toBe(await dotColor(page.getByTestId("tree-header")));
       // 他のプロジェクトとは色が違う。
-      expect(cardColor).not.toBe(await background(card(page, "ribbitlog")));
-      // 地の色は透明でない。
+      expect(cardColor).not.toBe(await dotColor(card(page, "ribbitlog")));
+      // 印の色は透明でない。
       expect(cardColor).not.toBe("rgba(0, 0, 0, 0)");
     });
   }
 
-  test("ライトとダークで地の色が切り替わる(OS の外観に追従)", async ({ page }) => {
+  test("ライトとダークで色が切り替わる(OS の外観に追従)", async ({ page }) => {
     await page.emulateMedia({ colorScheme: "light" });
     await open(page, projectsSnapshot([APP]));
-    const light = await background(card(page, "app"));
+    const light = await dotColor(card(page, "app"));
     const lightBody = await background(page.getByTestId("app-shell"));
     await page.emulateMedia({ colorScheme: "dark" });
-    await expect.poll(() => background(card(page, "app"))).not.toBe(light);
+    await expect.poll(() => dotColor(card(page, "app"))).not.toBe(light);
     await expect.poll(() => background(page.getByTestId("app-shell"))).not.toBe(lightBody);
   });
 });

@@ -7,15 +7,19 @@
   min-height: 0;
 }
 
-/* タブバー。タブの列だけが横にスクロールし、「+」は右端に見えたまま。 */
+/*
+ * タブバー(macOS のタブにならう)。地はすりガラスの上にわずかに影を落とした色、タブの間は細い区切り線、
+ * 表示中のタブだけ明るい地に浮かせる。タブの列だけが横にスクロールし、「+」は右端に見えたまま。
+ */
 .tab-bar {
   display: flex;
   flex: none;
   align-items: stretch;
+  box-sizing: border-box;
   /* タブ 0 枚でもタブがあるときと同じ高さにする(切り替えでターミナルの位置が跳ねない)。 */
-  min-height: 26px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-pane);
+  height: var(--tab-bar-height);
+  border-bottom: 1px solid var(--color-separator);
+  background: var(--color-tabbar-bg);
 }
 
 .tab-bar__list {
@@ -24,30 +28,42 @@
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
 
 /*
- * タブ 1 つぶん(タブと閉じるボタン)。地はプロジェクト色(.project-tinted)。
- * 縮めずに並べ(タブ名が読めなくならないように)、入りきらない分はタブの列の横スクロールで見る。長い名前は省略する。
+ * タブ 1 つぶん(タブと閉じるボタン)。縮めずに並べ(タブ名が読めなくならないように)、入りきらない分はタブの列の
+ * 横スクロールで見る。長い名前は省略する。
  */
 .tab-bar__item {
   display: flex;
   flex: none;
   align-items: center;
+  min-width: 96px;
   max-width: 200px;
-  border-right: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-separator);
+  color: var(--color-muted);
 }
 
-/* 表示中: 色だけでなく、太字と下の帯(プロジェクト色の目印)でも分かる。 */
-.tab-bar__item--selected {
-  box-shadow: inset 0 -3px 0 var(--project-accent);
+.tab-bar__item:hover {
+  background: var(--color-control-hover);
+}
+
+/* 表示中: 明るい地と太字(色だけに頼らない)。 */
+.tab-bar__item--selected,
+.tab-bar__item--selected:hover {
+  background: var(--color-tab-selected-bg);
+  color: var(--color-fg);
 }
 
 .tab-bar__tab {
+  display: flex;
   flex: 1;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
-  padding: 5px var(--space-1) 5px var(--space-3);
+  height: 100%;
+  padding: 0 var(--space-1) 0 var(--space-3);
   border: 0;
   background: transparent;
   color: inherit;
@@ -57,12 +73,18 @@
   cursor: default;
 }
 
+.tab-bar__dot {
+  width: var(--project-dot-size-s);
+  height: var(--project-dot-size-s);
+}
+
 .tab-bar__item--selected .tab-bar__tab {
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
 }
 
 .tab-bar__label {
-  display: block;
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -70,35 +92,48 @@
 
 .tab-bar__close,
 .tab-bar__new {
+  display: flex;
   flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   border: 0;
   border-radius: var(--radius-s);
   background: transparent;
   color: inherit;
-  font: inherit;
-  line-height: 1;
 }
 
+/* 閉じるボタンは表示中のタブとマウスを載せたタブにだけ見せる(見えないときも押せる)。 */
 .tab-bar__close {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   margin-right: var(--space-1);
-  padding: 0;
-  font-size: var(--font-size-l);
+  opacity: 0;
+}
+
+.tab-bar__close svg {
+  width: 12px;
+  height: 12px;
+}
+
+.tab-bar__item--selected .tab-bar__close,
+.tab-bar__item:hover .tab-bar__close,
+.tab-bar__close:focus-visible {
   opacity: 0.7;
 }
 
 .tab-bar__close:hover {
-  background: rgba(127, 127, 127, 0.25);
+  background: var(--color-control-hover);
   opacity: 1;
 }
 
 .tab-bar__new {
-  min-width: 32px;
-  padding: 0 var(--space-2);
-  border-left: 1px solid var(--color-border);
-  border-radius: 0;
-  font-size: var(--font-size-xl);
+  width: var(--tab-bar-height);
+  color: var(--color-muted);
+}
+
+.tab-bar__new:hover:not(:disabled) {
+  background: var(--color-control-hover);
 }
 
 .tab-bar__new:disabled {
@@ -108,7 +143,7 @@
 .tab-bar__tab:focus-visible,
 .tab-bar__close:focus-visible,
 .tab-bar__new:focus-visible {
-  outline: 2px solid var(--color-focus);
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: -2px;
 }
 
@@ -136,7 +171,11 @@
   margin: 0 0 var(--space-2);
   color: var(--color-fg);
   font-size: var(--font-size-xl);
-  font-weight: 600;
+  font-weight: var(--font-weight-strong);
+}
+
+.terminals-empty__body .button {
+  margin-top: var(--space-1);
 }
 
 .terminals-empty__body p {

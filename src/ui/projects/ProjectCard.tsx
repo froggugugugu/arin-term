@@ -14,9 +14,10 @@ interface ProjectCardProps {
 }
 
 /**
- * プロジェクトのカード 1 枚(FR-008。1 行)。プロジェクト名をプロジェクト色のタイトル部に出す(FR-060)。
+ * プロジェクトのカード 1 枚(FR-008。1 行)。macOS のサイドバーの項目にならい、プロジェクト色の小さな丸い印と名前を並べる
+ * (FR-060。印の色はツリーのヘッダ・タブの印と同じ)。
  * 表示用のパス(`~` 省略)はツールチップに出し、カードには常時出さない(C-03・C-25)。
- * 選択中は aria-current と太字・枠で、見つからないは「見つかりません」の文字で示す(色だけに頼らない)。
+ * 選択中は aria-current と角の丸い淡い塗り・太字で、見つからないは「見つかりません」の文字で示す(色だけに頼らない)。
  * 実行中の印(FR-012)とブランチ名(FR-011)は M6。
  */
 export function ProjectCard({ project, selected, onSelect, onOpenMenu, buttonRef }: ProjectCardProps) {
@@ -31,7 +32,7 @@ export function ProjectCard({ project, selected, onSelect, onOpenMenu, buttonRef
       onOpenMenu({ x: rect.left + 8, y: rect.bottom });
     }
   };
-  const classes = ["project-card", "project-tinted"];
+  const classes = ["project-card", "project-colored"];
   if (selected) classes.push("project-card--selected");
   if (project.missing) classes.push("project-card--missing");
 
@@ -49,6 +50,7 @@ export function ProjectCard({ project, selected, onSelect, onOpenMenu, buttonRef
       onContextMenu={onContextMenu}
       onKeyDown={onKeyDown}
     >
+      <span className="project-dot" aria-hidden="true" />
       <span className="project-card__name">{project.name}</span>
       {project.missing && <span className="project-card__badge">見つかりません</span>}
     </button>

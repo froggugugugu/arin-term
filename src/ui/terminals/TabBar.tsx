@@ -3,6 +3,7 @@ import { type KeyboardEvent, useEffect, useRef } from "react";
 import { moveMenuFocus } from "../../logic/menu/menuNavigation";
 import { projectColorStyle } from "../design/palette";
 import type { ProjectColor, TerminalTab, TerminalTabId } from "../snapshotTypes";
+import { CloseIcon, PlusIcon } from "../tree/icons";
 
 interface TabBarProps {
   /** 選択中のプロジェクトのタブ(タブの順)。 */
@@ -41,7 +42,10 @@ const MOVE_KEYS: Readonly<Record<string, string>> = {
  * タブバー(FR-044・FR-060・FR-061。設計書 §8「タブ表示」、§9.1 の Presentational)。
  * 選択中のプロジェクトのタブを順に並べ、右端に「+」(新規ターミナル)を置く。値とコールバックだけを受け取る。
  *
- * - タブは WAI-ARIA の tablist / tab。表示中は aria-selected、色に加えて太字と下線でも分かる。タブ名の文字を必ず出す
+ * - 見た目は macOS のタブにならう: タブの間は細い区切り線、表示中のタブだけ明るい地に浮かせ、ほかは控えめな文字の色。
+ *   各タブの名前の前に、カードと同じプロジェクト色の小さな丸い印を出す(FR-060。地は塗らない)
+ * - タブは WAI-ARIA の tablist / tab。表示中は aria-selected、明るい地と太字で分かる(色だけに頼らない)。タブ名の文字を必ず出す
+ * - 閉じるボタンは、表示中のタブとマウスを載せたタブだけに見せる(macOS のタブと同じ。見えないときも押せる場所は変えない)
  * - キーボード: 表示中のタブだけが Tab で止まり、左右の矢印・Home・End でタブを移る(端で反対側に回る)。
  *   Enter・Space で選ぶ(手動の切替。移るたびに Rust へ選択を送らない)。Delete・Backspace でそのタブを閉じる
  * - 閉じるボタンはマウス用で Tab では止まらない(キーボードでは Delete か ⌘W)。読み上げの名前は「「タブ名」を閉じる」
@@ -107,7 +111,7 @@ export function TabBar({
             <div
               key={terminal.id}
               role="presentation"
-              className={selected ? "tab-bar__item tab-bar__item--selected project-tinted" : "tab-bar__item project-tinted"}
+              className={selected ? "tab-bar__item tab-bar__item--selected project-colored" : "tab-bar__item project-colored"}
               style={projectColorStyle(color)}
               data-testid="tab-item"
             >
@@ -129,6 +133,7 @@ export function TabBar({
                   if (!selected) onSelect(terminal.id);
                 }}
               >
+                <span className="project-dot tab-bar__dot" aria-hidden="true" />
                 <span className="tab-bar__label">{terminal.label}</span>
               </button>
               <button
@@ -139,7 +144,7 @@ export function TabBar({
                 tabIndex={-1}
                 onClick={() => onClose(terminal.id)}
               >
-                <span aria-hidden="true">×</span>
+                <CloseIcon />
               </button>
             </div>
           );
@@ -154,7 +159,7 @@ export function TabBar({
         disabled={!canAdd}
         onClick={onNew}
       >
-        <span aria-hidden="true">+</span>
+        <PlusIcon />
       </button>
     </div>
   );

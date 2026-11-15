@@ -8,6 +8,7 @@ import type { Actions } from "../../state/actions";
 import type { AppStore } from "../../state/appStore";
 import type { UiStore } from "../../state/uiStore";
 import { ContextMenu } from "../menu/ContextMenu";
+import { PlusIcon } from "../tree/icons";
 import { runCardMenuCommand } from "../menu/runCardMenuCommand";
 import type { ProjectId } from "../snapshotTypes";
 import { ProjectCard } from "./ProjectCard";
@@ -19,8 +20,10 @@ interface ProjectCardListProps {
 }
 
 /**
- * 左ペイン上段(FR-001・FR-008)。カードの一覧(多いときは一覧だけがスクロールする)と「フォルダを追加」のボタン。
- * プロジェクトが 0 件なら案内を出す(設計書 §8「プロジェクト 0 件」)。
+ * 左ペイン上段(FR-001・FR-008)。小見出し「プロジェクト」と、その右の「フォルダを追加」(+ のアイコンのボタン)、
+ * カードの一覧(多いときは一覧だけがスクロールする)。Finder のサイドバーの見出しと項目にならう。
+ * プロジェクトが 0 件なら、一覧の代わりに案内と文言のある「フォルダを追加」のボタンを出す(空の状態の主操作。
+ * 設計書 §8「プロジェクト 0 件」)。そのときは見出しの + を出さない(同じ名前のボタンを 2 つにしない)。
  * カードは上下の矢印でも移れる。カードの右クリック(または Shift+F10)で、src/logic/menu の buildCardMenu の項目をそのままメニューに出す。
  */
 export function ProjectCardList({ store, ui, actions }: ProjectCardListProps) {
@@ -50,12 +53,31 @@ export function ProjectCardList({ store, ui, actions }: ProjectCardListProps) {
     if (restoreFocus && id !== undefined) cardRefs.current.get(id)?.focus();
   };
 
+  const addProject = () => void actions.addProjectByDialog();
+
   return (
     <div className="card-list-pane">
+      <div className="sidebar-section">
+        <h2 className="sidebar-section__title">プロジェクト</h2>
+        {list.length > 0 && (
+          <button
+            type="button"
+            className="icon-button sidebar-section__action"
+            aria-label="フォルダを追加"
+            title="フォルダを追加…"
+            onClick={addProject}
+          >
+            <PlusIcon />
+          </button>
+        )}
+      </div>
       {list.length === 0 ? (
         <div className="projects-empty" data-testid="projects-empty">
           <p className="projects-empty__title">プロジェクトがありません</p>
           <p className="projects-empty__hint">フォルダを追加すると、そのフォルダでターミナルが開きます。</p>
+          <button type="button" className="button projects-empty__action" onClick={addProject}>
+            フォルダを追加
+          </button>
         </div>
       ) : (
         <ul className="card-list" data-testid="card-list" aria-label="プロジェクト一覧" onKeyDown={onListKeyDown}>
@@ -80,11 +102,6 @@ export function ProjectCardList({ store, ui, actions }: ProjectCardListProps) {
           })}
         </ul>
       )}
-      <div className="card-list-pane__footer">
-        <button type="button" className="button add-project" onClick={() => void actions.addProjectByDialog()}>
-          <span aria-hidden="true">+</span> フォルダを追加
-        </button>
-      </div>
       {cardMenu !== null && menuProject !== undefined && (
         <ContextMenu
           key={`${cardMenu.projectId}:${cardMenu.x}:${cardMenu.y}`}
