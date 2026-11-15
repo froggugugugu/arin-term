@@ -17,7 +17,7 @@
 | 項目 | 内容 |
 | ---- | ---- |
 | 最終更新 | 2026-11-16(M4 は T50b の AI の分まで済み、残りは本人の確認。M4.5=ショートカットの設定は T63 が済み、本人の決定も出た。次は T64a・T64b。**再開の手順は §3 の 0 番**) |
-| ブランチ | `feat/m4-tiles`(`feat/m3-tree` から分岐。`feat/m3-tree` ← `feat/m2-projects` ← `feat/m1-terminal`。どれも push していない)。`feat/m0-skeleton` は push 済みで、pull request #1(main 向け)が開いている |
+| ブランチ | `feat/m4-tiles`(`feat/m3-tree` から分岐。`feat/m3-tree` ← `feat/m2-projects` ← `feat/m1-terminal`。4 本とも 2026-11-16 に push 済み。pull request はまだ作っていない)。`feat/m0-skeleton` は push 済みで、pull request #1(main 向け)が開いている |
 | 最後のコミット | `git log --oneline -1` で確認する(本ファイルに書くと古くなるため) |
 | 起動コマンド | `npm run dev`(開発用)。`.app` は `npm run app` で `target/aarch64-apple-darwin/release/bundle/macos/Arin.app` にできる |
 | スモークテスト | `npm run app && npm run smoke && node scripts/smoke.mjs --tiles` → 期待: 終了コード 0、「スモーク成功」(通常・壊れた `state.json`・タイル表示の 9 プロジェクト) |
