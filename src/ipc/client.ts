@@ -13,6 +13,7 @@ import type { QuitRequest } from "./generated/QuitRequest";
 import type { RelPath } from "./generated/RelPath";
 import type { RemoveProjectOutcome } from "./generated/RemoveProjectOutcome";
 import type { TerminalId } from "./generated/TerminalId";
+import type { TreeChange } from "./generated/TreeChange";
 
 /**
  * 出力チャネルを Rust へ渡すときの値。中身は通信の実体が決める(Tauri では Channel のインスタンス)。
@@ -59,12 +60,13 @@ export type CommandName = keyof CommandMap;
 
 /**
  * Rust から届くイベントと、その中身の対応。名前は src-tauri/src/commands/app.rs(app-snapshot)と
- * src-tauri/src/events.rs(menu-command・quit-requested)の定数と合わせる。
+ * src-tauri/src/events.rs(menu-command・quit-requested・tree-changed)の定数と合わせる。
  */
 export interface EventMap {
   "app-snapshot": AppSnapshot;
   "menu-command": MenuCommand;
   "quit-requested": QuitRequest;
+  "tree-changed": TreeChange;
 }
 
 export type EventName = keyof EventMap;
@@ -193,6 +195,12 @@ export interface ArinIpc {
   listDirectory(projectId: ProjectId, path: RelPath): Promise<DirListing>;
   /** ツリーの隠しファイル表示を切り替える(プロジェクトごと)。結果は写しの showHidden で届き、保存が予約される。 */
   setShowHidden(projectId: ProjectId, showHidden: boolean): Promise<void>;
+  /**
+   * 選択中のプロジェクトのツリーで外からの変更が届くたびに listener を呼ぶ(Rust は選択中のプロジェクトのルートだけを監視する)。
+   * 中身はプロジェクト ID と、中身が変わったフォルダの相対パス(ルートは空の文字列)、全部読み直しの印。絶対パスは届かない。
+   * 除外(隠しファイル表示が OFF のとき)の中の変更は届かない。購読が済んだら、やめる関数で解決する。
+   */
+  onTreeChanged(listener: (change: TreeChange) => void): Promise<Unlisten>;
 }
 
 /**
@@ -272,5 +280,6 @@ export function createIpc(transport: IpcTransport): ArinIpc {
     setSidebarCollapsed: (collapsed) => done(invoke("set_sidebar_collapsed", { collapsed })),
     listDirectory: (projectId, path) => invoke("list_directory", { projectId, path }),
     setShowHidden: (projectId, showHidden) => done(invoke("set_show_hidden", { projectId, showHidden })),
+    onTreeChanged: (listener) => transport.listen("tree-changed", listener),
   };
 }

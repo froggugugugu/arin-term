@@ -3,7 +3,7 @@
 //! ここでは部品を生成して渡すことだけを行い、規則を書かない。
 //! 置き場所と起動の通知先を管理状態に登録し、起動時に状態ファイルを読んで(`persistence.rs`)`Workspace` と
 //! セッション管理と保存のスレッドとプロジェクトの操作(`projects.rs`)とルートへの追従の見回り(`patrol.rs`)を作って登録し、
-//! ツリーの操作(`tree.rs`)を登録し、
+//! ツリーの操作(`tree.rs`)と、選択中のプロジェクトのツリーの監視の張り替え(`tree_watch.rs`。写しを送るたびに張り替えを頼む)を登録し、
 //! コマンドとメニューバー(`menu.rs`。項目が選ばれたときも `menu.rs`)と終了の確認の状態(`lifecycle.rs`)を登録して
 //! tauri.conf.json のウィンドウを 1 枚出す。Finder からのドロップは `lifecycle.rs` が受ける。
 
@@ -18,20 +18,25 @@ pub mod persistence;
 pub mod projects;
 pub mod sessions;
 pub mod tree;
+pub mod tree_watch;
 pub mod verify_log;
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use arin_core::persistence::codec::encode;
 use arin_core::ports::PtyPort;
 use arin_core::ports::fs::FileSystemPort;
+use arin_core::ports::watch::WatcherPort;
+use arin_core::tree::TreeChange;
 use arin_core::workspace::{AppSnapshot, Workspace};
 use arin_platform::fs::LocalFileSystem;
 use arin_platform::pty::{FALLBACK_SHELL, NativePty, default_shell, system_locale};
+use arin_platform::watch::FsEventsWatcher;
 use tauri::{Builder, Emitter, Manager, Runtime};
 
 pub use crate::commands::app::SNAPSHOT_EVENT;
+use crate::events::TREE_CHANGED_EVENT;
 use crate::launch::LaunchConfig;
 use crate::lifecycle::{FirstOutputNotice, QuitGate, ReadyNotice};
 use crate::patrol::{PATROL_INTERVAL, PatrolThread, RootPatrol};
@@ -39,6 +44,7 @@ use crate::persistence::{Persistence, PersistencePorts, load_startup};
 use crate::projects::{FolderPicker, NativeFolderPicker, ProjectPorts, Projects};
 use crate::sessions::{SessionConfig, SessionRegistry, ShellDefaults, ShellProbe};
 use crate::tree::Tree;
+use crate::tree_watch::{TreeChangeSink, TreeWatch};
 
 /// アプリの組み立て。ランタイムを型引数で受け取り、テストでは模擬ランタイムに差し替える。
 ///
@@ -96,7 +102,7 @@ pub fn builder_with_project_ports<R: Runtime>(
 }
 
 /// `builder_with_project_ports` に加えて、ファイルシステムのポート(ツリーの読み込み)も差し替えて組み立てる(テスト用)。
-/// 本物は `LocalFileSystem`。
+/// 本物は `LocalFileSystem`。監視は本物(`FsEventsWatcher`)。
 pub fn builder_with_file_system<R: Runtime>(
     launch: LaunchConfig,
     pty: Arc<dyn PtyPort>,
@@ -104,6 +110,27 @@ pub fn builder_with_file_system<R: Runtime>(
     ports: PersistencePorts,
     project_ports: ProjectPorts,
     fs: Arc<dyn FileSystemPort>,
+) -> Builder<R> {
+    builder_with_watcher(
+        launch,
+        pty,
+        probe,
+        ports,
+        project_ports,
+        fs,
+        Arc::new(FsEventsWatcher::new()),
+    )
+}
+
+/// `builder_with_file_system` に加えて、ツリーの監視のポートも差し替えて組み立てる(テスト用)。本物は `FsEventsWatcher`。
+pub fn builder_with_watcher<R: Runtime>(
+    launch: LaunchConfig,
+    pty: Arc<dyn PtyPort>,
+    probe: ShellProbe,
+    ports: PersistencePorts,
+    project_ports: ProjectPorts,
+    fs: Arc<dyn FileSystemPort>,
+    watcher: Arc<dyn WatcherPort>,
 ) -> Builder<R> {
     let ready = ReadyNotice::new(launch.ready_marker().map(ToOwned::to_owned));
     let first_output = FirstOutputNotice::new(launch.terminal_marker().map(ToOwned::to_owned));
@@ -143,11 +170,18 @@ pub fn builder_with_file_system<R: Runtime>(
             };
             let handle = app.handle().clone();
             let saver = persistence.clone();
+            // ツリーの監視の張り替え(T42b)。セッション管理を作ったあとに起動するので、受け口からは後で入れたものを使う。
+            let tree_watch: Arc<OnceLock<TreeWatch>> = Arc::new(OnceLock::new());
+            let rewatch = Arc::clone(&tree_watch);
             let listener = Arc::new(move |snapshot: AppSnapshot| {
                 // 画面がまだ無いときなどは送れない。写しは画面が取得のコマンドでも取れるので捨ててよい。
                 let _ = handle.emit(SNAPSHOT_EVENT, snapshot);
                 // 状態が変わったら保存を予約する。保存する内容が前回と同じなら書かない(`persistence.rs`)。
                 saver.mark_changed();
+                // 選択・ルート・見つからない・隠しファイル表示が変わっていれば張り替える(待たない。張り替えは専用のスレッド)。
+                if let Some(watch) = rewatch.get() {
+                    watch.refresh();
+                }
             });
             // 検証用の記録は開発ビルドだけ(リリースビルドでは `None`。T23)。
             let sessions = SessionRegistry::with_verify(
@@ -179,7 +213,19 @@ pub fn builder_with_file_system<R: Runtime>(
                 Arc::clone(&project_ports.pasteboard),
                 picker,
             ));
-            app.manage(Tree::new(sessions.clone(), fs));
+            app.manage(Tree::new(sessions.clone(), Arc::clone(&fs)));
+            // 9 枚の検証画面ではプロジェクトが無いので監視しない(スレッドも作らない)。
+            if !verify_grid {
+                let emitter = app.handle().clone();
+                let emit: TreeChangeSink = Arc::new(move |change: TreeChange| {
+                    // 画面が無いときは送れない。画面は表示したときに読み込むので捨ててよい。
+                    let _ = emitter.emit(TREE_CHANGED_EVENT, change);
+                });
+                let watch = TreeWatch::spawn(sessions.clone(), watcher, fs, emit)?;
+                // 見回りより先に入れる(見回りの追従の写しで張り替えを頼めるように)。
+                let _ = tree_watch.set(watch.clone());
+                app.manage(watch);
+            }
             // ルートへの追従の見回り(1 秒ごと。T33d)。開いたフォルダは見回りのスレッドが持ち、終了時に止める(`lifecycle.rs`)。
             let patrol = PatrolThread::spawn(
                 sessions.clone(),

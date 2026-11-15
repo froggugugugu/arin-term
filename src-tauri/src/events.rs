@@ -7,3 +7,7 @@ pub const MENU_COMMAND_EVENT: &str = "menu-command";
 
 /// 終了の要求を止めて、画面に確認を求めるイベント(FR-063)。中身は `arin_core::workspace::QuitRequest`。
 pub const QUIT_REQUESTED_EVENT: &str = "quit-requested";
+
+/// 選択中のプロジェクトのツリーで、外からの変更が届いたことを画面へ送るイベント(FR-014。計画書 T42b)。
+/// 中身は `arin_core::tree::TreeChange`(プロジェクト ID・変わったフォルダの相対パス・全部読み直し。絶対パスは載せない)。
+pub const TREE_CHANGED_EVENT: &str = "tree-changed";

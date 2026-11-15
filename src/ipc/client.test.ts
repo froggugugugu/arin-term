@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createFakeIpc, sampleSnapshot } from "../test/fakeIpc";
 import { createIpc, toBytes } from "./client";
 import type { DirListing } from "./generated/DirListing";
+import type { TreeChange } from "./generated/TreeChange";
 
 describe("src/ipc の包み", () => {
   it("写しの取得は get_app_snapshot を引数なしで呼び、届いた写しを返す", async () => {
@@ -98,6 +99,22 @@ describe("src/ipc の包み", () => {
 
     expect(seen).toEqual([running]);
     expect(fake.listenerCount("quit-requested")).toBe(0);
+  });
+
+  it("ツリーの変更のイベント(tree-changed)を購読し、届いた中身を渡し、やめる関数で外れる", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+    const seen: TreeChange[] = [];
+    const change: TreeChange = { projectId: "p1", dirs: ["", "src"], fullReload: false };
+
+    const unlisten = await ipc.onTreeChanged((c) => seen.push(c));
+    fake.emit("tree-changed", change);
+    unlisten();
+    fake.emit("tree-changed", { projectId: "p1", dirs: [], fullReload: true });
+
+    expect(seen).toEqual([change]);
+    expect(fake.listenerCount("tree-changed")).toBe(0);
+    expect(fake.calls).toEqual([]);
   });
 
   it("確認して終了は confirm_quit を引数なしで呼ぶ", async () => {

@@ -911,7 +911,7 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 不可
   - 先に書くテスト(模擬ランタイム、一時フォルダ。`harness = false` の `[[test]]` を足す): `ルートの中身が除外と並び順のとおりに返る`、`隠しファイル表示をオンにすると_3_つも返り写しと状態ファイルに反映される`、`ドットドットや絶対パスを渡すと拒否し何も読まない`、`シンボリックリンクでルートの外を指すフォルダは中身を返さない`、`見つからないプロジェクトは見つからないを返す`、`ファイルを指すとフォルダでないを返す`。Vitest: 新しいコマンドの包みが正しい名前と引数で届く
   - 検証: `npm test && npm run lint && npm run app && npm run smoke`
-- [ ] T42b — 監視の張り替えと `tree-changed` イベント(変更ファイル: src-tauri/src/tree_watch.rs, src-tauri/src/events.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/tree_watch.rs, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T38c, T40b, T42a)
+- [x] T42b — 監視の張り替えと `tree-changed` イベント(変更ファイル: src-tauri/src/tree_watch.rs, src-tauri/src/events.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/tree_watch.rs, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T38c, T40b, T42a)
   - 対応: FR-014、FR-002 のツリーの部分と FR-007 の「ツリーも表示され続ける」(M2 から回した分)、設計書 §1.3 #7、§7.1「プロジェクトの切替」「ルートフォルダへの追従」「外部でのファイル変更」
   - 張り替え: 写しを送るたびに、選択中のプロジェクト・そのルートのパス・見つからない・隠しファイル表示を前回と比べ、変わっていれば張り替える(プロジェクトの切替、再リンク、見回りでのルートの追従、見つからない、削除、0 件)。`patrol.rs` は変えない。張り替えの入出力は `Workspace` のロックの外。検証画面では張らない
   - 送るもの: 届いたパスを T38c の規則でまとめ、`tree-changed`(プロジェクト ID・変わったフォルダの相対パス・全部読み直し)で送る。絶対パスは送らない
