@@ -384,7 +384,7 @@ T29〜T35 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 19(逐次。M1 が Go のとき)
 
-- [ ] T28 — M2 の着手時の確認と再分解(変更ファイル: output/tasks/PLAN_multi-terminal.md, output/tasks/PROGRESS.md, output/design/ | 依存: T27)
+- [x] T28 — M2 の着手時の確認と再分解(変更ファイル: output/tasks/PLAN_multi-terminal.md, output/tasks/PROGRESS.md, output/design/ | 依存: T27)
   - (a) React のフック向けの lint を入れるか再検討する(設計書 §15.1 #10。`ARCH_multi-terminal.md:968`。Biome などを足すなら ADR に残し `npm run lint` に組み込む)
   - (b) ショートカットの受け口(メニューバーか画面内か)を実機で確かめる(設計書 §15.3 #7)。FR-044 と FR-006 の作り方が決まる
   - (c) Rust から macOS のブックマークを作って解決できることを小さなプログラムで確かめる(設計書 §5.4。Rust からは未実行)
@@ -394,7 +394,7 @@ T29〜T35 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 20a(並行可能。T28 完了後)
 
-- [ ] T28a — React のフック向けの lint を入れるかを調べて決める(変更ファイル: package.json, package-lock.json, eslint.config.js, src/ui/(違反があれば直す), output/design/ADR_008_frontend-lint.md, output/design/ADR_INDEX.md | 依存: T28)
+- [x] T28a — React のフック向けの lint を入れるかを調べて決める(変更ファイル: package.json, package-lock.json, eslint.config.js, src/ui/(違反があれば直す), output/design/ADR_008_frontend-lint.md, output/design/ADR_INDEX.md | 依存: T28)
   - 対応: 設計書 §15.1 #10(`ARCH_multi-terminal.md:979`)、PRD §7 C6、決定 (a)
   - 調べること: `eslint` と `eslint-plugin-react-hooks` だけでは `.ts`・`.tsx` を読めず、構文解析器(`typescript-eslint` か `@typescript-eslint/parser`)が要る見込み(未検証)。入れる場合の直接の依存の数、推移的な依存の数とそのうち公開から 2 週間未満のもの、`npm ci --ignore-scripts` で動くか、`npm run lint` の所要時間の増え方。比べる案として Biome(1 つのバイナリにフックの規則がある)も ADR に並べる
   - 入れるとき: 規則は `react-hooks` の `rules-of-hooks` と `exhaustive-deps` だけ。対象は `src/**/*.{ts,tsx}`(`src/ipc/generated/` は除く)。`npm run lint` の `tsc -b` の後ろに足す。版は正確に固定する(npm は `^` なし)。M1 のコードに違反があれば直す(`src/ui/` だけ)
@@ -410,14 +410,14 @@ T29〜T35 は親として残し、作業は子タスクで行う。親は子が�
   - 先に書くテスト: なし(文書だけ)
   - 検証: `grep -n 'state.corrupt' output/design/ARCH_multi-terminal.md` が 0 件
   - 人間の確認: 承認済みの設計書を直すので、差分を本人が読む(T36 までに)
-- [ ] T29a — `arin-core` に M2 のポートと ID 型、モジュールの骨格を置く(変更ファイル: crates/arin-core/src/lib.rs, crates/arin-core/src/ports/mod.rs, crates/arin-core/src/ports/root.rs, crates/arin-core/src/ports/state_file.rs, crates/arin-core/src/ports/pasteboard.rs, crates/arin-core/src/ports/system.rs, crates/arin-core/src/project/mod.rs, crates/arin-core/src/project/id.rs, crates/arin-core/src/persistence/mod.rs, crates/arin-core/src/persistence/codec.rs, crates/arin-core/src/persistence/scheduler.rs, crates/arin-core/src/layout/mod.rs, crates/arin-core/tests/project_id.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/ | 依存: T28)
+- [x] T29a — `arin-core` に M2 のポートと ID 型、モジュールの骨格を置く(変更ファイル: crates/arin-core/src/lib.rs, crates/arin-core/src/ports/mod.rs, crates/arin-core/src/ports/root.rs, crates/arin-core/src/ports/state_file.rs, crates/arin-core/src/ports/pasteboard.rs, crates/arin-core/src/ports/system.rs, crates/arin-core/src/project/mod.rs, crates/arin-core/src/project/id.rs, crates/arin-core/src/persistence/mod.rs, crates/arin-core/src/persistence/codec.rs, crates/arin-core/src/persistence/scheduler.rs, crates/arin-core/src/layout/mod.rs, crates/arin-core/tests/project_id.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/ | 依存: T28)
   - 対応: 設計書 §5.1 の `arin-core/ports`(`BookmarkPort`・`RootLocatorPort`・`StateFilePort`・`PasteboardPort`・`Clock`)、§3.2(機能モジュールどうしは ID 型と `ports` だけを共有する)、§リスク #1(M2 の分)
   - 置くもの: `ProjectId`(16 バイトから作る UUID v4 の形の文字列と、その検査。【仮定】1)、`ProjectColor`(8 つの識別子。【仮定】12。ts-rs で生成する)。ポートの trait: ルート(パスを調べて正規化したパス・フォルダか・ブックマークを返す、ブックマークを解決する、開いたフォルダの現在位置を返す)、状態ファイル(読む・原子的に書く・退避の名前へ改名する)、ペーストボード(文字列を書く)、`IdSource`(16 バイトの乱数)、`Clock`(いまの時刻)。ブックマークの中身はクレートの型を出さない形にする(バイト列か Base64 の文字列かは【仮定】2 のとおり T28 の (c) の結果に合わせる)。解決の結果の形(新しいパスと「古くなった」の印、解決できないときの理由)も T28 の (c) の結果に合わせる
   - `persistence` と `layout` は、子モジュール(`codec`・`scheduler`)の宣言と空のファイルだけ置く。後のタスクは `lib.rs` と各 `mod.rs` を触らずに済む
   - 並行: 可(T28a・T28b・T34a とファイルが重ならない)。Phase 20b の全タスクの前提
   - 先に書くテスト: `プロジェクト_id_は_16_バイトから_uuid_v4_の形になる`、`uuid_の形でない文字列はプロジェクト_id_にできない`、`プロジェクト_id_の_json_は文字列`、`色の識別子は_8_つでパレットの順に並ぶ`、`色の識別子の_json_は小文字の名前`。`generated_types.rs` に `ProjectId`・`ProjectColor` を足す(生成し直して差分が出ない)
   - 検証: `npm test && npm run lint`
-- [ ] T34a — 画面の純粋ロジック(キー、メニュー、ペインの寸法)(変更ファイル: src/logic/keys/, src/logic/menu/, src/logic/panes/ | 依存: T28)
+- [x] T34a — 画面の純粋ロジック(キー、メニュー、ペインの寸法)(変更ファイル: src/logic/keys/, src/logic/menu/, src/logic/panes/ | 依存: T28)
   - 対応: FR-044(タブ操作の ⌘ のキーを xterm.js に渡さない)、FR-009(ペインの寸法)、FR-003・FR-007・FR-059・FR-064(カードの右クリックの項目)、設計書 §5.1 の `src/logic/keys`・`src/logic/menu`、M1 の見送り(「すべてを選択」)
   - 置くもの: `terminalKeyOwner` で ⌘T・⌘W・⌘⇧[・⌘⇧]・⌘A を `app` にする(メニューが受けるので xterm.js に処理させない)。メニューから届く操作(「すべてを選択」)をフォーカス位置で振り分ける関数。`buildCardMenu`(絶対パスをコピー、色 ▸ 8 色、一覧から削除。見つからないときは再リンクと一覧から削除)。ペインの寸法を、ウィンドウの大きさと最小寸法(【仮定】10)から決める関数と、境界のドラッグ中の位置の計算
   - `src/logic` は他の `src/*` を import できないので、写しの型は使わず、必要な値だけの型をここで定める
@@ -427,41 +427,41 @@ T29〜T35 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 20b(並行可能。T29a 完了後)
 
-- [ ] T29b — プロジェクトの規則(`ProjectStore`)(変更ファイル: crates/arin-core/src/project/mod.rs, crates/arin-core/src/project/store.rs, crates/arin-core/src/project/color.rs, crates/arin-core/tests/project_store.rs | 依存: T29a)
+- [x] T29b — プロジェクトの規則(`ProjectStore`)(変更ファイル: crates/arin-core/src/project/mod.rs, crates/arin-core/src/project/store.rs, crates/arin-core/src/project/color.rs, crates/arin-core/tests/project_store.rs | 依存: T29a)
   - 対応: FR-001(登録)、FR-003(削除。ストアは入出力をしないのでフォルダに触れない)、FR-007(「見つからない」と再リンク。ゴミ箱の中は「見つからない」=設計書 §15.2 #7)、FR-010、FR-059、設計書 §5.1、§7.2「プロジェクトの登録」、§9.2(色の割当)、§15.2 #5(表示名はフォルダ名に追従)
   - 並行: 可(`project/` だけを触る)
   - 先に書くテスト: `登録すると末尾に_1_件増えて選択される`、`正規化したパスが同じなら増えず既存が選択される`(AC-P10)、`入れ子のフォルダは別のプロジェクトとして登録できる`(AC-P10)、`削除すると一覧から消え選択は次に移る`(【仮定】17)、`パレットが_8_色で_3_件登録すると色がすべて違う`(AC-C01)、`色は使われている数が最も少ないもの_同数ならパレットの順`、`削除で空いた色が次の登録で使われる`、`色をあとから変えられる`(FR-059)、`表示名はいまのパスのフォルダ名`、`パスが変わると表示名と表示用のパスが変わり_id_と色は変わらない`(AC-P07)、`表示用のパスはホームを_~_にする`、`ゴミ箱の中のパスは見つからない扱い`、`見つからないプロジェクトを再リンクすると_id_と色を保つ`、`再リンク先が既に登録済みのフォルダなら再リンクしない`
   - 検証: `npm test && npm run test:coverage`(`arin-core` の行 80%)
-- [ ] T30a — `state.json` 版 1 の読み書き(`arin-core/persistence/codec`)(変更ファイル: crates/arin-core/src/persistence/codec.rs, crates/arin-core/tests/persistence_codec.rs | 依存: T29a)
+- [x] T30a — `state.json` 版 1 の読み書き(`arin-core/persistence/codec`)(変更ファイル: crates/arin-core/src/persistence/codec.rs, crates/arin-core/tests/persistence_codec.rs | 依存: T29a)
   - 対応: FR-004、FR-009(保存値)、FR-056、設計書 §6.2 のスキーマと永続化、決定 (d)、【仮定】2・3・13
   - 読んだ結果は「状態」「無い(空で始める)」「退避する(理由つき)」のどれか。退避の名前は時計の値から作る。ペインの寸法は数として読むだけで、範囲の検査は T30b の規則を T32b が当てる
   - 並行: 可(`persistence/codec.rs` だけ。`scheduler.rs` は T30b)
   - 先に書くテスト: `書いて読むと同じ状態に戻る`、`欠けたキーは既定値で補う`、`未知のキーは無視する`、`壊れた_json_は退避の指示になる`、`版が新しすぎると退避の指示になる`、`版が数でない_0_負のときも退避の指示になる`、`ブックマークの文字列の往復`、`ブックマークが壊れていたらそのプロジェクトだけ作り直しの指示にする`、(Base64 の変換を `arin-core` に置く場合は `base64_の往復` も)`bookmark_が_null_なら_lastKnownPath_から作り直す指示`、`退避の名前は_utc_の日時`(`state.json.broken-20261115T093000Z`)、`退避の名前が既にあれば_-2_を足す`、`選択中の_id_が一覧に無ければ_null_にする`、`同じ_id_が_2_回出たら後のものを捨てる`
   - 検証: `npm test && npm run test:coverage`
-- [ ] T30b — ペインの寸法と保存のまとめ(`arin-core/layout`、`persistence/scheduler`)(変更ファイル: crates/arin-core/src/layout/mod.rs, crates/arin-core/src/layout/panes.rs, crates/arin-core/src/persistence/scheduler.rs, crates/arin-core/tests/layout_panes.rs, crates/arin-core/tests/persistence_scheduler.rs | 依存: T29a)
+- [x] T30b — ペインの寸法と保存のまとめ(`arin-core/layout`、`persistence/scheduler`)(変更ファイル: crates/arin-core/src/layout/mod.rs, crates/arin-core/src/layout/panes.rs, crates/arin-core/src/persistence/scheduler.rs, crates/arin-core/tests/layout_panes.rs, crates/arin-core/tests/persistence_scheduler.rs | 依存: T29a)
   - 対応: FR-009(最小寸法、左右の幅、折りたたみ)、FR-056(保存の契機)、設計書 §6.2「書き込みの契機」、§10.2(時計を注入する)
   - `layout/mod.rs` は T29a が置いた宣言に `panes` を足す(Phase 20b で `layout/` を触るのはこのタスクだけ)
   - 並行: 可
   - 先に書くテスト: `最小を下回る寸法は最小に留める`(【仮定】10)、`数でない値_無限大_負の値は既定値`、`折りたたんでも幅を覚えていて戻すと同じ幅`、`変更から_0.5_秒たつまで保存しない`(偽の時計)、`0.5_秒のあいだに続いた変更は_1_回の保存になる`、`ウィンドウが前面でなくなったときと終了時は待たずに保存する`、`変更が無ければ保存しない`、`保存に失敗したら次の変更でもう一度予約する`、`書かない設定(退避に失敗した回、検証画面)では一度も保存しない`
   - 検証: `npm test && npm run test:coverage`
-- [ ] T32a — タブの規則(`arin-core/terminal` の `TerminalStore`)(変更ファイル: crates/arin-core/src/terminal/mod.rs, crates/arin-core/src/terminal/store.rs, crates/arin-core/src/terminal/state.rs, crates/arin-core/tests/terminal_store.rs | 依存: T29a)
+- [x] T32a — タブの規則(`arin-core/terminal` の `TerminalStore`)(変更ファイル: crates/arin-core/src/terminal/mod.rs, crates/arin-core/src/terminal/store.rs, crates/arin-core/src/terminal/state.rs, crates/arin-core/tests/terminal_store.rs | 依存: T29a)
   - 対応: FR-039(プロジェクトごとの複数タブ、0 枚を許す)、FR-044(追加・閉じる・前後)、設計書 §6.1 の `TerminalStore`、§15.2 #3、【仮定】5・9・11・17、M1 の見送り(寸法の上限)
   - 並行: 可(`terminal/` だけを触る。`ports/pty.rs` は T31d)
   - 先に書くテスト: `プロジェクトごとにタブを持ち_追加すると末尾に増えて表示中になる`、`閉じると右隣_無ければ左が表示中になる`、`最後の_1_枚を閉じると_0_枚になり自動で開かない`(C-21)、`0_枚から追加できる`、`前後のタブの切替は端で反対側に回り込む`、`タブが_1_枚なら前後の切替は何もしない`、`ターミナルの_id_は起動中に使い回さない`、`タブの表示名はプロジェクト内の通し番号`、`プロジェクトのタブをまとめて外せる`、`シェルが終わったタブは閉じる`、`検証画面の設定ではシェルが終わってもタブを閉じない`、`寸法は行_1000_桁_2000_まで_超えたら_invalid_size`(M1 の見送り)
   - 検証: `npm test && npm run test:coverage`
-- [ ] T31a — 状態ファイルの読み書きと退避(`arin-platform/storage`)(変更ファイル: crates/arin-platform/src/storage/mod.rs, crates/arin-platform/src/storage/state_file.rs, crates/arin-platform/tests/state_file.rs | 依存: T29a)
+- [x] T31a — 状態ファイルの読み書きと退避(`arin-platform/storage`)(変更ファイル: crates/arin-platform/src/storage/mod.rs, crates/arin-platform/src/storage/state_file.rs, crates/arin-platform/tests/state_file.rs | 依存: T29a)
   - 対応: FR-056、FR-058 の土台、設計書 §6.2「書き込み方法」、決定 (d)。標準ライブラリだけで書く(依存を足さない)
   - 並行: 可(`storage/` だけ。`arin-platform/src/lib.rs` は既に `storage` を宣言している)
   - 先に書くテスト(一時ディレクトリだけ): `無ければ無いと返す`、`書くと同じフォルダの一時ファイルから置き換える`、`状態フォルダは_0700_ファイルは_0600`、`一時ファイルの段階で失敗しても元のファイルが残る`、`退避は改名だけで中身を変えない`、`退避先と同じ名前があれば上書きせず失敗する`、`渡したフォルダの外に書かない`
   - 検証: `npm test && npm run lint`
-- [ ] T31b — ブックマークとルートの現在位置(`arin-platform/bookmark`、`watch`)(変更ファイル: Cargo.toml, Cargo.lock, crates/arin-platform/Cargo.toml, crates/arin-platform/src/lib.rs, crates/arin-platform/src/bookmark/, crates/arin-platform/src/watch/, crates/arin-platform/tests/root.rs, output/design/ADR_009_m2-platform-deps.md, output/design/ADR_INDEX.md | 依存: T29a)
+- [x] T31b — ブックマークとルートの現在位置(`arin-platform/bookmark`、`watch`)(変更ファイル: Cargo.toml, Cargo.lock, crates/arin-platform/Cargo.toml, crates/arin-platform/src/lib.rs, crates/arin-platform/src/bookmark/, crates/arin-platform/src/watch/, crates/arin-platform/tests/root.rs, output/design/ADR_009_m2-platform-deps.md, output/design/ADR_INDEX.md | 依存: T29a)
   - 対応: FR-007、FR-010(正規化したパス)、設計書 §1.3 #8、§5.4、§7.1「ルートフォルダへの追従」
   - 使うクレート: ブックマークは **T28 の (c) の検証結果(PROGRESS に記載)に従う**(クレート: ＿＿＿＿＿＿)。開いたフォルダの現在位置(`fcntl` の `F_GETPATH`)は 【仮定】`libc`(Tauri が既に引き込んでいる版に合わせて正確に固定する)。公開から 2 週間未満の版を避け、足した理由と版を ADR-009 に書く
   - T28 の (c) で Rust から作れないと分かったとき: このタスクは始めず、本人に方式(パスだけで記憶して見回りで追う、など。FR-007 の AC が変わりうる)を確かめる
   - 並行: 可(Phase 20b で Cargo の 3 ファイルと `arin-platform/src/lib.rs` を触るのはこのタスクだけ)
   - 先に書くテスト(一時ディレクトリだけ。直列で、どの待ちにも上限時間): `登録するフォルダは正規化したパスになる`(シンボリックリンクを経由しても同じ)、`フォルダでないものは登録できない`、`ブックマークは改名後に新しいパスへ解決される`、`ブックマークは移動後に新しいパスへ解決される`、`削除したフォルダのブックマークは解決できない`、`開いたフォルダは改名と移動のあとも現在のパスが取れる`、`削除後は現在のパスが取れない`
   - 検証: `npm test && npm run lint`。`cargo tree -i reqwest --target aarch64-apple-darwin` で通信のクレートが増えていない
-- [ ] T31d — 前面プロセスの調査(動作中かの判定の材料)(変更ファイル: crates/arin-core/src/ports/pty.rs, crates/arin-platform/src/pty/native.rs, crates/arin-platform/tests/pty.rs | 依存: T29a)
+- [x] T31d — 前面プロセスの調査(動作中かの判定の材料)(変更ファイル: crates/arin-core/src/ports/pty.rs, crates/arin-platform/src/pty/native.rs, crates/arin-platform/tests/pty.rs | 依存: T29a)
   - 対応: FR-003・FR-063 の「動作中のプロセス」(設計書 §15.2 #2 の A、【仮定】4)、設計書 §1.3 #15、M1 の見送り(前面プロセスグループの取得がポートに無い)
   - `PtySession` に「前面のプロセスグループがシェル自身か(分からなければ不明)」を返す操作を足す。既定の実装(不明を返す)を持たせ、既存の偽の PTY(`src-tauri/tests/` など)を書き換えずに済ませる。`portable-pty` の `process_group_leader()` とシェルの pid を比べる(設計書 §1.4 #11 で動作は確認済み)
   - 並行: 可(`ports/pty.rs` と `pty/` だけ)
@@ -470,13 +470,13 @@ T29〜T35 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 20c(並行可能)
 
-- [ ] T31c — ペーストボード、乱数、時計(`arin-platform/desktop`、`system`)(変更ファイル: Cargo.toml, Cargo.lock, crates/arin-platform/Cargo.toml, crates/arin-platform/src/lib.rs, crates/arin-platform/src/desktop/, crates/arin-platform/src/system/, crates/arin-platform/tests/desktop.rs, crates/arin-platform/tests/system.rs, output/design/ADR_009_m2-platform-deps.md | 依存: T31b)
+- [x] T31c — ペーストボード、乱数、時計(`arin-platform/desktop`、`system`)(変更ファイル: Cargo.toml, Cargo.lock, crates/arin-platform/Cargo.toml, crates/arin-platform/src/lib.rs, crates/arin-platform/src/desktop/, crates/arin-platform/src/system/, crates/arin-platform/tests/desktop.rs, crates/arin-platform/tests/system.rs, output/design/ADR_009_m2-platform-deps.md | 依存: T31b)
   - 対応: FR-064(ルートの絶対パスをペーストボードへ)、【仮定】1(乱数)・3(時計)
   - 使うクレート: ペーストボードは 【仮定】`objc2-app-kit` の `NSPasteboard`(設計書 §1.4 #19。Tauri が既に使っている。T28 の (c) で使うクレートと同じ系統なら揃える)。乱数は `/dev/urandom` を読む、時計は `SystemTime`(どちらも依存なし)。ADR-009 に追記する
   - 並行: 可(T32b とファイルが重ならない。T31b の後なのは Cargo の 3 ファイルと `lib.rs` を共有するため)
   - 先に書くテスト: `テスト用の名前付きペーストボードに書いた文字列を読み戻せる`(ユーザーのクリップボードに触れない。書き込み先をポートの実装に渡せる形にする)、`乱数は_16_バイトで_2_回続けて同じにならない`、`時計は_unix_の秒とミリ秒を返す`
   - 検証: `npm test && npm run lint`。`cargo tree -i reqwest --target aarch64-apple-darwin`
-- [ ] T32b — `Workspace` の複数化と状態の写し(変更ファイル: crates/arin-core/src/workspace/, crates/arin-core/tests/workspace_terminal.rs, crates/arin-core/tests/workspace_projects.rs, crates/arin-core/tests/app_snapshot.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src-tauri/src/lib.rs, src-tauri/src/sessions.rs, src-tauri/tests/support/mod.rs, src/test/fakeIpc.ts, src/state/, e2e/fixtures/tauriMock.ts, src/ui/shell/AppShell.tsx | 依存: T29b, T30a, T30b, T32a)
+- [x] T32b — `Workspace` の複数化と状態の写し(変更ファイル: crates/arin-core/src/workspace/, crates/arin-core/tests/workspace_terminal.rs, crates/arin-core/tests/workspace_projects.rs, crates/arin-core/tests/app_snapshot.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src-tauri/src/lib.rs, src-tauri/src/sessions.rs, src-tauri/tests/support/mod.rs, src/test/fakeIpc.ts, src/state/, e2e/fixtures/tauriMock.ts, src/ui/shell/AppShell.tsx | 依存: T29b, T30a, T30b, T32a)
   - 対応: FR-002(切替でプロセスを止めない)、FR-003(削除の手順。動作中があれば確認を求める結果を返す)、FR-004(復元)、FR-039(起動時に解決できた全プロジェクトで 1 タブ。cwd はルート。C-22)、FR-042(切替はセッションに触らない)、FR-044、FR-063(終了の確認の材料)、設計書 §6.3・§7.1「起動」「プロジェクトの切替」
   - 写しの形(項目を足すだけで意味は変えないので、版は 1 のまま): `projects[]`(`id`・`name`・`color`・`displayPath`(`~` 省略。ツールチップ用)・`missing`・`terminalIds`(タブの順)・`activeTerminalId`)、`selectedProjectId`、`terminals[]`(`id`・`projectId`(検証画面では null)・`label`・`status`)、`layout`(左ペインの幅・折りたたみ・カード領域の高さ)、`notice`(退避したときの 1 行。閉じるまで)。絶対パスは写しに載せない(コピーは Rust が行う。設計書 §12)
   - `Workspace` は入出力をしない(M1 と同じ形)。起動時は「読んだ状態」と「各プロジェクトの解決の結果」を、削除と終了の確認は「動作中のターミナルの ID」を引数で受ける(調べるのは `src-tauri`)。保存する内容(`PersistedState`)を作る。検証画面は `Workspace::for_verify_grid`(プロジェクトなし、ホームを cwd にした 9 枚。`with_terminal_count` を置き換える)
