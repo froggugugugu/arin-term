@@ -6,7 +6,9 @@
 #![forbid(unsafe_code)]
 
 pub mod launch_options;
+pub mod layout;
 pub mod paths;
+pub mod persistence;
 pub mod ports;
 pub mod project;
 pub mod terminal;
