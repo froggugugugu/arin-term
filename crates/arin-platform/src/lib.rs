@@ -2,5 +2,6 @@
 //!
 //! ファイル操作、ファイル監視、PTY、ブックマークなど、OS への入出力をここに集める。
 
+pub mod bookmark;
 pub mod pty;
 pub mod storage;

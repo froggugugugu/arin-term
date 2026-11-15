@@ -23,6 +23,12 @@ tauri = { version = "=2.12.5" }
 tauri-build = { version = "=2.7.4" }
 # PTY を開いてシェルを起動する(ADR-004)。使うのは arin-platform/src/pty/ だけ。0.9.0 は 2025-02 公開。
 portable-pty = "=0.9.0"
+# macOS のブックマーク(NSURL)を作って解決する(FR-007、設計書 §1.4 #12)。使うのは arin-platform/src/bookmark/ だけ。
+# どちらも Tauri がすでに同じ版で使っているので、Cargo.lock に新しいクレートは増えない。
+objc2 = "=0.6.5"
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSURL", "NSData", "NSError", "NSString", "NSArray"] }
+# ブックマークのバイト列を state.json に入れる文字列に変える(標準の符号化)。Tauri が同じ版で使っている。
+base64 = "=0.23.1"
 
 # リリースのプロファイルに panic = "abort" を書かない。
 # 1 本のスレッドの異常でアプリ全体を落とさないため(NFR-006)。
