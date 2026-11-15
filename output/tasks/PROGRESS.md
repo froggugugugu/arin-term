@@ -16,13 +16,13 @@
 
 | 項目 | 内容 |
 | ---- | ---- |
-| 最終更新 | 2026-11-16(M4 は T50b を実行中。M4.5=ショートカットの設定は T63 が済み、本人の決定も出た。**再開の手順は §3 の 0 番**) |
+| 最終更新 | 2026-11-16(M4 は T50b の AI の分まで済み、残りは本人の確認。M4.5=ショートカットの設定は T63 が済み、本人の決定も出た。次は T64a・T64b。**再開の手順は §3 の 0 番**) |
 | ブランチ | `feat/m4-tiles`(`feat/m3-tree` から分岐。`feat/m3-tree` ← `feat/m2-projects` ← `feat/m1-terminal`。どれも push していない)。`feat/m0-skeleton` は push 済みで、pull request #1(main 向け)が開いている |
 | 最後のコミット | `git log --oneline -1` で確認する(本ファイルに書くと古くなるため) |
 | 起動コマンド | `npm run dev`(開発用)。`.app` は `npm run app` で `target/aarch64-apple-darwin/release/bundle/macos/Arin.app` にできる |
 | スモークテスト | `npm run app && npm run smoke && node scripts/smoke.mjs --tiles` → 期待: 終了コード 0、「スモーク成功」(通常・壊れた `state.json`・タイル表示の 9 プロジェクト) |
 | 既知の壊れている箇所 | なし(残っている問題は `output/reports/test/M2_acceptance.md` の「判断が要る点・残っている問題」)。`scripts/smoke.test.mjs` の一時フォルダの数を数える検査は、ほかのテストを同時に動かすと落ちることがある(単独では通る) |
-| 待ち | **本人の確認: M2(T36)・M3(T45)・M4(T50a。9 枚の体感と描画方式の選択)、1 週間のドッグフーディング**。描画方式が決まったら T50b。ゴミ箱の検証用の項目(`arin-probe-…` 2 つ、`arin-test-trash-…` 3 つ)の「戻す」の目視と片付け。push と pull request(本人に確認してから)。M0 の残り: pull request #1 のマージの判断、T1 の差分(コミット `b938d3d`)の了承 |
+| 待ち | **本人の確認: M2(T36)・M3(T45)・M4(T50a。9 枚の体感と描画方式の選択)、1 週間のドッグフーディング**(描画方式は「DOM のまま」と決定済みで、T50b で反映した)。ゴミ箱の検証用の項目(`arin-probe-…` 2 つ、`arin-test-trash-…` 3 つ)の「戻す」の目視と片付け。push と pull request(本人に確認してから)。M0 の残り: pull request #1 のマージの判断、T1 の差分(コミット `b938d3d`)の了承 |
 
 ---
 
@@ -101,7 +101,7 @@
 | T47 | 画面(タイル、ページ送り、タイトルバー、拡大、モード切替) | ボタンとショートカットでタブ表示とタイル表示が切り替わる。10 枚で 1 ページ目に 9 枚、2 ページ目に 1 枚、表示が `1/2`。タイルのダブルクリックで拡大し、同じ操作で戻る | 🟡 2026-11-16(T47a〜T47g。Playwright 225 件が合格。実際のキー(⇧⌘G・⌥⌘←・⌥⌘→・⇧⌘↩)と手触りは自動テストに無く、T50a で本人が見る) |
 | T48 | アテンションの走査の前倒し(【要確認】) | 単体テストで、BEL、OSC 9、OSC 777 の検出と除外が通る。別ページのタイルのアテンションでページ表示に印が付く | ✅ 2026-11-16(T48a〜T48c。実際のシェルで、隠れたタブの `printf '\\a'` で印が立ち、表示すると消える。規則は「フォーカス中のターミナル以外に立てる」に改めた=ADR-011。本人の承認は計画のリスク #3 に記録済み) |
 | T49 | 自動テスト、NFR-009 の計測、検証用の画面の撤去 | B のタイルをクリックするとカードとツリーが B になる(AC-M15)。A のカードと A の全タイルのタイトルバーが同じ色(AC-C02)。M1 の検証用の画面が消えている | ✅ 2026-11-16(T49a〜T49d。AC-M15・AC-C02 は画面のテストで合格。M1 の検証用の画面と `ARIN_VERIFY_GRID` は撤去。NFR-009 は 9 枚で計測して記録) |
-| T50 | M4 の完了確認(人間ゲート) | FR-048、051〜055 の合否一覧が全件合格。本人が 9 枚同時表示の体感を判定した | 🟡 2026-11-16(T50a の AI の分は済み: 合否一覧 `output/reports/test/M4_acceptance.md`、レビュー 2 種と指摘の修正。本人の確認 (1)〜(10) と、T50b=描画方式の決定の反映・`docs/` の同期が未) |
+| T50 | M4 の完了確認(人間ゲート) | FR-048、051〜055 の合否一覧が全件合格。本人が 9 枚同時表示の体感を判定した | 🟡 2026-11-16(T50a の AI の分は済み: 合否一覧 `output/reports/test/M4_acceptance.md`、レビュー 2 種と指摘の修正。T50b=描画方式の決定の反映・`docs/` の同期・最終の検証も済み。本人の確認 (1)〜(10) が未) |
 
 ### M5 公証・配布(粗い)
 
@@ -136,7 +136,7 @@
 
 0. **再開の手順(2026-11-16 の時点。文脈が切り替わったらここから)**
    - `git status --short` と `git log --oneline -5` を見る。最後のコミットが「docs: 進捗ノートに再開の手順を書く」より新しくなければ、T50b の変更が未コミットで作業ツリーに残っている可能性がある
-   - **T50b(M4 の最後)**: 中身は `PLAN_multi-terminal.md` の T50b の項。本人の決定は「描画方式は DOM のまま」(ADR-012 の末尾の表)。DOM 描画と `unicode11` に固定し、`ARIN_RENDERER`・`ARIN_UNICODE`・`get_launch_options`・`RendererLabel`・`@xterm/addon-webgl`・`@xterm/addon-unicode-graphemes`・`e2e/terminal-webgl.spec.ts` を外し、ADR-001 に決定を書き、`docs/` と `project-config.md` §2・§3 を M4 に合わせる。サブエージェントに任せて実行中だった。作業ツリーに途中の変更があれば、`npx tsc -b` と `cargo check --workspace` で状態を確かめ、足りない分を続ける
+   - **T50b(M4 の最後)は AI の分が済み(2026-11-16。検証を全部通してコミットした。計画のチェックは本人の T50a の確認と ADR-011 の了承が済むまで `[ ]` のまま)。次は M4.5 の T64a・T64b**。以下 2 項は T50b の記録: 中身は `PLAN_multi-terminal.md` の T50b の項。本人の決定は「描画方式は DOM のまま」(ADR-012 の末尾の表)。DOM 描画と `unicode11` に固定し、`ARIN_RENDERER`・`ARIN_UNICODE`・`get_launch_options`・`RendererLabel`・`@xterm/addon-webgl`・`@xterm/addon-unicode-graphemes`・`e2e/terminal-webgl.spec.ts` を外し、ADR-001 に決定を書き、`docs/` と `project-config.md` §2・§3 を M4 に合わせる。サブエージェントに任せて実行中だった。作業ツリーに途中の変更があれば、`npx tsc -b` と `cargo check --workspace` で状態を確かめ、足りない分を続ける
    - T50b のあとの検証(司令塔が **1 つずつ** 回す。並行にしない): `npm run lint` → `npm test` → `npm run e2e` → `npm run app` → `npm run smoke` → `node scripts/smoke.mjs --tiles` → `npm run test:coverage` → `npm run perf`。通ったら計画の T50b を `[x]` にしてコミットし、`output/reports/test/M4_acceptance.md` の検証の表と「判断が要る点」(描画方式は決定済み)を直す
    - **M4.5(ショートカットの設定)**: 計画の M4.5 の節(Phase 31.5b から。T64a ∥ T64b → T64c ∥ T65a → T65b → T65c ∥ T65e → T65d → T66a ∥ T66b → T66c → T66d)。方式は `output/design/ADR_012_keybindings.md`(末尾に本人の決定)。ブランチは `feat/m4-tiles` から `feat/m4.5-keybindings` を切る
    - 進め方の決まり: サブエージェント(Opus)に 1 タスクずつ任せ、同時は 2 件まで。各タスクの検証は最小限、全体の検証は節目だけ。サブエージェントの報告は短く頼む(変更ファイル・検証の終了コードと件数・【仮定】・計画と違う点だけ)。画面の部品は、デザインの方針(メモリ `design-apple-like`)を指示に入れ、画像で確かめる。push はしない
@@ -149,6 +149,13 @@
 ---
 
 ## 4. セッションログ(新しいものを上に)
+
+### 2026-11-16 — Mac のハングからの復帰と T50b の仕上げ
+
+- **起きたこと**: T50b をサブエージェントに任せている途中で Mac が固まり、セッションが切れた(原因は未特定)。サブエージェントの報告は残っていない
+- **復帰の確認**: `git fsck` 異常なし、ロック・stash・残ったプロセスなし。T50b の変更は未コミットで作業ツリーに残っていた(47 ファイル)。外す名前の取り残しはコメントと「呼べないこと」を確かめるテストだけ
+- **検証(T50b の変更を入れた内容。司令塔が 1 つずつ実行)**: `npm run lint`・`npm test`(Vitest 498、cargo 942、node 94)・`npm run e2e`(215 件)・`npm run app`・`npm run smoke`・`node scripts/smoke.mjs --tiles`・`npm run test:coverage`(`src/logic` 99.71%、`arin-core` 97.69%)・`npm run perf` が終了コード 0
+- **つまずいたこと**: rtk のフックが `npm run lint` などの出力を加工し、成功でも終了コード 1 に見えることがある。検証は `rtk proxy <コマンド>` で回し、出力をファイルに受けて終了コードを見る
 
 ### 2026-11-15〜16 — M4 の実装(T46a〜T49d)と完了確認の AI の分(T50a)
 

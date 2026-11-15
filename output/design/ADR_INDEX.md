@@ -2,7 +2,7 @@
 
 | # | タイトル | ステータス | 日付 |
 |---|---------|-----------|------|
-| ADR-001 | [ターミナルエンジンに xterm.js を使い、描画は DOM を既定にする(M1 の Go/No-Go の結果)](ADR_001_terminal-engine.md) | Accepted | 2026-11-15 |
+| ADR-001 | [ターミナルエンジンに xterm.js を使い、描画は DOM・全角幅は unicode11 にする(M1 の Go/No-Go と M4 の決定)](ADR_001_terminal-engine.md) | Accepted(M4 の決定で 2026-11-16 に更新) | 2026-11-15 |
 | ADR-002 | [ロジック層の置き場所と依存方向の強制方法](ADR_002_logic-placement.md) | Accepted | 2026-11-14 |
 | ADR-003 | [画面のフレームワークに React と zustand を使う](ADR_003_ui-framework.md) | Accepted | 2026-11-14 |
 | ADR-004 | [PTY のクレートと出力の流し方](ADR_004_pty.md) | Accepted | 2026-11-14 |

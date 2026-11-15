@@ -1,6 +1,6 @@
 # ADR-011: タイル表示の状態は Rust が持ち、画面は M2 のターミナルの置き場所の仕組みで複数枚を出す
 
-- ステータス: Proposed(本人の了承は M4 の完了確認 T50a。状態は T50b で直す)
+- ステータス: Proposed(本人の了承は M4 の完了確認 T50a の (1)〜(10)。2026-11-16 時点で本人が決めたのは描画方式と全角幅の方式だけ(ADR-001)で、この ADR の了承はまだ)
 - 日付: 2026-11-15
 - 決定者: AI(M4 の再分解。T46 の着手時)。PRD・設計書に無い点は【仮定】と書いた
 - 関連: PRD FR-048・FR-051〜055・FR-060・FR-061・NFR-009、C-10・C-11・C-23。`ARCH_multi-terminal.md` §1.3 #4、§3.4、§5.1(`DisplayMode`・`TileLayout`)、§6.1・§6.2(`ui.displayMode`)、§7.1「アテンション」、§8、§15.2 #4・#6・#10。ADR-001(描画方式)、ADR-003(xterm.js の要素は React の外)、ADR-010(半透過)。計画 `PLAN_multi-terminal.md` の M4 の節
@@ -46,7 +46,7 @@ M4 ではタイル表示(全プロジェクトの全ターミナルを自動グ�
 ### 5. 画面は M2 の置き場所の仕組みをそのまま使い、表示中を「並び」に広げる
 
 - xterm.js の要素は React の外に置き、`TerminalHost` が置き場所を描き、`TerminalManager.attach` が要素を置き場所の間で移す(ADR-003、M2)。タブ表示 ↔ タイル表示 ↔ 拡大は、置き場所が替わるだけで、ターミナルを作り直さない
-- `TerminalManager.present(shown, background)` の `shown` を 1 枚から並びにする。表示中のページのタイルだけを表示にし、ほかは `setVisible(false)`(描画の資源を手放す。WebGL ならコンテキストを返す)。出力の取り込みと処理済みの通知は続ける(FR-052、NFR-009)
+- `TerminalManager.present(shown, background)` の `shown` を 1 枚から並びにする。表示中のページのタイルだけを表示にし、ほかは `setVisible(false)`(要素を隠して描画を止める)。出力の取り込みと処理済みの通知は続ける(FR-052、NFR-009)
 - 各タイルの寸法は `TerminalHost` の `ResizeObserver` → `fit` → `resize_terminal` のまま(FR-051 の 3 つ目の AC)
 
 ### 6. M4 のショートカットは表に 4 行を足し、メニューバーに「表示」を足す【仮定】
@@ -72,7 +72,7 @@ M4 ではタイル表示(全プロジェクトの全ターミナルを自動グ�
 ### 8. 検証用の指定は段階的に外す
 
 - 9 枚の検証画面(`ARIN_VERIFY_GRID`)は T49c(画面とスモーク)・T49d(Rust と結合テストの足場)で外す。スモークと計測の 9 枚は、一時の状態フォルダに 9 プロジェクトとタイル表示の `state.json` を置いて作る
-- `ARIN_RENDERER`・`ARIN_UNICODE`・`RendererLabel` は、T49b で複数枚を実測して ADR-001 に案を書き、本人が T50a で体感を比べてから T50b で外す【仮定】
+- `ARIN_RENDERER`・`ARIN_UNICODE`・`RendererLabel` は、T49b で複数枚を実測して ADR-001 に案を書き、T50b で外した。本人は 9 枚の体感を比べる前に、計測の結果と案を見て DOM・`unicode11` のままを選んだ(2026-11-16。ADR-001「M4 の決定」)
 
 ## 検討した代替案
 

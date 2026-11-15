@@ -149,8 +149,8 @@ flowchart TD
 | ビルド(画面側) | Vite | 8 系 | 推奨・踏襲 |
 | パッケージ管理 | npm | 11 系 | 推奨・踏襲 |
 | ターミナルエンジン | xterm.js(`@xterm/xterm`) | 6.0.0 に固定 | 確定(M1 の Go/No-Go で Go。2026-11-15。ADR-001) |
-| ターミナルの描画方式 | DOM / WebGL(`@xterm/addon-webgl`) | 0.19.0 | 確定: DOM を既定にする。WebGL は起動時の指定(`ARIN_RENDERER=webgl`)で切り替えられるまま、複数枚の表示を実測する M4 まで残す(ADR-001) |
-| xterm.js のアドオン | `addon-fit`(寸法合わせ)0.11.0、`addon-unicode11` 0.9.0(全角幅・絵文字。既定)、`addon-unicode-graphemes` 0.4.0(`ARIN_UNICODE=graphemes` で切替。M4 まで残す)、`addon-search`(FR-047)、`addon-web-links`(FR-047) | 左に記載。search と web-links は入れるときに選ぶ | fit と全角幅は確定(ADR-001)。search と web-links は FR-047 を作るとき(M6 の T61)に入れる |
+| ターミナルの描画方式 | DOM(xterm.js の既定) | — | 確定(2026-11-16): DOM に固定する。M1〜M4 は WebGL(`@xterm/addon-webgl` 0.19.0)を起動時の指定 `ARIN_RENDERER=webgl` で切り替えられるようにして比べ、M4 の 9 枚の実測のあと本人が DOM のままを選んだので、WebGL と起動時の指定を外した(ADR-001) |
+| xterm.js のアドオン | `addon-fit`(寸法合わせ)0.11.0、`addon-unicode11` 0.9.0(全角幅・絵文字。固定)、`addon-search`(FR-047)、`addon-web-links`(FR-047) | 左に記載。search と web-links は入れるときに選ぶ | fit と全角幅は確定(ADR-001。`addon-unicode-graphemes` 0.4.0 は M4 まで `ARIN_UNICODE=graphemes` で比べ、2026-11-16 に外した)。search と web-links は FR-047 を作るとき(M6 の T61)に入れる |
 | PTY | `portable-pty` / `pty-process` / 自前実装 | 0.9.0 | 確定(§15.1 #3)。`portable-pty` |
 | ファイル監視 | FSEvents。`notify` クレート経由 | 8.2 系 | FSEvents は確定(PRD §7 C7)。クレートは推奨 |
 | macOS の API 呼び出し | `objc2`、`objc2-foundation`、`objc2-app-kit`、`libc`、`base64`(ブックマークを文字列にする) | =0.6.5 / =0.3.2 / =0.3.2 / =0.2.191 / =0.23.1 | 確定(M2。ADR-009)。どれも Tauri が使っている版と同じで、`Cargo.lock` に新しいクレートは増えない。使うのは `arin-platform` だけ |
@@ -187,7 +187,7 @@ PTY は `arin-core` の `PtyPort` 越しに使うので、クレートを替え�
 
 xterm.js を WKWebView で動かしたときの挙動は、すべて未検証。M1 を検証専用にする(PRD §7)。判定は人間が行う。
 
-結果(2026-11-15): 本人が **Go** と判断した。描画方式は DOM、全角幅は `unicode11` を既定にし、WebGL と `graphemes` は起動時の指定で切り替えられるまま M4 まで残す。項目ごとの確認の範囲と未確認の項目は ADR-001(`ADR_001_terminal-engine.md`)。
+結果(2026-11-15): 本人が **Go** と判断した。描画方式は DOM、全角幅は `unicode11` を既定にし、WebGL と `graphemes` は起動時の指定で切り替えられるまま M4 まで残した。M4 の 9 枚の実測のあと、本人が DOM・`unicode11` のままを選び(2026-11-16)、WebGL・`graphemes` と起動時の指定を外した。項目ごとの確認の範囲と未確認の項目は ADR-001(`ADR_001_terminal-engine.md`)。
 
 | 分類 | 確かめること |
 | ---- | ------------ |
@@ -406,9 +406,7 @@ export interface TerminalSurface {
   onInput(listener: (data: string) => void): void;   // キー入力・貼り付け → PTY
   onResize(listener: (cols: number, rows: number) => void): void;
   fit(): void;                                // 置き場所の大きさに合わせる(FR-043・051)
-  setVisible(visible: boolean): void;         // 表示中だけ描画の資源を持つ(NFR-009)
-  renderer(): RendererKind;                   // いまの描画方式(dom / webgl)
-  onRendererChange(listener: (renderer: RendererKind) => void): () => void;
+  setVisible(visible: boolean): void;         // 隠しているあいだは描画を止め、取り込みは続ける(NFR-009)
   size(): TerminalSize;                       // いまの行・桁数
   getSelection(): string;
   paste(text: string): void;
@@ -433,10 +431,10 @@ export interface TerminalSurface {
 
 | 分類 | コマンド(画面 → Rust) |
 | ---- | ----------------------- |
-| アプリ | `get_app_snapshot`、`notify_app_ready`、`confirm_quit`(終了の確定)、`report_frontend_error`、`get_launch_options`(M1 の検証用の指定。M4 で外す) |
+| アプリ | `get_app_snapshot`、`get_shortcuts`(ショートカットの表)、`notify_app_ready`、`confirm_quit`(終了の確定)、`report_frontend_error`。M1 の検証用の `get_launch_options` は M4 の T50b で外した |
 | プロジェクト | `add_project_by_dialog`(ダイアログは Rust が開き、選んだパスは画面を経由しない)、`select_project`、`remove_project`(動作中があり未確認なら何も変えず確認を求める結果を返す)、`relink_project`(同じくダイアログは Rust)、`set_project_color`、`copy_project_path`(パスは画面に返さない)。Finder からのドロップはコマンドではなく Rust がウィンドウのイベントで受ける。案: 並び替え、表示名の変更(M6) |
 | ターミナル | `new_terminal`(選択中プロジェクトの末尾)、`close_terminal`、`select_terminal`、`connect_terminal`(出力チャネルを渡す)、`write_terminal`、`write_terminal_bytes`、`ack_terminal_output`、`resize_terminal`。案: 新規(任意でフォルダ)、フォーカスの通知、タブ名の変更、パスの挿入 |
-| 表示 | `set_pane_sizes`、`set_sidebar_collapsed`。案: 表示モードの切替、タイルのページ切替、タイルの拡大(M4) |
+| 表示 | `set_pane_sizes`、`set_sidebar_collapsed`、`set_display_mode`、`focus_terminal`(タイルへのフォーカス)、`next_tile_page`・`previous_tile_page`、`toggle_tile_maximize`(`terminalId` は任意。無ければフォーカス中のタイル)(M4) |
 | ツリー | 案: フォルダの中身の取得、展開状態の保存、隠しファイル表示の切替 |
 | ファイル操作 | 案: 新規作成、名称変更、移動、コピー、複製、ゴミ箱、取り消し、ファイルのコピー・切り取り・ペースト、パスのコピー |
 | デスクトップ | 案: Finder で表示、開く、開けるアプリの一覧、Quick Look |
@@ -510,8 +508,8 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 | ストア | 責務 | 永続化 | ストレージキー |
 | ------ | ---- | ------ | -------------- |
 | `ProjectStore` | プロジェクトの一覧(順序つき)、選択中のプロジェクト、色、表示名(`customName`。変更の操作は M6)、ルートの参照(ブックマークと最後に分かっていたパス)、「見つからない」状態。ブランチ名は M6、ツリーの保存設定(展開、隠しファイル表示)は M3 で足す | あり(「見つからない」は保存しない) | `state.json` の `projects[]`、`ui.selectedProjectId` |
-| `TerminalStore` | プロジェクトごとのタブの並び(0 枚も許す)、表示中のタブ、タブ名(「ターミナル N」)、シェルが終わったタブを閉じるか(検証画面だけ残す)。ターミナルの状態と cwd は `Workspace` が持つ。フォーカス中のターミナル、実行中、アテンションは M4・M6 で足す | なし(FR-050 は Could。§16) | — |
-| ペインの寸法(`PaneSizes`。ストアにせず `Workspace` が直接持つ) | 左ペインの幅、左ペインの折りたたみ、カード領域の高さ。最小寸法と不正な値の規則は `layout::panes`。表示モード、タイルのページ、タイルからの拡大中かは M4 で足す | あり(ページと拡大中は保存しない予定) | `state.json` の `ui` |
+| `TerminalStore` | プロジェクトごとのタブの並び(0 枚も許す)、表示中のタブ、タブ名(「ターミナル N」)。シェルが終わったタブは閉じる。ターミナルの状態・cwd・アテンションの印(M4)は `Workspace` が持つ。フォーカス中のターミナルは選択中のプロジェクトの表示中のタブ(M4。ADR-011)。実行中は M6 で足す | なし(FR-050 は Could。§16) | — |
+| ペインの寸法(`PaneSizes`。ストアにせず `Workspace` が直接持つ) | 左ペインの幅、左ペインの折りたたみ、カード領域の高さ。最小寸法と不正な値の規則は `layout::panes`。表示モード・タイルのページ・拡大中かは `Workspace` が持ち(M4。規則は `layout::tiles`・`workspace/display`) | ペインの寸法と表示モードはあり(ページと拡大中は保存しない) | `state.json` の `ui`(表示モードは `ui.displayMode`。タイル表示のときだけ書く) |
 | `SettingsStore` | 設定ファイルを読んだ結果(読み取り専用)と、読み込みエラー(M6) | なし(設定ファイル自体が正本) | `settings.toml` |
 
 画面(TypeScript の `src/state`):
@@ -548,7 +546,7 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 | `projects[].tree.expanded` | 文字列の配列 | 展開中フォルダの相対パス | FR-020 | M3 で足す |
 | `projects[].tree.showHidden` | 真偽 | 隠しファイル表示 | FR-017 | M3 で足す |
 | `ui.selectedProjectId` | UUID 文字列または null | 最後に選択していたプロジェクト | FR-004 | M2 |
-| `ui.displayMode` | `"tabs"` / `"tiles"` | 表示モード | FR-048 | M4 で足す |
+| `ui.displayMode` | `"tabs"` / `"tiles"` | 表示モード。タイル表示のときだけ書く(無ければタブ表示。版は 1 のまま) | FR-048 | M4 |
 | `ui.sidebarWidth` | 数値(CSS ピクセル) | 左ペインの幅 | FR-009 | M2 |
 | `ui.sidebarCollapsed` | 真偽 | 左ペインの折りたたみ | FR-009 | M2 |
 | `ui.cardAreaHeight` | 数値(CSS ピクセル) | 左ペイン上段の高さ | FR-009 | M2 |
@@ -566,7 +564,7 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 | 版の移行 | キーの追加は既定値で吸収し、版を上げない。互換性が切れる変更のときだけ `schemaVersion` を上げ、1 版ずつの変換を足す(版 2 を作るとき) |
 | 未知の版 | 読んだ `schemaVersion` が対応より新しい・正しくないときは、破損時と同じく退避して空で始める |
 | 並び順 | 配列の順が正。別の順序フィールドを持たない |
-| 書き手 | Rust だけが書く。画面は状態ファイルに触れない。9 枚の検証画面(`ARIN_VERIFY_GRID`)では読まず書かない |
+| 書き手 | Rust だけが書く。画面は状態ファイルに触れない |
 
 設定ファイルのキー(提案。範囲外の値は既定値に戻し、理由を画面に出す):
 
@@ -588,18 +586,19 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 - 画面の `appStore` は Rust から届いた写しで丸ごと置き換える。画面のコードが部分的に書き換えることはない。
 - 画面の `treeStore` が持つ展開状態は、変更から少し待って Rust へ送る(保存のため)。それ以外の `treeStore` と `uiStore` の中身は Rust に送らない。
 
-状態の写し(`AppSnapshot`。M2 の形。正本は `crates/arin-core/src/workspace/snapshot.rs`、TypeScript の型は `src/ipc/generated/` に生成):
+状態の写し(`AppSnapshot`。M4 の形。正本は `crates/arin-core/src/workspace/snapshot.rs`、TypeScript の型は `src/ipc/generated/` に生成):
 
 | 項目 | 内容 |
 | ---- | ---- |
 | `schemaVersion`・`appVersion` | 写しの形の版(項目の追加では上げない)とアプリの版 |
 | `projects[]` | カード 1 枚ずつ(並び順): `id`、`name`(表示名)、`color`(色の識別子)、`displayPath`(`~` 省略の表示用のパス)、`missing`、`terminalIds`(タブの順)、`activeTerminalId` |
 | `selectedProjectId` | 選択中のプロジェクト(無ければ null) |
-| `terminals[]` | タブ 1 枚ずつ(プロジェクトの並び順、その中はタブの順。検証画面の持ち主の無いものは最後): `id`、`projectId`(検証画面では null)、`label`、`status` |
+| `terminals[]` | タブ 1 枚ずつ(プロジェクトの並び順、その中はタブの順): `id`、`projectId`(いまは必ず値がある。型は null を取りうるまま)、`label`、`status`、`attention`(M4) |
 | `layout` | ペインの寸法の保存値(`sidebarWidth`・`sidebarCollapsed`・`cardAreaHeight`)。ウィンドウに合わせた表示値は画面が計算する |
 | `notice` | 状態ファイルを退避したときなどの 1 行の知らせ(無ければ null) |
+| `display` | 右ペインの表示の状態(M4。ADR-011): `mode`(`tabs`/`tiles`)、`maximized`、`page`(0 から)、`pageCount`、`grid`(`cols`×`rows`)、`tileIds`(表示中のページのタイル)、`focusedTerminalId`、`attentionPages`(印のあるタイルのページ) |
 
-絶対パスとブックマークは写しに載せない(§12。「絶対パスをコピー」は Rust がペーストボードに書く)。表示モード・実行中・アテンションなどは使うマイルストーンで項目を足す。
+絶対パスとブックマークは写しに載せない(§12。「絶対パスをコピー」は Rust がペーストボードに書く)。実行中などは使うマイルストーンで項目を足す。
 
 ---
 
@@ -745,7 +744,7 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 | NFR-001(メモリ) | スクロールバックは 10,000 行が既定。画面は React を使う(§15.1 #2。フレームワークなしよりメモリは増えるが、数値は目安)。計測は Arin 本体と WebKit の補助プロセスの合計を記録する【仮定】§15.2 #11 |
 | NFR-002(起動) | ウィンドウを先に出し、シェルの起動とツリーの読み込みは後から行う |
 | NFR-003(アイドル CPU) | 定期処理は見回り(1 秒間隔。システムコール数回)だけ。FSEvents は選択中の 1 プロジェクトだけ |
-| NFR-004(大量出力) | 出力のまとめ送りと流量制御(§7.1)。描画方式は M1 で DOM を既定にした(WebGL は M4 の実測まで切替を残す。ADR-001) |
+| NFR-004(大量出力) | 出力のまとめ送りと流量制御(§7.1)。描画方式は DOM(M4 の実測のあと固定。ADR-001) |
 | NFR-005(大きなツリー) | フォルダは展開時に読む。読み込みはメインスレッドの外。画面は見えている行だけを描く(仮想スクロール) |
 | NFR-009(タイル 9 枚) | 表示中ページの要素だけを画面に出す。他ページは出力の取り込みだけ(§1.3 #4)。M1 で簡易確認、M4 で体感判定 |
 
@@ -778,7 +777,7 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 
 | 部位 | 実装 | 理由 |
 | ---- | ---- | ---- |
-| メニューバー、フォルダ選択ダイアログ | macOS 標準(Tauri のメニューと、`objc2-app-kit` で直接呼ぶ `NSOpenPanel`。ADR-009)。メニューバーは Tauri の既定を使わず、`menu.rs` で次の 3 つに置き換える(M2): 「Arin」(隠す・ほかを隠す・すべてを表示・終了 ⌘Q)、「ターミナル」(新規タブ ⌘T・タブを閉じる ⌘W・前のタブ ⌘⇧[・次のタブ ⌘⇧])、「編集」(コピー ⌘C・ペースト ⌘V・すべてを選択 ⌘A)。タブ操作は Rust の中で処理して写しで返し、「すべてを選択」は画面へ `menu-command` で送る。「終了」と「すべてを選択」は標準の項目ではなく自前の項目にする | macOS のアプリとして必要。選んだパスが画面を経由しない。既定のメニューの ⌘W などはタブ操作(FR-044)とぶつかる。標準の「終了」は終了の要求を経由せずに終わり(FR-063 の確認を挟めない)、標準の「すべてを選択」は xterm.js ではなく文書全体を選ぶ |
+| メニューバー、フォルダ選択ダイアログ | macOS 標準(Tauri のメニューと、`objc2-app-kit` で直接呼ぶ `NSOpenPanel`。ADR-009)。メニューバーは Tauri の既定を使わず、`menu.rs` で次の 4 つに置き換える(M2。「表示」は M4): 「Arin」(隠す・ほかを隠す・すべてを表示・終了 ⌘Q)、「ターミナル」(新規タブ ⌘T・タブを閉じる ⌘W・前のタブ ⌘⇧[・次のタブ ⌘⇧])、「編集」(切り取り ⌘X・コピー ⌘C・ペースト ⌘V・すべてを選択 ⌘A)、「表示」(タイル表示とタブ表示を切り替える ⇧⌘G・前のページ ⌥⌘←・次のページ ⌥⌘→・タイルを拡大/元に戻す ⇧⌘↩)。キーは既定の表(`arin-core/shortcuts`)から引く。タブ操作は Rust の中で処理して写しで返し、「すべてを選択」は画面へ `menu-command` で送る。「終了」と「すべてを選択」は標準の項目ではなく自前の項目にする | macOS のアプリとして必要。選んだパスが画面を経由しない。既定のメニューの ⌘W などはタブ操作(FR-044)とぶつかる。標準の「終了」は終了の要求を経由せずに終わり(FR-063 の確認を挟めない)、標準の「すべてを選択」は xterm.js ではなく文書全体を選ぶ |
 | ウィンドウ内の分割とペイン境界 | 画面内(CSS とマウスのイベント) | 最小寸法、折りたたみ、境界位置の読み書きを `Workspace` の `PaneSizes` 経由で `state.json` に持つ(FR-009) |
 | ツリー | 画面内。見えている行だけを描く仮想スクロール(自作するか React 用のライブラリを使うかは M3 の着手時に決め、足すなら ADR に残す) | 大きなフォルダでも行数に比例して重くならない(NFR-005) |
 | ターミナル | エンジンの要素を `TerminalHost` に入れる | 1 ターミナル 1 要素。表示先が変わるときは要素を付け替える |
@@ -980,7 +979,7 @@ ADR の一覧(設計ゲートの回答と各マイルストーンの判断を受
 
 | ADR | 主題 | 対応する §15.1 |
 | --- | ---- | -------------- |
-| ADR-001 | ターミナルエンジンと描画方式、アドオン、CSP(作成済み。`ADR_001_terminal-engine.md`。M1 の Go/No-Go は Go、DOM と `unicode11` を既定にした) | — |
+| ADR-001 | ターミナルエンジンと描画方式、アドオン、CSP(作成済み。`ADR_001_terminal-engine.md`。M1 の Go/No-Go は Go、DOM と `unicode11` を既定にし、M4 で固定した) | — |
 | ADR-002 | ロジック層の置き場所と依存方向の強制方法(作成済み。`ADR_002_logic-placement.md`) | #1、#10 |
 | ADR-003 | 画面のフレームワーク(作成済み。`ADR_003_ui-framework.md`) | #2 |
 | ADR-004 | PTY のクレートと出力の流し方(作成済み。`ADR_004_pty.md`) | #3 |
@@ -1019,7 +1018,7 @@ ADR の一覧(設計ゲートの回答と各マイルストーンの判断を受
 | - | ---- | ------ | -------- |
 | 1 | 隠しファイル表示の切替が指すもの(FR-017) | **A【仮定】**: 既定では `.git` `node_modules` `.DS_Store` の 3 つだけを隠し、他のドットファイル(`.claude` `.github` など)は表示する。切替を ON にすると 3 つも表示する / B: ドットファイル全般を既定で隠し、3 つは常に隠す | `ExclusionRule`、監視の除外範囲 |
 | 2 | 「動作中のプロセス」の定義(FR-003、FR-063) | **A【仮定】**: シェル以外が前面で動いているターミナルがあるときだけ確認する(FR-012 と同じ判定)/ B: シェルが 1 つでも生きていれば確認する(C-22 により、ほぼ毎回確認が出る)。**M2 で A を実装【仮定】(本人の了承は M2 の完了確認)**: 調べるのは削除と終了の確認のときだけ。前面を調べられないものは動作中に数えない | 終了とプロジェクト削除の確認 |
-| 3 | シェルが終了したタブ(`exit` など) | **A【仮定】**: タブを自動で閉じる(0 枚も許す。C-21)/ B: 「終了しました」の表示でタブを残す。**M2 で A を実装【仮定】(本人の了承は M2 の完了確認)**: 9 枚の検証画面だけは閉じずに「終了しました」を出す | `TerminalStore`、NFR-006 の見え方 |
+| 3 | シェルが終了したタブ(`exit` など) | **A【仮定】**: タブを自動で閉じる(0 枚も許す。C-21)/ B: 「終了しました」の表示でタブを残す。**M2 で A を実装【仮定】(本人の了承は M2 の完了確認)**。M1 の 9 枚の検証画面だけは閉じずに残していたが、検証画面は M4 で外した | `TerminalStore`、NFR-006 の見え方 |
 | 4 | タイルの最終ページのグリッド(FR-051、FR-052) | **A【仮定】**: そのページの枚数で決める(10 枚なら 2 ページ目は 1×1)/ B: 1 ページ目と同じ 3×3 の枠を保つ | `TileLayout` |
 | 5 | 表示名の持ち方(FR-005) | **A【仮定】**: 変更していないあいだはフォルダ名に追従する(フォルダを改名するとカード名も変わる)/ B: 登録時のフォルダ名を固定で保存する。M2 で A の保存値(`customName` が null ならフォルダ名)を実装。名前を変える操作は M6 | `state.json` の `customName` |
 | 6 | 別プロジェクトのターミナルへのパスのドロップ(タイル表示で起こる) | **A【仮定】**: ドロップ先のターミナルが同じプロジェクトなら相対パス、違うプロジェクトなら絶対パスを挿入する / B: 常にルート基準の相対パス | `Workspace`(FR-016) |
@@ -1034,7 +1033,7 @@ ADR の一覧(設計ゲートの回答と各マイルストーンの判断を受
 
 | # | 項目 | 選択肢 | 影響範囲 |
 | - | ---- | ------ | -------- |
-| 1 | xterm.js を WKWebView で使えるか | **決定(2026-11-15): Go。** 描画方式は DOM、全角幅は `unicode11` を既定にし、WebGL と `graphemes` は起動時の指定で切り替えられるまま M4 まで残す。§2.2 の未確認の項目は ADR-001 | M1 の Go/No-Go。実装技術そのもの。描画方式の最終判断は M4(複数枚の表示の実測) |
+| 1 | xterm.js を WKWebView で使えるか | **決定(2026-11-15): Go。** 描画方式は DOM、全角幅は `unicode11` を既定にし、WebGL と `graphemes` は起動時の指定で切り替えられるまま M4 まで残した。**描画方式の決定(2026-11-16): DOM・`unicode11` に固定。** 本人が M4 の 9 枚の実測の結果と案を見て決めた(9 枚の体感の実機での比較はしていない)。WebGL・`graphemes` と起動時の指定は外した。§2.2 の未確認の項目は ADR-001 | M1 の Go/No-Go。実装技術そのもの。9 枚で遅い・幅が崩れるときは M4.5 の設定ファイルの項目として戻すかを決める |
 | 2 | エンタイトルメント | A: 何も付けない(tadcap と同じ。最小)/ B: ターミナル内の CLI のために Apple Events などを付ける | M5。Claude Code や Codex が `osascript` などを使う場面で差が出る |
 | 3 | Finder の「戻す」の成立(FR-028 の AC) | M3 の最初に実機で確かめる。順に試す: 標準 API の `trashItemAtURL`(権限不要。「戻す」が出ない環境がある)→ `NSWorkspace` の `recycleURLs` → Finder に頼む(「戻す」が出るが、権限の確認が出る。B のエンタイトルメントが要る) | M3。`FileSystemPort` の実装だけに閉じる。取り消し(FR-032)は、ゴミ箱内の移動先が分かる方式のほうが作りやすい |
 | 4 | アプリ内のドラッグの実装 | M3 の最初に、マウスのイベントによる自前実装で FR-016 と FR-029 が成り立つことを確かめる。あわせて §1.4 #8(HTML 標準のドロップが届かない)を実機で確認する | M3。`src/logic/dnd`、`src/ui/tree` |

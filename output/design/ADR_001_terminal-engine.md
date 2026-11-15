@@ -1,8 +1,8 @@
-# ADR-001: ターミナルエンジンに xterm.js 6.0.0 を使い、描画は DOM を既定にする(M1 の Go/No-Go の結果)
+# ADR-001: ターミナルエンジンに xterm.js 6.0.0 を使い、描画は DOM・全角幅は unicode11 にする(M1 の Go/No-Go と M4 の決定)
 
 - ステータス: Accepted
-- 日付: 2026-11-15
-- 決定者: 本人(M1 の Go/No-Go。T26)。本人が明示しなかった項目は、本人が試した構成(既定のまま)を採り、下の「決めていないこと」に分けて書いた
+- 日付: 2026-11-15(M1 の Go/No-Go)。2026-11-16 に描画方式と全角幅の方式の決定で更新(M4 の T50b。下の「M4 の決定」)
+- 決定者: 本人(M1 の Go/No-Go。T26。M4 の描画方式と全角幅の方式。T50a・T50b)。本人が明示しなかった項目は、本人が試した構成(既定のまま)を採った
 - 関連: `ARCH_multi-terminal.md` §2.2、§4、§5.1、§12、§14、§15.2 #9。ADR-003(画面のフレームワーク)、ADR-004(PTY と出力の流し方)。`output/tasks/M1_GO-NO-GO_CHECKLIST.md`
 
 ## コンテキスト
@@ -25,8 +25,8 @@ M1 で作ったもの(T14〜T25): ログインシェルを PTY で起動し、�
 | 項目 | 決定 | 根拠 |
 | ---- | ---- | ---- |
 | エンジン | xterm.js(`@xterm/xterm` 6.0.0) | 本人の Go |
-| 描画方式 | **DOM を既定にする。** WebGL(`@xterm/addon-webgl` 0.19.0)は、起動時の指定 `ARIN_RENDERER=webgl` で切り替えられるまま残す | 本人が試して良いとしたのは既定(DOM)。WebGL が効くのは複数枚を同時に描くときで、それを実測できるのは M4(タイル表示)になる。比べないまま片方を消さない |
-| 全角幅の方式 | **`unicode11`(`@xterm/addon-unicode11` 0.9.0)を既定にする。** `graphemes`(`@xterm/addon-unicode-graphemes` 0.4.0)は `ARIN_UNICODE=graphemes` で切り替えられるまま残す | 同上。本人が試したのは既定 |
+| 描画方式 | **DOM(xterm.js の既定)に固定する**(2026-11-16。M4 の T50b)。M1 の時点では DOM を既定にし、WebGL(`@xterm/addon-webgl` 0.19.0)を起動時の指定 `ARIN_RENDERER=webgl` で切り替えられるまま M4 まで残した | M1: 本人が試して良いとしたのは既定(DOM)。WebGL が効くのは複数枚を同時に描くときで、それを実測できるのは M4(タイル表示)だった。M4: 9 枚の実測で差が小さく、本人が DOM のままを選んだ(下の「M4 の決定」) |
+| 全角幅の方式 | **`unicode11`(`@xterm/addon-unicode11` 0.9.0)に固定する**(2026-11-16。M4 の T50b)。M1 の時点では `graphemes`(`@xterm/addon-unicode-graphemes` 0.4.0)を `ARIN_UNICODE=graphemes` で切り替えられるまま残した | 同上。M4 の計測で `graphemes` は取り込みが遅く、本人が計測の案どおり `unicode11` を選んだ |
 | そのほかのアドオン | `@xterm/addon-fit` 0.11.0(寸法合わせ)。`addon-search`・`addon-web-links` は FR-047 を作るとき(M6 の T61)に入れる | 設計書 §4 |
 | CSP | `csp`・`devCsp` に `style-src-elem 'self' 'unsafe-inline'` と `style-src-attr 'unsafe-inline'` を足す。`style-src 'self'` は残し、`script-src` は緩めない | xterm.js 6.0.0 は実行時に `<style>` 要素を作り、truecolor の文字に style 属性を書く。緩める前は、実アプリのスモークが `style-src-elem` の違反で失敗した。`img-src`・`connect-src`・`default-src` は絞ったままなので、CSS を差し込まれても外への読み込みはできない |
 | OSC 52(クリップボードの制御シーケンス) | 対応しない(いまのまま。画面には渡らず、開発ビルドで回数だけ記録する) | 設計書 §15.2 #9 の既定。本人から対応の要望は出ていない |
@@ -36,7 +36,9 @@ M1 で作ったもの(T14〜T25): ログインシェルを PTY で起動し、�
 
 ### 起動時の指定の扱い
 
-`ARIN_RENDERER`・`ARIN_UNICODE`・`ARIN_VERIFY_GRID` と、いまの描画方式の表示(`RendererLabel`)は、検証用としてリリースビルドでも有効なまま **M4(T49)まで残す**。計画(T27)は、決まらなかった方を M1 の締めで外すとしていたが、上の理由で先に延ばした。配布(M5 の署名・公証)までには、外すか、設定の項目に移すかのどちらかにする。
+`ARIN_RENDERER`・`ARIN_UNICODE`・`ARIN_VERIFY_GRID` と、いまの描画方式の表示(`RendererLabel`)は、検証用としてリリースビルドでも有効なまま **M4 まで残した**。計画(T27)は、決まらなかった方を M1 の締めで外すとしていたが、上の理由で先に延ばした。
+
+**M4 で全部外した**: `ARIN_VERIFY_GRID`(9 枚の検証画面)は T49c・T49d、`ARIN_RENDERER`・`ARIN_UNICODE`・`RendererLabel` は T50b(下の「M4 の決定」)。設定の項目には移していない。
 
 ## 確かめた範囲
 
@@ -55,7 +57,20 @@ M1 で作ったもの(T14〜T25): ログインシェルを PTY で起動し、�
 
 ## M4 の実測と案(計画書 T49b。2026-11-15)
 
-> **ここに書くのは案で、決定ではない。** 描画方式と全角幅の方式は、本人が T50a で 9 枚の体感を比べてから決め、T50b でこの ADR の「判断」の表を直す。
+> 下の実測と案(T49b)をもとに、本人が 2026-11-16 に決めた。決定は次の「M4 の決定」の節、この ADR の「判断」の表も直した。
+
+### M4 の決定(2026-11-16。計画書 T50a・T50b)
+
+- **描画方式: DOM のまま**(本人の回答は「DOM のまま(推奨)」。選択肢の説明は「いまの既定のまま。使わない WebGL と、検証用の起動時の指定(ARIN_RENDERER・ARIN_UNICODE)と画面の小さな表示を外す」)
+- **全角幅の方式: `unicode11` のまま**(下の案どおり。`graphemes` は外す)
+- **決め方**: 本人は、下の計測の結果と案を見て決めた。**9 枚の体感を実機で DOM と WebGL、`unicode11` と `graphemes` で比べることは行っていない**(計画書 T50a の (2) で予定していた比較)
+- **外したもの(T50b)**:
+  - 起動時の指定 `ARIN_RENDERER`・`ARIN_UNICODE` と、それを解釈する `arin-core/src/launch_options.rs`(`LaunchOptions`・`RendererKind`・`UnicodeWidth`。項目が残らないので型ごと)、`src-tauri/src/launch.rs` の読み取り、コマンド `get_launch_options`、生成物 `src/ipc/generated/LaunchOptions.ts`・`RendererKind.ts`・`UnicodeWidth.ts`
+  - 画面の起動の手順の起動時の指定の取得(`src/state/launchOptions.ts`)、描画方式の表示 `RendererLabel`(`data-testid="terminal-renderer"`)
+  - 描画方式の切り替え(`src/terminal/rendererControl.ts`。WebGL のアドオンの付け外し、作れない・失ったときに DOM に戻して報告する仕組み)と、`TerminalSurface` の `renderer`・`onRendererChange`、`TerminalManager` の `rendererOf`・`onRendererChange`
+  - 依存の `@xterm/addon-webgl` 0.19.0 と `@xterm/addon-unicode-graphemes` 0.4.0
+  - WebGL の画面の自動テスト(`e2e/terminal-webgl.spec.ts`)と、計測(`e2e/perf-tiles.spec.ts`、`scripts/perf/`)の WebGL・`graphemes` の組
+- **見直す条件**: 9 枚のタイル表示で遅いと感じたとき、全角や絵文字の幅が崩れたとき。そのときは WebGL・`graphemes` を、起動時の指定ではなく M4.5 の設定ファイル(ADR-012)の項目として戻すかを決める。下の実測は、そのときの比べる基準として残す
 
 計測は `npm run perf` の 1 回(`testreport/perf/perf-20261115-230233.md`。Apple M5、macOS 26、release ビルド。`.app` は 22:41 のビルドで、タイル表示まで入ったもの)。どれも記録だけで、合否にしない。計測のあいだのシステムのメモリの空きは 74〜76%。
 
@@ -107,7 +122,7 @@ M1 で作ったもの(T14〜T25): ログインシェルを PTY で起動し、�
 - 流しているあいだのタイルのクリック・キー入力・次のページのボタンから画面がコマンドを呼ぶまでは、どの組も 0〜8 ms。ただし入力のイベントが届くまでの待ち(主スレッドが塞がっている時間)は含まないので、体感の代わりにはならない
 - WebGL は 1 枚に canvas が 2 つ(addon-webgl 0.19.0)で、9 枚で 18。隠すとコンテキストを返すので、ページを送るときの描き替えが DOM より約 40 ms 遅い
 
-### 案(本人が T50a で選ぶ)
+### 案(T49b。本人が 2026-11-16 に採った)
 
 | 項目 | 案 | 理由 |
 | ---- | -- | ---- |
@@ -118,20 +133,21 @@ M1 で作ったもの(T14〜T25): ログインシェルを PTY で起動し、�
 
 ### 本人が見ること(T50a。自動の計測では分からない)
 
-- 9 枚で Claude Code などを動かし、いくつかで `yes` を流しながら、ページ送り・タイルのクリック・入力が我慢できる速さか(NFR-009)。既定(DOM、`unicode11`)と `ARIN_RENDERER=webgl`・`ARIN_UNICODE=graphemes` で同じことをして比べる
+- 9 枚で Claude Code などを動かし、いくつかで `yes` を流しながら、ページ送り・タイルのクリック・入力が我慢できる速さか(NFR-009)。T49b の時点では既定と `ARIN_RENDERER=webgl`・`ARIN_UNICODE=graphemes` で比べる予定だったが、本人は比べずに決め(上の「M4 の決定」)、その指定は T50b で外した。いまは DOM・`unicode11` での体感だけを見る
 - 長く流しっぱなしにしたとき、アクティビティモニタで WebKit(WebContent)のメモリが増え続けないか(計測は 1 枚 4 MiB までしか流していない)
-- WebGL の 9 枚の見た目(にじみ・罫線)と、ページを送ったときのちらつき
+- ページを送ったときのちらつき(WebGL の 9 枚の見た目は、WebGL を外したので見ない)
 
 ## 検討した代替案
 
-- **WebGL を既定にする**: 複数枚では速い見込みだが、本人が試していない。WebView には WebGL のコンテキスト数の上限があり、9 枚を超えたときの挙動も未確認。M4 で実測して決める。
-- **比べずに WebGL と `graphemes` を外す**(計画どおり): コードは減るが、M4 で必要になったときに入れ直すことになる。切り替えの仕組みは小さく、テストもあるので、残す負担のほうが小さい。
+- **WebGL を既定にする**: 複数枚では速い見込みだったが、M4 の実測(9 枚)では取り込みの差が小さく、WebKit のメモリが約 20 MiB 多く、ページ送りの描き替えが遅かった。WebView には WebGL のコンテキスト数の上限もある。採らない(M4 の決定)。
+- **M1 の時点で比べずに WebGL と `graphemes` を外す**(T27 の計画): M4 で必要になったときに入れ直すことになるので、M4 まで残した。M4 で実測してから外した。
+- **WebGL・`graphemes` を M4.5 の設定ファイルの項目に移す**: 切り替えの仕組みとテストを持ち続けることになる。本人が DOM・`unicode11` のままを選んだので採らない(見直す条件に当たったときに改めて決める)。
 - **Electron**: 同じ xterm.js が Chromium で動くので WKWebView 固有の心配は減るが、サイズとメモリが増え、「ライト」という狙いから外れる。Go になったので採らない。
 - **Swift ネイティブ**: 日本語入力と体感は最良の見込みだが、ツリーやタブの UI を作る手間が大きい。Go になったので採らない。No-Go になった場合も、`arin-core` と `arin-platform`(PTY、起動、流量制御)は画面に依存しないので使い回せる。
 
 ## 影響
 
 - M2 以降は、xterm.js と DOM 描画を前提に進める。
-- 検証用の環境変数 3 つがリリースビルドに残る。値は列挙に直すだけで、不正な値は既定に戻る(`arin-core/src/launch_options.rs`)。外すのは M4(T49)。
+- 検証用の環境変数 3 つ(`ARIN_VERIFY_GRID`・`ARIN_RENDERER`・`ARIN_UNICODE`)は M4 で外した(T49c・T49d・T50b)。指定されていてもアプリは読まない。
 - CSP でスタイルの inline を許したままになる。HTML の差し込み(`innerHTML` など)は境界検査で禁止しているので、差し込みの入口は増えていない。
 - M1 で見送った項目(寸法の上限、終了済みセッションの解放、終了時の後片付けの時間、`onBinary`、「すべてを選択」、再接続時の寸法、隠したまま作るインスタンスの寸法)は M2 で扱う(`output/tasks/PROGRESS.md`)。
