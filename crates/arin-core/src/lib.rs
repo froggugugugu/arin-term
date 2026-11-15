@@ -11,6 +11,7 @@ pub mod paths;
 pub mod persistence;
 pub mod ports;
 pub mod project;
+pub mod settings;
 pub mod shortcuts;
 pub mod terminal;
 pub mod tree;

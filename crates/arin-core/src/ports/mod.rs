@@ -2,8 +2,8 @@
 //!
 //! PTY(`PtyPort`)、ルートフォルダ(`RootLocatorPort`・`BookmarkPort`)、乱数(`IdSource`)を置く。
 //! 状態ファイル(`state_file`)、ペーストボード(`pasteboard`)、時計(`clock`)、ファイルシステム(`fs`)、
-//! ファイル監視(`watch`)、デスクトップ(`desktop`)は、モジュールを公開して中の名前で使う
-//! (並行するタスクがこのファイルを触らずに足せるようにするため)。他のポートは使うマイルストーンで足す。
+//! ファイル監視(`watch`)、デスクトップ(`desktop`)、設定ファイル(`settings_file`。M4.5)は、モジュールを公開して
+//! 中の名前で使う(並行するタスクがこのファイルを触らずに足せるようにするため)。他のポートは使うマイルストーンで足す。
 
 pub mod clock;
 pub mod desktop;
@@ -11,6 +11,7 @@ pub mod fs;
 pub mod pasteboard;
 mod pty;
 mod root;
+pub mod settings_file;
 pub mod state_file;
 mod system;
 pub mod watch;

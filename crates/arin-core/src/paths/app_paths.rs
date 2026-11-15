@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
+use crate::ports::settings_file::SETTINGS_FILE_NAME;
+
 /// 起動スモークの印のファイル名。状態フォルダの直下に置く。
 ///
 /// `scripts/smoke.mjs` がこの名前のファイルが現れるのを待つ。変えるときは両方を合わせる。
@@ -95,6 +97,14 @@ impl AppPaths {
     #[must_use]
     pub fn is_overridden(&self) -> bool {
         self.overridden
+    }
+
+    /// 設定ファイル `settings.toml` の場所(状態フォルダの直下。ADR-012 の 1)。
+    ///
+    /// 状態フォルダを差し替えたときは差し替え先を指し、本物の設定ファイルを指さない(AC-K10)。
+    #[must_use]
+    pub fn settings_file(&self) -> PathBuf {
+        self.state_dir.join(SETTINGS_FILE_NAME)
     }
 
     /// 起動スモークの印のファイルの場所。

@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use arin_core::paths::{
     AppPaths, AppPathsError, SMOKE_READY_MARKER_FILE_NAME, SMOKE_TERMINAL_MARKER_FILE_NAME,
 };
+use arin_core::ports::settings_file::SETTINGS_FILE_NAME;
 
 const HOME: &str = "/Users/someone";
 
@@ -145,6 +146,29 @@ fn 状態フォルダを差し替えていなければターミナルの印も�
     let paths = AppPaths::resolve(home(), None).unwrap();
 
     assert_eq!(paths.smoke_terminal_marker(true), None);
+}
+
+#[test]
+fn 状態フォルダの直下の_settings_toml_を指す() {
+    let paths = AppPaths::resolve(home(), None).unwrap();
+
+    assert_eq!(
+        paths.settings_file(),
+        PathBuf::from("/Users/someone/Library/Application Support/Arin/settings.toml")
+    );
+    assert_eq!(SETTINGS_FILE_NAME, "settings.toml");
+}
+
+#[test]
+fn 差し替えた状態フォルダでは差し替え先の_settings_toml_を指す() {
+    // AC-K10: 差し替えたら本物の ~/Library/Application Support/Arin/settings.toml を指さない。
+    let paths = AppPaths::resolve(home(), Some(OsStr::new("/tmp/arin-smoke-6"))).unwrap();
+
+    assert_eq!(
+        paths.settings_file(),
+        PathBuf::from("/tmp/arin-smoke-6/settings.toml")
+    );
+    assert!(!paths.settings_file().starts_with(HOME));
 }
 
 #[test]
