@@ -22,7 +22,7 @@ interface TreeHeaderProps {
  * プロジェクト色で出す(FR-060。色は M2 のまま)。
  * ツリーを出しているときはルートの行(WAI-ARIA の treeitem、1 段目、常に開いている)になり、クリックでルートが選ばれる
  * (計画【仮定】1)。選択は内側の角の丸い塗りで示す(地のプロジェクト色は変えない)。
- * T43c はここに右クリック(フォルダの上のメニュー。名称変更・切り取り・ゴミ箱は無効)を足す。
+ * 右クリック(フォルダの上のメニュー。名称変更・切り取り・ゴミ箱は無効)はツリー(FileTreeView)が受ける。
  */
 export function TreeHeader({ name, color, root }: TreeHeaderProps) {
   if (root === undefined) {

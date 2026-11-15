@@ -162,6 +162,58 @@
   white-space: nowrap;
 }
 
+/*
+ * 名前の入力欄(インライン編集。Finder の名称変更にならう)。名前と同じ位置・同じ文字の大きさで行の中に置き、行の高さは変えない。
+ * 地は入力欄の色、輪はアクセント色の細い輪(1px と淡いにじみ)。
+ */
+.tree-name-input {
+  /* 幅は名前に合わせる(Finder と同じ。field-sizing の無い環境では入力欄の既定の幅)。 */
+  flex: 0 1 auto;
+  field-sizing: content;
+  min-width: 6em;
+  max-width: 100%;
+  box-sizing: border-box;
+  height: 18px;
+  margin: 0 0 0 -3px;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 3px;
+  background: var(--color-field-bg);
+  color: var(--color-field-fg);
+  caret-color: var(--color-focus);
+  font: inherit;
+  font-size: var(--font-size-l);
+  line-height: 18px;
+  outline: none;
+  box-shadow:
+    0 0 0 1px var(--color-focus),
+    0 0 0 3px var(--color-focus-ring-soft);
+}
+
+.tree-name-input::selection {
+  background: var(--color-text-selection);
+}
+
+/* メニューを開いている間は、右クリックした行(選択)をアクセント色の輪で示す(Finder と同じ)。 */
+.file-tree[data-menu-open="true"] .tree-row--selected .tree-row__inner,
+.file-tree[data-menu-open="true"] .tree-header--selected::before {
+  box-shadow: inset 0 0 0 2px var(--color-selection-active);
+}
+
+/* 入力中の行は、選択の塗りを淡いままにする(入力欄が目立つように)。 */
+.file-tree .tree-row--editing .tree-row__inner {
+  background: var(--color-selection-inactive);
+  color: var(--color-fg);
+}
+
+.file-tree .tree-row--editing :is(.tree-row__chevron, .tree-icon--file) {
+  color: var(--color-tree-icon);
+}
+
+.file-tree .tree-row--editing .tree-icon--folder {
+  color: var(--color-tree-folder);
+}
+
 /* 読み込み中の印(フォルダの行の右端の小さな輪)。 */
 .tree-spinner {
   flex: none;

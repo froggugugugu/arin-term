@@ -32,6 +32,17 @@
   /* ツリーのアイコン(単色で控えめに。フォルダだけ淡い青で見分ける)。 */
   --color-tree-icon: #8a8a8f;
   --color-tree-folder: #4a8bd4;
+  /* コンテキストメニュー(macOS のメニューにならう半透明の地・細い区切り線・薄いキーの表示・無効の項目)。 */
+  --color-menu-bg: rgba(246, 246, 246, 0.94);
+  --color-menu-separator: rgba(0, 0, 0, 0.1);
+  --color-menu-shortcut: rgba(0, 0, 0, 0.45);
+  --color-menu-disabled: rgba(0, 0, 0, 0.26);
+  --shadow-menu: 0 8px 28px rgba(0, 0, 0, 0.16), 0 0 0 0.5px rgba(0, 0, 0, 0.16);
+  /* ツリーの名前の入力欄(Finder の名称変更にならう。地は白、輪はアクセント色の細い輪)。 */
+  --color-field-bg: #ffffff;
+  --color-field-fg: #1d1d1f;
+  --color-focus-ring-soft: rgba(10, 100, 216, 0.22);
+  --color-text-selection: rgba(10, 100, 216, 0.25);
   /*
    * ターミナルの置き場所の地。xterm.js の既定の配色(背景 #000000・文字 #ffffff)に合わせる。置き場所は行の高さの倍数とは
    * 限らず下端に 1 行に満たない余りが出るので、余りがターミナルと違う色の帯に見えないようにする。
@@ -46,6 +57,7 @@
   --space-4: 16px;
   --radius-s: 4px;
   --radius-m: 6px;
+  --radius-menu: 7px;
   --font-size-s: 11px;
   --font-size-m: 12px;
   --font-size-l: 13px;
@@ -58,6 +70,10 @@
   --tree-row-height: 22px;
   --tree-indent: 16px;
   --tree-toolbar-height: 26px;
+
+  /* コンテキストメニュー(行の高さは macOS のメニューと同じ 22px)。 */
+  --menu-padding: 5px;
+  --menu-item-height: 22px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -84,6 +100,15 @@
     --color-focus-ring: rgba(76, 155, 255, 0.5);
     --color-tree-icon: #98989d;
     --color-tree-folder: #64a5ec;
+    --color-menu-bg: rgba(40, 40, 42, 0.94);
+    --color-menu-separator: rgba(255, 255, 255, 0.12);
+    --color-menu-shortcut: rgba(255, 255, 255, 0.5);
+    --color-menu-disabled: rgba(255, 255, 255, 0.28);
+    --shadow-menu: 0 8px 28px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.16);
+    --color-field-bg: #1e1e1e;
+    --color-field-fg: #f5f5f7;
+    --color-focus-ring-soft: rgba(76, 155, 255, 0.28);
+    --color-text-selection: rgba(76, 155, 255, 0.4);
   }
 }
 

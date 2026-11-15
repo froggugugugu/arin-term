@@ -1,7 +1,9 @@
 import { type CSSProperties, type MouseEvent, memo } from "react";
 
+import { renameSelectionRange } from "../../logic/tree/renameSelection";
 import type { TreeRow as TreeRowValue } from "../../logic/tree/treeModel";
 import { ChevronIcon, FileIcon, FolderIcon, LinkBadgeIcon } from "./icons";
+import { type InlineEditEnd, InlineNameInput } from "./InlineNameInput";
 
 export interface TreeRowProps {
   row: TreeRowValue;
@@ -14,6 +16,10 @@ export interface TreeRowProps {
   onToggle: (path: string) => void;
   /** ダブルクリック(フォルダは開閉、それ以外は既定のアプリで開く。【仮定】6)。 */
   onActivate: (row: TreeRowValue) => void;
+  /** 名称変更の入力中か(名前の位置に入力欄を出す。T43c)。 */
+  renaming?: boolean;
+  /** 名称変更の入力を閉じた(renaming のときだけ呼ばれる)。 */
+  onRenameEnd?: ((end: InlineEditEnd, name: string) => void) | undefined;
 }
 
 /** フォルダとして描く種類(フォルダへのリンクもフォルダのアイコン。開閉はしない)。 */
@@ -25,9 +31,19 @@ const isLinkKind = (kind: TreeRowValue["kind"]) => kind === "directoryLink" || k
  * (HTML として解釈させない。設計書 §12)。高さは --tree-row-height で固定(仮想スクロールの窓の計算と同じ値)。
  * 同じ props なら描き直さない(memo)。スクロールで窓が動いても、窓に残った行は描き直さない。
  * 選択の塗りの色(フォーカスの有無)は、ツリーの data-focused を CSS が見て決める(行の props にしない)。
- * T43c・T43d はこの行に右クリック・pointer のイベントを足す(data-path と data-kind で対象を引ける)。
+ * 右クリックはツリー(FileTreeView)が data-path と data-kind で対象を引いて受ける。T43d はこの行に pointer のイベントを足す。
+ * 名称変更の入力中は、名前の代わりに入力欄を出す(行の高さは変えない。T43c)。
  */
-export const TreeRow = memo(function TreeRow({ row, id, selected, onSelect, onToggle, onActivate }: TreeRowProps) {
+export const TreeRow = memo(function TreeRow({
+  row,
+  id,
+  selected,
+  onSelect,
+  onToggle,
+  onActivate,
+  renaming = false,
+  onRenameEnd,
+}: TreeRowProps) {
   const onToggleClick = (event: MouseEvent) => {
     event.stopPropagation();
     onToggle(row.path);
@@ -39,6 +55,7 @@ export const TreeRow = memo(function TreeRow({ row, id, selected, onSelect, onTo
   };
   const classes = ["tree-row"];
   if (selected) classes.push("tree-row--selected");
+  if (renaming) classes.push("tree-row--editing");
 
   return (
     <div
@@ -73,7 +90,16 @@ export const TreeRow = memo(function TreeRow({ row, id, selected, onSelect, onTo
           {isFolderKind(row.kind) ? <FolderIcon /> : <FileIcon />}
           {isLinkKind(row.kind) && <LinkBadgeIcon className="tree-icon__badge" />}
         </span>
-        <span className="tree-row__name">{row.name}</span>
+        {renaming && onRenameEnd !== undefined ? (
+          <InlineNameInput
+            initialName={row.name}
+            selection={renameSelectionRange(row.name, row.kind)}
+            label={`「${row.name}」の新しい名前`}
+            onEnd={onRenameEnd}
+          />
+        ) : (
+          <span className="tree-row__name">{row.name}</span>
+        )}
         {row.loading && <span className="tree-spinner" data-testid="tree-row-spinner" aria-hidden="true" />}
       </span>
     </div>

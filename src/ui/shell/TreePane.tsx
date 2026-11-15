@@ -3,6 +3,8 @@ import { useStore } from "zustand";
 import type { Actions } from "../../state/actions";
 import type { TreeStore } from "../../state/treeStore";
 import type { UiStore } from "../../state/uiStore";
+import { ConflictDialog } from "../dialogs/ConflictDialog";
+import type { TreeMenuActions } from "../menu/runTreeMenuCommand";
 import type { ProjectCard } from "../snapshotTypes";
 import { FileTreeView } from "../tree/FileTreeView";
 import { CloseIcon, CollapseAllIcon, EyeIcon } from "../tree/icons";
@@ -13,21 +15,23 @@ interface TreePaneProps {
   project: ProjectCard | null;
   tree: TreeStore;
   ui: UiStore;
-  actions: Pick<
-    Actions,
-    | "relinkProject"
-    | "removeProject"
-    | "selectTreePath"
-    | "toggleDir"
-    | "openEntry"
-    | "collapseAllDirs"
-    | "setShowHidden"
-  >;
+  actions: TreeMenuActions &
+    Pick<
+      Actions,
+      | "relinkProject"
+      | "removeProject"
+      | "selectTreePath"
+      | "toggleDir"
+      | "commitInlineEdit"
+      | "resolveConflict"
+      | "cancelConflict"
+    >;
 }
 
 /**
  * 左ペインの下段(設計書 §9.1)。選択中のプロジェクトのファイルツリー(FileTreeView)と、下端の小さな道具の帯
  * (すべて折りたたむ・隠しファイルを表示。Xcode のナビゲータの下端の帯にならう)、ツリーの知らせ(1 行)を出す。
+ * ファイル操作の名前の衝突の確認(ConflictDialog。モーダル)もここに置く(T43c)。
  * 選択中のプロジェクトが見つからないときは、ツリーの代わりに案内と「再リンク…」「一覧から削除」を出す(設計書 §8「見つからない」)。
  */
 export function TreePane({ project, tree, ui, actions }: TreePaneProps) {
@@ -57,6 +61,7 @@ export function TreePane({ project, tree, ui, actions }: TreePaneProps) {
     <>
       <FileTreeView key={project.id} project={project} tree={tree} ui={ui} actions={actions} />
       <TreeNotice ui={ui} />
+      <ConflictDialog ui={ui} actions={actions} />
       <div className="tree-toolbar" data-testid="tree-toolbar">
         <button
           type="button"

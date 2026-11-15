@@ -22,6 +22,7 @@ import { createUiStore } from "./state/uiStore";
 import { TerminalManager } from "./terminal/TerminalManager";
 import { XtermEngine } from "./terminal/xterm/XtermEngine";
 import { AppShell } from "./ui/shell/AppShell";
+import { createTreeClipboard } from "./ui/menu/runTreeMenuCommand";
 import { installClipboardRouting } from "./ui/terminals/clipboardRouting";
 
 /**
@@ -58,8 +59,19 @@ export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartA
   const terminals = new TerminalManager(engine, ipc, { reportError: reporter.report });
   // 写しの状態(終わったシェルには入力と寸法を送らない)、消えたターミナルの破棄、表示中と隠すものを伝える。
   syncTerminals(store, terminals, { verifyGrid });
-  // ⌘C・⌘V(メニューの「編集」から来る copy・paste のイベント)を、フォーカス位置で振り分ける。
-  installClipboardRouting(document, terminals);
+  // ⌘C・⌘X・⌘V(メニューの「編集」から来る copy・cut・paste のイベント)を、フォーカス位置で振り分ける
+  // (ツリーにフォーカスがあればツリーの操作、名前の入力中は入力欄、それ以外はターミナル)。
+  installClipboardRouting(
+    document,
+    terminals,
+    createTreeClipboard({
+      actions,
+      ui,
+      tree,
+      app: store,
+      isNameInputFocused: () => document.activeElement?.closest("[data-tree-name-input]") != null,
+    }),
+  );
   return startApp({
     ipc,
     store,

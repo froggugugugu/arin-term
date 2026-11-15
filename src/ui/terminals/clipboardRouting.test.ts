@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import type { ClipboardKind } from "../../logic/keys/clipboard";
+import type { ClipboardFocus, ClipboardKind } from "../../logic/keys/clipboard";
 import type { ClipboardText } from "../../terminal/TerminalManager";
-import { type ClipboardEventTarget, installClipboardRouting } from "./clipboardRouting";
+import {
+  type ClipboardEventTarget,
+  installClipboardRouting,
+  type TreeClipboardAction,
+  type TreeClipboardTarget,
+} from "./clipboardRouting";
 
 type Listener = (event: ClipboardEvent) => void;
 
@@ -103,6 +108,132 @@ describe("installClipboardRouting(コピー・ペーストのイベントの入�
     uninstall();
 
     expect(doc.listeners.get("copy")).toEqual([]);
+    expect(doc.listeners.get("cut")).toEqual([]);
     expect(doc.listeners.get("paste")).toEqual([]);
+  });
+
+  it("切り取りも捕捉の段階で受ける(ターミナルでは何もしない)", () => {
+    const doc = fakeDocument();
+    const seen: ClipboardKind[] = [];
+    installClipboardRouting(doc.target, {
+      handleClipboard: (kind) => {
+        seen.push(kind);
+        return false;
+      },
+    });
+
+    const cut = doc.dispatch("cut", data);
+
+    expect(doc.listeners.get("cut")?.map((l) => l.capture)).toEqual([true]);
+    expect(seen).toEqual(["cut"]);
+    expect(cut.defaultPrevented).toBe(false);
+  });
+});
+
+/** ツリーの受け口の偽物。フォーカス位置を差し替えられ、行った操作を記録する。 */
+function fakeTree(focus: ClipboardFocus | null) {
+  const runs: TreeClipboardAction[] = [];
+  const tree: TreeClipboardTarget & { current: ClipboardFocus | null } = {
+    current: focus,
+    focus: () => tree.current,
+    run: (action) => void runs.push(action),
+  };
+  return { tree, runs };
+}
+
+describe("installClipboardRouting(ツリーへの振り分け。T43c)", () => {
+  it("ツリーにフォーカスがあれば_コピー_切り取り_ペーストはツリーの操作になり_ターミナルには渡さない", () => {
+    const doc = fakeDocument();
+    let terminalCalls = 0;
+    const { tree, runs } = fakeTree({ kind: "tree", selection: "entry" });
+    installClipboardRouting(
+      doc.target,
+      {
+        handleClipboard: () => {
+          terminalCalls += 1;
+          return true;
+        },
+      },
+      tree,
+    );
+
+    const events = (["copy", "cut", "paste"] as const).map((kind) => doc.dispatch(kind, data));
+
+    expect(runs).toEqual(["tree-copy", "tree-cut", "tree-paste"]);
+    expect(terminalCalls).toBe(0);
+    expect(events.map((e) => [e.defaultPrevented, e.propagationStopped])).toEqual([
+      [true, true],
+      [true, true],
+      [true, true],
+    ]);
+  });
+
+  it("ツリーで操作にならないもの(ルートの切り取り・選択の無いコピー)は止めず_ターミナルにも渡さない", () => {
+    const doc = fakeDocument();
+    let terminalCalls = 0;
+    const { tree, runs } = fakeTree({ kind: "tree", selection: "root" });
+    installClipboardRouting(
+      doc.target,
+      {
+        handleClipboard: () => {
+          terminalCalls += 1;
+          return true;
+        },
+      },
+      tree,
+    );
+
+    const cut = doc.dispatch("cut", data);
+    tree.current = { kind: "tree", selection: "none" };
+    const copy = doc.dispatch("copy", data);
+    const paste = doc.dispatch("paste", data);
+
+    expect(runs).toEqual(["tree-paste"]);
+    expect([cut.defaultPrevented, copy.defaultPrevented, paste.defaultPrevented]).toEqual([false, false, true]);
+    expect(terminalCalls).toBe(0);
+  });
+
+  it("名前の入力中は何もしない(入力欄の文字の操作に任せる)", () => {
+    const doc = fakeDocument();
+    let terminalCalls = 0;
+    const { tree, runs } = fakeTree({ kind: "name-input" });
+    installClipboardRouting(
+      doc.target,
+      {
+        handleClipboard: () => {
+          terminalCalls += 1;
+          return true;
+        },
+      },
+      tree,
+    );
+
+    const events = (["copy", "cut", "paste"] as const).map((kind) => doc.dispatch(kind, data));
+
+    expect(runs).toEqual([]);
+    expect(terminalCalls).toBe(0);
+    expect(events.map((e) => e.defaultPrevented)).toEqual([false, false, false]);
+  });
+
+  it("ツリーにも入力欄にもフォーカスが無ければ今までどおりターミナルへ振り分ける", () => {
+    const doc = fakeDocument();
+    const seen: ClipboardKind[] = [];
+    const { tree, runs } = fakeTree(null);
+    installClipboardRouting(
+      doc.target,
+      {
+        handleClipboard: (kind) => {
+          seen.push(kind);
+          return true;
+        },
+      },
+      tree,
+    );
+
+    const paste = doc.dispatch("paste", data);
+
+    expect(seen).toEqual(["paste"]);
+    expect(runs).toEqual([]);
+    expect(paste.defaultPrevented).toBe(true);
   });
 });

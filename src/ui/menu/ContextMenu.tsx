@@ -11,9 +11,25 @@ export interface ContextMenuChoice<C> {
   readonly command: C;
 }
 
-/** メニューの 1 行。形は src/logic/menu/cardMenu.ts の CardMenuEntry と同じ。 */
+/**
+ * 実行する項目。`enabled` が false なら薄く出して選べなくする(既定は有効)。`shortcut` は右端に出すキーの表示
+ * (ショートカットの表から引いたもの。部品はキーの文字列を作らない)。`checked` を持つ項目は印の付く項目(menuitemcheckbox)。
+ */
+export interface ContextMenuCommand<C> {
+  readonly kind: "command";
+  readonly label: string;
+  readonly command: C;
+  readonly enabled?: boolean;
+  readonly shortcut?: string | null;
+  readonly checked?: boolean;
+}
+
+/**
+ * メニューの 1 行。形は src/logic/menu/cardMenu.ts の CardMenuEntry、src/logic/menu/treeMenu.ts の TreeMenuEntry と同じ
+ * (どちらもそのまま渡せる)。
+ */
 export type ContextMenuEntry<C> =
-  | { readonly kind: "command"; readonly label: string; readonly command: C }
+  | ContextMenuCommand<C>
   | { readonly kind: "submenu"; readonly label: string; readonly items: readonly ContextMenuChoice<C>[] }
   | { readonly kind: "separator" };
 
@@ -28,6 +44,11 @@ interface ContextMenuProps<C> {
   onSelect: (command: C) => void;
   /** 閉じる。`restoreFocus` は、開いたもの(カードなど)にフォーカスを戻すか(Esc・Tab。外をクリックしたときは戻さない)。 */
   onClose: (restoreFocus: boolean) => void;
+}
+
+/** 選べる項目か(無効の項目はキーボードの移動で飛ばし、押しても何もしない)。 */
+function isEnabled<C>(entry: Exclude<ContextMenuEntry<C>, { kind: "separator" }>): boolean {
+  return entry.kind !== "command" || entry.enabled !== false;
 }
 
 /** ウィンドウの端から空ける量。 */
@@ -46,6 +67,8 @@ function clampToViewport(x: number, y: number, w: number, h: number): { left: nu
  * WAI-ARIA の menu の型: 開くと最初の項目にフォーカスし、上下の矢印・Home・End で動き(端で回り込む)、Enter・Space で選ぶ。
  * 下の階層は右の矢印・Enter・クリック・ポインタを載せると開き、左の矢印・Esc で閉じる。Esc・Tab でメニューを閉じる。
  * メニューの外を押す・ウィンドウの大きさが変わる・ウィンドウが前面でなくなると閉じる。
+ * 無効の項目(aria-disabled)はキーボードの移動で飛ばし、ポインタを載せても強調しない(macOS のメニューと同じ)。
+ * ポインタがメニューの外に出ると強調を外す。
  */
 export function ContextMenu<C>({ label, entries, x, y, onSelect, onClose }: ContextMenuProps<C>) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -55,7 +78,12 @@ export function ContextMenu<C>({ label, entries, x, y, onSelect, onClose }: Cont
   const choiceRefs = useRef<(HTMLButtonElement | null)[]>([]);
   // 選べる項目(区切りを除く)。フォーカスはこの並びの番号で持つ。
   const items = entries.filter((e): e is Exclude<ContextMenuEntry<C>, { kind: "separator" }> => e.kind !== "separator");
-  const [focused, setFocused] = useState(0);
+  // キーボードで移れる項目(items の番号)。
+  const selectable = items.flatMap((entry, index) => (isEnabled(entry) ? [index] : []));
+  // 印の付く項目があれば、すべての項目の左に印の欄を空ける(名前の位置をそろえる)。
+  const hasChecks = items.some((entry) => entry.kind === "command" && entry.checked !== undefined);
+  /** フォーカスのある項目(items の番号)。-1 はどの項目にも無い(メニュー自体にある)。 */
+  const [focused, setFocused] = useState(() => selectable[0] ?? -1);
   /** 開いている下の階層(items の番号)と、その中のフォーカス。 */
   const [submenu, setSubmenu] = useState<{ index: number; focused: number | null } | null>(null);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
@@ -98,7 +126,8 @@ export function ContextMenu<C>({ label, entries, x, y, onSelect, onClose }: Cont
     if (submenuFocused !== null && submenuPosition !== null) {
       choiceRefs.current[submenuFocused]?.focus();
     } else if (submenuFocused === null) {
-      itemRefs.current[focused]?.focus();
+      if (focused < 0) menuRef.current?.focus();
+      else itemRefs.current[focused]?.focus();
     }
   }, [focused, submenuFocused, position, submenuPosition]);
 
@@ -129,7 +158,7 @@ export function ContextMenu<C>({ label, entries, x, y, onSelect, onClose }: Cont
 
   const activate = (index: number) => {
     const entry = items[index];
-    if (entry === undefined) return;
+    if (entry === undefined || !isEnabled(entry)) return;
     if (entry.kind === "submenu") openSubmenu(index, true);
     else onSelect(entry.command);
   };
@@ -141,12 +170,12 @@ export function ContextMenu<C>({ label, entries, x, y, onSelect, onClose }: Cont
     const subItems = subEntry?.kind === "submenu" ? subEntry.items : [];
     const moved = inSubmenu
       ? moveMenuFocus(subFocused, subItems.length, event.key)
-      : moveMenuFocus(focused, items.length, event.key);
+      : moveMenuFocus(selectable.indexOf(focused), selectable.length, event.key);
     if (moved !== null) {
       event.preventDefault();
       if (submenu !== null && inSubmenu) setSubmenu({ index: submenu.index, focused: moved });
       else {
-        setFocused(moved);
+        setFocused(selectable[moved] ?? -1);
         setSubmenu(null);
       }
       return;
@@ -184,9 +213,13 @@ export function ContextMenu<C>({ label, entries, x, y, onSelect, onClose }: Cont
         ref={menuRef}
         role="menu"
         aria-label={label}
+        tabIndex={-1}
         className="context-menu"
         data-testid="context-menu"
         style={position ?? hiddenStyle}
+        onPointerLeave={() => {
+          if (submenu === null) setFocused(-1);
+        }}
       >
         {entries.map((entry, entryIndex) => {
           if (entry.kind === "separator") {
@@ -195,6 +228,9 @@ export function ContextMenu<C>({ label, entries, x, y, onSelect, onClose }: Cont
           itemIndex++;
           const index = itemIndex;
           const isSubmenu = entry.kind === "submenu";
+          const enabled = isEnabled(entry);
+          const checked = entry.kind === "command" ? entry.checked : undefined;
+          const shortcut = entry.kind === "command" ? (entry.shortcut ?? null) : null;
           return (
             <button
               key={entry.label}
@@ -202,21 +238,39 @@ export function ContextMenu<C>({ label, entries, x, y, onSelect, onClose }: Cont
                 itemRefs.current[index] = el;
               }}
               type="button"
-              role="menuitem"
+              role={checked === undefined ? "menuitem" : "menuitemcheckbox"}
+              aria-checked={checked}
+              aria-disabled={enabled ? undefined : true}
               tabIndex={index === focused ? 0 : -1}
               className={isSubmenu ? "context-menu__item context-menu__item--submenu" : "context-menu__item"}
               aria-haspopup={isSubmenu ? "menu" : undefined}
               aria-expanded={isSubmenu ? submenu?.index === index : undefined}
               onPointerEnter={() => {
-                if (isSubmenu) openSubmenu(index, false);
+                if (!enabled) {
+                  setFocused(-1);
+                  setSubmenu(null);
+                } else if (isSubmenu) openSubmenu(index, false);
                 else {
                   setFocused(index);
                   setSubmenu(null);
                 }
               }}
+              onFocus={() => {
+                if (enabled && focused !== index) setFocused(index);
+              }}
               onClick={() => activate(index)}
             >
+              {hasChecks && (
+                <span className="context-menu__check" aria-hidden="true">
+                  {checked === true ? "✓" : ""}
+                </span>
+              )}
               <span className="context-menu__label">{entry.label}</span>
+              {shortcut !== null && (
+                <span className="context-menu__shortcut" aria-hidden="true">
+                  {shortcut}
+                </span>
+              )}
             </button>
           );
         })}

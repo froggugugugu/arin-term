@@ -40,3 +40,13 @@
   gap: var(--space-2);
   margin-top: var(--space-3);
 }
+
+/* 3 つ目のボタン(左端に離して置く)。 */
+.confirm-dialog__alternate {
+  margin-right: auto;
+}
+
+/* 取り返しはつくが既存を動かす操作(衝突の「置き換える」)。地は変えず、文字だけを警告の色にする。 */
+.button--destructive-text {
+  color: var(--color-danger);
+}
