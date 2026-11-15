@@ -27,7 +27,7 @@ fn アプリを組み立てて起動するとメインのウィンドウがで�
     app.run_return(move |handle, event| {
         if let RunEvent::Ready = event {
             seen.set(handle.get_webview_window("main").is_some());
-            // 状態ファイルの読み込みは T33a。それまで通常の起動はプロジェクト 0 件・ターミナル 0 枚で始まる。
+            // 状態フォルダは空なので、通常の起動はプロジェクト 0 件・ターミナル 0 枚で始まる(読み込みは app_persistence.rs)。
             let snapshot = handle
                 .state::<arin_lib::sessions::SessionRegistry>()
                 .snapshot();

@@ -487,7 +487,7 @@ T29〜T35 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 21(逐次。Phase 20 完了後。`src-tauri/src/lib.rs` と `src/ipc/` を順に触る)
 
-- [ ] T33a — 起動時の読み込み、保存、退避の知らせ(変更ファイル: src-tauri/src/lib.rs, src-tauri/src/persistence.rs, src-tauri/src/lifecycle.rs, src-tauri/Cargo.toml, src-tauri/tests/app_persistence.rs, scripts/smoke.mjs, scripts/smoke.test.mjs | 依存: T31a, T31b, T31c, T32b)
+- [x] T33a — 起動時の読み込み、保存、退避の知らせ(変更ファイル: src-tauri/src/lib.rs, src-tauri/src/persistence.rs, src-tauri/src/lifecycle.rs, src-tauri/Cargo.toml, src-tauri/tests/app_persistence.rs, scripts/smoke.mjs, scripts/smoke.test.mjs | 依存: T31a, T31b, T31c, T32b)
   - 対応: FR-004、FR-056、FR-001 の AC 3(プロジェクトのフォルダに何も作らない)、決定 (d)、設計書 §6.2「書き込みの契機」、§7.1「起動」、§11
   - 順: 置き場所 → `state.json` を読む(読めなければ退避して知らせを写しに載せる)→ 各プロジェクトのブックマークを解決する → `Workspace` → 保存のスレッド(0.5 秒まとめ。ウィンドウが前面でなくなったときと終了時は即時)。検証画面のときは読まず書かない
   - スモーク: 一時フォルダにプロジェクトのフォルダを作り、`bookmark: null` の `state.json` を一時の状態フォルダに置いて起動する(【仮定】13)。確かめる: ターミナルの印、終了後の `state.json` にブックマークが入っている、プロジェクトのフォルダに何も増えていない、本物の `~/Library/Application Support/Arin/` を作っていない。壊れた `state.json` を置いた起動も 1 回(退避のファイルが元の中身のままでき、新しい `state.json` が空の状態で書かれる)

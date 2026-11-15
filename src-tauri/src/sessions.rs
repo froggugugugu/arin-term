@@ -22,6 +22,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError, TryLockE
 use std::thread;
 use std::time::{Duration, Instant};
 
+use arin_core::persistence::codec::PersistedState;
 use arin_core::ports::{PtyError, PtyPort, PtySession, SpawnedPty};
 use arin_core::terminal::{
     FlowControl, OUTPUT_BATCH_MAX_BYTES, OUTPUT_BATCH_WINDOW_MS, OUTPUT_HIGH_WATER,
@@ -222,6 +223,12 @@ impl SessionRegistry {
     #[must_use]
     pub fn snapshot(&self) -> AppSnapshot {
         lock(&self.inner.workspace).snapshot()
+    }
+
+    /// 状態ファイルに保存する内容(`Workspace::persisted_state`。検証画面では `None`)。
+    #[must_use]
+    pub fn persisted_state(&self) -> Option<PersistedState> {
+        lock(&self.inner.workspace).persisted_state()
     }
 
     /// 出力の送り先をつなぐ。最初の接続(または起動の失敗のあと)なら `rows` × `cols` の PTY でシェルを起動する。

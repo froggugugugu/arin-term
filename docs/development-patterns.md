@@ -20,6 +20,7 @@
 | `[arin:frontend-error]` | `diagnostics.rs`(`report_frontend_error`) | CSP 違反・例外・読み込み失敗。常に有効。スモークは 1 行でもあれば失敗 |
 | `[arin:verify]` | `verify_log.rs` | OSC 52 の回数と流量制御の集計。開発ビルド(`cfg(debug_assertions)`)だけ |
 | `[arin:launch]` | `launch.rs` | 起動時の指定の不正な値 |
+| `[arin:state]` | `persistence.rs` | 状態ファイルを読めずに退避した・退避できなかった・読み取りや保存に失敗した |
 
 ## 2. 状態管理
 

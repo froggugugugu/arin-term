@@ -6,9 +6,18 @@
 // - smoke-ready: 画面が Rust へ準備完了を通知した
 // - smoke-terminal: PTY の出力が画面に届き、ターミナルのエンジン(xterm.js)が取り込み、処理済みの量が Rust に戻った
 //
+// 起動の前に、一時フォルダの中に状態フォルダ(state/)とプロジェクトのフォルダ(project/)を作り、プロジェクト 1 件の
+// state.json(bookmark は null、lastKnownPath はプロジェクトのフォルダ。計画書 M2 の【仮定】13)を置く。
+// 通常の起動はプロジェクトが無いとターミナルが 0 枚で印が書かれないため(T33a)。
+//
 // 2 つが現れたら少し待ち(CSP 違反などは描画のときに出るため)、そのあいだも含めてアプリの標準エラーに
 // 画面の失敗の行(頭が FRONTEND_ERROR_PREFIX。src-tauri/src/diagnostics.rs)が 1 行でもあれば失敗にする。
 // 最後にアプリを終了させ、アプリが起動したシェル(アプリの子プロセス)が残っていないことを確かめて後片付けをする。
+// 終了後に状態フォルダを確かめる: 通常は state.json にブックマークが入り、検証画面(ARIN_VERIFY_GRID=1)では置いたままで
+// 書かれていない。どちらもプロジェクトのフォルダには何も増えていない。
+//
+// `npm run smoke` は、検証画面でなければ続けてもう 1 回、壊れた state.json を置いて起動する(準備完了の印だけを待つ)。
+// 退避のファイル(state.json.broken-<日時>)が元の中身のままでき、新しい state.json が空の状態で書かれていることを確かめる。
 //
 // - ソケットやポートは使わない(PRD N2・NFR-008)。外から知る手段は印のファイルと標準エラーだけ
 // - .app が無ければビルドせずに失敗する(先に `npm run app`)
@@ -24,7 +33,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
-import { access, mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,6 +52,16 @@ export const ENV_STATE_DIR = "ARIN_STATE_DIR";
 export const ENV_SMOKE = "ARIN_SMOKE";
 /** 一時の状態フォルダの名前の頭。 */
 export const TEMP_PREFIX = "arin-smoke-";
+/** 9 枚の検証画面の指定(crates/arin-core/src/launch_options.rs の ENV_VERIFY_GRID)。この起動では状態ファイルを読まず書かない。 */
+export const ENV_VERIFY_GRID = "ARIN_VERIFY_GRID";
+/** 状態ファイルの名前(crates/arin-core/src/ports/state_file.rs の STATE_FILE_NAME)。 */
+export const STATE_FILE_NAME = "state.json";
+/** 退避の名前の頭(crates/arin-core/src/persistence/codec.rs の broken_file_name)。 */
+export const BROKEN_PREFIX = `${STATE_FILE_NAME}.broken-`;
+/** スモークが置くプロジェクトの ID(UUID v4 の形)。 */
+export const SMOKE_PROJECT_ID = "5b0c6a2e-1f3d-4e8a-9c7b-2d4e6f8a0b1c";
+/** 壊れた state.json の中身(JSON として読めない)。 */
+export const BROKEN_STATE = '{ "schemaVersion": 1, "projects": [';
 
 export const DEFAULT_APP_PATH = path.join(
   REPO_ROOT,
@@ -193,7 +212,96 @@ export function createOutputWatcher() {
 }
 
 /**
+ * 状態ファイルの中身を作る。kind が "project" ならプロジェクト 1 件(bookmark は null)、"broken" なら JSON として読めないもの。
+ */
+export function stateFixture(kind, projectDir) {
+  if (kind === "broken") return BROKEN_STATE;
+  if (kind !== "project") throw new Error(`知らない状態ファイルの種類: ${kind}`);
+  const state = {
+    schemaVersion: 1,
+    projects: [
+      { id: SMOKE_PROJECT_ID, bookmark: null, lastKnownPath: projectDir, customName: null, colorId: "green" },
+    ],
+    ui: { selectedProjectId: SMOKE_PROJECT_ID },
+  };
+  return `${JSON.stringify(state, null, 2)}\n`;
+}
+
+/** root の下に状態フォルダ(state/)とプロジェクトのフォルダ(project/)を作り、state.json を置く。 */
+export async function prepareStateDir(root, kind) {
+  const stateDir = path.join(root, "state");
+  const projectDir = path.join(root, "project");
+  await mkdir(stateDir, { mode: 0o700 });
+  await mkdir(projectDir);
+  const fixture = stateFixture(kind, projectDir);
+  await writeFile(path.join(stateDir, STATE_FILE_NAME), fixture, { mode: 0o600 });
+  return { stateDir, projectDir, fixture };
+}
+
+/** JSON として読めれば値、読めなければ null。 */
+function parseJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * アプリの終了後の状態フォルダとプロジェクトのフォルダを確かめる。問題が無ければ null、あれば理由の文字列。
+ * - 検証画面: state.json は置いたまま(読まず書かない)
+ * - "project": state.json のプロジェクトにブックマークが入り、lastKnownPath は正規化したパス
+ * - "broken": 退避のファイルが元の中身のままでき、state.json はプロジェクト 0 件
+ * - どれも: プロジェクトのフォルダに何も増えていない(FR-001 の AC 3)
+ */
+export async function checkStateAfterExit({ stateDir, projectDir, fixture, kind, verifyGrid }) {
+  const added = await readdir(projectDir);
+  if (added.length > 0) return `プロジェクトのフォルダに ${added.join("、")} ができた(何も作らないはず)`;
+  const names = await readdir(stateDir);
+  const backups = names.filter((n) => n.startsWith(BROKEN_PREFIX));
+  const statePath = path.join(stateDir, STATE_FILE_NAME);
+  let text;
+  try {
+    text = await readFile(statePath, "utf8");
+  } catch (e) {
+    return `終了後に ${STATE_FILE_NAME} を読めなかった: ${e.message}`;
+  }
+  if (verifyGrid) {
+    if (text !== fixture || backups.length > 0) {
+      return `検証画面(${ENV_VERIFY_GRID}=1)なのに ${STATE_FILE_NAME} を書いた・退避した(読まず書かないはず)`;
+    }
+    return null;
+  }
+  const state = parseJson(text);
+  if (state === null || state.schemaVersion !== 1 || !Array.isArray(state.projects)) {
+    return `終了後の ${STATE_FILE_NAME} が版 1 の形でない: ${text.slice(0, 200)}`;
+  }
+  if (kind === "broken") {
+    if (backups.length !== 1) return `退避のファイル(${BROKEN_PREFIX}<日時>)が 1 つでない: ${backups.join("、") || "無い"}`;
+    const kept = await readFile(path.join(stateDir, backups[0]), "utf8");
+    if (kept !== fixture) return `退避のファイル ${backups[0]} の中身が元の state.json と違う`;
+    if (state.projects.length !== 0) return `退避のあとの ${STATE_FILE_NAME} が空の状態でない`;
+    return null;
+  }
+  if (backups.length > 0) return `読める ${STATE_FILE_NAME} を退避した: ${backups.join("、")}`;
+  const [project] = state.projects;
+  if (state.projects.length !== 1 || project.id !== SMOKE_PROJECT_ID) {
+    return `終了後の ${STATE_FILE_NAME} のプロジェクトが置いたものと違う: ${text.slice(0, 200)}`;
+  }
+  if (typeof project.bookmark !== "string" || project.bookmark === "") {
+    return `終了後の ${STATE_FILE_NAME} にブックマークが入っていない(bookmark: ${JSON.stringify(project.bookmark)})`;
+  }
+  const canonical = await realpath(projectDir);
+  if (project.lastKnownPath !== canonical) {
+    return `lastKnownPath が正規化したパス ${canonical} でない: ${project.lastKnownPath}`;
+  }
+  return null;
+}
+
+/**
  * スモークを 1 回行う。
+ * stateKind は起動の前に置く state.json の種類("project" か "broken")。"broken" のときは準備完了の印だけを待つ
+ * (プロジェクトが無いのでターミナルが無い)。
  * @returns {Promise<{ ok: boolean, message: string, seconds: number, pid?: number, shells?: number[] }>}
  */
 export async function runSmoke({
@@ -205,6 +313,7 @@ export async function runSmoke({
   pollMs = 100,
   killGraceMs = 5_000,
   extraEnv = {},
+  stateKind = "project",
   log = console.log,
 } = {}) {
   const started = Date.now();
@@ -226,7 +335,19 @@ export async function runSmoke({
 
   const realBefore = await describeDir(realStateDir);
   const base = tmpdir();
-  const stateDir = await mkdtemp(path.join(base, TEMP_PREFIX));
+  const tempRoot = await mkdtemp(path.join(base, TEMP_PREFIX));
+  const verifyGrid = extraEnv[ENV_VERIFY_GRID] === "1";
+  const needTerminal = stateKind !== "broken";
+  let prepared;
+  try {
+    prepared = await prepareStateDir(tempRoot, stateKind);
+  } catch (e) {
+    await rm(tempRoot, { recursive: true, force: true });
+    return done(false, `状態フォルダを用意できなかった: ${e.message}`);
+  }
+  const { stateDir, projectDir } = prepared;
+  /** 終了後の状態フォルダの問題(無ければ null)。 */
+  let stateProblem = null;
   const readyMarker = path.join(stateDir, MARKER_FILE_NAME);
   const terminalMarker = path.join(stateDir, TERMINAL_MARKER_FILE_NAME);
 
@@ -237,20 +358,20 @@ export async function runSmoke({
   const names = new Map();
   const watcher = createOutputWatcher();
   // 自分が mkdtemp で作ったフォルダか(消してよいか)。
-  const ownsStateDir = path.dirname(stateDir) === base && path.basename(stateDir).startsWith(TEMP_PREFIX);
+  const ownsStateDir = path.dirname(tempRoot) === base && path.basename(tempRoot).startsWith(TEMP_PREFIX);
   // スクリプトが途中で抜けても(Ctrl+C で process.exit したときを含む)アプリと一時フォルダを取り残さないための最後の砦。
   // exit のハンドラでは非同期の処理を待てないので、同期の API だけを使う。
   const killOnExit = () => {
     child?.kill("SIGKILL");
     for (const pid of shells) if (isAlive(pid)) process.kill(pid, "SIGKILL");
-    if (ownsStateDir) rmSync(stateDir, { recursive: true, force: true });
+    if (ownsStateDir) rmSync(tempRoot, { recursive: true, force: true });
   };
   process.on("exit", killOnExit);
 
   let result;
   try {
     log(`起動: ${executable}`);
-    log(`状態フォルダ: ${stateDir}`);
+    log(`状態フォルダ: ${stateDir}(${STATE_FILE_NAME}: ${stateKind === "broken" ? "壊れたもの" : "プロジェクト 1 件"})`);
     for (const [name, value] of Object.entries(extraEnv)) log(`追加の環境変数: ${name}=${value}`);
     child = spawn(executable, [], {
       env: { ...process.env, ...extraEnv, [ENV_STATE_DIR]: stateDir, [ENV_SMOKE]: "1" },
@@ -273,7 +394,7 @@ export async function runSmoke({
       }
       seen.ready ||= await exists(readyMarker);
       seen.terminal ||= await exists(terminalMarker);
-      if (seen.ready && seen.terminal) {
+      if (seen.ready && (seen.terminal || !needTerminal)) {
         outcome = "markers";
         break;
       }
@@ -301,7 +422,7 @@ export async function runSmoke({
       );
     } else if (outcome === "markers") {
       const ready = (await readFile(readyMarker, "utf8")).trim();
-      const terminal = (await readFile(terminalMarker, "utf8")).trim();
+      const terminal = needTerminal ? (await readFile(terminalMarker, "utf8")).trim() : String(child.pid);
       if (ready !== String(child.pid) || terminal !== String(child.pid)) {
         result = done(
           false,
@@ -309,11 +430,8 @@ export async function runSmoke({
           child.pid,
         );
       } else {
-        result = done(
-          true,
-          `準備完了とターミナルの印を確認し、画面の失敗も無かった(${seconds().toFixed(1)} 秒)`,
-          child.pid,
-        );
+        const what = needTerminal ? "準備完了とターミナルの印" : "準備完了の印";
+        result = done(true, `${what}を確認し、画面の失敗も無かった(${seconds().toFixed(1)} 秒)`, child.pid);
       }
     } else if (outcome === "exited") {
       result = done(
@@ -324,7 +442,7 @@ export async function runSmoke({
     } else {
       const missing = [
         seen.ready ? null : `準備完了の印(${MARKER_FILE_NAME})`,
-        seen.terminal ? null : `ターミナルの印(${TERMINAL_MARKER_FILE_NAME}。PTY の出力が画面で取り込まれた印)`,
+        seen.terminal || !needTerminal ? null : `ターミナルの印(${TERMINAL_MARKER_FILE_NAME}。PTY の出力が画面で取り込まれた印)`,
       ].filter((m) => m !== null);
       result = done(false, `${timeoutMs} ミリ秒以内に ${missing.join("と")} が現れなかった`, child.pid);
     }
@@ -342,9 +460,16 @@ export async function runSmoke({
       log(`アプリを終了させた(${how})`);
     }
     process.off("exit", killOnExit);
+    if (result?.ok) {
+      try {
+        stateProblem = await checkStateAfterExit({ ...prepared, kind: stateKind, verifyGrid });
+      } catch (e) {
+        stateProblem = `終了後の状態フォルダを調べられなかった: ${e.message}`;
+      }
+    }
     // 自分が mkdtemp で作ったフォルダだけを消す。
     if (ownsStateDir) {
-      await rm(stateDir, { recursive: true, force: true });
+      await rm(tempRoot, { recursive: true, force: true });
     }
   }
   watcher.end();
@@ -370,6 +495,17 @@ export async function runSmoke({
     log(`アプリが起動した子プロセス ${shells.map((pid) => `${pid}(${names.get(pid)})`).join("、")} はアプリの終了後に終わった`);
   }
   result.shells = shells;
+  if (result.ok && stateProblem !== null) {
+    result = { ...done(false, stateProblem, result.pid), shells };
+  } else if (result.ok) {
+    log(
+      verifyGrid
+        ? `検証画面なので ${STATE_FILE_NAME} は置いたまま書かれていない`
+        : stateKind === "broken"
+          ? `壊れた ${STATE_FILE_NAME} は元の中身のまま退避され、空の状態で書き直された`
+          : `${STATE_FILE_NAME} にブックマークが書かれ、プロジェクトのフォルダには何も増えていない`,
+    );
+  }
 
   const realAfter = await describeDir(realStateDir);
   if (JSON.stringify(realBefore) !== JSON.stringify(realAfter)) {
@@ -386,6 +522,19 @@ export async function runSmoke({
     result.message += `\n--- アプリの出力(末尾) ---\n${watcher.tail.trimEnd()}`;
   }
   return result;
+}
+
+/**
+ * `npm run smoke` の一揃い。プロジェクト 1 件の state.json で起動し、検証画面でなければ続けて壊れた state.json でも起動する。
+ * @returns {Promise<Array<{ kind: string, result: Awaited<ReturnType<typeof runSmoke>> }>>}
+ */
+export async function runSmokeSuite(opts = {}) {
+  const kinds = opts.extraEnv?.[ENV_VERIFY_GRID] === "1" ? ["project"] : ["project", "broken"];
+  const results = [];
+  for (const kind of kinds) {
+    results.push({ kind, result: await runSmoke({ ...opts, stateKind: kind }) });
+  }
+  return results;
 }
 
 /** コマンドラインの引数を runSmoke の引数にする。不正なら例外。 */
@@ -427,13 +576,17 @@ async function main() {
       process.exit(130);
     });
   }
-  const result = await runSmoke(opts);
-  if (result.ok) {
-    console.log(`スモーク成功: ${result.message}`);
-    return 0;
+  let code = 0;
+  for (const { kind, result } of await runSmokeSuite(opts)) {
+    const label = kind === "broken" ? "(壊れた state.json)" : "";
+    if (result.ok) {
+      console.log(`スモーク成功${label}: ${result.message}`);
+    } else {
+      console.error(`スモーク失敗${label}: ${result.message}`);
+      code = 1;
+    }
   }
-  console.error(`スモーク失敗: ${result.message}`);
-  return 1;
+  return code;
 }
 
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

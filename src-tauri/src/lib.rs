@@ -1,28 +1,31 @@
 //! Arin の組み立て(設計書 §11)。
 //!
 //! ここでは部品を生成して渡すことだけを行い、規則を書かない。
-//! 置き場所と起動の通知先を管理状態に登録し、起動時に `Workspace` とセッション管理を作って登録し、
-//! コマンドとメニューバー(`menu.rs`)を登録して tauri.conf.json のウィンドウを 1 枚出す。
+//! 置き場所と起動の通知先を管理状態に登録し、起動時に状態ファイルを読んで(`persistence.rs`)`Workspace` と
+//! セッション管理と保存のスレッドを作って登録し、コマンドとメニューバー(`menu.rs`)を登録して tauri.conf.json のウィンドウを 1 枚出す。
 
 mod commands;
 pub mod diagnostics;
 pub mod launch;
 pub mod lifecycle;
 pub mod menu;
+pub mod persistence;
 pub mod sessions;
 pub mod verify_log;
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use arin_core::persistence::codec::encode;
 use arin_core::ports::PtyPort;
-use arin_core::workspace::{AppSnapshot, Startup, Workspace};
+use arin_core::workspace::{AppSnapshot, Workspace};
 use arin_platform::pty::{FALLBACK_SHELL, NativePty, default_shell, system_locale};
 use tauri::{Builder, Emitter, Manager, Runtime};
 
 pub use crate::commands::app::SNAPSHOT_EVENT;
 use crate::launch::LaunchConfig;
 use crate::lifecycle::{FirstOutputNotice, ReadyNotice};
+use crate::persistence::{Persistence, PersistencePorts, load_startup};
 use crate::sessions::{SessionConfig, SessionRegistry, ShellDefaults, ShellProbe};
 
 /// アプリの組み立て。ランタイムを型引数で受け取り、テストでは模擬ランタイムに差し替える。
@@ -41,10 +44,22 @@ pub fn builder<R: Runtime>(launch: LaunchConfig) -> Builder<R> {
 }
 
 /// PTY のポートと、シェルと言語設定の取得を差し替えて組み立てる(テスト用。本物は `builder`)。
+/// 状態ファイルは置き場所(`launch.paths()`)の OS の実装を使う。
 pub fn builder_with_pty<R: Runtime>(
     launch: LaunchConfig,
     pty: Arc<dyn PtyPort>,
     probe: ShellProbe,
+) -> Builder<R> {
+    let ports = PersistencePorts::native(launch.paths().state_dir().to_path_buf());
+    builder_with_ports(launch, pty, probe, ports)
+}
+
+/// `builder_with_pty` に加えて、状態の読み書きのポート(状態ファイル・ブックマーク・ルート・時計)も差し替えて組み立てる(テスト用)。
+pub fn builder_with_ports<R: Runtime>(
+    launch: LaunchConfig,
+    pty: Arc<dyn PtyPort>,
+    probe: ShellProbe,
+    ports: PersistencePorts,
 ) -> Builder<R> {
     let ready = ReadyNotice::new(launch.ready_marker().map(ToOwned::to_owned));
     let first_output = FirstOutputNotice::new(launch.terminal_marker().map(ToOwned::to_owned));
@@ -59,27 +74,55 @@ pub fn builder_with_pty<R: Runtime>(
         .setup(move |app| {
             let version = app.package_info().version.to_string();
             let home = terminal.home.unwrap_or_default();
-            let workspace = if verify_grid {
-                // 9 枚の検証画面(`ARIN_VERIFY_GRID`。M1 の検証用、M4 の T49 で外す)。プロジェクトを持たず、保存しない。
-                Workspace::for_verify_grid(version, home, terminal.vars)
+            let (workspace, persistence, needs_save) = if verify_grid {
+                // 9 枚の検証画面(`ARIN_VERIFY_GRID`。M1 の検証用、M4 の T49 で外す)。プロジェクトを持たず、状態ファイルを読まず書かない。
+                (
+                    Workspace::for_verify_grid(version, home, terminal.vars),
+                    Persistence::disabled(),
+                    false,
+                )
             } else {
-                // 状態ファイルの読み込みとルートの解決は T33a で足す。それまではプロジェクト 0 件・ターミナル 0 枚で始める。
-                Workspace::restore(version, home, terminal.vars, Startup::default())
+                let load = load_startup(&ports);
+                let workspace = Workspace::restore(version, home, terminal.vars, load.startup);
+                let persistence = Persistence::new(load.scheduler, Arc::clone(&ports.clock));
+                (workspace, persistence, load.needs_save)
+            };
+            // いまの状態ファイルの中身とみなすもの。読んだまま変わっていなければ、同じ中身を書き直さない。
+            let baseline = if needs_save {
+                None
+            } else {
+                workspace
+                    .persisted_state()
+                    .and_then(|state| encode(&state).ok())
             };
             let handle = app.handle().clone();
+            let saver = persistence.clone();
             let listener = Arc::new(move |snapshot: AppSnapshot| {
                 // 画面がまだ無いときなどは送れない。写しは画面が取得のコマンドでも取れるので捨ててよい。
                 let _ = handle.emit(SNAPSHOT_EVENT, snapshot);
+                // 状態が変わったら保存を予約する。保存する内容が前回と同じなら書かない(`persistence.rs`)。
+                saver.mark_changed();
             });
             // 検証用の記録は開発ビルドだけ(リリースビルドでは `None`。T23)。
-            app.manage(SessionRegistry::with_verify(
+            let sessions = SessionRegistry::with_verify(
                 workspace,
                 pty,
                 probe,
                 listener,
                 SessionConfig::default(),
                 verify_log::default_verify(),
-            ));
+            );
+            let source = sessions.clone();
+            persistence.start(
+                Arc::clone(&ports.state_file),
+                Box::new(move || source.persisted_state()),
+                baseline,
+            );
+            if needs_save {
+                persistence.mark_changed();
+            }
+            app.manage(sessions);
+            app.manage(persistence);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

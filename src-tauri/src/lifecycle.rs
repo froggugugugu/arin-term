@@ -1,22 +1,41 @@
 //! 起動まわり(設計書 §4 の `lifecycle.rs`)。
 //!
-//! 画面からの準備完了の通知を受けたときの処理と、アプリの終了時の後片付けを置く。
+//! 画面からの準備完了の通知を受けたときの処理と、ウィンドウが前面でなくなったときの保存、アプリの終了時の後片付けを置く。
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use tauri::{AppHandle, Manager, RunEvent, Runtime};
+use tauri::{AppHandle, Manager, RunEvent, Runtime, WindowEvent};
 
+use crate::persistence::Persistence;
 use crate::sessions::SessionRegistry;
 
 /// アプリのイベントループのイベントを受ける(`run` に渡す)。
 ///
-/// 終了するときは、全ターミナルのシェルを終わらせる(PTY を残さない)。
+/// - ウィンドウが前面でなくなったら、保存できていない変更を待たずに書く(設計書 §6.2「書き込みの契機」)
+/// - 終了するときは、状態を書き終えてから、全ターミナルのシェルを終わらせる(PTY を残さない)
 pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
-    if let RunEvent::Exit = event
-        && let Some(sessions) = app.try_state::<SessionRegistry>()
-    {
-        sessions.shutdown();
+    match event {
+        RunEvent::WindowEvent {
+            event: WindowEvent::Focused(focused),
+            ..
+        } => on_window_focus_changed(app, focused),
+        RunEvent::Exit => {
+            if let Some(persistence) = app.try_state::<Persistence>() {
+                persistence.shutdown();
+            }
+            if let Some(sessions) = app.try_state::<SessionRegistry>() {
+                sessions.shutdown();
+            }
+        }
+        _ => {}
+    }
+}
+
+/// ウィンドウが前面になった(`focused` が真)・でなくなったとき。でなくなったときだけ、待たずに保存する。
+pub fn on_window_focus_changed<R: Runtime>(app: &AppHandle<R>, focused: bool) {
+    if !focused && let Some(persistence) = app.try_state::<Persistence>() {
+        persistence.flush();
     }
 }
 

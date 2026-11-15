@@ -93,7 +93,7 @@ pub fn launch_in(dir: &TempDir, smoke: bool) -> LaunchConfig {
 
 /// `launch_in` に 9 枚の検証画面の指定(`ARIN_VERIFY_GRID=1` と同じ)を足した設定。
 ///
-/// 通常の起動はプロジェクト 0 件・ターミナル 0 枚で始まる(状態ファイルの読み込みは T33a)ので、
+/// 空の状態フォルダでの通常の起動はプロジェクト 0 件・ターミナル 0 枚で始まるので、
 /// 起動直後からターミナルが要るテストはこちらを使い、1 枚目(`terminal-1`)を操作する。
 pub fn launch_verify_grid_in(dir: &TempDir, smoke: bool) -> LaunchConfig {
     launch_in(dir, smoke).with_launch_options(LaunchOptions {
