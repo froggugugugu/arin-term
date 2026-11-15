@@ -1509,7 +1509,7 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 31.5c(並行可能。T64a・T64b 完了後)
 
-- [ ] T64c — 表に「設定ファイルを開く」の行と見本の文(変更ファイル: crates/arin-core/src/shortcuts/table.rs, crates/arin-core/src/shortcuts/sample.rs, crates/arin-core/src/shortcuts/mod.rs, crates/arin-core/tests/shortcuts.rs, crates/arin-core/tests/shortcut_overrides.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/logic/keys/defaultShortcuts.ts, src/logic/keys/keyOwner.test.ts, src/logic/keys/shortcutTable.test.ts | 依存: T64a)
+- [x] T64c — 表に「設定ファイルを開く」の行と見本の文(変更ファイル: crates/arin-core/src/shortcuts/table.rs, crates/arin-core/src/shortcuts/sample.rs, crates/arin-core/src/shortcuts/mod.rs, crates/arin-core/tests/shortcuts.rs, crates/arin-core/tests/shortcut_overrides.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/logic/keys/defaultShortcuts.ts, src/logic/keys/keyOwner.test.ts, src/logic/keys/shortcutTable.test.ts | 依存: T64a)
   - 対応: ADR-012 の 6(【要確認】4 の A)、AC-K08 の規則の部分
   - 足す行: `app.open-settings` = `Cmd+,`(受け口は「メニューの項目」)。`ShortcutCommandId::ALL` は 23 行になる。生成物(`ShortcutCommandId.ts`・`defaultShortcuts.json`)と画面の見本(`defaultShortcuts.ts`)を作り直す
   - 置くもの: `sample_settings_toml(既定の表) -> String`(見本の文。先頭に書き方の決まり・変えられないコマンド・予約のキー・効かないときの確かめ方・リンクの先の変更は拾えないことをコメントで書き、`[shortcuts]` の下に全コマンドの `# "ID" = "既定のキー"` をコメントで並べる)
