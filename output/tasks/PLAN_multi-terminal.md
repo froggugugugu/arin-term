@@ -827,7 +827,7 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 可(`shortcuts/` と生成物だけ。生成物を触るのは Phase 25b ではこのタスクだけ)
   - 先に書くテスト: `すべてのコマンドの_id_が既定のキーを持つ`、`同じフォーカスで受けるキーに重なりが無い`、`既定のキーは_prd_の表と_m2_のメニューのとおり`(表で列挙)、`id_の文字列は_m2_のメニューの_id_と同じ`、`キーの文字列を修飾キーとキーに分けて読める`、`修飾キーの順が違っても同じキーとみなす`、`読めない文字列は理由つきで拒否する`、`表の_json_の形`。生成した型と既定の表の JSON が最新
   - 検証: `npm test && npm run lint && npm run test:coverage`
-- [ ] T39a — ファイル操作の検査(範囲・名前・重複しない名前)(`arin-core/fileops`)(変更ファイル: crates/arin-core/src/fileops/scope.rs, crates/arin-core/src/fileops/name.rs, crates/arin-core/src/fileops/unique.rs, crates/arin-core/tests/fileops_scope.rs, crates/arin-core/tests/fileops_name.rs, crates/arin-core/tests/support/fake_fs.rs | 依存: T38a)
+- [x] T39a — ファイル操作の検査(範囲・名前・重複しない名前)(`arin-core/fileops`)(変更ファイル: crates/arin-core/src/fileops/scope.rs, crates/arin-core/src/fileops/name.rs, crates/arin-core/src/fileops/unique.rs, crates/arin-core/tests/fileops_scope.rs, crates/arin-core/tests/fileops_name.rs, crates/arin-core/tests/support/fake_fs.rs | 依存: T38a)
   - 対応: FR-025・FR-026(名前の検証)、FR-030(両方残すの名前)、FR-035、設計書 §5.1 の `PathScopeGuard`・`NameValidator`・`UniqueNameGenerator`、§7.2、§15.2 #8、【仮定】11
   - 置くもの: 範囲の検査(ルートの実パスと、対象の親フォルダの実パス=ファイルシステムのポートで解決したもの、を要素ごとに比べる。文字列の前方一致にしない。対象そのものはリンクをたどらない=リンク自体を操作する)。ルート自体を名称変更・移動・切り取り・ゴミ箱の対象にしない。フォルダを自分自身・子孫へ移さない。名前の検査(空でない、`/` と NUL を含まない、`.`・`..` でない、UTF-8 で 255 バイト以内)。両方残すの名前
   - 偽のファイルシステム(`tests/support/fake_fs.rs`。メモリの中のフォルダとシンボリックリンク。**上書きや削除を求められたら panic する**)をここで作り、T39b が使う
