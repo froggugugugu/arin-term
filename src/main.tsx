@@ -38,7 +38,7 @@ export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartA
   const store = createAppStore();
   const ui = createUiStore();
   // ツリー(M3): 写しの選択中のプロジェクトのルートを読み、tree-changed と保留(uiStore)に合わせて読み直す。
-  // ツリーの部品(T43b)へ tree を props で渡すのは T43b で足す。
+  // ツリーの部品(T43b)へは tree を props で渡す。
   const tree = createTreeStore();
   const treeController = createTreeController({ ipc, tree, app: store, ui, reportError: reporter.report });
   const actions = createActions({ ipc, ui, tree, treeController, reportError: reporter.report });
@@ -79,7 +79,7 @@ export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartA
       flushSync(() => {
         createRoot(container).render(
           <StrictMode>
-            <AppShell store={store} ui={ui} actions={actions} terminals={terminals} verifyGrid={verifyGrid} />
+            <AppShell store={store} ui={ui} tree={tree} actions={actions} terminals={terminals} verifyGrid={verifyGrid} />
           </StrictMode>,
         );
       });

@@ -21,6 +21,17 @@
   --color-notice: #fdf3d0;
   --color-notice-fg: #3d2e00;
   --shadow-popup: 0 6px 24px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.08);
+  /* 一覧の選択(Finder のサイドバーにならう): フォーカスがあるときはアクセント色、無いときは淡いグレー。 */
+  --color-selection-active: #0a64d8;
+  --color-selection-active-fg: #ffffff;
+  --color-selection-inactive: rgba(0, 0, 0, 0.09);
+  /* 小さな道具のボタン(ツリーの下端の帯)の押したとき・押した状態の地。 */
+  --color-control-hover: rgba(0, 0, 0, 0.06);
+  /* フォーカスの輪(選択の無いツリーにキーボードで入ったとき)。 */
+  --color-focus-ring: rgba(10, 100, 216, 0.45);
+  /* ツリーのアイコン(単色で控えめに。フォルダだけ淡い青で見分ける)。 */
+  --color-tree-icon: #8a8a8f;
+  --color-tree-folder: #4a8bd4;
   /*
    * ターミナルの置き場所の地。xterm.js の既定の配色(背景 #000000・文字 #ffffff)に合わせる。置き場所は行の高さの倍数とは
    * 限らず下端に 1 行に満たない余りが出るので、余りがターミナルと違う色の帯に見えないようにする。
@@ -42,6 +53,11 @@
   --font-family: system-ui, -apple-system, sans-serif;
 
   --divider-hit: 6px;
+
+  /* ツリー(ADR-007 の (c)、計画【仮定】5)。行の高さは仮想スクロールの窓の計算にも使う(FileTreeView が読む)。 */
+  --tree-row-height: 22px;
+  --tree-indent: 16px;
+  --tree-toolbar-height: 26px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -61,6 +77,13 @@
     --color-notice: #4a3b0c;
     --color-notice-fg: #fbefc4;
     --shadow-popup: 0 6px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1);
+    --color-selection-active: #2f6fde;
+    --color-selection-active-fg: #ffffff;
+    --color-selection-inactive: rgba(255, 255, 255, 0.11);
+    --color-control-hover: rgba(255, 255, 255, 0.08);
+    --color-focus-ring: rgba(76, 155, 255, 0.5);
+    --color-tree-icon: #98989d;
+    --color-tree-folder: #64a5ec;
   }
 }
 

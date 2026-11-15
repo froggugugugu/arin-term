@@ -8,6 +8,7 @@ import { DEFAULT_PANE_SIZES } from "../../logic/panes/paneLayout";
 import type { Actions } from "../../state/actions";
 import type { AppStore } from "../../state/appStore";
 import { selectedProject, shownTerminal } from "../../state/selectors";
+import type { TreeStore } from "../../state/treeStore";
 import type { UiStore } from "../../state/uiStore";
 import type { TerminalManager } from "../../terminal/TerminalManager";
 import { QuitDialog } from "../dialogs/QuitDialog";
@@ -25,6 +26,8 @@ interface AppShellProps {
   store: AppStore;
   /** 表示だけの状態(確認・メニュー・閉じた知らせ)。 */
   ui: UiStore;
+  /** ツリーの状態(表示中のプロジェクトのツリー。M3)。 */
+  tree: TreeStore;
   /** 画面の操作(コマンドの包み)。 */
   actions: Actions;
   terminals: TerminalManager;
@@ -34,12 +37,12 @@ interface AppShellProps {
 
 /**
  * ウィンドウ全体の枠(設計書 §8・§9.1)。上から順に、見出し(アプリ名・写しの版・左ペインの折りたたみ・描画方式(検証用)・
- * 起動の失敗)、知らせ(1 行)、ペインの分割(左: カード一覧とツリーのヘッダ、右: ターミナル領域)。削除と終了の確認もここに置く。
+ * 起動の失敗)、知らせ(1 行)、ペインの分割(左: カード一覧とファイルツリー、右: ターミナル領域)。削除と終了の確認もここに置く。
  * 右ペインはタブバーと表示中のターミナル(選択中のプロジェクトの表示中のタブ)を 1 枚だけ描く(TerminalArea)。
  * 他のタブ・他のプロジェクトのターミナルは TerminalManager が隠したまま取り込みを続ける。
  * 9 枚の検証画面の指定があるときは、M1 と同じく検証画面(写しにある全部のターミナル)だけを描く。終了の確認はどちらでも出す。
  */
-export function AppShell({ store, ui, actions, terminals, verifyGrid = false }: AppShellProps) {
+export function AppShell({ store, ui, tree, actions, terminals, verifyGrid = false }: AppShellProps) {
   const snapshot = useStore(store, (s) => s.snapshot);
   const startupError = useStore(store, (s) => s.startupError);
   const panes = usePaneSizes(snapshot?.layout ?? DEFAULT_PANE_SIZES, actions);
@@ -83,7 +86,7 @@ export function AppShell({ store, ui, actions, terminals, verifyGrid = false }: 
               <PaneSplit
                 panes={panes}
                 cards={<ProjectCardList store={store} ui={ui} actions={actions} />}
-                tree={<TreePane project={selectedProject(snapshot)} actions={actions} />}
+                tree={<TreePane project={selectedProject(snapshot)} tree={tree} ui={ui} actions={actions} />}
                 terminal={<TerminalArea store={store} actions={actions} terminals={terminals} />}
               />
               <RemoveProjectDialog store={store} ui={ui} actions={actions} />

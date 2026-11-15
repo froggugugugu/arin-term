@@ -18,6 +18,8 @@
 // - イベント(T19): `plugin:event|listen` で登録された受け取りの関数を覚え、emitEvent で
 //   Tauri と同じ `{ event, id, payload }` の形で呼ぶ
 // - イベントの購読・解除(`plugin:event|listen` など)は Tauri の内部の口なので、記録(__ARIN_E2E_CALLS__)には残さない
+// - ツリー(T43b): list_directory はフォルダごとの応答の表(listings。キーは listingKey)を先に引き、無ければ
+//   コマンドの既定の応答(空のフォルダ)を返す。外からの変更は表を置き換えてから tree-changed を emitEvent で流す
 //
 // # 型の合わせ方
 //
@@ -29,6 +31,9 @@ import type { Page } from "@playwright/test";
 
 import type { CommandMap, CommandName, EventMap, EventName } from "../../src/ipc/client";
 import type { AppSnapshot } from "../../src/ipc/generated/AppSnapshot";
+import type { DirEntry } from "../../src/ipc/generated/DirEntry";
+import type { DirListing } from "../../src/ipc/generated/DirListing";
+import type { EntryKind } from "../../src/ipc/generated/EntryKind";
 import type { ProjectCardSnapshot } from "../../src/ipc/generated/ProjectCardSnapshot";
 import type { ProjectColor } from "../../src/ipc/generated/ProjectColor";
 import type { RunningTerminal } from "../../src/ipc/generated/RunningTerminal";
@@ -206,14 +211,40 @@ interface MockControls {
   emit(event: string, payload: unknown): number;
   /** コマンドの応答を差し替える(以後の呼び出しから効く。T35a)。 */
   setReply(command: string, reply: { ok: unknown } | { error: string }): void;
+  /**
+   * フォルダごとの list_directory の応答を差し替える(T43b)。"pending" は応答を返さずに待たせ、
+   * あとで別の応答を置いたときに、待っていた問い合わせへもその応答を返す。null は差し替えを外す(既定の応答に戻る)。
+   */
+  setListing(key: string, listing: unknown): void;
+}
+
+/** フォルダごとの list_directory の応答。"pending" は、応答を置き直すまで返さない(読み込み中の表示を見るため)。 */
+export type MockListing = DirListing | "pending";
+
+/** フォルダごとの応答の表のキー(プロジェクトとルート基準の相対パス。ルートは空の文字列)。 */
+export function listingKey(projectId: string, path: string): string {
+  return `${projectId}\u0000${path}`;
+}
+
+/** 名前と種類の組から、フォルダの中身(listed)を作る。並び順は渡した順のまま(並べ替えは Rust の役目)。 */
+export function listed(entries: ReadonlyArray<readonly [string, EntryKind]>): DirListing {
+  return { kind: "listed", entries: entries.map(([name, kind]): DirEntry => ({ name, kind })) };
 }
 
 /**
  * 画面のページの中で実行する本体。Playwright はこの関数を文字列にして新しい文書の先頭で実行するので、
  * 外の変数や import を参照せず、引数の replies だけを使う(型の import は実行時には消える)。
  */
-function injectTauriMock(replies: Record<string, { ok: unknown } | { error: string }>): void {
+function injectTauriMock({
+  replies,
+  listings,
+}: {
+  replies: Record<string, { ok: unknown } | { error: string }>;
+  listings: Record<string, unknown>;
+}): void {
   const w = window as unknown as MockWindow;
+  // 応答を待たせている list_directory の問い合わせ(キーごと)。
+  const waiting = new Map<string, Array<(listing: unknown) => void>>();
   const calls: RecordedCall[] = [];
   w.__ARIN_E2E_CALLS__ = calls;
   // Channel と listen が渡す受け取りの関数(@tauri-apps/api の transformCallback)。
@@ -252,6 +283,14 @@ function injectTauriMock(replies: Record<string, { ok: unknown } | { error: stri
     setReply: (command, reply) => {
       replies[command] = reply;
     },
+    setListing: (key, listing) => {
+      if (listing === null) delete listings[key];
+      else listings[key] = listing;
+      if (listing === null || listing === "pending") return;
+      const resolvers = waiting.get(key) ?? [];
+      waiting.delete(key);
+      for (const resolve of resolvers) resolve(JSON.parse(JSON.stringify(listing)));
+    },
   };
   w.__TAURI_INTERNALS__ = {
     transformCallback: (callback: (payload: unknown) => void): number => {
@@ -278,6 +317,19 @@ function injectTauriMock(replies: Record<string, { ok: unknown } | { error: stri
       }
       // 画面が渡した引数をそのまま残すと、あとで画面が書き換えたときに記録も変わるので、写しを取る。
       calls.push({ command, args: args === undefined ? undefined : JSON.parse(JSON.stringify(args)) });
+      if (command === "list_directory") {
+        const { projectId, path } = args as { projectId: string; path: string };
+        const key = `${projectId}\u0000${path}`;
+        const listing = listings[key];
+        if (listing === "pending") {
+          return new Promise((resolve) => {
+            const resolvers = waiting.get(key) ?? [];
+            resolvers.push(resolve);
+            waiting.set(key, resolvers);
+          });
+        }
+        if (listing !== undefined) return JSON.parse(JSON.stringify(listing));
+      }
       const reply = replies[command];
       if (reply === undefined) {
         // 本物の Tauri も、登録されていないコマンドは文字列で失敗させる。
@@ -294,9 +346,28 @@ function injectTauriMock(replies: Record<string, { ok: unknown } | { error: stri
  * 偽の Rust 側を差し込む。page.goto の前に呼ぶ。渡さなかったコマンドは既定の応答を返す。
  * 再読み込みのたびに差し込み直され、記録も空から始まる。
  */
-export async function installTauriMock(page: Page, overrides: Partial<TauriMockConfig> = {}): Promise<void> {
+export async function installTauriMock(
+  page: Page,
+  overrides: Partial<TauriMockConfig> = {},
+  listings: Readonly<Record<string, MockListing>> = {},
+): Promise<void> {
   const replies: TauriMockConfig = { ...DEFAULT_REPLIES, ...overrides };
-  await page.addInitScript(injectTauriMock, replies);
+  await page.addInitScript(injectTauriMock, { replies, listings: { ...listings } });
+}
+
+/**
+ * 差し込んだあとで、1 つのフォルダの list_directory の応答を差し替える(T43b)。listingKey で作ったキーを渡す。
+ * 待たせていた("pending")問い合わせにも、この応答を返す。null は差し替えを外す。
+ */
+export async function setMockListing(page: Page, key: string, listing: MockListing | null): Promise<void> {
+  await page.evaluate(
+    ({ key, listing }) => {
+      const controls = (window as unknown as MockWindow).__ARIN_E2E__;
+      if (controls === undefined) throw new Error("偽の Rust 側が差し込まれていない");
+      controls.setListing(key, listing);
+    },
+    { key, listing },
+  );
 }
 
 /**

@@ -947,7 +947,7 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 不可
   - 先に書くテスト(Vitest。偽の通信): `選択したプロジェクトのルートを読み込む`、`展開でフォルダの中身を求め届いたら行が増える`、`tree-changed_で読み込み済みのフォルダを読み直す`、`保留中は読み直さず解けたらまとめて読み直す`、`名称変更が見つからないを返したら知らせを出し親を読み直す`(AC-T24)、`衝突を返したら衝突の確認を開き選んだ対処で呼び直す`、`衝突の確認で中止なら呼び直さない`、`新規作成が済んだら作った項目を選ぶ`(AC-T13)、`ドロップでの移動は確認を開き確認すると移動のコマンドを呼ぶ`(FR-029)、`option_のドロップは確認なしでコピーのコマンドを呼ぶ`、`プロジェクトを切り替えて戻ると読み込み済みのツリーを保ち読み直す`、`隠しファイル表示の切替でコマンドを呼び読み直す`、`起動時にショートカットの表を受け取る`
   - 検証: `npm test && npm run lint && npm run build`
-- [ ] T43b — ツリーの表示(仮想スクロール、開閉、ルートの行、監視の反映)(変更ファイル: src/ui/tree/FileTreeView.tsx, src/ui/tree/TreeRow.tsx, src/ui/tree/TreeHeader.tsx, src/ui/tree/TreeView.css, src/ui/tree/icons.tsx, src/ui/shell/TreePane.tsx, src/ui/design/tokens.css, e2e/fixtures/tauriMock.ts, e2e/tree.spec.ts | 依存: T43a)
+- [x] T43b — ツリーの表示(仮想スクロール、開閉、ルートの行、監視の反映)(変更ファイル: src/ui/tree/FileTreeView.tsx, src/ui/tree/TreeRow.tsx, src/ui/tree/TreeHeader.tsx, src/ui/tree/TreeView.css, src/ui/tree/icons.tsx, src/ui/shell/TreePane.tsx, src/ui/design/tokens.css, e2e/fixtures/tauriMock.ts, e2e/tree.spec.ts | 依存: T43a)
   - 対応: FR-013、FR-014、FR-017(切替)、FR-018(ダブルクリックで開く)、FR-060(ツリーのヘッダの着色を保つ)、FR-002 のツリーの部分と FR-007 の「ツリーも表示され続ける」(M2 から回した分)、NFR-005(見える行だけを描く)、設計書 §9.1、§15.2 #12(アイコンは自作の少数の SVG)、ADR-007 の (c)、【仮定】1・5・6
   - 作るもの: `FileTreeView`(コンテナ。T41a の窓で描く範囲を決め、上下の余白と見える行だけを描く)、`TreeRow`(字下げ・開閉の印・アイコン・名前。名前は文字として差し込む)、`TreeHeader` をルートの行として選べるようにする(色は M2 のまま)。偽の Rust 側にツリーのコマンドと `tree-changed` を足す
   - 安全: ファイル名は信頼しない文字列として扱い、HTML として解釈させない(設計書 §12。境界検査が `dangerouslySetInnerHTML` を禁止している)
