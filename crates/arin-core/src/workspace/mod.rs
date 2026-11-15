@@ -9,7 +9,9 @@ mod snapshot;
 mod state;
 mod terminals;
 
-pub use outcome::{RemoveOutcome, RootResolution, RunningTerminal, Startup, WorkspaceError};
+pub use outcome::{
+    ConnectOutcome, RemoveOutcome, RootResolution, RunningTerminal, Startup, WorkspaceError,
+};
 pub use snapshot::{
     AppSnapshot, ProjectCardSnapshot, SNAPSHOT_SCHEMA_VERSION, TerminalTabSnapshot,
 };

@@ -2,6 +2,7 @@
 // 通信の実体(IpcTransport)は外から受け取る。本物は ./tauri.ts、テストでは src/test/fakeIpc.ts を渡す。
 
 import type { AppSnapshot } from "./generated/AppSnapshot";
+import type { ConnectOutcome } from "./generated/ConnectOutcome";
 import type { LaunchOptions } from "./generated/LaunchOptions";
 import type { TerminalId } from "./generated/TerminalId";
 
@@ -22,9 +23,14 @@ export interface CommandMap {
   report_frontend_error: { args: { message: string }; result: null };
   connect_terminal: {
     args: { terminalId: TerminalId; rows: number; cols: number; onOutput: ChannelToken };
-    result: null;
+    result: ConnectOutcome;
   };
   write_terminal: { args: { terminalId: TerminalId; data: string }; result: null };
+  /** data は 0〜255 の数の配列(Rust の Vec<u8>)。 */
+  write_terminal_bytes: { args: { terminalId: TerminalId; data: number[] }; result: null };
+  new_terminal: { args: undefined; result: TerminalId };
+  close_terminal: { args: { terminalId: TerminalId }; result: null };
+  select_terminal: { args: { terminalId: TerminalId }; result: null };
   ack_terminal_output: { args: { terminalId: TerminalId; bytes: number }; result: null };
   resize_terminal: { args: { terminalId: TerminalId; rows: number; cols: number }; result: null };
 }
@@ -66,8 +72,11 @@ export interface IpcTransport {
 
 /** 接続中の出力の受け取り。 */
 export interface OutputSubscription {
-  /** 接続のコマンドの結果。失敗したら受け取りはやめてある。 */
-  readonly connected: Promise<void>;
+  /**
+   * 接続のコマンドの結果。sizeApplied が false なら、再接続で寸法を PTY に反映できなかった(画面が寸法を送り直す)。
+   * 失敗したら受け取りはやめてある。
+   */
+  readonly connected: Promise<ConnectOutcome>;
   /** 受け取りをやめる(以後に届いた出力は捨てる)。2 回目以降は何もしない。 */
   close(): void;
 }
@@ -96,6 +105,17 @@ export interface ArinIpc {
   ): OutputSubscription;
   /** キー入力・貼り付けの文字列を PTY に書き込む。 */
   writeTerminal(id: TerminalId, data: string): Promise<void>;
+  /**
+   * バイト列をそのまま PTY に書き込む(xterm.js の onBinary)。
+   * 同じターミナルへの writeTerminal と合わせて、前の応答を待ってから次を送る(順序は送る側が保つ)。
+   */
+  writeTerminalBytes(id: TerminalId, data: Uint8Array): Promise<void>;
+  /** 選択中のプロジェクトに新しいタブを開いて表示中にし、その ID を返す。シェルは接続で起動する。 */
+  newTerminal(): Promise<TerminalId>;
+  /** タブを閉じ、そのシェルを終わらせる。 */
+  closeTerminal(id: TerminalId): Promise<void>;
+  /** そのタブを表示中にする。 */
+  selectTerminal(id: TerminalId): Promise<void>;
   /** 出力を bytes バイト取り込んだことを知らせる(流量制御)。 */
   ackTerminalOutput(id: TerminalId, bytes: number): Promise<void>;
   /** 寸法(行・桁)を変える。 */
@@ -146,7 +166,7 @@ export function createIpc(transport: IpcTransport): ArinIpc {
         cols,
         onOutput: channel.token,
       }).then(
-        () => undefined,
+        (outcome) => outcome,
         (cause: unknown) => {
           close();
           throw cause;
@@ -155,6 +175,11 @@ export function createIpc(transport: IpcTransport): ArinIpc {
       return { connected, close };
     },
     writeTerminal: (terminalId, data) => done(invoke("write_terminal", { terminalId, data })),
+    writeTerminalBytes: (terminalId, data) =>
+      done(invoke("write_terminal_bytes", { terminalId, data: Array.from(data) })),
+    newTerminal: () => invoke("new_terminal", undefined),
+    closeTerminal: (terminalId) => done(invoke("close_terminal", { terminalId })),
+    selectTerminal: (terminalId) => done(invoke("select_terminal", { terminalId })),
     ackTerminalOutput: (terminalId, bytes) =>
       done(invoke("ack_terminal_output", { terminalId, bytes })),
     resizeTerminal: (terminalId, rows, cols) =>

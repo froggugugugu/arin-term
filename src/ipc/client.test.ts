@@ -84,7 +84,62 @@ describe("src/ipc の包み", () => {
   });
 });
 
+describe("タブの操作とバイト列の入力(T33b)", () => {
+  it("新しいタブは new_terminal を引数なしで呼び、開いたタブの ID を返す", async () => {
+    const fake = createFakeIpc({ new_terminal: () => "terminal-7" });
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.newTerminal()).resolves.toBe("terminal-7");
+
+    expect(fake.calls).toEqual([{ command: "new_terminal", args: undefined }]);
+  });
+
+  it("タブを閉じる・選ぶは close_terminal・select_terminal に camelCase の引数で届く", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.closeTerminal("t1")).resolves.toBeUndefined();
+    await expect(ipc.selectTerminal("t2")).resolves.toBeUndefined();
+
+    expect(fake.calls).toEqual([
+      { command: "close_terminal", args: { terminalId: "t1" } },
+      { command: "select_terminal", args: { terminalId: "t2" } },
+    ]);
+  });
+
+  it("バイト列の入力は write_terminal_bytes に 0〜255 の数の配列で届く", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+
+    await ipc.writeTerminalBytes("t1", new Uint8Array([27, 91, 77, 32, 255, 128, 0]));
+
+    expect(fake.calls).toEqual([
+      { command: "write_terminal_bytes", args: { terminalId: "t1", data: [27, 91, 77, 32, 255, 128, 0] } },
+    ]);
+  });
+
+  it("タブの操作の失敗はそのまま呼び出し元に返す", async () => {
+    const fake = createFakeIpc({
+      new_terminal: () => {
+        throw "プロジェクトが選ばれていないので、ターミナルを開けない";
+      },
+    });
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.newTerminal()).rejects.toBe("プロジェクトが選ばれていないので、ターミナルを開けない");
+  });
+});
+
 describe("connectTerminal", () => {
+  it("接続の応答(寸法を反映したか)を connected で返す", async () => {
+    const fake = createFakeIpc({ connect_terminal: () => ({ sizeApplied: false }) });
+    const ipc = createIpc(fake.transport);
+
+    const sub = ipc.connectTerminal("t1", 24, 80, () => {});
+
+    await expect(sub.connected).resolves.toEqual({ sizeApplied: false });
+  });
+
   it("チャネルを作って connect_terminal に渡し、届いた ArrayBuffer をバイト列で渡す", async () => {
     const fake = createFakeIpc();
     const ipc = createIpc(fake.transport);

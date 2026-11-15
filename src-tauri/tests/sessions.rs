@@ -14,9 +14,13 @@ use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use arin_core::ports::{ChildExit, PtyError, PtyPort, PtySession, PtySize, SpawnedPty};
+use arin_core::persistence::codec::PersistedState;
+use arin_core::ports::{ChildExit, Foreground, PtyError, PtyPort, PtySession, PtySize, SpawnedPty};
+use arin_core::project::{Project, ProjectColor, ProjectId, RootReference};
 use arin_core::terminal::{ShellLaunchSpec, TerminalError, TerminalId, TerminalStatus};
-use arin_core::workspace::{AppSnapshot, Workspace};
+use arin_core::workspace::{
+    AppSnapshot, ConnectOutcome, RootResolution, Startup, Workspace, WorkspaceError,
+};
 use arin_lib::sessions::{OutputSink, SessionConfig, SessionError, SessionRegistry, ShellDefaults};
 use arin_lib::verify_log::{FlowSummary, VerifyConfig, VerifyRecord, VerifySink};
 
@@ -71,6 +75,12 @@ struct Control {
     release: Condvar,
     /// 止まっている書き込みの数。
     held: AtomicUsize,
+    /// 前面で動いているもの(`PtySession::foreground` が返す値)。
+    foreground: Mutex<Foreground>,
+    /// 入力・寸法・終了の操作(`FakeSession`)を捨てたか。
+    session_dropped: AtomicBool,
+    /// 出力(`FakeOutput`。読み取りスレッドが持つ)を捨てたか。
+    output_dropped: AtomicBool,
 }
 
 impl Control {
@@ -89,6 +99,9 @@ impl Control {
             hold_writes: Mutex::new(false),
             release: Condvar::new(),
             held: AtomicUsize::new(0),
+            foreground: Mutex::new(Foreground::Unknown),
+            session_dropped: AtomicBool::new(false),
+            output_dropped: AtomicBool::new(false),
         })
     }
 
@@ -194,7 +207,19 @@ impl Read for FakeOutput {
     }
 }
 
+impl Drop for FakeOutput {
+    fn drop(&mut self) {
+        self.control.output_dropped.store(true, Ordering::SeqCst);
+    }
+}
+
 struct FakeSession(Arc<Control>);
+
+impl Drop for FakeSession {
+    fn drop(&mut self) {
+        self.0.session_dropped.store(true, Ordering::SeqCst);
+    }
+}
 
 impl PtySession for FakeSession {
     fn write(&mut self, data: &[u8]) -> Result<(), PtyError> {
@@ -232,6 +257,10 @@ impl PtySession for FakeSession {
 
     fn try_wait(&mut self) -> Result<Option<ChildExit>, PtyError> {
         Ok(lock(&self.0.exit).clone())
+    }
+
+    fn foreground(&mut self) -> Foreground {
+        *lock(&self.0.foreground)
     }
 }
 
@@ -303,7 +332,7 @@ impl Fixture {
         let probes = Arc::new(AtomicUsize::new(0));
         let seen = Arc::clone(&snapshots);
         let probe_count = Arc::clone(&probes);
-        // シェルが終わってもタブを残す 9 枚の検証画面の形で作り、1 枚目だけを使う(タブを閉じる形のテストは T33b)。
+        // シェルが終わってもタブを残す 9 枚の検証画面の形で作り、1 枚目だけを使う(タブを閉じる形のテストは下の T33b の節)。
         let workspace =
             Workspace::for_verify_grid("0.0.0-test", PathBuf::from(HOME), [("HOME", HOME)]);
         let registry = SessionRegistry::with_verify(
@@ -668,9 +697,13 @@ fn 存在しない_id_はどのコマンドでも見つからないと返す() {
     let not_found = Err(SessionError::Terminal(TerminalError::NotFound(id.clone())));
 
     assert_eq!(
-        f.registry.connect(&id, 24, 80, CollectSink::new()),
+        f.registry
+            .connect(&id, 24, 80, CollectSink::new())
+            .map(|_| ()),
         not_found
     );
+    assert_eq!(f.registry.close_terminal(&id), not_found);
+    assert_eq!(f.registry.select_terminal(&id), not_found);
     assert_eq!(f.registry.write(&id, b"x"), not_found);
     assert_eq!(f.registry.ack(&id, 1), not_found);
     assert_eq!(f.registry.resize(&id, 24, 80), not_found);
@@ -1014,7 +1047,7 @@ impl GridFixture {
     }
 
     /// 9 枚を順に接続する。失敗した接続の結果も返す。
-    fn connect_all(&self) -> Vec<Result<(), SessionError>> {
+    fn connect_all(&self) -> Vec<Result<ConnectOutcome, SessionError>> {
         self.ids
             .iter()
             .zip(&self.sinks)
@@ -1177,7 +1210,7 @@ fn 書き込みが止まっていても再接続は戻り_ほかの接続も止�
         within_wait(move || registry.connect(&id, 30, 90, sink as Arc<dyn OutputSink>))
     };
     assert!(
-        matches!(reattach, Some(Ok(()))),
+        matches!(reattach, Some(Ok(_))),
         "止まっているターミナルの再接続が戻らないか失敗した: {reattach:?}"
     );
     let other = {
@@ -1187,7 +1220,7 @@ fn 書き込みが止まっていても再接続は戻り_ほかの接続も止�
         within_wait(move || registry.connect(&id, 30, 90, sink as Arc<dyn OutputSink>))
     };
     assert!(
-        matches!(other, Some(Ok(()))),
+        matches!(other, Some(Ok(_))),
         "ほかのターミナルの再接続が止まった: {other:?}"
     );
     assert_eq!(
@@ -1208,4 +1241,500 @@ fn 書き込みが止まっていても再接続は戻り_ほかの接続も止�
         lock(&f.controls[0].sizes).last(),
         Some(&PtySize { rows: 30, cols: 90 })
     );
+}
+
+// ---------------------------------------------------------------------------
+// プロジェクトのタブとセッションの後片付け(T33b。FR-039・FR-042・FR-044、NFR-006、M1 の見送り)
+// ---------------------------------------------------------------------------
+
+const ROOT_A: &str = "/Users/someone/dev/alpha";
+const ROOT_B: &str = "/Users/someone/dev/beta";
+
+fn project_id(n: u8) -> ProjectId {
+    ProjectId::from_random_bytes([n; 16])
+}
+
+/// プロジェクト A(選択中)と B を 1 枚ずつのタブで持つ、通常の起動の Workspace。シェルが終わったタブは閉じる。
+fn two_projects() -> Workspace {
+    let projects: Vec<(ProjectId, RootReference)> = [(1, ROOT_A), (2, ROOT_B)]
+        .into_iter()
+        .map(|(n, root)| {
+            (
+                project_id(n),
+                RootReference::new(PathBuf::from(root), Some("Ym9va21hcms=".to_owned())),
+            )
+        })
+        .collect();
+    Workspace::restore(
+        "0.0.0-test",
+        PathBuf::from(HOME),
+        [("HOME", HOME)],
+        Startup {
+            state: PersistedState {
+                projects: projects
+                    .iter()
+                    .map(|(id, root)| {
+                        Project::restore(id.clone(), root.clone(), None, ProjectColor::Green)
+                    })
+                    .collect(),
+                selected_project_id: Some(project_id(1)),
+                ..PersistedState::default()
+            },
+            roots: projects
+                .into_iter()
+                .map(|(id, root)| (id, RootResolution::Found(root)))
+                .collect(),
+            notice: None,
+        },
+    )
+}
+
+/// 2 つのプロジェクトの Workspace と、起動の順に 1 つずつ使う偽の PTY(`count` 個)。
+struct ProjectFixture {
+    registry: SessionRegistry,
+    controls: Vec<Arc<Control>>,
+    snapshots: Arc<Mutex<Vec<AppSnapshot>>>,
+}
+
+impl ProjectFixture {
+    fn new(count: usize) -> Self {
+        let controls: Vec<Arc<Control>> = (0..count)
+            .map(|_| Control::new(OutputMode::Scripted))
+            .collect();
+        let snapshots = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&snapshots);
+        let registry = SessionRegistry::new(
+            two_projects(),
+            Arc::new(GridPty {
+                controls: controls.clone(),
+                next: AtomicUsize::new(0),
+            }),
+            Arc::new(|| ShellDefaults {
+                shell: PathBuf::from("/bin/zsh"),
+                locale: None,
+            }),
+            Arc::new(move |snapshot| lock(&seen).push(snapshot)),
+            test_config(),
+        );
+        Self {
+            registry,
+            controls,
+            snapshots,
+        }
+    }
+
+    /// `project` 番目(0 から)のプロジェクトのタブ。
+    fn tabs(&self, project: usize) -> Vec<TerminalId> {
+        self.registry.snapshot().projects[project]
+            .terminal_ids
+            .clone()
+    }
+
+    fn connect(&self, id: &TerminalId, sink: &Arc<CollectSink>) -> ConnectOutcome {
+        self.registry
+            .connect(id, 24, 80, Arc::clone(sink) as Arc<dyn OutputSink>)
+            .unwrap_or_else(|e| panic!("{id} に接続できなかった: {e}"))
+    }
+
+    fn has_terminal(&self, id: &TerminalId) -> bool {
+        self.registry
+            .snapshot()
+            .terminals
+            .iter()
+            .any(|t| &t.id == id)
+    }
+
+    /// 入力を書き、出力を流し、両方が届くことを確かめる。
+    fn assert_io(&self, id: &TerminalId, control: &Control, sink: &CollectSink) {
+        let input = format!("echo {id}\r");
+        self.registry
+            .write(id, input.as_bytes())
+            .unwrap_or_else(|e| panic!("{id} に書き込めなかった: {e}"));
+        assert!(lock(&control.written).ends_with(input.as_bytes()));
+        let before = sink.total();
+        let output = format!("out-{id}\r\n");
+        control.feed(output.as_bytes());
+        assert!(
+            sink.wait_total(before + output.len()),
+            "{id} の出力が届かなかった"
+        );
+        self.registry.ack(id, output.len() as u64).unwrap();
+    }
+}
+
+impl Drop for ProjectFixture {
+    fn drop(&mut self) {
+        self.registry.shutdown();
+    }
+}
+
+/// セッションの資源(送り先を持つ出力の状態、PTY の操作と出力)がすべて捨てられるまで待つ。
+/// 送り先を持つのはセッションと 2 本のスレッドだけなので、テストの持つ 1 つだけになれば、スレッドは抜けている。
+fn wait_released(sink: &Arc<CollectSink>, control: &Control) -> bool {
+    wait_until(|| {
+        Arc::strong_count(sink) == 1
+            && control.session_dropped.load(Ordering::SeqCst)
+            && control.output_dropped.load(Ordering::SeqCst)
+    })
+}
+
+#[test]
+fn タブを閉じるとそのセッションのスレッドが抜け一覧から消える() {
+    let f = ProjectFixture::new(2);
+    let a = f.tabs(0)[0].clone();
+    let sink = CollectSink::new();
+    f.connect(&a, &sink);
+    f.controls[0].feed(b"ready");
+    assert!(sink.wait_total(5));
+
+    f.registry.close_terminal(&a).expect("閉じられなかった");
+
+    assert!(!f.has_terminal(&a), "写しに残っている");
+    assert!(f.tabs(0).is_empty());
+    assert_eq!(f.registry.backlog(&a), None, "一覧に残っている");
+    assert!(
+        f.controls[0].killed.load(Ordering::SeqCst),
+        "シェルを終わらせなかった"
+    );
+    assert!(
+        wait_released(&sink, &f.controls[0]),
+        "スレッドが抜けないか、資源が残っている"
+    );
+    assert!(
+        lock(&f.snapshots)
+            .last()
+            .is_some_and(|s| s.terminals.iter().all(|t| t.id != a)),
+        "閉じたことを知らせなかった"
+    );
+    // 閉じたタブには接続できず、シェルも起動しない。
+    assert!(matches!(
+        f.registry
+            .connect(&a, 24, 80, CollectSink::new() as Arc<dyn OutputSink>),
+        Err(SessionError::Terminal(TerminalError::NotFound(_)))
+    ));
+    assert_eq!(f.controls[0].spawn_count(), 1);
+    assert_eq!(f.controls[1].spawn_count(), 0);
+}
+
+#[test]
+fn 起動していないタブも閉じられる() {
+    let f = ProjectFixture::new(1);
+    let a = f.tabs(0)[0].clone();
+
+    f.registry.close_terminal(&a).expect("閉じられなかった");
+
+    assert!(!f.has_terminal(&a));
+    assert!(matches!(
+        f.registry.close_terminal(&a),
+        Err(SessionError::Terminal(TerminalError::NotFound(_)))
+    ));
+    assert_eq!(f.controls[0].spawn_count(), 0);
+}
+
+#[test]
+fn シェルが終わるとタブが閉じセッションが解放される() {
+    let f = ProjectFixture::new(2);
+    let a = f.tabs(0)[0].clone();
+    let b = f.tabs(1)[0].clone();
+    let (sink_a, sink_b) = (CollectSink::new(), CollectSink::new());
+    f.connect(&a, &sink_a);
+    f.connect(&b, &sink_b);
+
+    f.controls[0].set_exit(0);
+    f.controls[0].close_output();
+
+    assert!(wait_until(|| !f.has_terminal(&a)), "タブが閉じなかった");
+    assert!(f.tabs(0).is_empty());
+    assert_eq!(f.registry.backlog(&a), None, "一覧に残っている");
+    assert!(
+        wait_released(&sink_a, &f.controls[0]),
+        "スレッドが抜けないか、資源が残っている"
+    );
+    assert!(
+        wait_until(|| lock(&f.snapshots)
+            .last()
+            .is_some_and(|s| s.terminals.iter().all(|t| t.id != a))),
+        "閉じたことを知らせなかった"
+    );
+    // もう片方のプロジェクトは巻き込まない(NFR-006)。
+    assert_eq!(
+        f.registry.snapshot().terminals[0].status,
+        TerminalStatus::Running
+    );
+    f.assert_io(&b, &f.controls[1], &sink_b);
+}
+
+#[test]
+fn 書き込みが止まったままのタブを閉じても他のコマンドが止まらず_書き込みが戻ったら終わる() {
+    let f = ProjectFixture::new(3);
+    let a = f.tabs(0)[0].clone();
+    let b = f.tabs(1)[0].clone();
+    let (sink_a, sink_b) = (CollectSink::new(), CollectSink::new());
+    f.connect(&a, &sink_a);
+    f.connect(&b, &sink_b);
+    f.controls[0].set_hold_writes(true);
+    let writer = {
+        let registry = f.registry.clone();
+        let id = a.clone();
+        thread::spawn(move || registry.write(&id, b"paste"))
+    };
+    assert!(
+        wait_until(|| f.controls[0].held.load(Ordering::SeqCst) == 1),
+        "書き込みが止まらなかった"
+    );
+
+    let closed = {
+        let registry = f.registry.clone();
+        let id = a.clone();
+        within_wait(move || registry.close_terminal(&id))
+    };
+    assert!(
+        matches!(closed, Some(Ok(()))),
+        "閉じるのが戻らないか失敗した: {closed:?}"
+    );
+    assert!(!f.has_terminal(&a));
+    assert!(
+        !f.controls[0].killed.load(Ordering::SeqCst),
+        "書き込み中の PTY を終わらせた"
+    );
+
+    // ほかのコマンドは止まらない。
+    let reattach = {
+        let registry = f.registry.clone();
+        let id = b.clone();
+        let sink = Arc::clone(&sink_b);
+        within_wait(move || registry.connect(&id, 30, 90, sink as Arc<dyn OutputSink>))
+    };
+    assert!(matches!(reattach, Some(Ok(_))), "{reattach:?}");
+    f.assert_io(&b, &f.controls[1], &sink_b);
+    let opened = {
+        let registry = f.registry.clone();
+        within_wait(move || registry.new_terminal())
+    };
+    assert!(matches!(opened, Some(Ok(_))), "{opened:?}");
+    let running = {
+        let registry = f.registry.clone();
+        within_wait(move || registry.running_terminals())
+    };
+    assert!(running.is_some(), "動作中の一覧が止まった");
+
+    // 書き込みが戻ったら終わらせる。
+    f.controls[0].set_hold_writes(false);
+    let _ = writer.join().expect("書き込みのスレッドが panic した");
+    assert!(
+        wait_until(|| f.controls[0].killed.load(Ordering::SeqCst)),
+        "書き込みが戻ってもシェルを終わらせなかった"
+    );
+    assert!(
+        wait_released(&sink_a, &f.controls[0]),
+        "スレッドが抜けないか、資源が残っている"
+    );
+}
+
+#[test]
+fn 終了の処理のあとの接続はシェルを起動しない() {
+    let f = ProjectFixture::new(2);
+    let a = f.tabs(0)[0].clone();
+
+    f.registry.shutdown();
+    let result = f
+        .registry
+        .connect(&a, 24, 80, CollectSink::new() as Arc<dyn OutputSink>);
+
+    assert!(
+        matches!(result, Err(SessionError::ShuttingDown)),
+        "{result:?}"
+    );
+    assert!(result.unwrap_err().to_string().contains("終了"));
+    assert_eq!(f.controls[0].spawn_count(), 0, "シェルを起動した");
+    assert_eq!(f.registry.backlog(&a), None);
+}
+
+#[test]
+fn 再接続で寸法を反映できなかったら応答でそう返す() {
+    let f = ProjectFixture::new(1);
+    let a = f.tabs(0)[0].clone();
+    let sink = CollectSink::new();
+
+    assert_eq!(
+        f.connect(&a, &sink),
+        ConnectOutcome { size_applied: true },
+        "起動では寸法を反映する"
+    );
+    let reattached = f
+        .registry
+        .connect(&a, 30, 100, Arc::clone(&sink) as Arc<dyn OutputSink>)
+        .unwrap();
+    assert_eq!(reattached, ConnectOutcome { size_applied: true });
+    assert_eq!(
+        lock(&f.controls[0].sizes).last(),
+        Some(&PtySize {
+            rows: 30,
+            cols: 100
+        })
+    );
+
+    f.controls[0].set_hold_writes(true);
+    let writer = {
+        let registry = f.registry.clone();
+        let id = a.clone();
+        thread::spawn(move || registry.write(&id, b"x"))
+    };
+    assert!(wait_until(|| f.controls[0].held.load(Ordering::SeqCst) == 1));
+    let blocked = {
+        let registry = f.registry.clone();
+        let id = a.clone();
+        let sink = Arc::clone(&sink);
+        within_wait(move || registry.connect(&id, 40, 120, sink as Arc<dyn OutputSink>))
+    };
+    assert_eq!(
+        blocked.map(|r| r.map_err(|e| e.to_string())),
+        Some(Ok(ConnectOutcome {
+            size_applied: false
+        }))
+    );
+    f.controls[0].set_hold_writes(false);
+    writer.join().unwrap().unwrap();
+    assert_eq!(
+        lock(&f.controls[0].sizes).last(),
+        Some(&PtySize {
+            rows: 30,
+            cols: 100
+        }),
+        "反映していないのに寸法が変わった"
+    );
+}
+
+#[test]
+fn バイト列の入力がそのまま書かれる() {
+    let f = ProjectFixture::new(1);
+    let a = f.tabs(0)[0].clone();
+    f.connect(&a, &CollectSink::new());
+    // xterm.js の `onBinary`(古い形式のマウス報告)は UTF-8 にならないバイトを含む。
+    let bytes = [0x1b, b'[', b'M', b' ', 0xff, 0x80, 0x00];
+
+    f.registry.write(&a, &bytes).unwrap();
+
+    assert_eq!(lock(&f.controls[0].written).as_slice(), &bytes);
+}
+
+#[test]
+fn 動作中の一覧は前面がシェル以外のものだけ() {
+    let f = ProjectFixture::new(3);
+    let a1 = f.tabs(0)[0].clone();
+    let a2 = f.registry.new_terminal().unwrap();
+    let a3 = f.registry.new_terminal().unwrap(); // 起動しない
+    let b = f.tabs(1)[0].clone();
+    *lock(&f.controls[0].foreground) = Foreground::Shell;
+    *lock(&f.controls[1].foreground) = Foreground::Other;
+    *lock(&f.controls[2].foreground) = Foreground::Unknown;
+    f.connect(&a1, &CollectSink::new());
+    f.connect(&a2, &CollectSink::new());
+    f.connect(&b, &CollectSink::new());
+
+    let running = f.registry.running_terminals();
+
+    assert_eq!(
+        running
+            .iter()
+            .map(|t| t.terminal_id.clone())
+            .collect::<Vec<_>>(),
+        vec![a2.clone()],
+        "a3 は起動していない: {a3}"
+    );
+    assert_eq!(running[0].project_id, Some(project_id(1)));
+    assert_eq!(running[0].project_name.as_deref(), Some("alpha"));
+    assert_eq!(running[0].label, "ターミナル 2");
+
+    *lock(&f.controls[2].foreground) = Foreground::Other;
+    let ids: Vec<TerminalId> = f
+        .registry
+        .running_terminals()
+        .into_iter()
+        .map(|t| t.terminal_id)
+        .collect();
+    assert_eq!(ids, vec![a2, b], "プロジェクトの並び順・タブの順");
+}
+
+#[test]
+fn _0_枚のプロジェクトに新しいタブを開ける() {
+    let f = ProjectFixture::new(1);
+    let a = f.tabs(0)[0].clone();
+    f.registry.close_terminal(&a).unwrap();
+    assert!(f.tabs(0).is_empty());
+
+    let opened = f.registry.new_terminal().expect("開けなかった");
+
+    assert_eq!(f.tabs(0), vec![opened.clone()]);
+    assert_eq!(
+        f.registry.snapshot().projects[0].active_terminal_id,
+        Some(opened.clone())
+    );
+    assert!(
+        lock(&f.snapshots)
+            .last()
+            .is_some_and(|s| s.terminals.iter().any(|t| t.id == opened)),
+        "開いたことを知らせなかった"
+    );
+    assert_eq!(f.controls[0].spawn_count(), 0, "開いただけで起動した");
+    f.connect(&opened, &CollectSink::new());
+    assert_eq!(lock(&f.controls[0].spawned)[0].0.cwd(), Path::new(ROOT_A));
+}
+
+#[test]
+fn プロジェクトを選んでいなければ新しいタブは開けない() {
+    let f = Fixture::new(OutputMode::Scripted);
+
+    let result = f.registry.new_terminal();
+
+    assert!(
+        matches!(
+            result,
+            Err(SessionError::Workspace(WorkspaceError::NoProjectSelected))
+        ),
+        "{result:?}"
+    );
+    assert_eq!(f.registry.snapshot().terminals.len(), 9);
+}
+
+#[test]
+fn タブの選択と前後の切替と表示中のタブを閉じる操作() {
+    let f = ProjectFixture::new(1);
+    let a1 = f.tabs(0)[0].clone();
+    let a2 = f.registry.new_terminal().unwrap();
+    let active = || f.registry.snapshot().projects[0].active_terminal_id.clone();
+    assert_eq!(active(), Some(a2.clone()));
+
+    f.registry.select_terminal(&a1).unwrap();
+    assert_eq!(active(), Some(a1.clone()));
+    assert!(
+        lock(&f.snapshots)
+            .last()
+            .is_some_and(|s| s.projects[0].active_terminal_id.as_ref() == Some(&a1)),
+        "選択を知らせなかった"
+    );
+    assert!(matches!(
+        f.registry.select_terminal(&TerminalId::new("no-such")),
+        Err(SessionError::Terminal(TerminalError::NotFound(_)))
+    ));
+
+    assert_eq!(f.registry.select_next_terminal(), Some(a2.clone()));
+    assert_eq!(
+        f.registry.select_next_terminal(),
+        Some(a1.clone()),
+        "末尾の次は先頭"
+    );
+    assert_eq!(f.registry.select_previous_terminal(), Some(a2.clone()));
+
+    // 表示中(a2)を閉じると、左隣の a1 が表示中になる。
+    assert_eq!(f.registry.close_active_terminal(), Some(a2.clone()));
+    assert!(!f.has_terminal(&a2));
+    assert_eq!(active(), Some(a1.clone()));
+    assert_eq!(f.registry.close_active_terminal(), Some(a1));
+    assert_eq!(
+        f.registry.close_active_terminal(),
+        None,
+        "0 枚なら何もしない"
+    );
+    assert_eq!(f.registry.select_next_terminal(), None);
 }

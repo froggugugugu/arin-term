@@ -12,23 +12,31 @@
 //! スレッドとロックだけを扱う。検証用の記録(`verify_log`。開発ビルドだけ)を渡したときだけ、読み取りスレッドが
 //! OSC 52 を走査し、流量制御の状態と処理済みの通知を集計する(T23)。ロックの順序は「接続の直列化 → Workspace → セッションの一覧」で、
 //! PTY の操作(起動・書き込み・寸法・終了)と送り先への送信のあいだは Workspace と一覧のロックを持たない。
+//!
+//! セッションの後片付け(T33b): タブを閉じたとき(`close_terminal`)とシェルが終わってタブが閉じたとき
+//! (`ExitAction::Closed`)に、セッションを一覧から外し、出力を閉じ(読み取りとまとめのスレッドが抜ける)、シェルを終わらせる。
+//! 書き込みが止まっていて PTY のロックが取れなければ印(`PtyCell::closing`)だけを付け、ロックを持っていた側が
+//! 手放した時点で終わらせる。終了の処理(`shutdown`)が始まったあとの接続はシェルを起動しない。
 
 use std::collections::HashMap;
 use std::fmt;
 use std::io::{ErrorKind, Read};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError, TryLockError};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use arin_core::persistence::codec::PersistedState;
-use arin_core::ports::{PtyError, PtyPort, PtySession, SpawnedPty};
+use arin_core::ports::{Foreground, PtyError, PtyPort, PtySession, SpawnedPty};
 use arin_core::terminal::{
-    FlowControl, OUTPUT_BATCH_MAX_BYTES, OUTPUT_BATCH_WINDOW_MS, OUTPUT_HIGH_WATER,
+    ExitAction, FlowControl, OUTPUT_BATCH_MAX_BYTES, OUTPUT_BATCH_WINDOW_MS, OUTPUT_HIGH_WATER,
     OUTPUT_LOW_WATER, OscScanner, OutputBatch, TerminalError, TerminalId, validate_size,
 };
-use arin_core::workspace::{AppSnapshot, ConnectPlan, Workspace};
+use arin_core::workspace::{
+    AppSnapshot, ConnectOutcome, ConnectPlan, RunningTerminal, Workspace, WorkspaceError,
+};
 
 use crate::verify_log::{FlowRecorder, VerifyConfig, VerifyRecord};
 
@@ -102,6 +110,10 @@ pub struct Backlog {
 pub enum SessionError {
     /// 状態の規則で受け付けられない(ID が無い、寸法が 0、起動前、終了後、起動の仕様の誤り)。
     Terminal(TerminalError),
+    /// タブを開けない(プロジェクトを選んでいない、ルートが見つからない)。
+    Workspace(WorkspaceError),
+    /// アプリの終了の処理が始まっているので、シェルを起動しない。
+    ShuttingDown,
     /// PTY の操作に失敗した。
     Pty(PtyError),
     /// スレッドを起動できなかった。
@@ -112,6 +124,8 @@ impl fmt::Display for SessionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Terminal(e) => e.fmt(f),
+            Self::Workspace(e) => e.fmt(f),
+            Self::ShuttingDown => f.write_str("アプリを終了しているので、ターミナルを起動しない"),
             Self::Pty(e) => e.fmt(f),
             Self::Thread(e) => write!(f, "ターミナルのスレッドを起動できなかった: {e}"),
         }
@@ -123,6 +137,12 @@ impl std::error::Error for SessionError {}
 impl From<TerminalError> for SessionError {
     fn from(e: TerminalError) -> Self {
         Self::Terminal(e)
+    }
+}
+
+impl From<WorkspaceError> for SessionError {
+    fn from(e: WorkspaceError) -> Self {
+        Self::Workspace(e)
     }
 }
 
@@ -150,14 +170,29 @@ struct Inner {
     connect_serial: Mutex<()>,
     /// 検証用の記録。`None` なら走査も集計もしない(リリースビルド)。
     verify: Option<VerifyConfig>,
+    /// 終了の処理が始まった。セッションの一覧のロックを持って読み書きする(接続の登録と終了の処理の取りこぼしを防ぐ)。
+    shutting_down: AtomicBool,
 }
 
 /// 起動した PTY 1 組。
 struct Session {
-    /// 入力・寸法・終了の操作。終了の処理で取り出して `None` にする。
-    pty: Arc<Mutex<Option<Box<dyn PtySession>>>>,
+    pty: Arc<PtyCell>,
     output: Arc<OutputState>,
 }
+
+/// 入力・寸法・終了の操作と、終わらせる印。セッションとまとめのスレッドが共有する。
+///
+/// PTY の操作はすべて `with`・`try_with` を通す。どちらもロックを手放したあとに印を確かめ、付いていれば終わらせるので、
+/// 書き込みが止まっているあいだに閉じたタブも、書き込みが戻った時点で終わる。
+struct PtyCell {
+    /// 入力・寸法・終了の操作。終わらせるときに取り出して `None` にする。
+    pty: Mutex<Option<Box<dyn PtySession>>>,
+    /// 一覧から外した(タブを閉じた・アプリの終了)。以後の操作はせず、ロックが取れた時点で終わらせる。
+    closing: AtomicBool,
+}
+
+/// PTY のロックをほかの操作(止まった書き込みなど)が持っている。
+struct Busy;
 
 /// 読み取りスレッドとまとめのスレッドが共有する、流量制御と送り先。
 struct OutputState {
@@ -215,6 +250,7 @@ impl SessionRegistry {
                 sessions: Mutex::new(HashMap::new()),
                 connect_serial: Mutex::new(()),
                 verify,
+                shutting_down: AtomicBool::new(false),
             }),
         }
     }
@@ -233,21 +269,25 @@ impl SessionRegistry {
 
     /// 出力の送り先をつなぐ。最初の接続(または起動の失敗のあと)なら `rows` × `cols` の PTY でシェルを起動する。
     /// 起動済みなら送り先を付け替え、未処理の量を捨てて、寸法を伝える(画面の再読み込み)。
+    /// 応答の `size_applied` は寸法を PTY に反映したか(再接続で PTY が塞がっていたら `false`。画面が送り直す)。
     ///
     /// 待つことがある(シェルの取得、PTY の起動)。メインスレッドから呼ばない。
     ///
     /// # Errors
     ///
-    /// ID が無い、寸法が 0、シェルが終わっている、起動できないとき。
+    /// ID が無い、寸法が 0、シェルが終わっている、起動できない、終了の処理が始まっているとき。
     pub fn connect(
         &self,
         id: &TerminalId,
         rows: u16,
         cols: u16,
         sink: Arc<dyn OutputSink>,
-    ) -> Result<(), SessionError> {
+    ) -> Result<ConnectOutcome, SessionError> {
         let size = validate_size(rows, cols)?;
         let inner = &self.inner;
+        if self.is_shutting_down() {
+            return Err(SessionError::ShuttingDown);
+        }
         let _serial = lock(&inner.connect_serial);
         let defaults = inner.defaults.get_or_init(|| (inner.probe)());
 
@@ -271,19 +311,20 @@ impl SessionRegistry {
                 session.output.replace_sink(sink);
                 // 接続の直列化のロックを持ったまま PTY のロックを待たない。書き込みが止まったまま
                 // (シェルが入力を読まない)PTY のロックを持っていると、ほかの全ターミナルの接続まで止まるため。
-                // 取れなければ寸法の変更は諦め、画面が次に送る `resize_terminal` に任せる。
-                let mut pty = match session.pty.try_lock() {
-                    Ok(pty) => pty,
-                    Err(TryLockError::Poisoned(p)) => p.into_inner(),
-                    Err(TryLockError::WouldBlock) => return Ok(()),
+                // 取れなければ寸法の変更は諦め、反映していないと応答で返す(画面が `resize_terminal` で送り直す)。
+                let size_applied = match session.pty.try_with(|pty| pty.resize(size)) {
+                    Ok(Some(result)) => {
+                        result?;
+                        true
+                    }
+                    Ok(None) | Err(Busy) => false,
                 };
-                if let Some(pty) = pty.as_mut() {
-                    pty.resize(size)?;
-                }
-                Ok(())
+                Ok(ConnectOutcome { size_applied })
             }
             ConnectPlan::Spawn(spec) => match inner.pty.spawn(&spec, size) {
-                Ok(spawned) => self.start(id, spawned, sink),
+                Ok(spawned) => self
+                    .start(id, spawned, sink)
+                    .map(|()| ConnectOutcome { size_applied: true }),
                 Err(e) => {
                     let _ = lock(&inner.workspace).mark_failed(id, e.to_string());
                     self.notify();
@@ -317,11 +358,27 @@ impl SessionRegistry {
             verify: inner.verify.clone(),
         });
         let session = Arc::new(Session {
-            pty: Arc::new(Mutex::new(Some(session))),
+            pty: Arc::new(PtyCell {
+                pty: Mutex::new(Some(session)),
+                closing: AtomicBool::new(false),
+            }),
             output: Arc::clone(&state),
         });
-        lock(&inner.sessions).insert(id.clone(), Arc::clone(&session));
-        lock(&inner.workspace).mark_running(id)?;
+        {
+            // 終了の処理は一覧のロックを持って印を付けてから全部を取り出すので、ここで印が無ければ必ず後片付けに載る。
+            let mut sessions = lock(&inner.sessions);
+            if self.is_shutting_down() {
+                drop(sessions);
+                end_session(&session);
+                return Err(SessionError::ShuttingDown);
+            }
+            sessions.insert(id.clone(), Arc::clone(&session));
+        }
+        if let Err(e) = lock(&inner.workspace).mark_running(id) {
+            // 起動しているあいだにタブが閉じられた。
+            self.close(id);
+            return Err(e.into());
+        }
         self.notify();
 
         let (tx, rx) = mpsc::channel();
@@ -370,11 +427,10 @@ impl SessionRegistry {
         let session = self
             .session(id)
             .ok_or_else(|| TerminalError::Exited(id.clone()))?;
-        let mut pty = lock(&session.pty);
-        let pty = pty
-            .as_mut()
-            .ok_or_else(|| TerminalError::Exited(id.clone()))?;
-        pty.write(data)?;
+        session
+            .pty
+            .with(|pty| pty.write(data))
+            .ok_or_else(|| TerminalError::Exited(id.clone()))??;
         Ok(())
     }
 
@@ -405,10 +461,97 @@ impl SessionRegistry {
         let Some(session) = self.session(id) else {
             return Ok(());
         };
-        if let Some(pty) = lock(&session.pty).as_mut() {
-            pty.resize(size)?;
+        if let Some(result) = session.pty.with(|pty| pty.resize(size)) {
+            result?;
         }
         Ok(())
+    }
+
+    /// 選択中のプロジェクトの末尾に新しいタブを開いて表示中にし、その ID を返す(FR-039・FR-044。⌘T のメニューも呼ぶ)。
+    /// シェルは画面が接続したときに起動する。cwd はプロジェクトのルート。0 枚のプロジェクトにも開ける。
+    ///
+    /// # Errors
+    ///
+    /// プロジェクトを選んでいないとき、ルートが見つからないとき。
+    pub fn new_terminal(&self) -> Result<TerminalId, SessionError> {
+        let id = lock(&self.inner.workspace).open_terminal_in_selected()?;
+        self.notify();
+        Ok(id)
+    }
+
+    /// タブを閉じ、そのセッションを終わらせる(FR-044)。動作中のプロセスがあっても確認しない(計画書 M2 の【仮定】14)。
+    /// 表示中だったなら右隣(無ければ左)が表示中になる。
+    ///
+    /// 書き込みが止まっていて PTY のロックが取れなくても待たない(印を付け、書き込みが戻った時点で終わらせる)。
+    /// シェルを終わらせるのに最大でおよそ 200ms 待つことがある。メインスレッドから呼ばない。
+    ///
+    /// # Errors
+    ///
+    /// その ID のタブが無いとき。
+    pub fn close_terminal(&self, id: &TerminalId) -> Result<(), SessionError> {
+        lock(&self.inner.workspace).close_terminal(id)?;
+        let session = self.detach(id);
+        self.notify();
+        if let Some(session) = session {
+            end_session(&session);
+        }
+        Ok(())
+    }
+
+    /// 選択中のプロジェクト(無ければ持ち主の無いタブ)の表示中のタブを閉じ、閉じたタブを返す(⌘W のメニュー)。
+    /// 0 枚なら何もせず `None`。待つことは `close_terminal` と同じ。
+    pub fn close_active_terminal(&self) -> Option<TerminalId> {
+        let id = lock(&self.inner.workspace).active_terminal()?;
+        self.close_terminal(&id).ok().map(|()| id)
+    }
+
+    /// そのタブを表示中にする(FR-044)。セッションには触れない(FR-042)。
+    ///
+    /// # Errors
+    ///
+    /// その ID のタブが無いとき。
+    pub fn select_terminal(&self, id: &TerminalId) -> Result<(), SessionError> {
+        lock(&self.inner.workspace).activate_terminal(id)?;
+        self.notify();
+        Ok(())
+    }
+
+    /// 選択中のプロジェクトの次のタブを表示中にし、その ID を返す(⌘⇧] のメニュー)。末尾の次は先頭。0 枚なら `None`。
+    pub fn select_next_terminal(&self) -> Option<TerminalId> {
+        let id = lock(&self.inner.workspace).select_next_terminal()?;
+        self.notify();
+        Some(id)
+    }
+
+    /// 選択中のプロジェクトの前のタブを表示中にし、その ID を返す(⌘⇧[ のメニュー)。先頭の前は末尾。0 枚なら `None`。
+    pub fn select_previous_terminal(&self) -> Option<TerminalId> {
+        let id = lock(&self.inner.workspace).select_previous_terminal()?;
+        self.notify();
+        Some(id)
+    }
+
+    /// 動作中のターミナル(前面がシェル以外。`Foreground::Other`)を、プロジェクト名とタブ名つきで返す
+    /// (FR-003・FR-063 の確認の材料。プロジェクトの削除=T33c とアプリの終了=T33e が使う)。
+    ///
+    /// 待たない。前面を調べられないもの(`Foreground::Unknown`)と、書き込みが止まっていて PTY のロックが取れないものは
+    /// 動作中に数えない。順はプロジェクトの並び順・タブの順。
+    #[must_use]
+    pub fn running_terminals(&self) -> Vec<RunningTerminal> {
+        let sessions: Vec<(TerminalId, Arc<Session>)> = lock(&self.inner.sessions)
+            .iter()
+            .map(|(id, session)| (id.clone(), Arc::clone(session)))
+            .collect();
+        let running: Vec<TerminalId> = sessions
+            .into_iter()
+            .filter(|(_, session)| {
+                matches!(
+                    session.pty.try_with(|pty| pty.foreground()),
+                    Ok(Some(Foreground::Other))
+                )
+            })
+            .map(|(id, _)| id)
+            .collect();
+        lock(&self.inner.workspace).running_terminals(&running)
     }
 
     /// 未処理の量と、読み取りを止めているか。セッションが無ければ `None`。
@@ -422,31 +565,35 @@ impl SessionRegistry {
         })
     }
 
-    /// アプリの終了時に呼ぶ。全セッションのシェルを終わらせ、読み取りスレッドを抜けさせる。2 回目以降は何もしない。
+    /// アプリの終了時に呼ぶ。全セッションのシェルを終わらせ、読み取りスレッドを抜けさせる。以後の接続はシェルを起動しない。
+    /// 2 回目以降は何もしない。
+    ///
+    /// 書き込みが止まっているセッションは待たない(アプリの終了で PTY の親側が閉じ、シェルには SIGHUP が届く)。
     pub fn shutdown(&self) {
-        let ids: Vec<TerminalId> = lock(&self.inner.sessions).keys().cloned().collect();
-        for id in ids {
-            self.close(&id);
+        let drained: Vec<Arc<Session>> = {
+            let mut sessions = lock(&self.inner.sessions);
+            self.inner.shutting_down.store(true, Ordering::SeqCst);
+            sessions.drain().map(|(_, session)| session).collect()
+        };
+        for session in &drained {
+            end_session(session);
         }
     }
 
-    /// 1 つのセッションを一覧から外して終わらせる。PTY を捨てる(最大でおよそ 200ms 待つ)のは一覧のロックの外。
+    fn is_shutting_down(&self) -> bool {
+        self.inner.shutting_down.load(Ordering::SeqCst)
+    }
+
+    /// 1 つのセッションを一覧から外して終わらせる。
     fn close(&self, id: &TerminalId) {
-        let Some(session) = lock(&self.inner.sessions).remove(id) else {
-            return;
-        };
-        session.output.close();
-        // 書き込みが止まったまま PTY のロックを持っていると待ち続けてしまうので、取れなければ諦める。
-        // その場合もアプリの終了で PTY の親側が閉じ、シェルには SIGHUP が届く。
-        let taken = match session.pty.try_lock() {
-            Ok(mut pty) => pty.take(),
-            Err(TryLockError::Poisoned(p)) => p.into_inner().take(),
-            Err(TryLockError::WouldBlock) => None,
-        };
-        if let Some(mut pty) = taken {
-            let _ = pty.kill();
-            drop(pty);
+        if let Some(session) = self.detach(id) {
+            end_session(&session);
         }
+    }
+
+    /// セッションを一覧から外す(終わらせるのは呼び出し側。一覧のロックの外で行う)。
+    fn detach(&self, id: &TerminalId) -> Option<Arc<Session>> {
+        lock(&self.inner.sessions).remove(id)
     }
 
     fn session(&self, id: &TerminalId) -> Option<Arc<Session>> {
@@ -457,6 +604,69 @@ impl SessionRegistry {
     fn notify(&self) {
         let snapshot = self.snapshot();
         (self.inner.listener)(snapshot);
+    }
+}
+
+/// 一覧から外したセッションを終わらせる。出力を閉じ(読み取りとまとめのスレッドが抜ける)、印を付けてシェルを終わらせる。
+/// PTY のロックが取れなければ、持っていた側が手放した時点で終わらせる(`PtyCell::finish_if_closing`)。
+/// シェルを終わらせるのに最大でおよそ 200ms 待つことがある。
+fn end_session(session: &Session) {
+    session.output.close();
+    session.pty.closing.store(true, Ordering::SeqCst);
+    session.pty.finish_if_closing();
+}
+
+impl PtyCell {
+    /// ロックを取って `f` を行う(書き込みが止まっていれば待つ)。終わらせた・終わらせる印が付いていれば何もせず `None`。
+    fn with<T>(&self, f: impl FnOnce(&mut dyn PtySession) -> T) -> Option<T> {
+        let result = {
+            let mut pty = lock(&self.pty);
+            self.run_open(&mut pty, f)
+        };
+        self.finish_if_closing();
+        result
+    }
+
+    /// 待たずにロックを取って `f` を行う。ほかが持っていれば `Err(Busy)`。印が付いていれば `Ok(None)`。
+    fn try_with<T>(&self, f: impl FnOnce(&mut dyn PtySession) -> T) -> Result<Option<T>, Busy> {
+        let result = {
+            let mut pty = match self.pty.try_lock() {
+                Ok(pty) => pty,
+                Err(TryLockError::Poisoned(p)) => p.into_inner(),
+                Err(TryLockError::WouldBlock) => return Err(Busy),
+            };
+            self.run_open(&mut pty, f)
+        };
+        self.finish_if_closing();
+        Ok(result)
+    }
+
+    fn run_open<T>(
+        &self,
+        pty: &mut Option<Box<dyn PtySession>>,
+        f: impl FnOnce(&mut dyn PtySession) -> T,
+    ) -> Option<T> {
+        if self.closing.load(Ordering::SeqCst) {
+            return None;
+        }
+        pty.as_mut().map(|pty| f(pty.as_mut()))
+    }
+
+    /// 印が付いていて、ロックが取れれば、PTY を取り出して終わらせる。取れなければ、持っている側が手放したあとに
+    /// ここを呼ぶ(印はロックを試す前に付け、手放した側はロックの外で印を見るので、取りこぼさない)。
+    fn finish_if_closing(&self) {
+        if !self.closing.load(Ordering::SeqCst) {
+            return;
+        }
+        let taken = match self.pty.try_lock() {
+            Ok(mut pty) => pty.take(),
+            Err(TryLockError::Poisoned(p)) => p.into_inner().take(),
+            Err(TryLockError::WouldBlock) => None,
+        };
+        if let Some(mut pty) = taken {
+            let _ = pty.kill();
+            drop(pty);
+        }
     }
 }
 
@@ -536,12 +746,18 @@ impl OutputState {
         lock(&self.state).closed
     }
 
-    /// 送り先へ送る。送っているあいだはロックを持たない。
+    /// 送り先へ送る。送っているあいだはロックを持たない。閉じたあと(タブを閉じた)は送らない。
     fn send(&self, data: Vec<u8>) {
         if data.is_empty() {
             return;
         }
-        let sink = Arc::clone(&lock(&self.state).sink);
+        let sink = {
+            let state = lock(&self.state);
+            if state.closed {
+                return;
+            }
+            Arc::clone(&state.sink)
+        };
         // 画面が無いなどで送れなくても続ける。画面が通知を返さないので、やがて読み取りが止まる。
         let _ = sink.send(data);
     }
@@ -606,7 +822,7 @@ impl ClipboardCounter {
 struct Pump {
     id: TerminalId,
     registry: SessionRegistry,
-    pty: Arc<Mutex<Option<Box<dyn PtySession>>>>,
+    pty: Arc<PtyCell>,
     output: Arc<OutputState>,
     rx: Receiver<Vec<u8>>,
 }
@@ -620,6 +836,10 @@ impl Pump {
         let mut ended = false;
 
         while !ended {
+            if self.output.is_closed() {
+                // 一覧から外された(タブを閉じた・アプリの終了)。読み取りスレッドは送り先が無くなったことで抜ける。
+                return;
+            }
             match self.rx.recv_timeout(config.exit_poll) {
                 Ok(chunk) => {
                     batch.push(&chunk);
@@ -663,28 +883,25 @@ impl Pump {
     /// シェルが終わったかを確かめ、終わっていれば状態に反映して知らせる。見回りを終えてよければ `true`。
     ///
     /// 書き込みが PTY のロックを持っているときは待たずに次の機会に回す。
+    /// タブが閉じた(`ExitAction::Closed`。通常の起動)なら、セッションを一覧から外して資源を返す。
     fn check_exit(&self) -> bool {
-        let status = {
-            let mut pty = match self.pty.try_lock() {
-                Ok(pty) => pty,
-                Err(TryLockError::Poisoned(p)) => p.into_inner(),
-                Err(TryLockError::WouldBlock) => return false,
-            };
-            let Some(pty) = pty.as_mut() else {
-                // 終了の処理で取り出された。
-                return true;
-            };
-            match pty.try_wait() {
-                Ok(Some(exit)) => exit,
-                Ok(None) | Err(_) => return false,
-            }
+        let status = match self.pty.try_with(|pty| pty.try_wait()) {
+            Err(Busy) | Ok(Some(Ok(None) | Err(_))) => return false,
+            // 終わらせた(タブを閉じた・アプリの終了)。
+            Ok(None) => return true,
+            Ok(Some(Ok(Some(exit)))) => exit,
         };
-        // タブを閉じた(`ExitAction::Closed`)ときのセッションの後片付けは T33b で足す。それまではアプリの終了で終わらせる。
-        let changed = lock(&self.registry.inner.workspace)
-            .mark_exited(&self.id, Some(status))
-            .is_some();
-        if changed {
-            self.registry.notify();
+        let action = lock(&self.registry.inner.workspace).mark_exited(&self.id, Some(status));
+        match action {
+            Some(ExitAction::Closed(_)) => {
+                let session = self.registry.detach(&self.id);
+                self.registry.notify();
+                if let Some(session) = session {
+                    end_session(&session);
+                }
+            }
+            Some(ExitAction::Kept) => self.registry.notify(),
+            None => {}
         }
         true
     }

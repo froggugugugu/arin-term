@@ -17,7 +17,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use arin_core::launch_options::LaunchOptions;
-use arin_core::workspace::AppSnapshot;
+use arin_core::workspace::{AppSnapshot, ConnectOutcome};
 use ts_rs::{Config, TS, TypeVisitor};
 
 /// 画面とやり取りする型の入口。ここから参照している型は、たどって全部生成する。
@@ -29,6 +29,7 @@ fn collect_generated(cfg: &Config) -> BTreeMap<PathBuf, String> {
     };
     collector.visit::<AppSnapshot>();
     collector.visit::<LaunchOptions>();
+    collector.visit::<ConnectOutcome>();
     collector.files
 }
 

@@ -21,8 +21,16 @@ export interface RecordedCall {
   args: unknown;
 }
 
+/**
+ * 偽の応答の型。connect_terminal だけは M1 の形(null)も受ける(T33b で応答に寸法の反映を足した。
+ * src/terminal のテストを新しい形に合わせるのは T34b。null は「反映した」とみなしてよい)。
+ */
+type FakeResult<C extends CommandName> = C extends "connect_terminal"
+  ? CommandMap[C]["result"] | null
+  : CommandMap[C]["result"];
+
 export type FakeHandlers = {
-  [C in CommandName]: (args: CommandMap[C]["args"]) => CommandMap[C]["result"] | Promise<CommandMap[C]["result"]>;
+  [C in CommandName]: (args: CommandMap[C]["args"]) => FakeResult<C> | Promise<FakeResult<C>>;
 };
 
 /** 偽のチャネル 1 本。 */
@@ -83,10 +91,14 @@ export function createFakeIpc(handlers: Partial<FakeHandlers> = {}): FakeIpc {
     get_launch_options: () => ({ renderer: "dom", unicode: "unicode11", verifyGrid: false }),
     notify_app_ready: () => null,
     report_frontend_error: () => null,
-    connect_terminal: () => null,
+    connect_terminal: () => ({ sizeApplied: true }),
     write_terminal: () => null,
     ack_terminal_output: () => null,
     resize_terminal: () => null,
+    write_terminal_bytes: () => null,
+    new_terminal: () => "terminal-new",
+    close_terminal: () => null,
+    select_terminal: () => null,
     ...handlers,
   };
   const calls: RecordedCall[] = [];
@@ -95,7 +107,8 @@ export function createFakeIpc(handlers: Partial<FakeHandlers> = {}): FakeIpc {
 
   const invoke: InvokeFn = async (command, args) => {
     calls.push({ command, args });
-    return all[command](args);
+    // connect_terminal の null(M1 の形)は FakeResult のとおり通す。
+    return all[command](args) as CommandMap[typeof command]["result"];
   };
 
   const fake: FakeIpc = {

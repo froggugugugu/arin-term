@@ -134,6 +134,10 @@ pub fn builder_with_ports<R: Runtime>(
             commands::terminal::write_terminal,
             commands::terminal::ack_terminal_output,
             commands::terminal::resize_terminal,
+            commands::terminal::write_terminal_bytes,
+            commands::terminal::new_terminal,
+            commands::terminal::close_terminal,
+            commands::terminal::select_terminal,
         ])
 }
 

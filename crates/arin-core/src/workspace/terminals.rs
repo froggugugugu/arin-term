@@ -171,6 +171,27 @@ impl Workspace {
             .ok_or_else(|| ProjectError::NotFound(project.clone()).into())
     }
 
+    /// 選択中のプロジェクトに新しいタブを開く(`open_terminal` と同じ。⌘T と `new_terminal` のコマンド)。
+    ///
+    /// # Errors
+    ///
+    /// プロジェクトを選んでいないとき(`WorkspaceError::NoProjectSelected`)、ルートが見つからないとき
+    /// (`WorkspaceError::RootMissing`)。
+    pub fn open_terminal_in_selected(&mut self) -> Result<TerminalId, WorkspaceError> {
+        let project = self
+            .projects
+            .selected()
+            .cloned()
+            .ok_or(WorkspaceError::NoProjectSelected)?;
+        self.open_terminal(&project)
+    }
+
+    /// 選択中のプロジェクト(無ければ持ち主の無いタブ)の表示中のタブ(⌘W で閉じるもの)。0 枚なら `None`。
+    #[must_use]
+    pub fn active_terminal(&self) -> Option<TerminalId> {
+        self.tabs.active(self.projects.selected()).cloned()
+    }
+
     /// タブを閉じ、閉じたタブを返す(FR-044)。表示中だったなら右隣(無ければ左)が表示中になる。最後の 1 枚なら 0 枚。
     /// セッションの後片付けは呼び出し側。
     ///

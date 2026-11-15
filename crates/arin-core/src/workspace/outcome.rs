@@ -63,4 +63,16 @@ pub enum WorkspaceError {
     /// ルートが見つからないプロジェクトにはタブを開けない。
     #[error("プロジェクト {0} のフォルダが見つからないので、ターミナルを開けない")]
     RootMissing(ProjectId),
+    /// プロジェクトを選んでいないので、どこにタブを開くか決められない。
+    #[error("プロジェクトが選ばれていないので、ターミナルを開けない")]
+    NoProjectSelected,
+}
+
+/// 接続のコマンド(`connect_terminal`)の応答。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectOutcome {
+    /// 接続で渡した寸法を PTY に反映したか。起動したときと、再接続で寸法を変えられたときは `true`。
+    /// 再接続で PTY が書き込みで塞がっていて変えられなかったときは `false`(画面が寸法を 1 回送り直す)。
+    pub size_applied: bool,
 }

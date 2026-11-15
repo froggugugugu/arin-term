@@ -494,7 +494,7 @@ T29〜T35 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 不可
   - 先に書くテスト(模擬ランタイム、一時の状態フォルダ。`harness = false` の `[[test]]` を足す): `状態ファイルが無ければ空で始まる`、`壊れた状態ファイルは退避され空で始まり知らせが写しに載る`、`版が新しすぎるときも同じ`、`退避に失敗したらその回は書かない`、`変更から少したつと状態ファイルが書かれる`、`終了のときに書かれる`、`検証画面では読まず書かない`。`scripts/smoke.test.mjs` に、状態ファイルを用意する部分の単体テストを足す
   - 検証: `npm test && npm run lint && npm run app && npm run smoke`(ここからスモークがふたたびそのまま通る)。`node scripts/smoke.mjs --env=ARIN_VERIFY_GRID=1`
-- [ ] T33b — ターミナルの複数化(タブのコマンドとセッションの後片付け)(変更ファイル: src-tauri/src/sessions.rs, src-tauri/src/commands/terminal.rs, src-tauri/src/lib.rs, src-tauri/tests/sessions.rs, src-tauri/tests/terminal_commands.rs, src-tauri/tests/session_pty.rs, crates/arin-core/src/workspace/, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T31d, T33a)
+- [x] T33b — ターミナルの複数化(タブのコマンドとセッションの後片付け)(変更ファイル: src-tauri/src/sessions.rs, src-tauri/src/commands/terminal.rs, src-tauri/src/lib.rs, src-tauri/tests/sessions.rs, src-tauri/tests/terminal_commands.rs, src-tauri/tests/session_pty.rs, crates/arin-core/src/workspace/, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T31d, T33a)
   - 対応: FR-039、FR-042、FR-044、NFR-006、M1 の見送り(終了済みセッションの解放、終了と同時の接続、`onBinary` の受け口、再接続で寸法を諦めたとき、書き込みが止まったままのシェル)
   - コマンド: `new_terminal`(選択中のプロジェクトに。メニューからも同じ関数を呼ぶ)、`close_terminal`、`select_terminal`、`write_terminal_bytes`(xterm.js の `onBinary` のバイト列をそのまま書く)。`connect_terminal` の応答に「寸法を反映したか」を足す(反映できなかったら画面が寸法を 1 回送り直す。T34b)
   - 後片付け: タブを閉じたとき・シェルが終わってタブが閉じたときに、セッションを一覧から外し、読み取りとまとめのスレッドを抜けさせる。PTY のロックが取れない(書き込みが止まっている)ときは印を付け、書き込みが戻った時点で終わらせる。終了の処理が始まったあとの接続はシェルを起動しない

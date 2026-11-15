@@ -75,10 +75,14 @@ const DEFAULT_REPLIES: TauriMockConfig = {
   get_launch_options: { ok: { renderer: "dom", unicode: "unicode11", verifyGrid: false } },
   notify_app_ready: { ok: null },
   report_frontend_error: { ok: null },
-  connect_terminal: { ok: null },
+  connect_terminal: { ok: { sizeApplied: true } },
   write_terminal: { ok: null },
   ack_terminal_output: { ok: null },
   resize_terminal: { ok: null },
+  write_terminal_bytes: { ok: null },
+  new_terminal: { ok: "terminal-new" },
+  close_terminal: { ok: null },
+  select_terminal: { ok: null },
 };
 
 /** 画面のページの中で、偽の Rust 側が記録を置く場所(テストの側からだけ読む)。 */

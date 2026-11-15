@@ -568,3 +568,49 @@ fn _9_枚ともホームフォルダで起動を計画し_状態はそれぞれ�
     // 起動に失敗した 1 枚は、次の接続で起動し直せる。
     assert_eq!(spawn_plan(&mut ws, &ids[8]).cwd(), Path::new(HOME));
 }
+
+// ---------------------------------------------------------------------------
+// 選択中のプロジェクトへのタブの操作(T33b。⌘T・⌘W と `new_terminal` のコマンド)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn 選択中のプロジェクトに新しいタブを開け_表示中のタブが返る() {
+    let mut ws = workspace();
+    let first = only_id(&ws);
+    assert_eq!(ws.active_terminal(), Some(first.clone()));
+
+    let second = ws.open_terminal_in_selected().unwrap();
+
+    assert_eq!(
+        ws.snapshot().projects[0].terminal_ids,
+        vec![first, second.clone()]
+    );
+    assert_eq!(ws.active_terminal(), Some(second.clone()));
+    assert_eq!(spawn_plan(&mut ws, &second).cwd(), Path::new(ROOT));
+}
+
+#[test]
+fn _0_枚のプロジェクトにも選択中として新しいタブを開ける() {
+    let mut ws = workspace();
+    let first = only_id(&ws);
+    ws.close_terminal(&first).unwrap();
+    assert_eq!(ws.active_terminal(), None);
+
+    let opened = ws.open_terminal_in_selected().unwrap();
+
+    assert_eq!(ws.snapshot().projects[0].terminal_ids, vec![opened.clone()]);
+    assert_eq!(ws.active_terminal(), Some(opened));
+}
+
+#[test]
+fn プロジェクトを選んでいなければ新しいタブを開けない() {
+    let mut ws = grid();
+
+    let err = ws.open_terminal_in_selected().unwrap_err();
+
+    assert_eq!(err, WorkspaceError::NoProjectSelected);
+    assert!(err.to_string().contains("選ばれていない"), "{err}");
+    assert_eq!(ws.snapshot().terminals.len(), 9);
+    // 持ち主の無いタブ(検証画面)では、その表示中のタブ(最後に足した 9 枚目)を返す。
+    assert_eq!(ws.active_terminal(), Some(ids(&ws)[8].clone()));
+}

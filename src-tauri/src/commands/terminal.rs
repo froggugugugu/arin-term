@@ -1,4 +1,5 @@
-//! ターミナルのコマンド(設計書 §5.2 の「ターミナル」のうち M1 で使う 4 つ)。
+//! ターミナルのコマンド(設計書 §5.2 の「ターミナル」)。M1 の 4 つ(接続・入力・処理済みの通知・寸法)に、
+//! M2 のタブの操作(`new_terminal`・`close_terminal`・`select_terminal`)とバイト列の入力(`write_terminal_bytes`)を足した(T33b)。
 //!
 //! 引数を受けて `SessionRegistry` を呼ぶだけにする。規則は `arin-core`、スレッドは `sessions.rs` が持つ。
 //! 待ちうる操作(起動、書き込み、寸法の変更)は Tauri の待ってよいスレッドで行い、非同期の実行環境とメインスレッドを塞がない。
@@ -10,6 +11,7 @@
 use std::sync::Arc;
 
 use arin_core::terminal::TerminalId;
+use arin_core::workspace::ConnectOutcome;
 use tauri::State;
 use tauri::ipc::{Channel, InvokeResponseBody};
 
@@ -28,9 +30,10 @@ impl OutputSink for ChannelSink {
 }
 
 /// 待ってよいスレッドで `f` を行い、失敗を文言にする。
-async fn blocking<F>(f: F) -> Result<(), String>
+async fn blocking<T, F>(f: F) -> Result<T, String>
 where
-    F: FnOnce() -> Result<(), SessionError> + Send + 'static,
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, SessionError> + Send + 'static,
 {
     tauri::async_runtime::spawn_blocking(f)
         .await
@@ -43,6 +46,9 @@ where
 ///
 /// チャネルには、まとめた出力を生のバイト列で 1 回ずつ流す。画面は取り込みが済んだバイト数を
 /// `ack_terminal_output` で返す。
+///
+/// 応答の `sizeApplied` が偽なら、再接続で寸法を PTY に反映できなかった(書き込みで塞がっていた)。画面は寸法を
+/// `resize_terminal` で 1 回送り直す。終了の処理が始まったあとはシェルを起動せず失敗を返す。
 #[tauri::command]
 pub async fn connect_terminal(
     sessions: State<'_, SessionRegistry>,
@@ -50,7 +56,7 @@ pub async fn connect_terminal(
     rows: u16,
     cols: u16,
     on_output: Channel<InvokeResponseBody>,
-) -> Result<(), String> {
+) -> Result<ConnectOutcome, String> {
     let sessions = sessions.inner().clone();
     blocking(move || sessions.connect(&terminal_id, rows, cols, Arc::new(ChannelSink(on_output))))
         .await
@@ -65,6 +71,47 @@ pub async fn write_terminal(
 ) -> Result<(), String> {
     let sessions = sessions.inner().clone();
     blocking(move || sessions.write(&terminal_id, data.as_bytes())).await
+}
+
+/// バイト列をそのまま PTY に書き込む(xterm.js の `onBinary`。古い形式のマウス報告など、UTF-8 にならないもの)。
+/// 引数 `data` は 0〜255 の数の配列。順序は `write_terminal` と同じく、画面がターミナルごとに直列に送って保つ。
+#[tauri::command]
+pub async fn write_terminal_bytes(
+    sessions: State<'_, SessionRegistry>,
+    terminal_id: TerminalId,
+    data: Vec<u8>,
+) -> Result<(), String> {
+    let sessions = sessions.inner().clone();
+    blocking(move || sessions.write(&terminal_id, &data)).await
+}
+
+/// 選択中のプロジェクトの末尾に新しいタブを開いて表示中にし、その ID を返す(FR-039・FR-044)。
+/// シェルは画面が `connect_terminal` を呼んだときに起動する。変わった状態は写しのイベントでも届く。
+#[tauri::command]
+pub fn new_terminal(sessions: State<'_, SessionRegistry>) -> Result<TerminalId, String> {
+    sessions.new_terminal().map_err(|e| e.to_string())
+}
+
+/// タブを閉じ、そのシェルを終わらせる(FR-044)。動作中のプロセスがあっても確認しない。
+/// シェルを終わらせるのに待つことがあるので、待ってよいスレッドで行う。
+#[tauri::command]
+pub async fn close_terminal(
+    sessions: State<'_, SessionRegistry>,
+    terminal_id: TerminalId,
+) -> Result<(), String> {
+    let sessions = sessions.inner().clone();
+    blocking(move || sessions.close_terminal(&terminal_id)).await
+}
+
+/// そのタブを表示中にする(FR-044)。シェルには触れない(FR-042)。
+#[tauri::command]
+pub fn select_terminal(
+    sessions: State<'_, SessionRegistry>,
+    terminal_id: TerminalId,
+) -> Result<(), String> {
+    sessions
+        .select_terminal(&terminal_id)
+        .map_err(|e| e.to_string())
 }
 
 /// 画面が出力を `bytes` バイト取り込んだことを知らせる(流量制御)。
