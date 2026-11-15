@@ -42,7 +42,7 @@ export interface XtermEngineOptions {
   readonly reportError?: (message: string) => void;
   /**
    * ショートカットの表を返す関数。キーを押すたびに呼び、受け口がメニューの項目・「編集」の項目のキーを xterm.js に処理させない。
-   * 既定は src/logic/keys/defaultShortcuts.ts の見本(Rust から表を受け取るまでの仮の値。計画 T43a で `get_shortcuts` の表に替える)。
+   * 既定は src/logic/keys/defaultShortcuts.ts の見本。main.tsx は uiStore の表(起動時に `get_shortcuts` で受け取ったもの)を渡す。
    */
   readonly getShortcuts?: () => ShortcutTable;
 }

@@ -941,7 +941,7 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 28a(逐次。T42e と T41a・T41b の完了後)
 
-- [ ] T43a — 画面のツリーのストアと操作(変更ファイル: src/state/treeStore.ts, src/state/treeStore.test.ts, src/state/actions.ts, src/state/actions.test.ts, src/state/uiStore.ts, src/state/uiStore.test.ts, src/state/selectors.ts, src/state/startApp.ts, src/state/startApp.test.ts, src/test/fakeIpc.ts, src/main.tsx | 依存: T41a, T41b, T42e)
+- [x] T43a — 画面のツリーのストアと操作(変更ファイル: src/state/treeStore.ts, src/state/treeStore.test.ts, src/state/actions.ts, src/state/actions.test.ts, src/state/uiStore.ts, src/state/uiStore.test.ts, src/state/selectors.ts, src/state/startApp.ts, src/state/startApp.test.ts, src/test/fakeIpc.ts, src/main.tsx | 依存: T41a, T41b, T42e)
   - 対応: FR-013、FR-014、FR-025〜030、FR-036、FR-037、設計書 §6.1 の `treeStore`・`uiStore`、§6.3、§7.1「外部でのファイル変更」、【仮定】4・12・18・20
   - 置くもの: `treeStore`(プロジェクトごとの T41a の表示モデルと保留。生成関数で作る)。`tree-changed` の購読と再読込、保留が解けたときのまとめての再読込。操作の結果の扱い(見つからない=1 行の知らせを出して親を読み直す、衝突=衝突の確認を開いて選んだ対処で呼び直す、済み=関わるフォルダを読み直して作った項目を選ぶ)。`uiStore` に、ツリーのメニュー、インライン編集(新規作成・名称変更)、衝突の確認、移動の確認、ツリーの知らせ、ツリーにフォーカスがあるか、を足す。起動時に `get_shortcuts` で表を受け取る
   - 並行: 不可

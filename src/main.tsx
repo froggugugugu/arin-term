@@ -17,6 +17,7 @@ import { installErrorReporter } from "./state/errorReporter";
 import { createWithLaunchOptions } from "./state/launchOptions";
 import { startApp, type StartAppResult } from "./state/startApp";
 import { syncTerminals } from "./state/terminalSync";
+import { createTreeController, createTreeStore } from "./state/treeStore";
 import { createUiStore } from "./state/uiStore";
 import { TerminalManager } from "./terminal/TerminalManager";
 import { XtermEngine } from "./terminal/xterm/XtermEngine";
@@ -36,11 +37,21 @@ export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartA
   });
   const store = createAppStore();
   const ui = createUiStore();
-  const actions = createActions({ ipc, ui, reportError: reporter.report });
+  // ツリー(M3): 写しの選択中のプロジェクトのルートを読み、tree-changed と保留(uiStore)に合わせて読み直す。
+  // ツリーの部品(T43b)へ tree を props で渡すのは T43b で足す。
+  const tree = createTreeStore();
+  const treeController = createTreeController({ ipc, tree, app: store, ui, reportError: reporter.report });
+  const actions = createActions({ ipc, ui, tree, treeController, reportError: reporter.report });
   // 描画方式と全角幅の方式は起動時の指定で選ぶ(検証用。既定は DOM と unicode11。M4 で決めて外す。ADR-001)。
   // 指定を取ってからエンジンを作る。取れなければ既定で作り、報告する。WebGL を作れなかったときの報告も同じ口へ流す。
   const { engine, verifyGrid } = await createWithLaunchOptions(ipc, reporter.report, (options) => ({
-    engine: new XtermEngine({ renderer: options.renderer, unicode: options.unicode, reportError: reporter.report }),
+    engine: new XtermEngine({
+      renderer: options.renderer,
+      unicode: options.unicode,
+      reportError: reporter.report,
+      // Rust から受け取った表(startApp の onShortcuts)。届くまでは uiStore の既定の表の見本。
+      getShortcuts: () => ui.getState().shortcuts,
+    }),
     // 9 枚の検証画面(ARIN_VERIFY_GRID。M1 の検証用、M4 の T49 で外す)。
     verifyGrid: options.verifyGrid,
   }));
@@ -57,7 +68,12 @@ export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartA
       onMenuCommand: (command) => terminals.handleMenuCommand(command),
       // 動作中のターミナルがあって終了が止められたら、終了の確認を開く(ダイアログの部品は T34d)。
       onQuitRequested: (request) => ui.getState().openQuitConfirmation(request.running),
+      // 選択中のプロジェクトのツリーの外からの変更(FR-014)。保留中は積む。
+      onTreeChanged: (change) => treeController.handleTreeChange(change),
     },
+    // ショートカットの表を Rust から受け取る(届くまで・失敗したときは既定の表の見本)。
+    onShortcuts: (table) => ui.getState().setShortcuts(table),
+    reportError: reporter.report,
     mount: () => {
       // 描き終えてから準備完了を通知するため、描画を同期で済ませる。
       flushSync(() => {

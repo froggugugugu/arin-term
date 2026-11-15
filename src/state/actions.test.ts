@@ -1,17 +1,30 @@
 import { describe, expect, it } from "vitest";
 
 import { createIpc } from "../ipc/client";
+import type { DirListing } from "../ipc/generated/DirListing";
+import type { FileOpOutcome } from "../ipc/generated/FileOpOutcome";
 import type { RunningTerminal } from "../ipc/generated/RunningTerminal";
-import { createFakeIpc, type FakeHandlers } from "../test/fakeIpc";
+import { createFakeIpc, type FakeHandlers, sampleSnapshot } from "../test/fakeIpc";
 import { createActions } from "./actions";
+import { createAppStore } from "./appStore";
+import { activeTreeModel, activeTreeRows } from "./selectors";
+import { createTreeController, createTreeStore } from "./treeStore";
 import { createUiStore } from "./uiStore";
 
-function setup(handlers: Partial<FakeHandlers> = {}) {
-  const fake = createFakeIpc(handlers);
+function setup(handlers: Partial<FakeHandlers> = {}, fs: Map<string, DirListing> = new Map()) {
+  const fake = createFakeIpc({
+    list_directory: ({ projectId, path }) => fs.get(`${projectId}:${path}`) ?? { kind: "notFound" },
+    ...handlers,
+  });
+  const ipc = createIpc(fake.transport);
   const ui = createUiStore();
+  const app = createAppStore();
+  const tree = createTreeStore();
   const errors: string[] = [];
-  const actions = createActions({ ipc: createIpc(fake.transport), ui, reportError: (m) => errors.push(m) });
-  return { fake, ui, errors, actions };
+  const reportError = (m: string) => errors.push(m);
+  const treeController = createTreeController({ ipc, tree, app, ui, reportError });
+  const actions = createActions({ ipc, ui, tree, treeController, reportError });
+  return { fake, ui, app, tree, errors, actions, fs };
 }
 
 const running: RunningTerminal = { terminalId: "t1", projectId: "p1", projectName: "app", label: "ターミナル 1" };
@@ -165,5 +178,328 @@ describe("actions(終了の確認。FR-063)", () => {
     await actions.confirmQuit();
 
     expect(errors).toEqual(["アプリを終了できなかった: 保存できなかった"]);
+  });
+});
+
+// ── ツリー(M3。T43a) ──
+
+const dir = (name: string) => ({ name, kind: "directory" as const });
+const file = (name: string) => ({ name, kind: "file" as const });
+const listed = (...entries: ReturnType<typeof dir | typeof file>[]): DirListing => ({ kind: "listed", entries });
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** p1 を選んだ写しを入れ、ルートと src を読み込んだ状態にする。 */
+async function treeSetup(handlers: Partial<FakeHandlers> = {}) {
+  const fs = new Map<string, DirListing>([
+    ["p1:", listed(dir("src"), dir("docs"), file("a.md"))],
+    ["p1:src", listed(file("a.ts"))],
+    ["p1:docs", listed()],
+  ]);
+  const t = setup(handlers, fs);
+  t.app.getState().replaceSnapshot(
+    sampleSnapshot({
+      projects: [
+        {
+          id: "p1",
+          name: "app",
+          color: "blue",
+          displayPath: "~/dev/app",
+          missing: false,
+          showHidden: false,
+          terminalIds: [],
+          activeTerminalId: null,
+        },
+      ],
+      selectedProjectId: "p1",
+    }),
+  );
+  await settle();
+  t.actions.expandDir("src");
+  await settle();
+  t.fake.calls.length = 0;
+  const lists = () => t.fake.calls.filter((c) => c.command === "list_directory").map((c) => (c.args as { path: string }).path);
+  const ops = () => t.fake.calls.filter((c) => c.command !== "list_directory");
+  const selected = () => activeTreeModel(t.tree.getState())?.selected;
+  return { ...t, lists, ops, selected };
+}
+
+const conflict = (name: string): FileOpOutcome => ({ kind: "conflict", name });
+
+describe("actions(ツリーの開閉と選択)", () => {
+  it("開閉と選択は表示中のツリーに効く", async () => {
+    const t = await treeSetup();
+
+    t.actions.selectTreePath("src/a.ts");
+    t.actions.toggleDir("docs");
+    await settle();
+    expect(t.lists()).toEqual(["docs"]);
+    t.actions.collapseDir("src");
+    // 隠れた選択は閉じたフォルダに移る(T41a)。
+    expect(t.selected()).toBe("src");
+
+    t.actions.collapseAllDirs();
+    expect(activeTreeRows(t.tree.getState()).map((r) => r.path)).toEqual(["src", "docs", "a.md"]);
+  });
+});
+
+describe("actions(ファイル操作の応答)", () => {
+  it("新規作成が済んだら作った項目を選ぶ", async () => {
+    const t = await treeSetup({ create_entry: () => ({ kind: "done", select: "src/new.ts" }) });
+    t.fs.set("p1:src", listed(file("a.ts"), file("new.ts")));
+
+    await t.actions.createEntry("p1", "src", "new.ts", "file");
+    await settle();
+
+    expect(t.ops()).toEqual([
+      { command: "create_entry", args: { projectId: "p1", parent: "src", name: "new.ts", kind: "file" } },
+    ]);
+    expect(t.lists()).toEqual(["src"]);
+    expect(t.selected()).toBe("src/new.ts");
+    expect(activeTreeRows(t.tree.getState()).map((r) => r.path)).toContain("src/new.ts");
+  });
+
+  it("閉じたフォルダに作ったら祖先を開いて選ぶ", async () => {
+    const t = await treeSetup({ create_entry: () => ({ kind: "done", select: "docs/n" }) });
+    t.fs.set("p1:docs", listed(dir("n")));
+
+    await t.actions.createEntry("p1", "docs", "n", "folder");
+    await settle();
+
+    expect(activeTreeModel(t.tree.getState())?.expanded.has("docs")).toBe(true);
+    expect(t.selected()).toBe("docs/n");
+  });
+
+  it("インライン編集を確定すると入力を閉じてから名称変更を呼ぶ", async () => {
+    let openDuringCall: unknown = "未呼び出し";
+    const t = await treeSetup({
+      rename_entry: () => {
+        openDuringCall = t.ui.getState().inlineEdit;
+        return { kind: "done", select: "src/b.ts" };
+      },
+    });
+    t.ui.getState().startInlineEdit({ mode: "rename", projectId: "p1", path: "src/a.ts" });
+
+    await t.actions.commitInlineEdit("b.ts");
+
+    expect(openDuringCall).toBeNull();
+    expect(t.ops()).toEqual([
+      { command: "rename_entry", args: { projectId: "p1", path: "src/a.ts", newName: "b.ts" } },
+    ]);
+  });
+
+  it("インライン編集の新規作成を確定すると作成を呼び_編集が無ければ何も呼ばない", async () => {
+    const t = await treeSetup();
+    await t.actions.commitInlineEdit("x");
+    expect(t.ops()).toEqual([]);
+
+    t.ui.getState().startInlineEdit({ mode: "create", projectId: "p1", parent: "", kind: "folder" });
+    await t.actions.commitInlineEdit("lib");
+
+    expect(t.ops()).toEqual([
+      { command: "create_entry", args: { projectId: "p1", parent: "", name: "lib", kind: "folder" } },
+    ]);
+  });
+
+  it("名称変更が見つからないを返したら知らせを出し親を読み直す", async () => {
+    const t = await treeSetup({ rename_entry: () => ({ kind: "notFound" }) });
+    t.fs.set("p1:src", listed());
+
+    await t.actions.renameEntry("p1", "src/a.ts", "b.ts");
+    await settle();
+
+    expect(t.ui.getState().treeNotice?.message).toBe("「a.ts」が見つかりません");
+    expect(t.lists()).toEqual(["src"]);
+    expect(activeTreeRows(t.tree.getState()).map((r) => r.path)).not.toContain("src/a.ts");
+  });
+
+  it("衝突を返したら衝突の確認を開き選んだ対処で呼び直す", async () => {
+    const replies: FileOpOutcome[] = [conflict("a.ts"), { kind: "done", select: "src/a 2.ts" }];
+    const t = await treeSetup({ paste_entries: () => replies.shift() ?? { kind: "done", select: null } });
+    t.fs.set("p1:src", listed(file("a 2.ts"), file("a.ts")));
+
+    await t.actions.pasteEntries("p1", "src");
+    expect(t.ui.getState().treeConflict).toEqual({ request: { op: "paste", projectId: "p1", destDir: "src" }, name: "a.ts" });
+    // 確認の間は更新を保留する。
+    expect(t.tree.getState().gate.holds.has("dialog")).toBe(true);
+
+    await t.actions.resolveConflict("keepBoth");
+
+    expect(t.ui.getState().treeConflict).toBeNull();
+    expect(t.tree.getState().gate.holds.has("dialog")).toBe(false);
+    expect(t.ops()).toEqual([
+      { command: "paste_entries", args: { projectId: "p1", destDir: "src" } },
+      { command: "paste_entries", args: { projectId: "p1", destDir: "src", resolution: "keepBoth" } },
+    ]);
+    expect(t.selected()).toBe("src/a 2.ts");
+  });
+
+  it("衝突の確認で置き換えるを選ぶと置き換えるで呼び直す(作成・名称変更・移動・コピー)", async () => {
+    const t = await treeSetup({
+      create_entry: (a) => (a.resolution === undefined ? conflict("n") : { kind: "done", select: null }),
+      rename_entry: (a) => (a.resolution === undefined ? conflict("b") : { kind: "done", select: null }),
+      move_entry: (a) => (a.resolution === undefined ? conflict("a.md") : { kind: "done", select: null }),
+      copy_entry: (a) => (a.resolution === undefined ? conflict("a.md") : { kind: "done", select: null }),
+    });
+
+    await t.actions.createEntry("p1", "", "n", "file");
+    await t.actions.resolveConflict("replace");
+    await t.actions.renameEntry("p1", "a.md", "b");
+    await t.actions.resolveConflict("replace");
+    await t.actions.moveEntry("p1", "a.md", "docs");
+    await t.actions.resolveConflict("replace");
+    await t.actions.copyEntry("p1", "a.md", "docs");
+    await t.actions.resolveConflict("replace");
+
+    expect(t.ops().map((c) => [c.command, (c.args as { resolution?: string }).resolution])).toEqual([
+      ["create_entry", undefined],
+      ["create_entry", "replace"],
+      ["rename_entry", undefined],
+      ["rename_entry", "replace"],
+      ["move_entry", undefined],
+      ["move_entry", "replace"],
+      ["copy_entry", undefined],
+      ["copy_entry", "replace"],
+    ]);
+  });
+
+  it("衝突の確認で中止なら呼び直さない", async () => {
+    const t = await treeSetup({ rename_entry: () => conflict("b.ts") });
+    await t.actions.renameEntry("p1", "src/a.ts", "b.ts");
+
+    t.actions.cancelConflict();
+    await t.actions.resolveConflict("replace");
+
+    expect(t.ui.getState().treeConflict).toBeNull();
+    expect(t.ops()).toHaveLength(1);
+  });
+
+  it("ドロップでの移動は確認を開き確認すると移動のコマンドを呼ぶ", async () => {
+    const t = await treeSetup({ move_entry: () => ({ kind: "done", select: "docs/a.md" }) });
+    t.fs.set("p1:", listed(dir("src"), dir("docs")));
+    t.fs.set("p1:docs", listed(file("a.md")));
+
+    await t.actions.dropEntry("p1", "a.md", "docs", false);
+    expect(t.ops()).toEqual([]);
+    expect(t.ui.getState().moveConfirmation).toEqual({ projectId: "p1", source: "a.md", destDir: "docs" });
+
+    await t.actions.confirmMove();
+    await settle();
+
+    expect(t.ui.getState().moveConfirmation).toBeNull();
+    expect(t.ops()).toEqual([{ command: "move_entry", args: { projectId: "p1", source: "a.md", destDir: "docs" } }]);
+    expect(t.selected()).toBe("docs/a.md");
+  });
+
+  it("移動の確認で中止なら何も呼ばない", async () => {
+    const t = await treeSetup();
+
+    await t.actions.dropEntry("p1", "a.md", "docs", false);
+    t.actions.cancelMove();
+    await t.actions.confirmMove();
+
+    expect(t.ops()).toEqual([]);
+  });
+
+  it("option_のドロップは確認なしでコピーのコマンドを呼ぶ", async () => {
+    const t = await treeSetup();
+
+    await t.actions.dropEntry("p1", "a.md", "docs", true);
+
+    expect(t.ui.getState().moveConfirmation).toBeNull();
+    expect(t.ops()).toEqual([{ command: "copy_entry", args: { projectId: "p1", source: "a.md", destDir: "docs" } }]);
+  });
+
+  it("ゴミ箱に入れたら選択を外し親を読み直す", async () => {
+    const t = await treeSetup();
+    t.actions.selectTreePath("src/a.ts");
+    t.fs.set("p1:src", listed());
+
+    await t.actions.trashEntry("p1", "src/a.ts");
+    await settle();
+
+    expect(t.ops()).toEqual([{ command: "trash_entry", args: { projectId: "p1", path: "src/a.ts" } }]);
+    expect(t.selected()).toBeNull();
+    expect(t.lists()).toEqual(["src"]);
+  });
+
+  it("名前が正しくない_対象にできない_失敗の応答は1行の知らせを出す", async () => {
+    const replies: FileOpOutcome[] = [
+      { kind: "invalidName", reason: "containsSlash" },
+      { kind: "notAllowed", reason: "rootItself" },
+      { kind: "failed", message: "別のディスクへは移動できません" },
+    ];
+    const t = await treeSetup({ rename_entry: () => replies.shift() ?? { kind: "done", select: null } });
+    const notices: string[] = [];
+
+    for (let i = 0; i < 3; i++) {
+      await t.actions.renameEntry("p1", "a.md", "x/y");
+      notices.push(t.ui.getState().treeNotice?.message ?? "");
+    }
+
+    expect(notices).toEqual([
+      "名前に「/」は使えません",
+      "プロジェクトのフォルダ自体は対象にできません",
+      "別のディスクへは移動できません",
+    ]);
+    expect(t.ui.getState().treeConflict).toBeNull();
+  });
+
+  it("隠しファイル表示の切替でコマンドを呼び読み直す", async () => {
+    const t = await treeSetup();
+
+    await t.actions.setShowHidden("p1", true);
+    await settle();
+
+    expect(t.ops()).toEqual([{ command: "set_show_hidden", args: { projectId: "p1", showHidden: true } }]);
+    expect(t.lists()).toEqual(["", "src"]);
+  });
+
+  it("デスクトップとパスとペーストボードの操作は正しいコマンドを呼ぶ", async () => {
+    const t = await treeSetup();
+
+    await t.actions.revealEntry("p1", "src");
+    await t.actions.openEntry("p1", "a.md");
+    await t.actions.copyEntryPath("p1", "src/a.ts", "relative");
+    await t.actions.insertEntryPath("p1", ["src/a.ts"], "t1");
+    await t.actions.copyEntries("p1", ["a.md"]);
+    await t.actions.cutEntries("p1", ["a.md"]);
+
+    expect(t.ops()).toEqual([
+      { command: "reveal_entry", args: { projectId: "p1", path: "src" } },
+      { command: "open_entry", args: { projectId: "p1", path: "a.md" } },
+      { command: "copy_entry_path", args: { projectId: "p1", path: "src/a.ts", kind: "relative" } },
+      { command: "insert_entry_path", args: { projectId: "p1", paths: ["src/a.ts"], terminalId: "t1" } },
+      { command: "copy_entries", args: { projectId: "p1", paths: ["a.md"] } },
+      { command: "cut_entries", args: { projectId: "p1", paths: ["a.md"] } },
+    ]);
+    expect(t.ui.getState().treeNotice).toBeNull();
+  });
+
+  it("開く対象が見つからないと知らせを出す", async () => {
+    const t = await treeSetup({ open_entry: () => ({ kind: "notFound" }) });
+
+    await t.actions.openEntry("p1", "src/a.ts");
+
+    expect(t.ui.getState().treeNotice?.message).toBe("「a.ts」が見つかりません");
+  });
+
+  it("ファイル操作のコマンドの失敗は報告し_Promise_は失敗しない", async () => {
+    const t = await treeSetup({
+      trash_entry: () => {
+        throw "ゴミ箱に届かない";
+      },
+      set_show_hidden: () => {
+        throw "保存できない";
+      },
+    });
+
+    await expect(t.actions.trashEntry("p1", "a.md")).resolves.toBeUndefined();
+    await expect(t.actions.setShowHidden("p1", true)).resolves.toBeUndefined();
+
+    expect(t.errors).toEqual([
+      "ゴミ箱に入れられなかった: ゴミ箱に届かない",
+      "隠しファイルの表示を切り替えられなかった: 保存できない",
+    ]);
+    expect(t.lists()).toEqual([]);
   });
 });

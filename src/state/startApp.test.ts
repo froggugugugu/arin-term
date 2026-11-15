@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { createIpc } from "../ipc/client";
+import type { ShortcutTable } from "../ipc/generated/ShortcutTable";
+import type { TreeChange } from "../ipc/generated/TreeChange";
+import { DEFAULT_SHORTCUT_TABLE } from "../logic/keys/defaultShortcuts";
 import { createFakeIpc, sampleSnapshot } from "../test/fakeIpc";
 import { createAppStore } from "./appStore";
 import { type StartAppDeps, startApp } from "./startApp";
@@ -196,6 +199,87 @@ describe("startApp(画面側の起動の手順)", () => {
     const result = await run({ onMenuCommand: () => {} });
 
     expect(result).toEqual({ ok: false, error: "メニューの操作を購読できなかった: not allowed" });
+    expect(fake.calls).toEqual([]);
+  });
+
+  it("起動時にショートカットの表を受け取る", async () => {
+    const table: ShortcutTable = DEFAULT_SHORTCUT_TABLE.map((b) =>
+      b.command === "tree.new-file" ? { ...b, accelerator: "Cmd+Alt+N" } : { ...b },
+    );
+    const { fake, run } = setup({ get_shortcuts: () => table });
+    const received: ShortcutTable[] = [];
+
+    const result = await startApp({
+      ipc: createIpc(fake.transport),
+      store: createAppStore(),
+      mount: () => {},
+      logError: () => {},
+      onShortcuts: (t) => received.push(t),
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(received).toEqual([table]);
+    // 写しのあと、準備完了の通知の前に受け取る。
+    expect(fake.calls.map((c) => c.command)).toEqual(["get_app_snapshot", "get_shortcuts", "notify_app_ready"]);
+    // 受け手を渡さなければ取得しない(既存の起動の手順のまま)。
+    fake.calls.length = 0;
+    await run();
+    expect(fake.calls.map((c) => c.command)).toEqual(["get_app_snapshot", "notify_app_ready"]);
+  });
+
+  it("ショートカットの表を取得できなくても起動し_報告だけする", async () => {
+    const fake = createFakeIpc({
+      get_shortcuts: () => {
+        throw "command get_shortcuts not found";
+      },
+    });
+    const reported: string[] = [];
+    const received: unknown[] = [];
+
+    const result = await startApp({
+      ipc: createIpc(fake.transport),
+      store: createAppStore(),
+      mount: () => {},
+      logError: () => {},
+      onShortcuts: (t) => received.push(t),
+      reportError: (m) => reported.push(m),
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(received).toEqual([]);
+    expect(reported).toEqual([
+      "ショートカットの表を取得できなかったので、既定の表で動かす: command get_shortcuts not found",
+    ]);
+    expect(fake.calls.map((c) => c.command)).toContain("notify_app_ready");
+  });
+
+  it("ツリーの変更を準備完了の通知より先に購読して受け手に渡す", async () => {
+    let listenersAtReady = -1;
+    let fakeRef: ReturnType<typeof setup>["fake"] | undefined;
+    const ctx = setup({
+      notify_app_ready: () => {
+        listenersAtReady = fakeRef?.listenerCount("tree-changed") ?? 0;
+        return null;
+      },
+    });
+    fakeRef = ctx.fake;
+    const seen: TreeChange[] = [];
+
+    await ctx.run({ onTreeChanged: (change) => seen.push(change) });
+    const change: TreeChange = { projectId: "p1", dirs: ["src"], fullReload: false };
+    ctx.fake.emit("tree-changed", change);
+
+    expect(listenersAtReady).toBe(1);
+    expect(seen).toEqual([change]);
+  });
+
+  it("ツリーの変更を購読できなかったら、原因を残し、準備完了を通知しない", async () => {
+    const { fake, run } = setup();
+    fake.failListenOf = { event: "tree-changed", cause: "not allowed" };
+
+    const result = await run({ onTreeChanged: () => {} });
+
+    expect(result).toEqual({ ok: false, error: "ツリーの変更を購読できなかった: not allowed" });
     expect(fake.calls).toEqual([]);
   });
 });

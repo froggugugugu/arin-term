@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { RunningTerminal } from "../ipc/generated/RunningTerminal";
+import { DEFAULT_SHORTCUT_TABLE } from "../logic/keys/defaultShortcuts";
 import { createUiStore } from "./uiStore";
 
 const running = (terminalId: string, label = "ターミナル 1"): RunningTerminal => ({
@@ -82,5 +83,85 @@ describe("uiStore(表示だけの状態)", () => {
     a.getState().openQuitConfirmation([running("t1")]);
 
     expect(b.getState().quitConfirmation).toBeNull();
+  });
+});
+
+describe("uiStore(ツリーの表示だけの状態。M3)", () => {
+  it("作った直後はツリーのメニュー_入力_確認_知らせが無く_フォーカスもドラッグも無く_表は既定の見本", () => {
+    const ui = createUiStore().getState();
+
+    expect(ui.treeMenu).toBeNull();
+    expect(ui.inlineEdit).toBeNull();
+    expect(ui.treeConflict).toBeNull();
+    expect(ui.moveConfirmation).toBeNull();
+    expect(ui.treeNotice).toBeNull();
+    expect(ui.treeDragging).toBe(false);
+    expect(ui.treeFocused).toBe(false);
+    expect(ui.shortcuts).toBe(DEFAULT_SHORTCUT_TABLE);
+  });
+
+  it("ツリーのメニューは場所と位置を持ち_閉じると消える", () => {
+    const ui = createUiStore();
+
+    ui.getState().openTreeMenu("p1", { kind: "file", path: "src/a.ts" }, { x: 5, y: 6 });
+    expect(ui.getState().treeMenu).toEqual({ projectId: "p1", target: { kind: "file", path: "src/a.ts" }, x: 5, y: 6 });
+
+    ui.getState().closeTreeMenu();
+    expect(ui.getState().treeMenu).toBeNull();
+  });
+
+  it("インライン編集は新規作成と名称変更を持ち_閉じると消える", () => {
+    const ui = createUiStore();
+
+    ui.getState().startInlineEdit({ mode: "create", projectId: "p1", parent: "src", kind: "file" });
+    expect(ui.getState().inlineEdit).toEqual({ mode: "create", projectId: "p1", parent: "src", kind: "file" });
+    ui.getState().startInlineEdit({ mode: "rename", projectId: "p1", path: "src/a.ts" });
+    expect(ui.getState().inlineEdit).toEqual({ mode: "rename", projectId: "p1", path: "src/a.ts" });
+
+    ui.getState().closeInlineEdit();
+    expect(ui.getState().inlineEdit).toBeNull();
+  });
+
+  it("衝突の確認と移動の確認は開いて閉じられる", () => {
+    const ui = createUiStore();
+    const request = { op: "move", projectId: "p1", source: "a.md", destDir: "docs" } as const;
+
+    ui.getState().openTreeConflict({ request, name: "a.md" });
+    ui.getState().openMoveConfirmation({ projectId: "p1", source: "a.md", destDir: "docs" });
+    expect(ui.getState().treeConflict).toEqual({ request, name: "a.md" });
+    expect(ui.getState().moveConfirmation).toEqual({ projectId: "p1", source: "a.md", destDir: "docs" });
+
+    ui.getState().closeTreeConflict();
+    ui.getState().closeMoveConfirmation();
+    expect(ui.getState().treeConflict).toBeNull();
+    expect(ui.getState().moveConfirmation).toBeNull();
+  });
+
+  it("ツリーの知らせは出すたびに番号が変わり_閉じると消える", () => {
+    const ui = createUiStore();
+
+    ui.getState().showTreeNotice("「a.ts」が見つかりません");
+    const first = ui.getState().treeNotice;
+    ui.getState().showTreeNotice("「a.ts」が見つかりません");
+    const second = ui.getState().treeNotice;
+
+    expect(first?.message).toBe("「a.ts」が見つかりません");
+    expect(second?.message).toBe("「a.ts」が見つかりません");
+    expect(second?.id).not.toBe(first?.id);
+    ui.getState().dismissTreeNotice();
+    expect(ui.getState().treeNotice).toBeNull();
+  });
+
+  it("ツリーのフォーカスとドラッグ中とショートカットの表を切り替えられる", () => {
+    const ui = createUiStore();
+    const table = DEFAULT_SHORTCUT_TABLE.slice(0, 2);
+
+    ui.getState().setTreeFocused(true);
+    ui.getState().setTreeDragging(true);
+    ui.getState().setShortcuts(table);
+
+    expect(ui.getState().treeFocused).toBe(true);
+    expect(ui.getState().treeDragging).toBe(true);
+    expect(ui.getState().shortcuts).toBe(table);
   });
 });

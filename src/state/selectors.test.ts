@@ -2,7 +2,19 @@ import { describe, expect, it } from "vitest";
 
 import type { ProjectCardSnapshot } from "../ipc/generated/ProjectCardSnapshot";
 import { sampleSnapshot, sampleTerminal } from "../test/fakeIpc";
-import { presentation, projectTabs, selectedProject, shownTerminal } from "./selectors";
+import { DEFAULT_SHORTCUT_TABLE } from "../logic/keys/defaultShortcuts";
+import { applyDirListing, createTreeModel, selectPath, type TreeModel } from "../logic/tree/treeModel";
+import {
+  activeTreeModel,
+  activeTreeRows,
+  presentation,
+  projectTabs,
+  selectedProject,
+  selectedTreeTarget,
+  shownTerminal,
+  treeMenuContext,
+  treeSelectionKind,
+} from "./selectors";
 
 const project = (id: string, terminalIds: string[], activeTerminalId: string | null): ProjectCardSnapshot => ({
   id,
@@ -61,5 +73,58 @@ describe("写しから表示用の値を取り出す関数", () => {
       background: ["a1", "a2", "b1"],
     });
     expect(presentation(null)).toEqual({ shown: null, background: [] });
+  });
+});
+
+describe("ツリーの選択子(T43a)", () => {
+  const model: TreeModel = applyDirListing(createTreeModel(), "", [
+    { name: "src", kind: "directory" },
+    { name: "a.md", kind: "file" },
+    { name: "lib", kind: "directoryLink" },
+  ]);
+  const view = (m: TreeModel | null) => ({
+    activeProjectId: m === null ? null : "p1",
+    trees: new Map(m === null ? [] : [["p1", m] as const]),
+  });
+
+  it("表示中のツリーが無ければモデルは null で行は空", () => {
+    expect(activeTreeModel(view(null))).toBeNull();
+    expect(activeTreeRows(view(null))).toEqual([]);
+    expect(selectedTreeTarget(view(null))).toBeNull();
+  });
+
+  it("同じモデルの行は同じ配列を返す", () => {
+    const rows = activeTreeRows(view(model));
+    expect(rows.map((r) => r.path)).toEqual(["src", "a.md", "lib"]);
+    expect(activeTreeRows(view(model))).toBe(rows);
+  });
+
+  it("選択をメニューの場所と選択の種類にする", () => {
+    const at = (path: string | null) => view(selectPath(model, path));
+    expect(selectedTreeTarget(at(null))).toBeNull();
+    expect(treeSelectionKind(at(null))).toBe("none");
+    expect(selectedTreeTarget(at(""))).toEqual({ kind: "root" });
+    expect(treeSelectionKind(at(""))).toBe("root");
+    expect(selectedTreeTarget(at("src"))).toEqual({ kind: "folder", path: "src" });
+    expect(selectedTreeTarget(at("a.md"))).toEqual({ kind: "file", path: "a.md" });
+    // フォルダへのリンクは中に作らないので file として扱う(T41b の TreeMenuTarget)。
+    expect(selectedTreeTarget(at("lib"))).toEqual({ kind: "file", path: "lib" });
+    expect(treeSelectionKind(at("a.md"))).toBe("entry");
+    expect(selectedTreeTarget(at("gone.ts"))).toBeNull();
+  });
+
+  it("メニューの文脈は表示中のタブと隠しファイル表示を写しから読む", () => {
+    const snapshot = sampleSnapshot({
+      projects: [{ ...project("p1", ["t1"], "t1"), showHidden: true }],
+      selectedProjectId: "p1",
+      terminals: [sampleTerminal("t1", running, { projectId: "p1" })],
+    });
+
+    expect(treeMenuContext(snapshot, DEFAULT_SHORTCUT_TABLE)).toEqual({
+      hasTab: true,
+      showHidden: true,
+      shortcuts: DEFAULT_SHORTCUT_TABLE,
+    });
+    expect(treeMenuContext(null, [])).toEqual({ hasTab: false, showHidden: false, shortcuts: [] });
   });
 });

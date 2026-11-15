@@ -8,10 +8,14 @@
 // 取得の応答より先にイベントで写しが届いたら、そちらが新しいので取得の応答は捨てる。
 // 失敗は握りつぶさない。原因をストアの startupError に入れて画面に出し、ログにも残す。
 // 写しを取得できなかったときは準備完了を通知しない(起動スモークが失敗として気づけるように)。
+// ショートカットの表(T43a): onShortcuts を渡したときだけ、写しが届いたあと準備完了の通知の前に get_shortcuts で受け取る。
+// 取得の失敗は起動の失敗にしない(既定の表の見本のまま動く)。reportError に 1 行で報告する。
 
 import type { ArinIpc } from "../ipc/client";
 import type { MenuCommand } from "../ipc/generated/MenuCommand";
 import type { QuitRequest } from "../ipc/generated/QuitRequest";
+import type { ShortcutTable } from "../ipc/generated/ShortcutTable";
+import type { TreeChange } from "../ipc/generated/TreeChange";
 import { describeError } from "../logic/describeError";
 import type { AppStore } from "./appStore";
 
@@ -35,7 +39,13 @@ export interface StartAppDeps {
     onMenuCommand?: (command: MenuCommand) => void;
     /** 終了の確認の要求(FR-063)。main.tsx が uiStore の終了の確認を開く。 */
     onQuitRequested?: (request: QuitRequest) => void;
+    /** ツリーの外からの変更(FR-014)。main.tsx が TreeController.handleTreeChange へつなぐ。 */
+    onTreeChanged?: (change: TreeChange) => void;
   };
+  /** Rust から受け取ったショートカットの表の受け手(main.tsx が uiStore.setShortcuts へつなぐ)。渡さなければ取得しない。 */
+  onShortcuts?: (table: ShortcutTable) => void;
+  /** 起動を止めない失敗(ショートカットの表を取得できなかった)の報告先。既定は logError。 */
+  reportError?: (message: string) => void;
 }
 
 export type StartAppResult = { ok: true } | { ok: false; error: string };
@@ -46,6 +56,8 @@ export async function startApp({
   mount,
   logError = console.error,
   events = {},
+  onShortcuts,
+  reportError,
 }: StartAppDeps): Promise<StartAppResult> {
   const fail = (what: string, cause: unknown): StartAppResult => {
     const error = `${what}: ${describeError(cause)}`;
@@ -64,7 +76,7 @@ export async function startApp({
     mount();
     return fail("状態の更新を購読できなかった", cause);
   }
-  const { onMenuCommand, onQuitRequested } = events;
+  const { onMenuCommand, onQuitRequested, onTreeChanged } = events;
   try {
     if (onMenuCommand !== undefined) await ipc.onMenuCommand(onMenuCommand);
   } catch (cause) {
@@ -77,6 +89,12 @@ export async function startApp({
     mount();
     return fail("終了の確認の要求を購読できなかった", cause);
   }
+  try {
+    if (onTreeChanged !== undefined) await ipc.onTreeChanged(onTreeChanged);
+  } catch (cause) {
+    mount();
+    return fail("ツリーの変更を購読できなかった", cause);
+  }
 
   // 取得は描画と並行して始める。失敗は下の await で受けるので、未処理の失敗にはならない。
   const snapshotRequest = ipc.getAppSnapshot();
@@ -87,6 +105,16 @@ export async function startApp({
     if (!updated) store.getState().replaceSnapshot(snapshot);
   } catch (cause) {
     return fail("状態の写しを取得できなかった", cause);
+  }
+
+  if (onShortcuts !== undefined) {
+    try {
+      onShortcuts(await ipc.getShortcuts());
+    } catch (cause) {
+      const message = `ショートカットの表を取得できなかったので、既定の表で動かす: ${describeError(cause)}`;
+      if (reportError !== undefined) reportError(message);
+      else logError(message, cause);
+    }
   }
 
   try {
