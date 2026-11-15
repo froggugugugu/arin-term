@@ -25,8 +25,9 @@ tauri-build = { version = "=2.7.4" }
 portable-pty = "=0.9.0"
 # macOS のブックマーク(NSURL)を作って解決する(FR-007、設計書 §1.4 #12)。使うのは arin-platform/src/bookmark/ だけ。
 # どちらも Tauri がすでに同じ版で使っているので、Cargo.lock に新しいクレートは増えない。
+# ゴミ箱(NSFileManager の trashItemAtURL。FR-028、ADR-007 の (a))は arin-platform/src/fs/trash.rs だけが使う。
 objc2 = "=0.6.5"
-objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSURL", "NSData", "NSError", "NSString", "NSArray"] }
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSURL", "NSData", "NSError", "NSString", "NSArray", "NSFileManager"] }
 # ブックマークのバイト列を state.json に入れる文字列に変える(標準の符号化)。Tauri が同じ版で使っている。
 base64 = "=0.23.1"
 # 開いたままにしたフォルダの現在のパスを fcntl の F_GETPATH で調べる(FR-007、設計書 §1.4 #13)。使うのは arin-platform/src/watch/ だけ。

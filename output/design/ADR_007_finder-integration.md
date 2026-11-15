@@ -1,6 +1,6 @@
 # ADR-007: M3 のゴミ箱の方式、アプリ内のドラッグ、ツリーの仮想スクロール、M3 で足す依存
 
-- ステータス: Proposed((a) は【検証中】。(b)・(c) は【仮定】で進め、本人の了承は M3 の完了確認 T45 で求める)
+- ステータス: Proposed((a) は方式 1 で実装したが「戻す」の目視は本人の確認待ち【仮定】。(b)・(c) は【仮定】で進め、本人の了承は M3 の完了確認 T45 で求める)
 - 日付: 2026-11-15
 - 決定者: AI(司令塔とサブエージェント。計画 T37)。(a) の結果の記入と (b) の実機の確認は司令塔と本人
 - 関連: `ARCH_multi-terminal.md` §1.3 #7・#11・#13、§1.4 #8・#14・#15・#19、§5.4、§7.1「外部でのファイル変更」「ファイル操作」、§7.3、§9.1、§10.2、§12、§15.2 #8、§15.3 #3・#4。PRD FR-013〜018、024〜030、035〜037、NFR-005、C6・C7。ADR-002・003・006・009。計画 T37
@@ -25,23 +25,23 @@ M3 ではツリーとファイル操作を作る。設計書は次の 3 つを�
 
 ### (a) ゴミ箱に入れる方式と Finder の「戻す」
 
-**【検証中】** 司令塔がこの Mac の実機で検証している。結果が出るまで、ゴミ箱の実装(計画 T40c)は始めない。
+**方式 1 で実装した【仮定】。** 司令塔が実機で方式 1・2 を試し、どちらも成功した(2026-11-15)。Finder の「戻す」の目視は本人の確認待ち。あとで方式を差し替えられるよう、OS に頼む部分は `arin-platform/src/fs/trash.rs` の `request_trash` の 1 つの関数に閉じ込めた(計画 T40c)。
 
 試す順(§15.3 #3):
 
 | 順 | 方式 | 見込み | 結果 |
 | -- | ---- | ------ | ---- |
-| 1 | `NSFileManager` の `trashItemAtURL:resultingItemURL:error:`(`objc2-foundation`) | 権限の確認が要らない。ゴミ箱の中の移動先(`resultingItemURL`)が返る(取り消し=FR-032 を作りやすい)。「戻す」が出ない環境がある(§1.4 #15) | 【検証中】 |
-| 2 | `NSWorkspace` の `recycleURLs:completionHandler:`(`objc2-app-kit`) | 権限の確認が要らない見込み。完了は非同期で返る。移動先が返るかは未確認 | 【検証中】 |
-| 3 | Finder に頼む(Apple Events で Finder の `delete`) | 「戻す」が出る。初回に自動操作の許可の確認が出る。署名済みの `.app` ではエンタイトルメント(`com.apple.security.automation.apple-events`)が要る見込み(§15.3 #2 の B。M5 に影響する) | 【検証中】 |
+| 1 | `NSFileManager` の `trashItemAtURL:resultingItemURL:error:`(`objc2-foundation`) | 権限の確認が要らない。ゴミ箱の中の移動先(`resultingItemURL`)が返る(取り消し=FR-032 を作りやすい)。「戻す」が出ない環境がある(§1.4 #15) | 成功。一時フォルダのファイルが `~/.Trash/` の下へ移り、行き先の URL が返った(司令塔)。T40c の `#[ignore]` のテストでもファイル・フォルダ・リンクで成功 |
+| 2 | `NSWorkspace` の `recycleURLs:completionHandler:`(`objc2-app-kit`) | 権限の確認が要らない見込み。完了は非同期で返る。移動先が返るかは未確認 | 成功。`~/.Trash/` の下の行き先の URL が返った(司令塔) |
+| 3 | Finder に頼む(Apple Events で Finder の `delete`) | 「戻す」が出る。初回に自動操作の許可の確認が出る。署名済みの `.app` ではエンタイトルメント(`com.apple.security.automation.apple-events`)が要る見込み(§15.3 #2 の B。M5 に影響する) | 試していない(方式 1・2 が成功したため) |
 
 結果を書く欄(司令塔が記入する):
 
-- 採る方式: 【検証中】
-- 確かめた環境(macOS の版、ボリュームの種類): 【検証中】
-- 「戻す」が出たか(人間が Finder で目で見た): 【検証中】
-- ゴミ箱の中の移動先が分かるか(FR-032 の取り消しに使う。M6): 【検証中】
-- 片付け: 検証で入れた項目は、検証が入れたものだけをゴミ箱から消した(ユーザーのゴミ箱のほかの項目には触れていない): 【検証中】
+- 採る方式: 方式 1(`NSFileManager` の `trashItemAtURL:resultingItemURL:error:`)【仮定】。「戻す」が出ないと分かったら方式 2・3 と比べ直す
+- 確かめた環境(macOS の版、ボリュームの種類): macOS 26.5.2、起動ボリューム(APFS)の一時フォルダ(`/private/var/folders/…`)。外付けのボリューム(`.Trashes`)は確かめていない
+- 「戻す」が出たか(人間が Finder で目で見た): 未(本人の確認待ち。`~/.Trash` はシステムの保護でプロセスから一覧を読めず、自動では確かめられない)
+- ゴミ箱の中の移動先が分かるか(FR-032 の取り消しに使う。M6): 分かる(方式 1・2 とも `~/.Trash/<名前>` が返る)
+- 片付け: 検証とテストはゴミ箱の中のものを消さない(`~/.Trash` は保護されていて、ほかの項目を巻き込む危険がある)。入れた項目は名前を報告し、本人が片付ける。計画 T40c の「テストが入れた項目だけを片付ける」はこの理由で行わない
 
 どの方式でも変わらないこと:
 
@@ -140,4 +140,9 @@ Playwright の WebKit は macOS 標準の WKWebView とは別のビルドで、T
   - 作り方: `arin-platform/src/desktop/workspace.rs`(`MacDesktop`。`activateFileViewerSelectingURLs:`・`openURL:`)、`desktop/file_pasteboard.rs`(`MacFilePasteboard`。`writeObjects:` に `NSURL` を 1 つずつ、読むときは項目ごとの `public.file-url`)。どちらもメインスレッドを求めない
   - 落とし穴: `NSURL::fileURLWithPath` は名前を NFD に変える(`ダ` → `タ` + 濁点)。そのままペーストボードに書くと、貼り付け先で名前の違うファイルができる。URL はパスのバイト列を百分率符号化して `URLWithString` で作る(フォルダは Finder と同じく末尾に `/`)
   - 無いパスと相対パスは OS に渡す前に失敗にする。`activateFileViewerSelectingURLs:` は戻り値が無く、Finder が受け付けなかったことを知れない
-- T40c: 足した feature と、Tauri がすでに有効にしていたか: 未記入
+- T40c(2026-11-15):
+  - feature: `objc2-foundation` =0.3.2 の宣言に `NSFileManager` を足した(版は変えていない)。T40d の `objc2-app-kit` の `NSWorkspace` がすでに推移的に有効にしていた(`cargo tree -e features -i objc2-foundation --target aarch64-apple-darwin` で `NSFileManager` ← `objc2-app-kit feature "NSWorkspace"`)が、直接使うので明示した。Tauri 自身は有効にしていなかった(T40d の追記)。`Cargo.lock` は変わらない
+  - 作り方: `arin-platform/src/fs/trash.rs`。OS に頼む前に、絶対パス・`..` を含まない・名前がある・UTF-8・項目そのものがある(リンクはたどらない)を確かめる。パスは要素から組み直して末尾の `/` を落とす(残すとリンクの先のフォルダを指す)。シンボリックリンクはリンク自体を入れる(URL の末尾に `/` を付けない)。URL は `desktop::file_url_from_str`(パスのバイト列を百分率符号化)で作る。入れられなかったら失敗をそのまま返し、削除や別の方式に切り替えない。調べたあとに消されていた(`NSCocoaErrorDomain` の 4)ときは「見つからない」
+  - 日本語の名前: `arin-test-trash-<pid>-<n>-ダミー.txt`(NFC)を入れると、返った行き先の名前はバイト列で元と同じ(NFD に変わらない)
+  - スレッド: どのスレッドからでも呼べる(`MainThreadMarker` を求めない)。同期の処理なのでメインスレッドの外から呼ぶ
+  - 本物のゴミ箱のテスト: `crates/arin-platform/tests/trash.rs` の `#[ignore]` の 3 つ(`cargo test -p arin-platform --test trash -- --ignored --nocapture`)。入れた項目と行き先を `[arin:test-trash]` で標準エラーに出す。ゴミ箱の中は消さない

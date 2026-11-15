@@ -883,7 +883,7 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 26c(逐次。T37 の (a) の結果と、T40a・T40d の完了後)
 
-- [ ] T40c — ゴミ箱(`arin-platform/fs`)(変更ファイル: Cargo.toml, Cargo.lock, crates/arin-platform/Cargo.toml, crates/arin-platform/src/fs/mod.rs, crates/arin-platform/src/fs/trash.rs, crates/arin-platform/tests/trash.rs, output/design/ADR_007_finder-integration.md | 依存: T37 の (a), T40a, T40d)
+- [x] T40c — ゴミ箱(`arin-platform/fs`)(変更ファイル: Cargo.toml, Cargo.lock, crates/arin-platform/Cargo.toml, crates/arin-platform/src/fs/mod.rs, crates/arin-platform/src/fs/trash.rs, crates/arin-platform/tests/trash.rs, output/design/ADR_007_finder-integration.md | 依存: T37 の (a), T40a, T40d)
   - **T37 の (a) の結果(ADR-007 の (a) の欄)に従う。結果が「【検証中】」のままなら始めない。** どの方式も「戻す」が出ないと分かったら、このタスクを止めて本人に方式を確かめる(FR-028 の AC が変わりうる)
   - 対応: FR-028、FR-030(置き換える=既存をゴミ箱へ)、設計書 §1.3 #11、§5.4「ゴミ箱と Finder の「戻す」」、§15.3 #3
   - 使うクレート: (a) で採った方式による(方式 1 は `objc2-foundation` の `NSFileManager`、方式 2 は `objc2-app-kit` の `NSWorkspace`、方式 3 は Apple Events)。版は変えず feature だけ足し、ADR-007 の追記に書く。方式 3 ならエンタイトルメント(設計書 §15.3 #2)を M5 の T51 に申し送る

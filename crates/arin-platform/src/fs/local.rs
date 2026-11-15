@@ -142,12 +142,8 @@ impl FileSystemPort for LocalFileSystem {
     }
 
     fn trash(&self, path: &Path) -> Result<Option<PathBuf>, FsError> {
-        // T40c で実装する(ADR-007 の (a) の結果に従う)。それまでは何も変えずに失敗する。
-        // 別の方式や削除に切り替えない
-        Err(FsError::Io(format!(
-            "{}: ゴミ箱はまだ使えない(未実装)",
-            path.display()
-        )))
+        // 中身は `trash.rs`(T40c、ADR-007 の (a))。入れられなければ失敗を返し、削除に切り替えない
+        super::trash::trash(path)
     }
 }
 

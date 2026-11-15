@@ -13,4 +13,5 @@ mod workspace;
 pub use file_pasteboard::MacFilePasteboard;
 pub use folder_panel::{NotMainThread, choose_folder};
 pub use pasteboard::MacPasteboard;
+pub(crate) use workspace::file_url_from_str;
 pub use workspace::{MacDesktop, check_openable, check_revealable};

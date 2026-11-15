@@ -94,12 +94,13 @@ fn file_url(path: &Path) -> Result<Retained<NSURL>, DesktopError> {
         .ok_or_else(|| DesktopError::Failed(format!("URL にできないパス: {}", path.display())))
 }
 
-/// 絶対パスの文字列から、文字をそのまま保ったファイルの URL を作る(ペーストボードの書き込みでも使う)。
+/// 絶対パスの文字列から、文字をそのまま保ったファイルの URL を作る(ペーストボードの書き込みと、
+/// ゴミ箱=`fs/trash.rs` でも使う)。
 ///
 /// `NSURL::fileURLWithPath` は名前を分解した形(NFD。`ダ` → `タ` + 濁点)に変えるので使わない。
 /// 変えられた名前がペーストボードに載ると、貼り付け先で別の名前のファイルができてしまう(git では別のファイル)。
 /// ここではバイト列を百分率符号化して `URLWithString` で作る。`dir` が真なら Finder と同じく末尾に `/` を付ける。
-pub(super) fn file_url_from_str(path: &str, dir: bool) -> Option<Retained<NSURL>> {
+pub(crate) fn file_url_from_str(path: &str, dir: bool) -> Option<Retained<NSURL>> {
     if !path.starts_with('/') {
         return None;
     }

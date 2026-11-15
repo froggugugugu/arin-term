@@ -571,15 +571,7 @@ fn コピーが途中で失敗したら作りかけを残さない() {
     assert_eq!(names_in(&from), vec!["a.txt", "z-unreadable.txt"]);
 }
 
-// ---- ゴミ箱(T40c で実装する) ----
-
-#[test]
-fn ゴミ箱はまだ未実装で何も変えない() {
-    let tmp = TempDir::new("trash");
-    let path = tmp.write("a.txt", "a");
-    assert!(matches!(local().trash(&path), Err(FsError::Io(_))));
-    assert_eq!(read(&path), "a");
-}
+// ゴミ箱は tests/trash.rs(T40c。本物のゴミ箱を使うテストは `#[ignore]`)
 
 // ---- テストの補助 ----
 
