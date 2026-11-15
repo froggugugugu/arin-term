@@ -25,6 +25,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use arin_core::layout::tiles::DisplayMode;
 use arin_core::ports::{PtyError, PtyPort, PtySize, SpawnedPty};
 use arin_core::shortcuts::table::{
     ShortcutBinding, ShortcutCommandId, ShortcutReceiver, ShortcutTable,
@@ -33,7 +34,7 @@ use arin_core::terminal::ShellLaunchSpec;
 use arin_core::workspace::{AppSnapshot, MenuCommand};
 use arin_lib::events::MENU_COMMAND_EVENT;
 use arin_lib::launch::LaunchConfig;
-use arin_lib::menu::{self, EDIT_MENU_TITLE, Shortcuts, TERMINAL_MENU_TITLE};
+use arin_lib::menu::{self, EDIT_MENU_TITLE, Shortcuts, TERMINAL_MENU_TITLE, VIEW_MENU_TITLE};
 use arin_lib::sessions::{SessionRegistry, ShellDefaults};
 use muda::accelerator::Accelerator;
 use serde_json::json;
@@ -166,14 +167,117 @@ fn アプリのメニューは本アプリの見出しだけで既定のメニ�
 
     let name = app.package_info().name.clone();
     // 既定のメニューにある「File」「View」「Window」「Help」は置かない(⌘W などを本アプリのタブ操作に使うため)。
+    // 並びは `見出しの並びは_arin_ターミナル_編集_表示` が確かめる(T47c で「表示」を足した)。
+    let given = titles(&menu);
+    for default_title in ["File", "Edit", "View", "Window", "Help"] {
+        assert!(
+            !given.iter().any(|t| t == default_title),
+            "既定のメニューの見出し {default_title} がある: {given:?}"
+        );
+    }
+    assert_eq!(given.first(), Some(&name));
+    assert_eq!(
+        given.len(),
+        4,
+        "本アプリの見出しのほかに見出しがある: {given:?}"
+    );
+}
+
+fn 見出しの並びは_arin_ターミナル_編集_表示() {
+    let state_dir = support::TempDir::new("menu-title-order");
+    let app = build_app(support::launch_in(&state_dir, false));
+    let menu = app.menu().expect("アプリにメニューが付いていない");
+
+    // 「表示」は「編集」の右(macOS の並び。【仮定】10)。
+    assert_eq!(VIEW_MENU_TITLE, "表示");
     assert_eq!(
         titles(&menu),
         vec![
-            name,
+            app.package_info().name.clone(),
             TERMINAL_MENU_TITLE.to_owned(),
-            EDIT_MENU_TITLE.to_owned()
+            EDIT_MENU_TITLE.to_owned(),
+            VIEW_MENU_TITLE.to_owned(),
         ]
     );
+}
+
+fn 表示に切替_前のページ_次のページ_拡大がこの順である() {
+    let state_dir = support::TempDir::new("menu-view");
+    let app = build_app(support::launch_in(&state_dir, false));
+    let menu = app.menu().expect("アプリにメニューが付いていない");
+
+    // 文言は固定(【仮定】10)。ID は表のコマンドの ID。
+    let labels: Vec<(&str, Option<&str>)> = [
+        C::ViewToggleDisplayMode,
+        C::ViewPreviousPage,
+        C::ViewNextPage,
+        C::ViewToggleMaximize,
+    ]
+    .into_iter()
+    .map(|c| (c.as_str(), menu::label(c)))
+    .collect();
+    assert_eq!(
+        labels,
+        vec![
+            (
+                "view.toggle-display-mode",
+                Some("タイル表示とタブ表示を切り替える")
+            ),
+            ("view.previous-page", Some("前のページ")),
+            ("view.next-page", Some("次のページ")),
+            ("view.toggle-maximize", Some("タイルを拡大/元に戻す")),
+        ]
+    );
+    assert_eq!(
+        entries(&menu, VIEW_MENU_TITLE),
+        vec![
+            own(C::ViewToggleDisplayMode),
+            separator(),
+            own(C::ViewPreviousPage),
+            own(C::ViewNextPage),
+            separator(),
+            own(C::ViewToggleMaximize),
+        ]
+    );
+}
+
+fn 表示の項目のアクセラレータが表の既定のキーと同じ() {
+    let table = ShortcutTable::default_table();
+    // 【仮定】9 の仮のキー。メニューに渡す文字列は表の行そのもの(menu.rs に直書きしない)。
+    let expected = [
+        (C::ViewToggleDisplayMode, "Cmd+Shift+G"),
+        (C::ViewPreviousPage, "Cmd+Alt+ArrowLeft"),
+        (C::ViewNextPage, "Cmd+Alt+ArrowRight"),
+        (C::ViewToggleMaximize, "Cmd+Shift+Enter"),
+    ];
+    for (command, key) in expected {
+        let given = menu::accelerator(&table, command)
+            .unwrap_or_else(|| panic!("{command} にアクセラレータが無い"));
+        assert_eq!(
+            given,
+            table.get(command).accelerator().to_string(),
+            "{command}"
+        );
+        assert_eq!(given, key, "{command}");
+        assert_eq!(
+            Accelerator::from_str(&given).expect("muda が読めない"),
+            Accelerator::from_str(key).expect("muda が読めない"),
+            "{command}"
+        );
+    }
+}
+
+fn 受け口がメニューの項目の行にはすべて文言がある() {
+    // 文言の足し忘れ(`label` が `None`)はメニューから黙って消えるので、ここで捕まえる。
+    // 「終了」だけは文言にアプリ名を入れて作るので `label` を持たない(`QUIT_ID`)。
+    let table = ShortcutTable::default_table();
+    let missing: Vec<&str> = table
+        .by_receiver(ShortcutReceiver::MenuItem)
+        .map(ShortcutBinding::command)
+        .filter(|&c| c != C::AppQuit && menu::label(c).is_none())
+        .map(ShortcutCommandId::as_str)
+        .collect();
+    assert!(missing.is_empty(), "文言が無い: {missing:?}");
 }
 
 fn メニューに新規タブ_タブを閉じる_前後のタブがある() {
@@ -338,21 +442,22 @@ fn 受け口がメニューの項目のものだけがメニューに載る() {
     let state_dir = support::TempDir::new("menu-receivers");
     let app = build_app(support::launch_in(&state_dir, false));
 
-    // 既定の表: 自前の項目はちょうど受け口がメニューの項目の行。画面で受けるツリーのキーは載らない(【仮定】21)。
-    // 表示の 4 行(T47a)はまだ置き場所(「表示」の見出し)が無いので載らない。T47c で「表示」を足したら、この除外を外す。
-    let not_yet_in_menu = [
+    // 既定の表: 自前の項目はちょうど受け口がメニューの項目の行(表示の 4 行を含む。T47c)。
+    // 画面で受けるツリーのキーは載らない(【仮定】21)。
+    let menu = app.menu().expect("アプリにメニューが付いていない");
+    let expected: BTreeSet<String> = ShortcutTable::default_table()
+        .by_receiver(ShortcutReceiver::MenuItem)
+        .map(|b| b.command().as_str().to_owned())
+        .collect();
+    assert_eq!(own_ids(&menu), expected);
+    for view in [
         C::ViewToggleDisplayMode,
         C::ViewPreviousPage,
         C::ViewNextPage,
         C::ViewToggleMaximize,
-    ];
-    let menu = app.menu().expect("アプリにメニューが付いていない");
-    let expected: BTreeSet<String> = ShortcutTable::default_table()
-        .by_receiver(ShortcutReceiver::MenuItem)
-        .filter(|b| !not_yet_in_menu.contains(&b.command()))
-        .map(|b| b.command().as_str().to_owned())
-        .collect();
-    assert_eq!(own_ids(&menu), expected);
+    ] {
+        assert!(expected.contains(view.as_str()), "{view} が期待に無い");
+    }
 
     // 受け口を画面に替えた行はメニューに載らず、区切り線が余らない。
     let table = table_with_receiver(&[
@@ -360,10 +465,18 @@ fn 受け口がメニューの項目のものだけがメニューに載る() {
         (C::TerminalNextTab, ShortcutReceiver::Screen),
         (C::EditSelectAll, ShortcutReceiver::Screen),
         (C::EditCut, ShortcutReceiver::Screen),
+        (C::ViewPreviousPage, ShortcutReceiver::Screen),
+        (C::ViewNextPage, ShortcutReceiver::Screen),
     ]);
     let menu = menu::build_with_table(app.handle(), &table).expect("メニューを作れなかった");
     let ids = own_ids(&menu);
-    for gone in [C::TerminalPreviousTab, C::TerminalNextTab, C::EditSelectAll] {
+    for gone in [
+        C::TerminalPreviousTab,
+        C::TerminalNextTab,
+        C::EditSelectAll,
+        C::ViewPreviousPage,
+        C::ViewNextPage,
+    ] {
         assert!(!ids.contains(gone.as_str()), "{gone} が載っている: {ids:?}");
     }
     assert_eq!(
@@ -373,6 +486,15 @@ fn 受け口がメニューの項目のものだけがメニューに載る() {
     assert_eq!(
         entries(&menu, EDIT_MENU_TITLE),
         vec![standard("コピー"), standard("ペースト")]
+    );
+    // 「表示」の真ん中の組が空になっても、区切り線は 1 本だけ。
+    assert_eq!(
+        entries(&menu, VIEW_MENU_TITLE),
+        vec![
+            own(C::ViewToggleDisplayMode),
+            separator(),
+            own(C::ViewToggleMaximize)
+        ]
     );
 }
 
@@ -614,11 +736,79 @@ fn すべてを選択は画面へ_menu_command_を送りタブに触れない() 
     });
 }
 
+fn display(handle: &AppHandle<MockRuntime>) -> arin_core::workspace::DisplaySnapshot {
+    snapshot(handle).display
+}
+
+/// 選択中のプロジェクトのタブを、新規タブの項目で `count` 枚になるまで開く。
+fn open_tabs(handle: &AppHandle<MockRuntime>, count: usize) {
+    while tabs(handle).0.len() < count {
+        menu::on_menu_event(handle, C::TerminalNewTab.as_str());
+    }
+}
+
+fn 表示の項目を選ぶと写しの表示が変わる() {
+    let fx = ProjectFixture::new("menu-view-select");
+    run_app(fx.launch(), |handle| {
+        // 10 枚で 2 ページ(1 ページは 9 枚。C-11)。
+        open_tabs(handle, 10);
+        assert_eq!(display(handle).mode, DisplayMode::Tabs);
+
+        // タイル表示とタブ表示を切り替える。フォーカス中(最後に開いた 10 枚目)のページで開く。
+        menu::on_menu_event(handle, C::ViewToggleDisplayMode.as_str());
+        let d = display(handle);
+        assert_eq!(d.mode, DisplayMode::Tiles);
+        assert_eq!((d.page, d.page_count), (1, 2));
+
+        // 前のページ・次のページ。端では何もしない(【仮定】3)。
+        menu::on_menu_event(handle, C::ViewPreviousPage.as_str());
+        assert_eq!(display(handle).page, 0, "前のページに移らない");
+        menu::on_menu_event(handle, C::ViewPreviousPage.as_str());
+        assert_eq!(display(handle).page, 0, "最初のページの前に移った");
+        menu::on_menu_event(handle, C::ViewNextPage.as_str());
+        assert_eq!(display(handle).page, 1, "次のページに移らない");
+        let last = display(handle);
+        menu::on_menu_event(handle, C::ViewNextPage.as_str());
+        assert_eq!(display(handle), last, "最後のページの次で変わった");
+
+        // 拡大と元に戻す(同じ項目)。
+        menu::on_menu_event(handle, C::ViewToggleMaximize.as_str());
+        let d = display(handle);
+        assert!(d.maximized, "拡大しない");
+        assert_eq!(d.focused_terminal_id, last.focused_terminal_id);
+        menu::on_menu_event(handle, C::ViewToggleMaximize.as_str());
+        assert!(!display(handle).maximized, "元に戻らない");
+
+        // タブ表示に戻す。
+        menu::on_menu_event(handle, C::ViewToggleDisplayMode.as_str());
+        assert_eq!(display(handle).mode, DisplayMode::Tabs);
+    });
+}
+
+fn タブ表示でページ送りと拡大の項目を選んでも何も変わらない() {
+    let fx = ProjectFixture::new("menu-view-tabs");
+    run_app(fx.launch(), |handle| {
+        open_tabs(handle, 10);
+        let before = snapshot(handle);
+        assert_eq!(before.display.mode, DisplayMode::Tabs);
+
+        // 項目は無効にせず並べる。タブ表示では選んでも何もしない(【仮定】9)。
+        for command in [C::ViewPreviousPage, C::ViewNextPage, C::ViewToggleMaximize] {
+            menu::on_menu_event(handle, command.as_str());
+        }
+        assert_eq!(snapshot(handle), before, "タブ表示で状態が変わった");
+    });
+}
+
 fn main() {
-    let tests: [(&str, fn()); 13] = [
+    let tests: [(&str, fn()); 19] = [
         (
             "アプリのメニューは本アプリの見出しだけで既定のメニューではない",
             アプリのメニューは本アプリの見出しだけで既定のメニューではない,
+        ),
+        (
+            "見出しの並びは_arin_ターミナル_編集_表示",
+            見出しの並びは_arin_ターミナル_編集_表示,
         ),
         (
             "メニューに新規タブ_タブを閉じる_前後のタブがある",
@@ -632,6 +822,18 @@ fn main() {
         (
             "メニューの項目のアクセラレータが表の既定のキーと同じ",
             メニューの項目のアクセラレータが表の既定のキーと同じ,
+        ),
+        (
+            "表示に切替_前のページ_次のページ_拡大がこの順である",
+            表示に切替_前のページ_次のページ_拡大がこの順である,
+        ),
+        (
+            "表示の項目のアクセラレータが表の既定のキーと同じ",
+            表示の項目のアクセラレータが表の既定のキーと同じ,
+        ),
+        (
+            "受け口がメニューの項目の行にはすべて文言がある",
+            受け口がメニューの項目の行にはすべて文言がある,
         ),
         (
             "表のキーの文字列はすべて_muda_のアクセラレータとして読める",
@@ -661,6 +863,14 @@ fn main() {
         (
             "すべてを選択は画面へ_menu_command_を送りタブに触れない",
             すべてを選択は画面へ_menu_command_を送りタブに触れない,
+        ),
+        (
+            "表示の項目を選ぶと写しの表示が変わる",
+            表示の項目を選ぶと写しの表示が変わる,
+        ),
+        (
+            "タブ表示でページ送りと拡大の項目を選んでも何も変わらない",
+            タブ表示でページ送りと拡大の項目を選んでも何も変わらない,
         ),
     ];
     for (name, test) in tests {

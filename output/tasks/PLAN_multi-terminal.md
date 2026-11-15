@@ -1255,7 +1255,7 @@ T46〜T50 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 可(T47c とファイルが重ならない)
   - 先に書くテスト(偽の PTY。`harness = false` の `[[test]]` を足す): `表示していないタブで_bel_が出ると写しにアテンションが載る`、`表示中のタブの_bel_では写しを送らない`、`bel_が続いても写しは_1_回だけ送られる`、`osc_9;4_の進捗では写しを送らない`、`検証用の記録の_osc_52_の数え方は変わらない`。実 PTY(`session_pty.rs`。`/bin/zsh` 固定、`HOME` は一時フォルダ、目印、上限時間): `隠れたタブで_printf_'\a'_を実行すると印が立つ`
   - 検証: `cargo test -p arin --test session_attention --test session_pty`
-- [ ] T47c — メニューバーの「表示」(変更ファイル: src-tauri/src/menu.rs, src-tauri/tests/app_menu.rs | 依存: T47b)
+- [x] T47c — メニューバーの「表示」(変更ファイル: src-tauri/src/menu.rs, src-tauri/tests/app_menu.rs | 依存: T47b)
   - 対応: FR-048・FR-052・FR-054(ショートカット)、【要件の追加】(アクセラレータは表から)、前提 (f)、【仮定】9・10
   - 変えるもの: 「表示」の見出しと 4 つの自前の項目(文言は `menu.rs`、ID とキーは表)。並びは「編集」の右。`on_menu_event` で `SessionRegistry` の表示の口を呼ぶ(タブの操作と同じ形。画面を経由しない)
   - 並行: 可(T48c とファイルが重ならない)

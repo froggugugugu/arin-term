@@ -1,11 +1,11 @@
-//! メニューバー(設計書 §4 の `menu.rs`、§9.1、FR-043・FR-044、計画書 T33e・T42e・決定 (b)・前提 (e))。
+//! メニューバー(設計書 §4 の `menu.rs`、§9.1、FR-043・FR-044・FR-048・FR-052・FR-054、計画書 T33e・T42e・T47c・決定 (b)・前提 (e)・M4 の前提 (f))。
 //!
 //! 項目の ID とキーはショートカットの表(`arin_core::shortcuts`。T38d)から作り、ここには文言と並びだけを書く
 //! (M4.5 で設定ファイルからキーを変えるため)。表はアプリの管理状態の [`Shortcuts`] が 1 つだけ持ち、メニューを作るときと
 //! 画面へ渡すとき(`get_shortcuts`)の両方がそれを見る。
 //!
 //! - 受け口が「メニューの項目」の行: 自前の項目にし、表のキーをアクセラレータにする(WKWebView より先に OS が受けるため。決定 (b))。
-//!   項目が選ばれたら `on_menu_event` が、タブの操作は画面を経由せず `SessionRegistry` を呼び(変わった状態は写しで画面に届く)、
+//!   項目が選ばれたら `on_menu_event` が、タブの操作と表示の操作は画面を経由せず `SessionRegistry` を呼び(変わった状態は写しで画面に届く)、
 //!   「すべてを選択」は画面へ `menu-command` を送り、「終了」は終了の要求(`lifecycle::request_quit`。FR-063 の確認を挟む)にする
 //! - 受け口が「編集の項目」の行(切り取り・コピー・ペースト): macOS 標準の項目(`cut:`・`copy:`・`paste:`)にする。WKWebView では
 //!   画面の cut・copy・paste イベントになり、画面がフォーカス位置で振り分ける(`src/ui/terminals/clipboardRouting.ts`)。
@@ -63,6 +63,8 @@ impl Default for Shortcuts {
 pub const TERMINAL_MENU_TITLE: &str = "ターミナル";
 /// 「編集」の見出し。
 pub const EDIT_MENU_TITLE: &str = "編集";
+/// 「表示」の見出し(「編集」の右。M4 の【仮定】10)。
+pub const VIEW_MENU_TITLE: &str = "表示";
 /// 「終了」の項目の ID(表のコマンドの ID と同じ)。文言はアプリ名を入れて作る(「Arin を終了」)。
 pub const QUIT_ID: &str = ShortcutCommandId::AppQuit.as_str();
 
@@ -78,6 +80,12 @@ const EDIT_GROUPS: &[&[ShortcutCommandId]] = &[
     &[C::EditCut, C::EditCopy, C::EditPaste],
     &[C::EditSelectAll],
 ];
+/// 「表示」の並び(表示モードの切替、区切り線、前後のページ、区切り線、拡大)。
+const VIEW_GROUPS: &[&[ShortcutCommandId]] = &[
+    &[C::ViewToggleDisplayMode],
+    &[C::ViewPreviousPage, C::ViewNextPage],
+    &[C::ViewToggleMaximize],
+];
 
 /// メニューに出す項目の文言。メニューに置き場所の無いコマンド(ツリーの操作)と、文言にアプリ名が入る「終了」は `None`。
 #[must_use]
@@ -91,6 +99,10 @@ pub const fn label(command: ShortcutCommandId) -> Option<&'static str> {
         C::EditCut => Some("切り取り"),
         C::EditCopy => Some("コピー"),
         C::EditPaste => Some("ペースト"),
+        C::ViewToggleDisplayMode => Some("タイル表示とタブ表示を切り替える"),
+        C::ViewPreviousPage => Some("前のページ"),
+        C::ViewNextPage => Some("次のページ"),
+        C::ViewToggleMaximize => Some("タイルを拡大/元に戻す"),
         _ => None,
     }
 }
@@ -121,6 +133,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 /// - アプリ名のメニュー: 隠す・ほかを隠す・すべてを表示(標準)・終了(自前)
 /// - ターミナル: 新規タブ・タブを閉じる・前のタブ・次のタブ(自前)
 /// - 編集: 切り取り・コピー・ペースト(標準)・すべてを選択(自前)
+/// - 表示: タイル表示とタブ表示の切替・前のページ・次のページ・タイルの拡大(自前。T47c)
 ///
 /// 受け口が合わない行(自前の項目なら「メニューの項目」以外、標準の項目なら「編集の項目」以外)は載せない。
 ///
@@ -145,9 +158,10 @@ pub fn build_with_table<R: Runtime>(
     let app_menu = app_menu.build()?;
     let terminal_menu = submenu(app, table, TERMINAL_MENU_TITLE, TERMINAL_GROUPS)?;
     let edit_menu = submenu(app, table, EDIT_MENU_TITLE, EDIT_GROUPS)?;
+    let view_menu = submenu(app, table, VIEW_MENU_TITLE, VIEW_GROUPS)?;
 
     MenuBuilder::new(app)
-        .items(&[&app_menu, &terminal_menu, &edit_menu])
+        .items(&[&app_menu, &terminal_menu, &edit_menu, &view_menu])
         .build()
 }
 
@@ -229,6 +243,8 @@ fn entry<R: Runtime>(
 /// - 新規タブ・前後のタブ: `SessionRegistry` を呼ぶ。プロジェクトを選んでいない・見つからない・タブが 0 枚のときは何もしない
 /// - タブを閉じる: シェルを終わらせるのに待つことがあるので、待ってよいスレッドで閉じる。0 枚なら何もしない
 /// - すべてを選択: 画面へ `menu-command`(`"select-all"`)を送る
+/// - 表示の 4 項目: `SessionRegistry` の表示の口を呼ぶ(変わったときだけ写しが届く)。タブ表示でのページ送り・拡大、
+///   端のページでのページ送りは何もしない。項目はいつも有効のまま並べる(M4 の【仮定】9)
 /// - 終了: 終了の要求(動作中のターミナルがあれば画面に確認を求める。FR-063)
 /// - それ以外の ID(標準の項目・画面で受けるコマンドなど): 何もしない
 pub fn on_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
@@ -263,6 +279,21 @@ pub fn on_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
                     let _ = sessions.select_next_terminal();
                 }
             }
+        }
+        C::ViewToggleDisplayMode
+        | C::ViewPreviousPage
+        | C::ViewNextPage
+        | C::ViewToggleMaximize => {
+            let Some(sessions) = app.try_state::<SessionRegistry>() else {
+                return;
+            };
+            // 変わらないとき(タブ表示でのページ送り・拡大、端のページ、0 枚)は何もしない。
+            let _ = match command {
+                C::ViewToggleDisplayMode => sessions.toggle_display_mode(),
+                C::ViewPreviousPage => sessions.previous_tile_page(),
+                C::ViewNextPage => sessions.next_tile_page(),
+                _ => sessions.toggle_tile_maximize(),
+            };
         }
         _ => {}
     }
