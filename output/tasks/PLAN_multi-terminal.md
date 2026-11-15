@@ -817,7 +817,7 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 可(`tree/` の子ファイルだけ)
   - 先に書くテスト: `既定では_git_node_modules_ds_store_を隠す`(C-07)、`ほかのドットファイルは既定でも出す`(`.claude`・`.github`)、`隠しファイル表示をオンにすると_3_つも出す`、`入れ子の階層でも名前が一致すれば隠す`、`名前の一部が一致するだけなら隠さない`(`node_modules_backup`)、`フォルダが先でその中は名前の順`、`大文字小文字が違うだけの名前はバイトの順で決まる`、`フォルダへのシンボリックリンクはフォルダと同じ並びで展開しない種類`、`ファイルの変更はその親のフォルダの変更にまとまる`、`同じフォルダの変更は_1_つにまとまる`、`除外の中の変更は捨てる`、`隠しファイル表示がオンなら除外の中の変更も渡す`、`ルートの外のパスは捨てる`、`1000_件を超えたら全部読み直しの印だけにする`
   - 検証: `npm test && npm run test:coverage`
-- [ ] T38d — ショートカットの表(`arin-core/shortcuts`。【要件の追加(本人。2026-11-15)】)(変更ファイル: crates/arin-core/src/shortcuts/table.rs, crates/arin-core/src/shortcuts/key.rs, crates/arin-core/tests/shortcuts.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/ | 依存: T38a)
+- [x] T38d — ショートカットの表(`arin-core/shortcuts`。【要件の追加(本人。2026-11-15)】)(変更ファイル: crates/arin-core/src/shortcuts/table.rs, crates/arin-core/src/shortcuts/key.rs, crates/arin-core/tests/shortcuts.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/ | 依存: T38a)
   - 対応: 【要件の追加】(M4.5 でキーを設定ファイルで変えるための土台)、FR-024(メニューの各操作をショートカットでも)、FR-044(M2 のタブ操作)、C-04、前提 (e)、【仮定】21・22
   - 置くもの:
     - コマンドの ID(列挙。文字列は M2 の `menu.rs` の ID をそのまま使う: `terminal.new-tab`・`terminal.close-tab`・`terminal.previous-tab`・`terminal.next-tab`・`edit.select-all`・`app.quit`。M3 で足す: `edit.copy`・`edit.cut`・`edit.paste`(ターミナルとツリーで共有)、`tree.open`・`tree.reveal-in-finder`・`tree.insert-path`・`tree.copy-relative-path`・`tree.copy-absolute-path`・`tree.rename`・`tree.trash`・`tree.new-file`・`tree.new-folder`)

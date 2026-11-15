@@ -20,6 +20,7 @@ use arin_core::fileops::{ConflictResolution, FileOpOutcome, NewEntryKind};
 use arin_core::launch_options::LaunchOptions;
 use arin_core::paths::{PathKind, RelPath};
 use arin_core::project::ProjectColor;
+use arin_core::shortcuts::table::ShortcutTable;
 use arin_core::tree::{DirListing, TreeChange};
 use arin_core::workspace::{
     AddProjectOutcome, AppSnapshot, ConnectOutcome, MenuCommand, QuitRequest, RemoveProjectOutcome,
@@ -49,6 +50,8 @@ fn collect_generated(cfg: &Config) -> BTreeMap<PathBuf, String> {
     collector.visit::<FileOpOutcome>();
     collector.visit::<ConflictResolution>();
     collector.visit::<NewEntryKind>();
+    // ショートカットの表(計画書 T38d)。行・コマンドの ID・受け口もたどって生成する。
+    collector.visit::<ShortcutTable>();
     collector.files
 }
 
@@ -75,6 +78,11 @@ impl TypeVisitor for Collector<'_> {
         T::visit_dependencies(self);
     }
 }
+
+/// 既定のショートカットの表の JSON の置き場所(生成先からの相対パス。計画書 T38d)。
+///
+/// 画面の自動テストの偽物と Vitest が、Rust と同じ既定の表を使うために置く。
+const DEFAULT_SHORTCUTS_JSON: &str = "defaultShortcuts.json";
 
 fn generated_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src/ipc/generated")
@@ -147,5 +155,27 @@ fn 生成した_type_script_の型が最新である() {
     assert!(
         stale.is_empty(),
         "生成先に、どの Rust の型からも作られないファイルがある: {stale:?}。不要なら消す"
+    );
+}
+
+#[test]
+fn 既定のショートカットの表の_json_が最新である() {
+    let expected = ShortcutTable::default_table().to_json();
+    let path = generated_dir().join(DEFAULT_SHORTCUTS_JSON);
+    let update = std::env::var_os("ARIN_UPDATE_GENERATED").is_some_and(|v| v == "1");
+
+    if update {
+        fs::write(&path, &expected)
+            .unwrap_or_else(|e| panic!("{} に書けなかった: {e}", path.display()));
+    }
+
+    let hint = "再生成: ARIN_UPDATE_GENERATED=1 cargo test -p arin-core --test generated_types";
+    let actual = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("生成物 {} が無い({e})。{hint}", path.display()));
+    assert_eq!(
+        actual,
+        expected,
+        "生成物 {} が Rust の既定の表と合っていない。{hint}",
+        path.display()
     );
 }

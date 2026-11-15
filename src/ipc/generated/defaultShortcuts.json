@@ -1,0 +1,92 @@
+[
+  {
+    "command": "terminal.new-tab",
+    "accelerator": "Cmd+T",
+    "receiver": "menu-item"
+  },
+  {
+    "command": "terminal.close-tab",
+    "accelerator": "Cmd+W",
+    "receiver": "menu-item"
+  },
+  {
+    "command": "terminal.previous-tab",
+    "accelerator": "Cmd+Shift+[",
+    "receiver": "menu-item"
+  },
+  {
+    "command": "terminal.next-tab",
+    "accelerator": "Cmd+Shift+]",
+    "receiver": "menu-item"
+  },
+  {
+    "command": "edit.select-all",
+    "accelerator": "Cmd+A",
+    "receiver": "menu-item"
+  },
+  {
+    "command": "app.quit",
+    "accelerator": "Cmd+Q",
+    "receiver": "menu-item"
+  },
+  {
+    "command": "edit.copy",
+    "accelerator": "Cmd+C",
+    "receiver": "edit-item"
+  },
+  {
+    "command": "edit.cut",
+    "accelerator": "Cmd+X",
+    "receiver": "edit-item"
+  },
+  {
+    "command": "edit.paste",
+    "accelerator": "Cmd+V",
+    "receiver": "edit-item"
+  },
+  {
+    "command": "tree.open",
+    "accelerator": "Cmd+O",
+    "receiver": "screen"
+  },
+  {
+    "command": "tree.reveal-in-finder",
+    "accelerator": "Cmd+Alt+R",
+    "receiver": "screen"
+  },
+  {
+    "command": "tree.insert-path",
+    "accelerator": "Cmd+Enter",
+    "receiver": "screen"
+  },
+  {
+    "command": "tree.copy-relative-path",
+    "accelerator": "Cmd+Shift+Alt+C",
+    "receiver": "screen"
+  },
+  {
+    "command": "tree.copy-absolute-path",
+    "accelerator": "Cmd+Alt+C",
+    "receiver": "screen"
+  },
+  {
+    "command": "tree.rename",
+    "accelerator": "Enter",
+    "receiver": "screen"
+  },
+  {
+    "command": "tree.trash",
+    "accelerator": "Cmd+Backspace",
+    "receiver": "screen"
+  },
+  {
+    "command": "tree.new-file",
+    "accelerator": "Cmd+N",
+    "receiver": "screen"
+  },
+  {
+    "command": "tree.new-folder",
+    "accelerator": "Cmd+Shift+N",
+    "receiver": "screen"
+  }
+]
