@@ -460,6 +460,22 @@ async function settleFocus(page: Page, title: string): Promise<void> {
 /** しばらく待つ(「起きない」ことを確かめるとき。次の描画のフレームでの移し替えが済む時間)。 */
 const SETTLE_MS = 250;
 
+/**
+ * 右ペインの外(表示モードの切替のボタン)へ入力のフォーカスを出してから、Tab キーでタイルの入力欄に入るまで進める。
+ * ターミナルの中の Tab は xterm.js がシェルへ送るので、外から入る。最初に入るのは並びの先頭のタイル。
+ */
+async function tabIntoFirstTile(page: Page): Promise<void> {
+  await tilesButton(page).focus();
+  for (let i = 0; i < 40; i += 1) {
+    await page.keyboard.press("Tab");
+    const inTile = await page.evaluate(
+      () => document.activeElement?.closest('[data-testid="tile"]') !== null && document.activeElement !== null,
+    );
+    if (inTile) return;
+  }
+  throw new Error("Tab キーでタイルの入力欄に入れなかった");
+}
+
 test.describe("拡大と復帰(FR-054)", () => {
   test("タイトルバーをダブルクリックするとそのターミナルがタブ表示の形で出て表示モードはタイルのまま", async ({ page }) => {
     await open(page, withTileDisplay(projectsSnapshot([A, B])));
@@ -472,6 +488,9 @@ test.describe("拡大と復帰(FR-054)", () => {
       .poll(async () => [...new Set((await readCallArgs(page, "focus_terminal")).map((c) => c.terminalId))])
       .toEqual(["p-a-t2"]);
     await expect.poll(() => countOf(page, "toggle_tile_maximize")).toBe(1);
+    // 拡大のコマンドには対象のタイルの ID を渡す(フォーカスのコマンドが失敗した・届く順が前後しても別のタイルを拡大しない。
+    // M4 のレビューの S3)。
+    expect(await readCallArgs(page, "toggle_tile_maximize")).toEqual([{ terminalId: "p-a-t2" }]);
 
     // Rust が返す写し: タイル表示のまま拡大中で、フォーカス中のタイル 1 枚だけが見える。
     await emitEvent(
@@ -509,6 +528,8 @@ test.describe("拡大と復帰(FR-054)", () => {
 
     await restoreButton(page).click();
     await expect.poll(() => countOf(page, "toggle_tile_maximize")).toBe(1);
+    // 元に戻すボタンは対象を渡さない(Rust はフォーカス中=拡大しているタイルの拡大を解く)。
+    expect((await readCallArgs(page, "toggle_tile_maximize"))[0]?.terminalId).toBeUndefined();
 
     await emitEvent(page, "app-snapshot", withTileDisplay(projectsSnapshot(list), { page: 1 }));
     await expect(maximizedStrip(page)).toHaveCount(0);
@@ -763,6 +784,45 @@ test.describe("入力のフォーカス(FR-053)", () => {
     await emitEvent(page, "app-snapshot", withTileDisplay(projectsSnapshot(list, { selectedProjectId: "p3" }), { mode: "tabs" }));
     await expect(terminalHosts(page)).toHaveAttribute("data-terminal-id", "p3-t1");
     await expect(terminalHosts(page).locator(".xterm-helper-textarea")).toBeFocused();
+  });
+
+  // M4 のレビューの S2: クリック以外(キーボード)で入力のフォーカスが入ったタイルにも、Rust のフォーカス中のタイルを合わせる。
+  test("キーボードで別のタイルに入力のフォーカスが入るとそのタイルへのフォーカスのコマンドが呼ばれる", async ({ page }) => {
+    // フォーカス中は最後のタイル(b)。並びの先頭の a の 1 枚目へ、キーボードで入る。
+    await open(page, withTileDisplay(projectsSnapshot([A, B]), { focusedTerminalId: "p-b-t1" }));
+    await settleFocus(page, "ribbitlog: ターミナル 1");
+    await tabIntoFirstTile(page);
+
+    await expect(tileInput(page, "app: ターミナル 1")).toBeFocused();
+    await expect.poll(() => readCallArgs(page, "focus_terminal")).toEqual([{ terminalId: "p-a-t1" }]);
+
+    // Rust が返す写し(a の 1 枚目がフォーカス中)で入力のフォーカスを移し直しても、もう一度は呼ばない。
+    await emitEvent(page, "app-snapshot", withTileDisplay(projectsSnapshot([A, B]), { focusedTerminalId: "p-a-t1" }));
+    await expect(tile(page, "app: ターミナル 1")).toHaveAttribute("aria-current", "true");
+    await page.waitForTimeout(SETTLE_MS);
+    expect(await readCallArgs(page, "focus_terminal")).toEqual([{ terminalId: "p-a-t1" }]);
+  });
+
+  test("キーボードでフォーカス中のタイルに入力のフォーカスが入ってもコマンドを呼ばない", async ({ page }) => {
+    await open(page, withTileDisplay(projectsSnapshot([A, B])));
+    await settleFocus(page, "app: ターミナル 1");
+    await tabIntoFirstTile(page);
+
+    await expect(tileInput(page, "app: ターミナル 1")).toBeFocused();
+    await page.waitForTimeout(SETTLE_MS);
+    expect(await readCallArgs(page, "focus_terminal")).toEqual([]);
+  });
+
+  test("クリックで入力のフォーカスが入ってもフォーカスのコマンドは_1_回だけ", async ({ page }) => {
+    await open(page, withTileDisplay(projectsSnapshot([A, B])));
+    await settleFocus(page, "app: ターミナル 1");
+    await connectOf(page, "p-b-t1");
+
+    // 押下(捕捉)と、xterm.js が入力欄に移すフォーカス(捕捉)の両方で求めるが、写しが届くまでは同じタイルを送り直さない。
+    await tile(page, "ribbitlog: ターミナル 1").getByTestId("terminal-host").click();
+    await expect(tileInput(page, "ribbitlog: ターミナル 1")).toBeFocused();
+    await page.waitForTimeout(SETTLE_MS);
+    expect(await readCallArgs(page, "focus_terminal")).toEqual([{ terminalId: "p-b-t1" }]);
   });
 
   test("フォーカス中のタイルが同じなら写しが変わってもフォーカスを動かさない", async ({ page }) => {

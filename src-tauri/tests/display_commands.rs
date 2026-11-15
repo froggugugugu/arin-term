@@ -385,18 +385,63 @@ fn フォーカス中のタイルへのフォーカスは写しを送らない(c
 }
 
 /// 前提: タイル表示。
-fn 知らないターミナルへのフォーカスは失敗を返し何も変えない(c: &Ctx) {
+///
+/// M4 のレビューの S6 で期待を「失敗を返す」から「何もせず成功を返す」に変えた。シェルが終わってタブが閉じるのと
+/// 同時にそのタイルをクリックすると、閉じたタイルへのフォーカスは普通に起きる。失敗を返すと画面が診断
+/// (`[arin:frontend-error]`)に流し、スモークが失敗になる(処理済みの通知 `ack_terminal_output` と同じ扱い)。
+/// 何も変えないこと・写しを送らないこと・監視を張り替えないことは、今までどおり確かめる。
+fn 知らないターミナルへのフォーカスと拡大は何もせず成功を返す(
+    c: &Ctx,
+) {
     let before = c.snapshot();
     let watched = c.watcher.count();
-    c.assert_not_sent("知らないターミナルへのフォーカス", || {
-        let result = c.call(
-            "focus_terminal",
-            json!({ "terminalId": "terminal-unknown" }),
-        );
-        assert!(result.is_err(), "知らない ID を受け付けた: {result:?}");
-    });
+    c.assert_not_sent(
+        "知らないターミナルへのフォーカスと拡大",
+        || {
+            c.ok(
+                "focus_terminal",
+                json!({ "terminalId": "terminal-unknown" }),
+            );
+            c.ok(
+                "toggle_tile_maximize",
+                json!({ "terminalId": "terminal-unknown" }),
+            );
+        },
+    );
     assert_eq!(c.snapshot(), before);
     assert_eq!(c.watcher.count(), watched);
+}
+
+/// 前提: タイル表示(拡大していない)、alpha 2 枚・beta 1 枚、alpha の 2 枚目にフォーカス。
+/// タイトルバーのダブルクリックは対象のタイルの ID を渡す(M4 のレビューの S3)。フォーカス中でないタイルを渡しても、
+/// そのタイルにフォーカスしてから拡大する。
+fn 対象のタイルを渡す拡大はそのタイルにフォーカスしてから拡大する(
+    c: &Ctx,
+) {
+    let beta_tile = c.tiles_of(BETA_ID)[0].clone();
+    assert_ne!(
+        c.snapshot().display.focused_terminal_id,
+        Some(beta_tile.clone())
+    );
+
+    c.assert_sent("対象のタイルを渡す拡大", || {
+        c.ok("toggle_tile_maximize", json!({ "terminalId": beta_tile }));
+    });
+    let s = c.snapshot();
+    assert!(s.display.maximized);
+    assert_eq!(s.display.focused_terminal_id, Some(beta_tile.clone()));
+    assert_eq!(s.selected_project_id, Some(project(BETA_ID)));
+
+    c.assert_sent("対象のタイルを渡して拡大を解く", || {
+        c.ok("toggle_tile_maximize", json!({ "terminalId": beta_tile }));
+    });
+    let s = c.snapshot();
+    assert!(!s.display.maximized);
+    assert_eq!(s.display.focused_terminal_id, Some(beta_tile));
+
+    // 次の確認の前提(alpha を選択中)に戻す
+    let alpha = c.tiles_of(ALPHA_ID);
+    c.ok("focus_terminal", json!({ "terminalId": alpha[0] }));
 }
 
 /// 前提: タイル表示、alpha を選択中(alpha 2 枚・beta 1 枚)。alpha に 7 枚足して 10 枚(alpha 9 枚・beta 1 枚)にする。
@@ -500,8 +545,12 @@ const CHECKS: &[(&str, Check)] = &[
         フォーカス中のタイルへのフォーカスは写しを送らない,
     ),
     (
-        "知らないターミナルへのフォーカスは失敗を返し何も変えない",
-        知らないターミナルへのフォーカスは失敗を返し何も変えない,
+        "知らないターミナルへのフォーカスと拡大は何もせず成功を返す",
+        知らないターミナルへのフォーカスと拡大は何もせず成功を返す,
+    ),
+    (
+        "対象のタイルを渡す拡大はそのタイルにフォーカスしてから拡大する",
+        対象のタイルを渡す拡大はそのタイルにフォーカスしてから拡大する,
     ),
     (
         "ページ送りと拡大のコマンドで写しの表示が変わる",

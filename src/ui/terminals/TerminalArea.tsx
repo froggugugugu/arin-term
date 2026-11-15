@@ -54,8 +54,8 @@ export function TerminalArea({ store, ui, actions, terminals }: TerminalAreaProp
   const project = selectedProject(snapshot);
   const terminal = shownTerminal(snapshot);
   const shownId = terminal?.id ?? null;
-  // 入力のフォーカスの宛先。タイル表示(拡大中を含む)はフォーカス中のタイル(=選択中のプロジェクトの表示中のタブ。前提 (c))。
-  const focusTarget = view.mode === "tiles" ? (view.focusedTile?.id ?? null) : shownId;
+  // 入力のフォーカスの宛先(inputFocusTarget)。
+  const focusTarget = inputFocusTarget(snapshot);
   // 宛先が同じでも、表示モードの切替と拡大・復帰では置き場所が作り直され、前の置き場所の入力欄のフォーカスが外れるので移し直す。
   const focusKey = `${view.mode}|${view.maximized}|${focusTarget ?? ""}`;
   /** 前回フォーカスを移そうとしたときの目印と宛先。 */
@@ -67,6 +67,9 @@ export function TerminalArea({ store, ui, actions, terminals }: TerminalAreaProp
   // 外し直す(blur のイベントは出ない)ので、同じ処理の中で移したフォーカスは消える。
   // 宛先が無くなった(最後の 1 枚を閉じた)ときは、「新規ターミナル」のボタンへ移す(body に落とさない。タブ表示だけにある)。
   // 写しが変わっただけ(宛先・モード・拡大が同じ)なら、この effect は動かない。
+  // 移す直前に、いまの写しの宛先がまだ同じかを確かめる(描画のフレームを待つあいだに新しい写しが届いていたら、古い宛先へ
+  // 移さない。タイルは入力のフォーカスが入るとフォーカスのコマンドを送るので、古い宛先へ移すと Rust のフォーカス中の
+  // タイルを古いほうへ戻してしまう。M4 のレビューの S2)。新しい宛先へは、新しい写しの effect が移す。
   useEffect(() => {
     const previous = previousFocus.current;
     previousFocus.current = { key: focusKey, target: focusTarget };
@@ -74,11 +77,12 @@ export function TerminalArea({ store, ui, actions, terminals }: TerminalAreaProp
     if (!mayTakeInputFocus()) return;
     const frame = requestAnimationFrame(() => {
       if (hasOpenOverlay()) return;
+      if (inputFocusTarget(store.getState().snapshot) !== focusTarget) return;
       if (focusTarget === null) newTerminalButton.current?.focus();
       else terminals.focus(focusTarget);
     });
     return () => cancelAnimationFrame(frame);
-  }, [terminals, focusTarget, focusKey]);
+  }, [store, terminals, focusTarget, focusKey]);
 
   if (view.mode === "tiles" && view.maximized) {
     const item = view.focusedTile;
@@ -191,6 +195,16 @@ function EmptyState({ title, children }: { title: string; children?: ReactNode }
       {children !== undefined && <div className="terminals-empty__body">{children}</div>}
     </div>
   );
+}
+
+/**
+ * 入力のフォーカスの宛先。タイル表示(拡大中を含む)はフォーカス中のタイル(=選択中のプロジェクトの表示中のタブ。前提 (c))、
+ * タブ表示は表示中のタブ。無ければ null。
+ */
+function inputFocusTarget(snapshot: ReturnType<AppStore["getState"]>["snapshot"]): TerminalId | null {
+  const view = tileView(snapshot);
+  if (view.mode === "tiles") return view.focusedTile?.id ?? null;
+  return shownTerminal(snapshot)?.id ?? null;
 }
 
 /** 開いているメニュー・確認ダイアログがあるか(あれば、そちらの操作の最中なので入力のフォーカスを動かさない)。 */

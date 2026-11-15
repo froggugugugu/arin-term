@@ -1,6 +1,6 @@
 import "./TileGrid.css";
 
-import type { CSSProperties, MouseEvent, PointerEvent } from "react";
+import type { CSSProperties, FocusEvent, MouseEvent, PointerEvent } from "react";
 import { useStore } from "zustand";
 
 import type { Actions } from "../../state/actions";
@@ -35,8 +35,12 @@ interface TileGridProps {
  * - 最後の行が埋まらないとき(3 枚で 2×2 など)は、タイルを引き伸ばさず空きを残す(【仮定】。タイルの大きさをそろえる)
  * - タイルのどこを押しても(タイトルバーでもターミナルの本文でも)フォーカスのコマンドを送る。本文の押下は xterm.js が
  *   文字の選択に使うので、捕捉の段階で見るだけにして止めない。フォーカス中のタイルなら actions.focusTile が何もしない
- * - タイトルバーのダブルクリックで拡大する(FR-054、計画【仮定】8)。1 回目の押下でそのタイルにフォーカスしてから
- *   拡大を求めるので、Rust はフォーカス中になったそのタイルを拡大する
+ * - クリック以外(Tab キーなど)でタイルに入力のフォーカスが入ったときも、捕捉の段階でフォーカスのコマンドを送る
+ *   (M4 のレビューの S2。キーの行き先と、Rust のフォーカス中のタイル=輪・ツリー・⌘W の対象・アテンションの判定をそろえる)。
+ *   TerminalArea が入力のフォーカスを移す先はいつもフォーカス中のタイルなので、そのときは focusTile が何もしない。
+ *   押下のあとに xterm.js が入力欄へ移すフォーカスでも呼ぶが、写しが届くまで同じタイルは送り直さない(actions.focusTile)
+ * - タイトルバーのダブルクリックで、そのタイルの ID を渡して拡大を求める(FR-054、計画【仮定】8、M4 のレビューの S3)。
+ *   Rust が「そのタイルにフォーカスしてから拡大」を 1 回で行うので、フォーカスのコマンドの成否や届く順によらない
  * - アテンションの印はタイトルバーの右端と、ページ送りの前後のボタン(FR-055)
  * - 入力のフォーカスの移し替えは TerminalArea が行う(フォーカス中のタイルが替わったとき)
  */
@@ -75,7 +79,7 @@ export function TileGrid({ view, store, ui, actions, terminals }: TileGridProps)
             lastRow={Math.floor(index / cols) === rows - 1}
             terminals={terminals}
             onFocus={() => void actions.focusTile(item.id)}
-            onMaximize={() => void actions.toggleTileMaximize()}
+            onMaximize={() => void actions.toggleTileMaximize(item.id)}
           />
         ))}
       </div>
@@ -99,6 +103,7 @@ function Tile({ item, lastCol, lastRow, terminals, onFocus, onMaximize }: TilePr
   const onPointerDownCapture = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button === 0) onFocus();
   };
+  const onFocusCapture = (_event: FocusEvent<HTMLDivElement>) => onFocus();
   const className = ["tile", item.focused && "tile--focused", lastCol && "tile--last-col", lastRow && "tile--last-row"]
     .filter(Boolean)
     .join(" ");
@@ -112,6 +117,7 @@ function Tile({ item, lastCol, lastRow, terminals, onFocus, onMaximize }: TilePr
       data-testid="tile"
       data-tile-id={item.id}
       onPointerDownCapture={onPointerDownCapture}
+      onFocusCapture={onFocusCapture}
     >
       <TileTitleBar
         title={item.title}

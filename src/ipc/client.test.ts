@@ -507,6 +507,15 @@ describe("表示のコマンド", () => {
     ]);
   });
 
+  it("対象のタイルを渡す拡大は_toggle_tile_maximize_に_terminalId_付きで届く", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.toggleTileMaximize("t2")).resolves.toBeUndefined();
+
+    expect(fake.calls).toEqual([{ command: "toggle_tile_maximize", args: { terminalId: "t2" } }]);
+  });
+
   it("知らないターミナルへのフォーカスの失敗はそのまま返す", async () => {
     const fake = createFakeIpc({
       focus_terminal: () => {

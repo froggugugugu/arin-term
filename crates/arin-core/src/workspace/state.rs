@@ -148,7 +148,9 @@ impl Workspace {
     /// `running` は呼び出し側が調べた動作中のターミナル(ほかのプロジェクトのものが混ざってよい)。
     /// そのプロジェクトに動作中のものがあり `confirmed` が偽なら、何も変えずに確認を求める。
     /// そうでなければタブをすべて外してから一覧から外し、外したタブを返す(セッションの後片付けは呼び出し側)。
-    /// 選択中だったなら選択は次(無ければ前、0 件なら無し)に移る。
+    /// 選択中だったなら選択は次(無ければ前、0 件なら無し)に移る。タイル表示で、それでフォーカス中のタイルが無くなり
+    /// ほかにタイルが残っていれば、消したプロジェクトのタイルがあった位置のタイル(末尾だったら 1 つ前)にフォーカスを移す
+    /// (`close_terminal` と同じ規則。M4 のレビューの S4)。
     ///
     /// # Errors
     ///
@@ -170,11 +172,17 @@ impl Workspace {
         if !busy.is_empty() && !confirmed {
             return Ok(RemoveOutcome::NeedsConfirmation(busy));
         }
+        // 消すプロジェクトのタイルがあった位置(先頭のタイルの位置)。閉じる前にフォーカスがあったときだけ使う。
+        let position = self
+            .active_terminal()
+            .and_then(|_| self.tabs.tabs(id).first().map(|tab| tab.id.clone()))
+            .and_then(|first| self.ordered_tabs().position(|tab| tab.id == first));
         let terminals = self.tabs.remove_project(id);
         for terminal in &terminals {
             self.terminals.remove(terminal);
         }
         self.projects.remove(id)?;
+        self.refocus_lost_tile(position);
         self.sync_display();
         Ok(RemoveOutcome::Removed { terminals })
     }

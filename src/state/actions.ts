@@ -17,6 +17,7 @@
 // (応答は無く、結果は写しの display で届く)。フォーカス中のタイルへのフォーカスは呼ばない(写しを増やさない)。
 
 import type { ArinIpc } from "../ipc/client";
+import type { AppSnapshot } from "../ipc/generated/AppSnapshot";
 import type { ConflictResolution } from "../ipc/generated/ConflictResolution";
 import type { DisplayMode } from "../ipc/generated/DisplayMode";
 import type { FileOpOutcome } from "../ipc/generated/FileOpOutcome";
@@ -119,16 +120,20 @@ export interface Actions {
   /** 表示モードをタブ表示・タイル表示にする(FR-048。表示モードの切替のボタン)。 */
   setDisplayMode(mode: DisplayMode): Promise<void>;
   /**
-   * タイルをクリックした: そのターミナルにフォーカスする(FR-053。そのプロジェクトが選ばれ、そのタブが表示中になる)。
-   * もうフォーカス中(写しの display.focusedTerminalId)なら何も呼ばない。
+   * タイルをクリックした・タイルに入力のフォーカスが入った: そのターミナルにフォーカスする(FR-053。そのプロジェクトが
+   * 選ばれ、そのタブが表示中になる)。もうフォーカス中(写しの display.focusedTerminalId)なら何も呼ばない。
+   * 同じタイルを求めたあと、写しがまだ届いていなければ送り直さない(失敗したら送り直せる)。
    */
   focusTile(id: TerminalId): Promise<void>;
   /** 次のページへ(FR-052。端では Rust が何もしない)。 */
   nextTilePage(): Promise<void>;
   /** 前のページへ(FR-052)。 */
   previousTilePage(): Promise<void>;
-  /** フォーカス中のタイルを拡大する・元に戻す(FR-054。タイトルバーのダブルクリック、元に戻すボタン)。 */
-  toggleTileMaximize(): Promise<void>;
+  /**
+   * タイルを拡大する・元に戻す(FR-054)。タイトルバーのダブルクリックは対象のタイルの ID を渡す(そのタイルにフォーカス
+   * してから拡大する)。元に戻すボタン・メニューは渡さない(フォーカス中のタイル)。
+   */
+  toggleTileMaximize(terminalId?: TerminalId): Promise<void>;
 
   // ── ツリー(M3)。開閉・選択は表示中のプロジェクトのツリーに効く ──
   /** フォルダを開く(未読込なら中身を求める。FR-013)。 */
@@ -214,6 +219,8 @@ const parentOf = (path: RelPath): RelPath => parentPath(path) ?? "";
 export function createActions({ ipc, ui, app, tree, treeController, reportError }: ActionsDeps): Actions {
   /** そのプロジェクトのツリーが表示中か(替えたあとに届いた応答で、確認や知らせを開かないため。T47e)。 */
   const isShown = (projectId: ProjectId) => tree.getState().activeProjectId === projectId;
+  /** 送ったタイルへのフォーカスの求めと、送ったときの写し(focusTile が同じ求めを続けて送らないため)。 */
+  let pendingFocus: { id: TerminalId; snapshot: AppSnapshot | null } | null = null;
 
   /** コマンドを呼び、失敗は what を付けて報告する。 */
   const run = async (what: string, request: () => Promise<unknown>): Promise<void> => {
@@ -348,12 +355,26 @@ export function createActions({ ipc, ui, app, tree, treeController, reportError 
 
     setDisplayMode: (mode) => run("表示モードを切り替えられなかった", () => ipc.setDisplayMode(mode)),
     focusTile: async (id) => {
-      if (app.getState().snapshot?.display.focusedTerminalId === id) return;
-      await run("タイルにフォーカスできなかった", () => ipc.focusTerminal(id));
+      const snapshot = app.getState().snapshot;
+      if (snapshot?.display.focusedTerminalId === id) return;
+      // 同じタイルを求めたあと、まだ写しが届いていなければ送り直さない(押下のあとに xterm.js が入力欄へ移すフォーカス、
+      // ドロップのあとのフォーカスでも呼ばれる。M4 のレビューの S2)。写しが届けば(どの写しでも)次は送る。
+      if (pendingFocus !== null && pendingFocus.id === id && pendingFocus.snapshot === snapshot) return;
+      pendingFocus = { id, snapshot };
+      await run("タイルにフォーカスできなかった", async () => {
+        try {
+          await ipc.focusTerminal(id);
+        } catch (cause) {
+          // 失敗したら、同じタイルをもう一度求められるようにする。
+          if (pendingFocus?.id === id) pendingFocus = null;
+          throw cause;
+        }
+      });
     },
     nextTilePage: () => run("次のページに送れなかった", () => ipc.nextTilePage()),
     previousTilePage: () => run("前のページに戻せなかった", () => ipc.previousTilePage()),
-    toggleTileMaximize: () => run("タイルを拡大・元に戻せなかった", () => ipc.toggleTileMaximize()),
+    toggleTileMaximize: (terminalId) =>
+      run("タイルを拡大・元に戻せなかった", () => ipc.toggleTileMaximize(terminalId)),
 
     expandDir: (path) => treeController.expand(path),
     collapseDir: (path) => treeController.collapse(path),

@@ -10,7 +10,7 @@
 //!
 //! 規則(未処理の量の計算、止める・再開の判定、まとめの量、ターミナルの状態)は `arin-core` が持ち、ここは
 //! スレッドとロックだけを扱う。検証用の記録(`verify_log`。開発ビルドだけ)を渡したときだけ、読み取りスレッドが
-//! OSC 52 を走査し、流量制御の状態と処理済みの通知を集計する(T23)。ロックの順序は「接続の直列化 → Workspace → セッションの一覧」で、
+//! OSC 52 を走査し、流量制御の状態と処理済みの通知を集計する(T23)。ロックの順序は「接続の直列化 → 写しの直列化 → Workspace → セッションの一覧」で、
 //! PTY の操作(起動・書き込み・寸法・終了)と送り先への送信のあいだは Workspace と一覧のロックを持たない。
 //!
 //! アテンション(FR-055。計画書 T48c): 読み取りスレッドは検証用の記録の有無によらず、自分だけが持つ `AttentionScanner` で
@@ -184,6 +184,9 @@ struct Inner {
     sessions: Mutex<HashMap<TerminalId, Arc<Session>>>,
     /// 接続を 1 つずつ行う(同じターミナルを二重に起動しない)。入力・寸法・通知はこれを取らない。
     connect_serial: Mutex<()>,
+    /// 写しを 1 本ずつ送る(`notify`)。写しを作ってから受け口を呼び終えるまで持つので、受け口に届く写しは
+    /// Workspace が変わった順に並ぶ(古い写しがあとから届いて、画面が古い状態に戻ることが無い)。
+    notify_serial: Mutex<()>,
     /// 検証用の記録。`None` なら走査も集計もしない(リリースビルド)。
     verify: Option<VerifyConfig>,
     /// 終了の処理が始まった。セッションの一覧のロックを持って読み書きする(接続の登録と終了の処理の取りこぼしを防ぐ)。
@@ -265,6 +268,7 @@ impl SessionRegistry {
                 config,
                 sessions: Mutex::new(HashMap::new()),
                 connect_serial: Mutex::new(()),
+                notify_serial: Mutex::new(()),
                 verify,
                 shutting_down: AtomicBool::new(false),
             }),
@@ -760,11 +764,16 @@ impl SessionRegistry {
     /// タイルにフォーカスする(FR-053、AC-M15)。そのタブのプロジェクトを選び、そのタブを表示中にする。
     /// 選択か表示中のタブが変わったときだけ写しを送り `true` を返す(プロジェクトが替わればツリーの監視は写しで張り替わる)。
     ///
+    /// その ID のタブが無いとき(持ち主のプロジェクトが無いタブを含む)は、何も変えず写しも送らず `false` を返す
+    /// (失敗にしない。M4 のレビューの S6)。シェルが終わってタブが閉じるのと同時にそのタイルをクリックすると、
+    /// 閉じたタイルへのフォーカスは普通に起きる。失敗として画面に返すと診断に出てしまう(`ack` と同じ扱い)。
+    ///
     /// # Errors
     ///
-    /// その ID のタブが無いとき、持ち主のプロジェクトが無いタブのとき。何も変えず、写しも送らない。
+    /// いまは失敗しない(コマンドの形をほかとそろえるため `Result` のまま)。
     pub fn focus_terminal(&self, id: &TerminalId) -> Result<bool, SessionError> {
-        let changed = lock(&self.inner.workspace).focus_terminal(id)?;
+        let focused = lock(&self.inner.workspace).focus_terminal(id);
+        let changed = ignore_closed(focused)?;
         if changed {
             self.notify();
         }
@@ -799,6 +808,23 @@ impl SessionRegistry {
             self.notify();
         }
         changed
+    }
+
+    /// 渡したタイルにフォーカスしてから、拡大する・拡大を解く(タイトルバーのダブルクリック。FR-054、M4 のレビューの S3)。
+    /// 1 回のロックの中で行うので、フォーカスのコマンドの失敗や届く順の前後で別のタイルを拡大しない。
+    /// 変わったときだけ写しを送り `true` を返す。タブ表示では何もしない。
+    /// その ID のタブが無いときは `focus_terminal` と同じく、何も変えず `false` を返す(失敗にしない。S6)。
+    ///
+    /// # Errors
+    ///
+    /// いまは失敗しない(コマンドの形をほかとそろえるため `Result` のまま)。
+    pub fn toggle_tile_maximize_of(&self, id: &TerminalId) -> Result<bool, SessionError> {
+        let toggled = lock(&self.inner.workspace).toggle_maximize_of(id);
+        let changed = ignore_closed(toggled)?;
+        if changed {
+            self.notify();
+        }
+        Ok(changed)
     }
 
     /// Workspace から外したタブのセッションを一覧から外し、写しを送ってから終わらせる(待つのはロックの外)。
@@ -853,10 +879,29 @@ impl SessionRegistry {
         lock(&self.inner.sessions).get(id).cloned()
     }
 
-    /// いまの写しを知らせる。Workspace のロックの外で呼ぶ。
+    /// いまの写しを知らせる。Workspace のロックの外で呼ぶ(持ったまま呼ぶと、ロックの順が逆になる)。
+    ///
+    /// 「写しを作る → 受け口を呼ぶ」を `notify_serial` の中で 1 本ずつ行う(M4 のレビューの S1)。送り手は
+    /// コマンド・メニュー・読み取りスレッド(アテンション)・まとめのスレッド(シェルの終了)・見回りと複数あり、
+    /// 直列にしないと、先に作った古い写しが新しい写しのあとに届きうる。写しを作るあいだだけ Workspace のロックを取る
+    /// (ロックの順は notify_serial → Workspace。受け口を呼ぶあいだは Workspace のロックを持たない)。
+    ///
+    /// 受け口(`lib.rs`)は待たない処理だけにする: emit(メインスレッド以外からはイベントループへ送るだけ)、
+    /// 保存の予約(保存のロックを短く取る)、ツリーの監視の張り替えの依頼(チャネルへ送るだけ)。受け口の中から
+    /// Workspace のロックを取るのはよいが、`notify` を呼び直すと自分を待って止まる。
     fn notify(&self) {
+        let _serial = lock(&self.inner.notify_serial);
         let snapshot = self.snapshot();
         (self.inner.listener)(snapshot);
+    }
+}
+
+/// タイルへの操作で、閉じたタイル(ID が無い)を「何もしなかった」とみなす(M4 のレビューの S6)。
+fn ignore_closed(result: Result<bool, TerminalError>) -> Result<bool, SessionError> {
+    match result {
+        Ok(changed) => Ok(changed),
+        Err(TerminalError::NotFound(_)) => Ok(false),
+        Err(e) => Err(e.into()),
     }
 }
 

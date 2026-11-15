@@ -8,6 +8,8 @@
 //! 不変条件(どの口のあとも成り立つ):
 //! - ページは範囲内(0 枚なら 0)。フォーカス中のタイルがあれば、ページはそのタイルのページ
 //! - 拡大中はタイル表示で、拡大しているのはフォーカス中のタイル。拡大していたターミナルが消えたら拡大を解く
+//! - タイル表示でフォーカス中のタイルがタブを閉じて無くなり、ほかにタイルが残っていれば、閉じた位置のタイルにフォーカスを移す
+//!   (`refocus_lost_tile`。M4 のレビューの S4)
 //! - フォーカス中のターミナルにアテンションの印は無い(計画書 T48b、ADR-011 の 7。`note_attention` はフォーカス中なら
 //!   立てず、`sync_display` がフォーカス中になったものの印を消す)。タイル表示で見えているだけのタイルには立つ
 //!
@@ -76,12 +78,7 @@ impl Workspace {
     /// その ID のタブが無いとき、持ち主のプロジェクトが一覧に無いとき(どちらも `TerminalError::NotFound`)。
     /// どの場合も何も変えない。
     pub fn focus_terminal(&mut self, id: &TerminalId) -> Result<bool, TerminalError> {
-        let project = self
-            .tabs
-            .tab(id)
-            .map(|tab| tab.project.clone())
-            .filter(|project| self.projects.get(project).is_some())
-            .ok_or_else(|| TerminalError::NotFound(id.clone()))?;
+        let project = self.tile_owner(id)?;
         let before = (self.projects.selected().cloned(), self.active_terminal());
         self.focus_tile(id, &project);
         Ok((self.projects.selected().cloned(), self.active_terminal()) != before)
@@ -123,6 +120,22 @@ impl Workspace {
         }
         self.sync_display();
         true
+    }
+
+    /// 渡したタイルにフォーカスしてから、拡大する・拡大を解く(タイトルバーのダブルクリック。FR-054、M4 のレビューの S3)。
+    /// 「フォーカス → 拡大」を 1 回で行うので、フォーカスのコマンドの失敗や届く順の前後で別のタイルを拡大しない。
+    /// タブ表示では何もせず `Ok(false)`。変わったら `Ok(true)`(拡大しているタイルを渡すと拡大を解く)。
+    ///
+    /// # Errors
+    ///
+    /// `focus_terminal` と同じ(その ID のタブが無い・持ち主のプロジェクトが一覧に無いとき)。何も変えない。
+    pub fn toggle_maximize_of(&mut self, id: &TerminalId) -> Result<bool, TerminalError> {
+        let project = self.tile_owner(id)?;
+        if self.display.mode != DisplayMode::Tiles {
+            return Ok(false);
+        }
+        self.focus_tile(id, &project);
+        Ok(self.toggle_maximize())
     }
 
     /// 表示中のターミナルの並び(NFR-009。画面がどのターミナルを描くかに使う。アテンションの判定には使わない。
@@ -204,6 +217,35 @@ impl Workspace {
         }
     }
 
+    /// フォーカス中のタイルの、全タイルの並びでの位置(タブが閉じる前に覚えておき、`refocus_lost_tile` に渡す)。
+    pub(super) fn focused_tile_position(&self) -> Option<usize> {
+        let focused = self.active_terminal()?;
+        self.tile_ids().iter().position(|t| t == &focused)
+    }
+
+    /// タイル表示(拡大中を含む)で、タブが閉じた結果フォーカス中のタイルが無くなり、ほかにタイルが残っていれば、
+    /// 閉じたタイルがあった位置(`position`。並びの同じ番号。末尾だったら 1 つ前)のタイルにフォーカスを移す
+    /// (`focus_terminal` と同じ結果。M4 のレビューの S4、ADR-011)。入力のフォーカスが行き場を失い、
+    /// アテンションが全タイルに立つのを防ぐ。`position` が `None`(閉じる前からフォーカスが無い=カードで 0 枚の
+    /// プロジェクトを選んだ)・タブ表示・フォーカスが残っているとき・タイルが 0 枚のときは何もしない。
+    /// 拡大していたタイルが閉じていれば、拡大は `sync_display` で解ける。
+    pub(super) fn refocus_lost_tile(&mut self, position: Option<usize>) {
+        let Some(position) = position else {
+            return;
+        };
+        if self.display.mode != DisplayMode::Tiles || self.active_terminal().is_some() {
+            return;
+        }
+        let tiles = self.tile_ids();
+        let Some(target) = tiles.get(position.min(tiles.len().saturating_sub(1))) else {
+            return;
+        };
+        if let Ok(project) = self.tile_owner(target) {
+            let target = target.clone();
+            self.focus_tile(&target, &project);
+        }
+    }
+
     /// 保存値を、いまのタブから決まる表示に合わせ直す(選択・タブの追加・閉じる・切替・削除・シェルの終了のあとに呼ぶ)。
     /// フォーカス中になったターミナルのアテンションの印を消す(設計書 §7.1「アテンション」の 5)。
     /// ページを送っただけで見えるようになったタイルの印は消さない。
@@ -260,6 +302,15 @@ impl Workspace {
         self.display.page = page;
         self.focus_tile(&first, &project);
         true
+    }
+
+    /// タイルの持ち主のプロジェクト。タブが無い・持ち主が一覧に無いときは `TerminalError::NotFound`。
+    fn tile_owner(&self, id: &TerminalId) -> Result<ProjectId, TerminalError> {
+        self.tabs
+            .tab(id)
+            .map(|tab| tab.project.clone())
+            .filter(|project| self.projects.get(project).is_some())
+            .ok_or_else(|| TerminalError::NotFound(id.clone()))
     }
 
     /// そのタイルの持ち主を選び、タブを表示中にしてから表示を合わせ直す。

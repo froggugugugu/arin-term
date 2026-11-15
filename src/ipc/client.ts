@@ -64,7 +64,8 @@ export interface CommandMap {
   focus_terminal: { args: { terminalId: TerminalId }; result: null };
   next_tile_page: { args: undefined; result: null };
   previous_tile_page: { args: undefined; result: null };
-  toggle_tile_maximize: { args: undefined; result: null };
+  /** terminalId を渡すと、そのタイルにフォーカスしてから拡大する(タイトルバーのダブルクリック)。閉じたタイルなら何もしない。 */
+  toggle_tile_maximize: { args: { terminalId: TerminalId } | undefined; result: null };
   /** path はルート基準の相対パス(ルートは空の文字列)。絶対パス・`..` は Rust が拒否する。 */
   list_directory: { args: { projectId: ProjectId; path: RelPath }; result: DirListing };
   set_show_hidden: { args: { projectId: ProjectId; showHidden: boolean }; result: null };
@@ -254,15 +255,18 @@ export interface ArinIpc {
   setDisplayMode(mode: DisplayMode): Promise<void>;
   /**
    * タイルにフォーカスする(タイルのクリック)。そのタブのプロジェクトが選ばれ、そのタブが表示中になる(ツリーも切り替わる)。
-   * 知らない ID・持ち主の無いタブは失敗する。
+   * 知らない ID・持ち主の無いタブ(閉じたタイル)は何もしない(失敗にしない)。
    */
   focusTerminal(id: TerminalId): Promise<void>;
   /** 次のページへ送り、その先頭のタイルにフォーカスする。タブ表示・拡大中・最後のページでは何もしない。 */
   nextTilePage(): Promise<void>;
   /** 前のページへ送り、その先頭のタイルにフォーカスする。タブ表示・拡大中・最初のページでは何もしない。 */
   previousTilePage(): Promise<void>;
-  /** フォーカス中のタイルを拡大する、または拡大を解く。タブ表示では何もしない。 */
-  toggleTileMaximize(): Promise<void>;
+  /**
+   * タイルを拡大する、または拡大を解く。タブ表示では何もしない。terminalId を渡すと、そのタイルにフォーカスしてから
+   * 拡大する(1 回のコマンドで行うので、別のタイルを拡大しない)。渡さなければフォーカス中のタイル。
+   */
+  toggleTileMaximize(terminalId?: TerminalId): Promise<void>;
   /**
    * フォルダの中身を問い合わせる(ツリーの展開)。path はルート基準の相対パスで、ルートは空の文字列。
    * Rust が除外(隠しファイル表示が OFF のとき)と並び順を当てて返す。プロジェクトやフォルダが見つからなければ notFound、
@@ -438,7 +442,8 @@ export function createIpc(transport: IpcTransport): ArinIpc {
     focusTerminal: (terminalId) => done(invoke("focus_terminal", { terminalId })),
     nextTilePage: () => done(invoke("next_tile_page", undefined)),
     previousTilePage: () => done(invoke("previous_tile_page", undefined)),
-    toggleTileMaximize: () => done(invoke("toggle_tile_maximize", undefined)),
+    toggleTileMaximize: (terminalId) =>
+      done(invoke("toggle_tile_maximize", terminalId === undefined ? undefined : { terminalId })),
     listDirectory: (projectId, path) => invoke("list_directory", { projectId, path }),
     setShowHidden: (projectId, showHidden) => done(invoke("set_show_hidden", { projectId, showHidden })),
     onTreeChanged: (listener) => transport.listen("tree-changed", listener),

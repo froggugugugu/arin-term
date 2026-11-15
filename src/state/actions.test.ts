@@ -130,6 +130,38 @@ describe("actions(表示の操作。T47e)", () => {
     expect(fake.calls).toEqual([{ command: "focus_terminal", args: { terminalId: "a2" } }]);
   });
 
+  it("同じタイルへのフォーカスは写しが届くまで送り直さず_届いたら送る", async () => {
+    const { fake, actions, app } = displaySetup();
+
+    await actions.focusTile("a2");
+    await actions.focusTile("a2");
+    expect(fake.calls).toEqual([{ command: "focus_terminal", args: { terminalId: "a2" } }]);
+
+    // 別の写しが届いた(フォーカス中は a1 のまま。Rust 側でタブが閉じたなど)ら、もう一度求められる。
+    const snapshot = app.getState().snapshot;
+    if (snapshot === null) throw new Error("写しが無い");
+    app.getState().replaceSnapshot({ ...snapshot });
+    await actions.focusTile("a2");
+    expect(fake.calls).toHaveLength(2);
+  });
+
+  it("フォーカスのコマンドが失敗したら同じタイルをもう一度求められる", async () => {
+    let failing = true;
+    const { fake, actions, errors } = displaySetup({
+      focus_terminal: () => {
+        if (failing) throw "一時的な失敗";
+        return null;
+      },
+    });
+
+    await actions.focusTile("a2");
+    failing = false;
+    await actions.focusTile("a2");
+
+    expect(fake.calls).toHaveLength(2);
+    expect(errors).toEqual(["タイルにフォーカスできなかった: 一時的な失敗"]);
+  });
+
   it("写しがまだ無ければフォーカスのコマンドを呼ぶ", async () => {
     const { fake, actions } = setup();
 
@@ -150,6 +182,14 @@ describe("actions(表示の操作。T47e)", () => {
       { command: "previous_tile_page", args: undefined },
       { command: "toggle_tile_maximize", args: undefined },
     ]);
+  });
+
+  it("タイトルバーのダブルクリックの拡大は対象のタイルの_ID_を渡す", async () => {
+    const { fake, actions } = displaySetup();
+
+    await actions.toggleTileMaximize("a2");
+
+    expect(fake.calls).toEqual([{ command: "toggle_tile_maximize", args: { terminalId: "a2" } }]);
   });
 
   it("表示の操作の失敗は報告し_Promise_は失敗しない", async () => {

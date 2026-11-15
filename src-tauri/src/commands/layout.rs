@@ -38,7 +38,8 @@ pub fn set_display_mode(sessions: State<'_, SessionRegistry>, mode: DisplayMode)
 }
 
 /// タイルにフォーカスする(タイルのクリック。FR-053、AC-M15)。そのタブのプロジェクトを選び、そのタブを表示中にする。
-/// プロジェクトが替わると、ツリーの監視は写しで張り替わる。
+/// プロジェクトが替わると、ツリーの監視は写しで張り替わる。閉じたタイルの ID なら何もしない(失敗にしない。
+/// M4 のレビューの S6。`SessionRegistry::focus_terminal`)。
 #[tauri::command]
 pub fn focus_terminal(
     sessions: State<'_, SessionRegistry>,
@@ -62,8 +63,24 @@ pub fn previous_tile_page(sessions: State<'_, SessionRegistry>) {
     sessions.previous_tile_page();
 }
 
-/// フォーカス中のタイルを拡大する、または拡大を解く(FR-054)。タブ表示では何もしない。
+/// タイルを拡大する、または拡大を解く(FR-054)。タブ表示では何もしない。
+///
+/// `terminal_id` を渡したら(タイトルバーのダブルクリック)、そのタイルにフォーカスしてから拡大する(1 回のロックの中。
+/// M4 のレビューの S3)。閉じたタイルの ID なら何もしない(失敗にしない。S6)。渡さなければフォーカス中のタイル
+/// (拡大中の帯の「戻す」)。
 #[tauri::command]
-pub fn toggle_tile_maximize(sessions: State<'_, SessionRegistry>) {
-    sessions.toggle_tile_maximize();
+pub fn toggle_tile_maximize(
+    sessions: State<'_, SessionRegistry>,
+    terminal_id: Option<TerminalId>,
+) -> Result<(), String> {
+    match terminal_id {
+        Some(id) => sessions
+            .toggle_tile_maximize_of(&id)
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        None => {
+            sessions.toggle_tile_maximize();
+            Ok(())
+        }
+    }
 }

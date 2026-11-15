@@ -34,8 +34,10 @@ impl Workspace {
                 Ok(AddProjectOutcome::Added { project_id })
             }
             Err(ProjectError::AlreadyRegistered(project_id)) => {
-                // `ProjectStore::register` が既存を選んでいる。選択が変わるので表示を合わせ直す
-                // (見えたタブのアテンションの印を消す。計画書 T48b)。
+                // `ProjectStore::register` が既存を選んでいる。カードの選択(`select_project`)と同じ順で、
+                // タイル表示ならそのプロジェクトの最初のタイルのページへ移してから表示を合わせ直す
+                // (見えたタブのアテンションの印を消す。計画書 T48b。M4 のレビューの S5)。
+                self.align_selected_project_to_tiles();
                 self.sync_display();
                 Ok(AddProjectOutcome::AlreadyRegistered { project_id })
             }

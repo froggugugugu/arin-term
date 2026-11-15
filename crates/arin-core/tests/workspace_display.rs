@@ -509,10 +509,15 @@ fn タブを閉じてページが減るとページを丸める() {
 
 #[test]
 fn フォーカスの無いまま最後のページが消えると前のページに丸める() {
-    // A が 9 枚、B が 1 枚。B を選んで 2 ページ目を出してから、B の唯一のタブを閉じる(B は 0 枚)
-    let mut ws = workspace(&[9, 1]);
+    // A が 9 枚、B が 1 枚、C が 0 枚。B を選んで 2 ページ目を出し、0 枚の C をカードで選んで(フォーカスは無し。
+    // ページはそのまま)から、B の唯一のタブを閉じる。
+    // M4 のレビューの S4 で、フォーカス中のタイルが閉じて無くなったときは近くのタイルへ移すようにしたので、
+    // 「フォーカスの無いまま」を作るのは、閉じる前からフォーカスが無い(0 枚のプロジェクトを選んだ)形にした
+    let mut ws = workspace(&[9, 1, 0]);
     ws.set_display_mode(DisplayMode::Tiles);
     ws.select_project(&pid(2)).unwrap();
+    assert_eq!(page(&ws), 1);
+    ws.select_project(&pid(3)).unwrap();
     assert_eq!(page(&ws), 1);
     let b1 = tabs_of(&ws, &pid(2))[0].clone();
 
@@ -559,6 +564,223 @@ fn シェルが終わってタブが消えてもページとフォーカスが�
 
     assert!(!all_ids(&ws).contains(&a[9]));
     assert_eq!(page(&ws), 0);
+    check_invariants(&ws);
+}
+
+// ---------------------------------------------------------------------------
+// タイル表示でフォーカス中のタイルが閉じたら近くのタイルへ移す(M4 のレビューの S4、ADR-011)
+
+#[test]
+fn タイル表示で選択中のプロジェクトの最後のタブが閉じると同じ位置のタイルにフォーカスが移る() {
+    let mut ws = workspace(&[1, 1, 1]);
+    ws.set_display_mode(DisplayMode::Tiles);
+    let b1 = tabs_of(&ws, &pid(2))[0].clone();
+    let c1 = tabs_of(&ws, &pid(3))[0].clone();
+    ws.focus_terminal(&b1).unwrap();
+
+    ws.close_terminal(&b1).unwrap();
+
+    assert_eq!(
+        selected(&ws),
+        Some(pid(3)),
+        "そのタイルのプロジェクトが選ばれる"
+    );
+    assert_eq!(ws.snapshot().display.focused_terminal_id, Some(c1.clone()));
+    assert_eq!(active_of(&ws, &pid(3)), Some(c1));
+    check_invariants(&ws);
+}
+
+#[test]
+fn タイル表示で閉じたタイルが末尾なら_1_つ前のタイルにフォーカスが移る() {
+    let mut ws = workspace(&[2, 1]);
+    ws.set_display_mode(DisplayMode::Tiles);
+    let a = tabs_of(&ws, &pid(1));
+    let b1 = tabs_of(&ws, &pid(2))[0].clone();
+    ws.focus_terminal(&b1).unwrap();
+
+    ws.close_terminal(&b1).unwrap();
+
+    assert_eq!(selected(&ws), Some(pid(1)));
+    assert_eq!(
+        ws.snapshot().display.focused_terminal_id,
+        Some(a[1].clone())
+    );
+    check_invariants(&ws);
+}
+
+#[test]
+fn タイル表示でシェルが終わって最後のタブが閉じても同じ位置のタイルにフォーカスが移る() {
+    let mut ws = workspace(&[1, 1, 1]);
+    ws.set_display_mode(DisplayMode::Tiles);
+    let b1 = tabs_of(&ws, &pid(2))[0].clone();
+    let c1 = tabs_of(&ws, &pid(3))[0].clone();
+    ws.focus_terminal(&b1).unwrap();
+    ws.mark_running(&b1).unwrap();
+
+    assert!(
+        ws.mark_exited(
+            &b1,
+            Some(ChildExit {
+                exit_code: 0,
+                signal: None,
+            }),
+        )
+        .is_some()
+    );
+
+    assert_eq!(selected(&ws), Some(pid(3)));
+    assert_eq!(ws.snapshot().display.focused_terminal_id, Some(c1));
+    check_invariants(&ws);
+}
+
+#[test]
+fn タブ表示では最後のタブが閉じてもほかのプロジェクトへフォーカスを移さない() {
+    let mut ws = workspace(&[1, 1]);
+    let b1 = tabs_of(&ws, &pid(2))[0].clone();
+    ws.select_project(&pid(2)).unwrap();
+
+    ws.close_terminal(&b1).unwrap();
+
+    assert_eq!(selected(&ws), Some(pid(2)), "0 枚の表示のまま");
+    assert_eq!(ws.snapshot().display.focused_terminal_id, None);
+    check_invariants(&ws);
+}
+
+#[test]
+fn カードで_0_枚のプロジェクトを選んだときはフォーカスを移さず_ほかのタブが閉じても移さない() {
+    let mut ws = workspace(&[2, 0]);
+    ws.set_display_mode(DisplayMode::Tiles);
+    let a = tabs_of(&ws, &pid(1));
+
+    ws.select_project(&pid(2)).unwrap();
+    assert_eq!(ws.snapshot().display.focused_terminal_id, None);
+
+    // フォーカスはもともと無いので、閉じたことで無くなったのではない(利用者が選んだものを変えない)
+    ws.close_terminal(&a[0]).unwrap();
+    assert_eq!(selected(&ws), Some(pid(2)));
+    assert_eq!(ws.snapshot().display.focused_terminal_id, None);
+    check_invariants(&ws);
+}
+
+#[test]
+fn 拡大中に拡大していたタイルが閉じると拡大が解け同じ位置のタイルにフォーカスが移る() {
+    let mut ws = workspace(&[1, 1, 1]);
+    ws.set_display_mode(DisplayMode::Tiles);
+    let b1 = tabs_of(&ws, &pid(2))[0].clone();
+    let c1 = tabs_of(&ws, &pid(3))[0].clone();
+    ws.focus_terminal(&b1).unwrap();
+    assert!(ws.toggle_maximize());
+
+    ws.close_terminal(&b1).unwrap();
+
+    let display = ws.snapshot().display;
+    assert!(!display.maximized, "拡大は解ける");
+    assert_eq!(display.focused_terminal_id, Some(c1));
+    check_invariants(&ws);
+}
+
+#[test]
+fn タイル表示で選択中のプロジェクトを消し次が_0_枚なら消した位置のタイルへ移る() {
+    // A 1 枚・B 2 枚・C 0 枚・D 1 枚。B を消すと選択は C(0 枚)に移る。B のタイルがあった位置(全体の 2 枚目)には D がくる
+    let mut ws = workspace(&[1, 2, 0, 1]);
+    ws.set_display_mode(DisplayMode::Tiles);
+    let b = tabs_of(&ws, &pid(2));
+    let d1 = tabs_of(&ws, &pid(4))[0].clone();
+    ws.focus_terminal(&b[1]).unwrap();
+
+    ws.remove_project(&pid(2), &[], true).unwrap();
+
+    assert_eq!(selected(&ws), Some(pid(4)));
+    assert_eq!(ws.snapshot().display.focused_terminal_id, Some(d1));
+    check_invariants(&ws);
+}
+
+#[test]
+fn タブ表示で選択中のプロジェクトを消して次の選択が_0_枚ならフォーカスは無いまま() {
+    let mut ws = workspace(&[1, 1, 0]);
+    ws.select_project(&pid(2)).unwrap();
+
+    ws.remove_project(&pid(2), &[], true).unwrap();
+
+    assert_eq!(selected(&ws), Some(pid(3)));
+    assert_eq!(ws.snapshot().display.focused_terminal_id, None);
+    check_invariants(&ws);
+}
+
+// ---------------------------------------------------------------------------
+// 対象のタイルを渡す拡大(M4 のレビューの S3)
+
+#[test]
+fn 対象のタイルを渡して拡大するとそのタイルにフォーカスしてから拡大する() {
+    let mut ws = workspace(&[2, 1]);
+    ws.set_display_mode(DisplayMode::Tiles);
+    let b1 = tabs_of(&ws, &pid(2))[0].clone();
+    assert_ne!(ws.active_terminal(), Some(b1.clone()));
+
+    assert_eq!(ws.toggle_maximize_of(&b1), Ok(true));
+
+    let display = ws.snapshot().display;
+    assert!(display.maximized);
+    assert_eq!(display.focused_terminal_id, Some(b1.clone()));
+    assert_eq!(selected(&ws), Some(pid(2)));
+    assert_eq!(ws.visible_terminals(), vec![b1.clone()]);
+    check_invariants(&ws);
+
+    // 拡大しているタイルを渡すと拡大を解く
+    assert_eq!(ws.toggle_maximize_of(&b1), Ok(true));
+    assert!(!ws.snapshot().display.maximized);
+    assert_eq!(ws.snapshot().display.focused_terminal_id, Some(b1));
+    check_invariants(&ws);
+}
+
+#[test]
+fn 対象のタイルを渡す拡大は知らない_id_なら失敗し何も変えない() {
+    let mut ws = workspace(&[2]);
+    ws.set_display_mode(DisplayMode::Tiles);
+    let before = ws.snapshot();
+    let unknown = TerminalId::new("no-such-terminal");
+
+    assert_eq!(
+        ws.toggle_maximize_of(&unknown),
+        Err(TerminalError::NotFound(unknown))
+    );
+    assert_eq!(ws.snapshot(), before);
+}
+
+#[test]
+fn タブ表示では対象のタイルを渡す拡大は何もしない() {
+    let mut ws = workspace(&[2, 1]);
+    let b1 = tabs_of(&ws, &pid(2))[0].clone();
+    let before = ws.snapshot();
+
+    assert_eq!(ws.toggle_maximize_of(&b1), Ok(false));
+    assert_eq!(ws.snapshot(), before);
+}
+
+// ---------------------------------------------------------------------------
+// 登録済みのフォルダの再登録はカードの選択と同じ(M4 のレビューの S5、FR-010・FR-053)
+
+#[test]
+fn タイル表示で登録済みのフォルダを登録し直すとカードの選択と同じく最初のタイルのページへ移る() {
+    // A が 8 枚、B が 3 枚 → B の 1 枚目は 1 ページ目、表示中の 3 枚目は 2 ページ目
+    let mut ws = workspace(&[8, 3]);
+    ws.set_display_mode(DisplayMode::Tiles);
+    let mut by_card = ws.clone();
+    by_card.select_project(&pid(2)).unwrap();
+
+    let outcome = ws
+        .register_project(pid(200), RootReference::new(root_path(2), None))
+        .unwrap();
+
+    assert!(matches!(
+        outcome,
+        arin_core::workspace::AddProjectOutcome::AlreadyRegistered { .. }
+    ));
+    assert_eq!(
+        active_of(&ws, &pid(2)),
+        Some(tabs_of(&ws, &pid(2))[0].clone())
+    );
+    assert_eq!(ws.snapshot(), by_card.snapshot());
     check_invariants(&ws);
 }
 
@@ -876,7 +1098,10 @@ fn どの操作の列のあとも不変条件が成り立つ() {
     for _ in 0..600 {
         let all = all_ids(&ws);
         let projects: Vec<ProjectId> = ws.snapshot().projects.into_iter().map(|p| p.id).collect();
-        match next(13) {
+        // タイル表示でフォーカス中のタイルがあるときに、タブを閉じる・シェルの終了・プロジェクトの削除をしたか(S4)
+        let had_focus = ws.display_mode() == DisplayMode::Tiles && ws.active_terminal().is_some();
+        let mut closing = false;
+        match next(15) {
             0 => {
                 ws.toggle_display_mode();
             }
@@ -902,6 +1127,7 @@ fn どの操作の列のあとも不変条件が成り立つ() {
             7 | 8 if !all.is_empty() => {
                 let id = all[next(all.len())].clone();
                 ws.close_terminal(&id).unwrap();
+                closing = true;
             }
             9 => {
                 ws.select_next_terminal();
@@ -909,6 +1135,7 @@ fn どの操作の列のあとも不変条件が成り立つ() {
             10 if projects.len() > 1 && next(8) == 0 => {
                 ws.remove_project(&projects[next(projects.len())], &[], true)
                     .unwrap();
+                closing = true;
             }
             // アテンションの契機(計画書 T48b)。フォーカス中なら立たず、それ以外は(見えていても)立つ
             11 if !all.is_empty() => {
@@ -931,8 +1158,26 @@ fn どの操作の列のあとも不変条件が成り立つ() {
                 let n = u8::try_from(next(4) + 1).unwrap();
                 let _ = ws.register_project(pid(200), RootReference::new(root_path(n), None));
             }
+            // 対象のタイルを渡す拡大(タイトルバーのダブルクリック。S3)
+            13 if !all.is_empty() => {
+                let id = all[next(all.len())].clone();
+                ws.toggle_maximize_of(&id).unwrap();
+            }
+            // シェルの終了でタブが閉じる
+            14 if !all.is_empty() => {
+                let id = all[next(all.len())].clone();
+                ws.mark_running(&id).unwrap();
+                assert!(ws.mark_exited(&id, None).is_some());
+                closing = true;
+            }
             _ => {}
         }
         check_invariants(&ws);
+        if had_focus && closing && !all_ids(&ws).is_empty() {
+            assert!(
+                ws.active_terminal().is_some(),
+                "タイル表示でタイルが残っているのにフォーカス中のタイルが無くなった"
+            );
+        }
     }
 }

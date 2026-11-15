@@ -90,6 +90,7 @@ impl Workspace {
     /// シェルが終わった。`exit` は終わり方(確かめられなかったときは `None`)。
     ///
     /// `Running` のときだけ `Exited` にしてからタブを閉じ、閉じたタブを返す(セッションの後片付けは呼び出し側)。
+    /// タイル表示でフォーカス中のタイルが無くなれば、近くのタイルへ移す(`close_terminal` と同じ)。
     /// それ以外(ID が無い、既に終わっている)は何もせず `None` を返す。
     pub fn mark_exited(&mut self, id: &TerminalId, exit: Option<ChildExit>) -> Option<TerminalTab> {
         let entry = self.terminals.get_mut(id)?;
@@ -106,8 +107,10 @@ impl Workspace {
                 signal: None,
             },
         };
+        let position = self.focused_tile_position();
         let tab = self.tabs.close(id).ok()?;
         self.terminals.remove(id);
+        self.refocus_lost_tile(position);
         self.sync_display();
         Some(tab)
     }
@@ -191,14 +194,18 @@ impl Workspace {
     }
 
     /// タブを閉じ、閉じたタブを返す(FR-044)。表示中だったなら右隣(無ければ左)が表示中になる。最後の 1 枚なら 0 枚。
+    /// タイル表示(拡大中を含む)で、選択中のプロジェクトのタブが 0 枚になりほかにタイルが残っていれば、閉じたタイルが
+    /// あった位置のタイル(末尾だったら 1 つ前)にフォーカスを移す(そのプロジェクトが選ばれる。M4 のレビューの S4)。
     /// セッションの後片付けは呼び出し側。
     ///
     /// # Errors
     ///
     /// その ID のタブが無いとき(`TerminalError::NotFound`)。
     pub fn close_terminal(&mut self, id: &TerminalId) -> Result<TerminalTab, TerminalError> {
+        let position = self.focused_tile_position();
         let tab = self.tabs.close(id)?;
         self.terminals.remove(id);
+        self.refocus_lost_tile(position);
         self.sync_display();
         Ok(tab)
     }

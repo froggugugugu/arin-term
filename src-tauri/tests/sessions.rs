@@ -1789,3 +1789,89 @@ fn タブの選択と前後の切替と表示中のタブを閉じる操作() {
     );
     assert_eq!(f.registry.select_next_terminal(), None);
 }
+
+// ---------------------------------------------------------------------------
+// 写しが届く順序(M4 のレビューの S1)
+// ---------------------------------------------------------------------------
+
+/// 写しの受け口が、最後に届いた写しで丸ごと置き換える画面と同じく、届いた順に写しを並べる。
+/// 写しを作ってから受け口が呼ばれるまでのあいだに、ほかのスレッドが割り込みやすいように、受け口の頭で譲る。
+/// 受け口の中から Workspace のロックに戻る(保存の内容の読み取り・ツリーの監視の対象の読み取りと同じ)。
+fn ordered_fixture() -> (
+    SessionRegistry,
+    Arc<Mutex<Vec<AppSnapshot>>>,
+    Arc<AtomicUsize>,
+) {
+    let snapshots = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&snapshots);
+    let reentered = Arc::new(AtomicUsize::new(0));
+    let reentry = Arc::clone(&reentered);
+    let me: Arc<std::sync::OnceLock<SessionRegistry>> = Arc::new(std::sync::OnceLock::new());
+    let me_in_listener = Arc::clone(&me);
+    let registry = SessionRegistry::new(
+        nine_projects(),
+        Arc::new(FakePty(Control::new(OutputMode::Scripted))),
+        Arc::new(|| ShellDefaults {
+            shell: PathBuf::from("/bin/zsh"),
+            locale: None,
+        }),
+        Arc::new(move |snapshot: AppSnapshot| {
+            thread::yield_now();
+            if let Some(registry) = me_in_listener.get() {
+                let _ = registry.persisted_state();
+                let _ = registry.snapshot();
+                reentry.fetch_add(1, Ordering::SeqCst);
+            }
+            lock(&seen).push(snapshot);
+        }),
+        test_config(),
+    );
+    let _ = me.set(registry.clone());
+    (registry, snapshots, reentered)
+}
+
+#[test]
+fn 複数のスレッドから状態を変えても写しは古い状態に戻らず_最後の写しが最終の状態と一致する() {
+    const THREADS: usize = 8;
+    const PER_THREAD: usize = 12;
+    for round in 0..20 {
+        let (registry, snapshots, reentered) = ordered_fixture();
+        let start = Arc::new(std::sync::Barrier::new(THREADS));
+        let workers: Vec<_> = (0..THREADS)
+            .map(|_| {
+                let registry = registry.clone();
+                let start = Arc::clone(&start);
+                thread::spawn(move || {
+                    start.wait();
+                    for _ in 0..PER_THREAD {
+                        // タブを開く(タブの数は単調に増える)
+                        registry.new_terminal().expect("タブを開けなかった");
+                    }
+                })
+            })
+            .collect();
+        let joined = within_wait(move || {
+            for worker in workers {
+                worker.join().expect("操作のスレッドが落ちた");
+            }
+        });
+        assert!(
+            joined.is_some(),
+            "{round} 回目: 上限時間までに終わらなかった(デッドロック)"
+        );
+
+        let counts: Vec<usize> = lock(&snapshots).iter().map(|s| s.terminals.len()).collect();
+        assert_eq!(counts.len(), THREADS * PER_THREAD, "{round} 回目: 写しの数");
+        assert!(
+            counts.windows(2).all(|w| w[0] <= w[1]),
+            "{round} 回目: 写しのタブの数が戻った: {counts:?}"
+        );
+        assert_eq!(
+            lock(&snapshots).last(),
+            Some(&registry.snapshot()),
+            "{round} 回目: 最後に届いた写しが最終の状態と違う"
+        );
+        assert_eq!(reentered.load(Ordering::SeqCst), THREADS * PER_THREAD);
+        registry.shutdown();
+    }
+}
