@@ -1,49 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { type KeyChord, routeClipboard, terminalKeyOwner } from "./clipboard";
+import { routeClipboard, terminalKeyOwner } from "./clipboard";
+import { terminalKeyOwner as movedTerminalKeyOwner } from "./keyOwner";
 
-const chord = (key: string, mods: Partial<Omit<KeyChord, "key">> = {}): KeyChord => ({
-  key,
-  metaKey: false,
-  ctrlKey: false,
-  altKey: false,
-  shiftKey: false,
-  ...mods,
-});
-
-describe("terminalKeyOwner(ターミナルにフォーカスがあるときのキーの受け手)", () => {
-  it("⌘C と ⌘V はアプリが受ける(メニューから画面のコピー・ペーストのイベントにする)", () => {
-    expect(terminalKeyOwner(chord("c", { metaKey: true }))).toBe("app");
-    expect(terminalKeyOwner(chord("v", { metaKey: true }))).toBe("app");
-  });
-
-  it("Caps Lock などで大文字になっても ⌘C・⌘V はアプリが受ける", () => {
-    expect(terminalKeyOwner(chord("C", { metaKey: true }))).toBe("app");
-    expect(terminalKeyOwner(chord("V", { metaKey: true }))).toBe("app");
-  });
-
-  it("⌘⇧C・⌘⇧V はターミナルに任せる(M1 では割り当てない)", () => {
-    expect(terminalKeyOwner(chord("C", { metaKey: true, shiftKey: true }))).toBe("terminal");
-    expect(terminalKeyOwner(chord("V", { metaKey: true, shiftKey: true }))).toBe("terminal");
-  });
-
-  it("Ctrl+C・Ctrl+V はターミナルに任せる(xterm.js が \\x03・\\x16 にして PTY へ送る)", () => {
-    expect(terminalKeyOwner(chord("c", { ctrlKey: true }))).toBe("terminal");
-    expect(terminalKeyOwner(chord("v", { ctrlKey: true }))).toBe("terminal");
-  });
-
-  it("⌘ に Ctrl・Option を重ねた組み合わせはターミナルに任せる", () => {
-    expect(terminalKeyOwner(chord("c", { metaKey: true, ctrlKey: true }))).toBe("terminal");
-    expect(terminalKeyOwner(chord("c", { metaKey: true, altKey: true }))).toBe("terminal");
-    expect(terminalKeyOwner(chord("v", { metaKey: true, altKey: true }))).toBe("terminal");
-  });
-
-  it("修飾キーなし・Option だけ・ほかの ⌘ のキーはターミナルに任せる", () => {
-    expect(terminalKeyOwner(chord("c"))).toBe("terminal");
-    expect(terminalKeyOwner(chord("ç", { altKey: true }))).toBe("terminal");
-    expect(terminalKeyOwner(chord("a", { metaKey: true }))).toBe("terminal");
-    expect(terminalKeyOwner(chord("x", { metaKey: true }))).toBe("terminal");
-    expect(terminalKeyOwner(chord("Meta", { metaKey: true }))).toBe("terminal");
+describe("clipboard からの再公開", () => {
+  it("terminalKeyOwner は ./keyOwner と同じ関数", () => {
+    expect(terminalKeyOwner).toBe(movedTerminalKeyOwner);
   });
 });
 
