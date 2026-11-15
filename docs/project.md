@@ -14,7 +14,7 @@ npm run dev            # Tauri の開発起動(Vite は 1420 番)
 npm run dev:web        # Vite の開発サーバーだけ
 npm run build          # tsc -b && vite build && cargo build --workspace
 npm test               # vitest + cargo test + node --test "scripts/*.test.mjs"
-npm run lint           # tsc -b + clippy -D warnings + cargo fmt --check + 境界検査
+npm run lint           # tsc -b + biome lint(フックの 2 規則)+ clippy -D warnings + cargo fmt --check + 境界検査
 npm run test:coverage  # 行 80% を src/logic と arin-core に課す(testreport/coverage/)
 npm run gen:types      # Rust の型から src/ipc/generated/ を再生成
 npm run e2e            # Playwright(WebKit、Vite の画面に対して)
