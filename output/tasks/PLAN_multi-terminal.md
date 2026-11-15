@@ -894,7 +894,7 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 26d(並行可能。T40c 完了後。Phase 27・28a と同時に進めてよい)
 
-- [ ] T44a — 実ファイルの同時操作、シェルへの往復、NFR-005 の計測(変更ファイル: crates/arin-platform/tests/fs_race.rs, crates/arin-platform/tests/shell_roundtrip.rs, crates/arin-platform/tests/perf_tree.rs, scripts/perf/, scripts/perf-run.test.mjs | 依存: T38b, T39b, T40c)
+- [x] T44a — 実ファイルの同時操作、シェルへの往復、NFR-005 の計測(変更ファイル: crates/arin-platform/tests/fs_race.rs, crates/arin-platform/tests/shell_roundtrip.rs, crates/arin-platform/tests/perf_tree.rs, scripts/perf/, scripts/perf-run.test.mjs | 依存: T38b, T39b, T40c)
   - 対応: FR-036(実ファイルでの同時操作)、FR-030(上書きしない)、FR-016(エスケープの往復)、NFR-005(10 万ファイルの見本で展開の時間を記録。合否にしない)、PRD §8「同時操作」
   - 計測: 一時フォルダに見本を 2 つ作る(1 つのフォルダに 10 万ファイル、1,000 フォルダ × 100 ファイル)。フォルダの読み込み・除外・並べ替えの時間を記録する(`#[ignore]`、`npm run perf` が動かす)。画面側の時間は T44b
   - 安全: 一時フォルダの中だけ。ゴミ箱は偽のポート(本物は T40c のテストだけ)

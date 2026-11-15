@@ -8,12 +8,14 @@
 //   1. PTY の読み取りの速さ(crates/arin-platform/tests/perf_pty.rs。cargo test --release の --ignored)
 //   2. PTY から送り先まで(src-tauri/tests/perf_sessions.rs。処理済みをすぐ返す送り先と、返さない送り先)
 //   3. 起動中のアプリのメモリと、起動からターミナルの印までの時間(scripts/perf/app-memory.mjs)。.app が無ければ未計測
+//   4. ツリーのフォルダの読み込み(crates/arin-platform/tests/perf_tree.rs。T44a、NFR-005。10 万ファイルの見本)
 // 画面の反応(描画の滑らかさ、入力の遅れ)は自動では測れないので、結果に「人間が見る項目」として書く。
 //
 // 出力: testreport/perf/perf-<日時>.json と .md、latest.json と latest.md。
 // Node の標準モジュールだけで書く。ソケットやポートは使わない(PRD N2)。
 //
-// 使い方: node scripts/perf/run.mjs [--app=<Arin.app のパス>]
+// 使い方: node scripts/perf/run.mjs [--app=<Arin.app のパス>] [--tree-files=<見本のファイルの数>]
+//   --tree-files は 4. の見本のファイルの数(既定 100000。100 以上の整数)。perf_tree.rs へ ARIN_PERF_TREE_FILES で渡す
 
 import { spawnSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -28,6 +30,10 @@ export const OUT_DIR = path.join(REPO_ROOT, "testreport", "perf");
 export const PERF_LINE_PREFIX = "ARIN_PERF ";
 
 const MIB = 1024 * 1024;
+/** ツリーの見本のファイルの数を perf_tree.rs へ渡す環境変数。 */
+export const TREE_FILES_ENV = "ARIN_PERF_TREE_FILES";
+/** ツリーの見本のファイルの数の既定(NFR-005 の 10 万ファイル)。 */
+export const DEFAULT_TREE_FILES = 100_000;
 
 // ---------------------------------------------------------------------------
 // 集計
@@ -76,6 +82,9 @@ function deriveApp(run) {
  * 表の行の定義。kind は計測の種類、get は 1 回分から値を取り出す関数。
  * guide は PRD・設計書の目安(合否に使わない)。
  */
+/** ツリーの読み込みの 1 回分のうち、見本が `fixture` のものだけから値を取り出す。 */
+const treeOf = (fixture, get) => (r) => (r.fixture === fixture ? get(r) : null);
+
 const ROWS = {
   pty_read: [
     { label: "所要時間(最初のバイト→最後のバイト)", unit: "ms", get: (r) => r.first_to_last_ms, guide: "NFR-004(UI が固まらない。切替 100ms 以内)の参考" },
@@ -114,6 +123,18 @@ const ROWS = {
     { label: "WebKit の補助プロセスの数", unit: "個", get: (r) => r.webkit_count, digits: 0, guide: "WebContent・GPU・Networking" },
     { label: "WebKit がアプリの終了と一緒に消えた", unit: "1=はい", get: (r) => (r.webkit_exited_with_app ? 1 : 0), digits: 0, guide: "1 なら別のアプリの WebKit と取り違えていない" },
   ],
+  tree_list: [
+    { label: "1 フォルダに全ファイル: 読み込み+除外+並べ替え", unit: "ms", get: treeOf("flat", (r) => r.total_ms), guide: "NFR-005(展開 100ms 以内)の参考。画面側の時間は含まない" },
+    { label: "1 フォルダに全ファイル: 読み込み(範囲の検査を含む)", unit: "ms", get: treeOf("flat", (r) => r.read_ms) },
+    { label: "1 フォルダに全ファイル: 除外", unit: "ms", get: treeOf("flat", (r) => r.filter_ms), digits: 3 },
+    { label: "1 フォルダに全ファイル: 並べ替え", unit: "ms", get: treeOf("flat", (r) => r.sort_ms) },
+    { label: "1 フォルダに全ファイル: 一覧の項目の数", unit: "個", get: treeOf("flat", (r) => r.listed), digits: 0, guide: "既定で隠す 3 つを除いた数" },
+    { label: "フォルダ × 100 ファイル: ルート(フォルダの一覧)", unit: "ms", get: treeOf("nested_root", (r) => r.total_ms), digits: 3, guide: "NFR-005 の参考" },
+    { label: "フォルダ × 100 ファイル: ルートの項目の数", unit: "個", get: treeOf("nested_root", (r) => r.listed), digits: 0 },
+    { label: "フォルダ × 100 ファイル: 中の 1 フォルダ", unit: "ms", get: treeOf("nested_child", (r) => r.total_ms), digits: 3, guide: "NFR-005 の参考" },
+    { label: "見本の全ファイルの数", unit: "個", get: treeOf("flat", (r) => r.fixture_files), digits: 0 },
+    { label: "見本(1 フォルダ)を作る時間", unit: "s", get: treeOf("flat", (r) => r.create_s), guide: "計測の対象ではない(参考)" },
+  ],
 };
 
 const SECTION_TITLES = {
@@ -121,14 +142,16 @@ const SECTION_TITLES = {
   session_ack: "2a. PTY から送り先まで: 処理済みをすぐ返す送り先(SessionRegistry)",
   session_stall: "2b. PTY から送り先まで: 処理済みを返さない送り先(流量制御)",
   app: "3. 起動中のアプリ(.app、スモークと同じ起動、5 プロジェクト・各 1 タブ)",
+  tree_list: "4. ツリーのフォルダの読み込み(arin-platform、実ファイル、NFR-005)",
 };
 
 /** 計測の結果を、種類ごとの 1 回分の一覧にする。 */
 function runsByKind(measures) {
-  const out = { pty_read: [], session_ack: [], session_stall: [], app: [] };
+  const out = { pty_read: [], session_ack: [], session_stall: [], app: [], tree_list: [] };
   for (const r of measures.pty_read?.runs ?? []) if (r.kind === "pty_read") out.pty_read.push(r);
   for (const r of measures.sessions?.runs ?? []) if (out[r.kind]) out[r.kind].push(r);
   for (const r of measures.app?.runs ?? []) out.app.push(deriveApp(r));
+  for (const r of measures.tree?.runs ?? []) if (r.kind === "tree_list") out.tree_list.push(r);
   return out;
 }
 
@@ -256,10 +279,12 @@ export const CONDITIONS = [
   "アプリはスモークと同じ起動(一時の状態フォルダ、ARIN_SMOKE=1)で 3 回。状態は 5 プロジェクト・各 1 タブ(一時フォルダに作ったプロジェクトのフォルダ 5 つと、bookmark が null の state.json を置く)。印が揃ってから 3 秒置いて測る。起動の時間はファイルの印を 10ms ごとに見た値で、ディスクのキャッシュが効いた起動(コールドスタートではない)",
   "WebKit の補助プロセスは launchd の子なので、起動の前後で増えたものをこのアプリのものとみなす(同時に別のアプリが WebKit を起動すると混ざる。JSON の webkit_exited_with_app が true なら、アプリの終了と一緒に消えた)",
   "メモリは footprint の phys_footprint(アクティビティモニタの「メモリ」と同じ)。MiB は 1024×1024 バイト",
+  "ツリーの読み込みは見本を一時フォルダに 2 つ作って各 3 回(1 つのフォルダに全ファイル、全ファイルを 100 ファイルずつのフォルダに分けたもの。どちらも .git・node_modules・.DS_Store を足す)。見本は計測の後で消す。ファイルの数は --tree-files(既定 10 万)",
+  "ツリーの読み込みは src-tauri の list_directory と同じ手順(範囲の検査・read_dir・除外・並べ替え)を Rust の中で測った時間。作った直後に測るのでディスクのキャッシュが効いている。コマンドの呼び出し・写しの受け渡し・画面の描画は含まない(T44b)",
 ];
 
 /** cargo test で計測テスト(--ignored)を動かし、`ARIN_PERF` の行を返す。 */
-export function runCargoPerf(pkg, test, { log = console.log } = {}) {
+export function runCargoPerf(pkg, test, { log = console.log, env = {} } = {}) {
   const args = ["test", "--release", "--locked", "-p", pkg, "--test", test, "--", "--ignored", "--nocapture", "--test-threads=1"];
   log(`\n=== cargo ${args.join(" ")}`);
   const r = spawnSync("cargo", args, {
@@ -267,6 +292,7 @@ export function runCargoPerf(pkg, test, { log = console.log } = {}) {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "inherit"],
     maxBuffer: 64 * MIB,
+    env: { ...process.env, ...env },
   });
   if (r.error) return { status: "error", runs: [], error: `cargo を起動できなかった: ${r.error.message}` };
   const runs = parsePerfLines(r.stdout ?? "");
@@ -279,7 +305,7 @@ export function runCargoPerf(pkg, test, { log = console.log } = {}) {
   return { status: "ok", runs };
 }
 
-export function defaultMeasures({ appPath } = {}) {
+export function defaultMeasures({ appPath, treeFiles = DEFAULT_TREE_FILES } = {}) {
   return {
     pty_read: ({ log }) => runCargoPerf("arin-platform", "perf_pty", { log }),
     sessions: ({ log }) => runCargoPerf("arin", "perf_sessions", { log }),
@@ -287,6 +313,7 @@ export function defaultMeasures({ appPath } = {}) {
       log("\n=== 起動中のアプリのメモリ");
       return measureAppMemory({ ...(appPath ? { appPath } : {}), log });
     },
+    tree: ({ log }) => runCargoPerf("arin-platform", "perf_tree", { log, env: { [TREE_FILES_ENV]: String(treeFiles) } }),
   };
 }
 
@@ -350,12 +377,23 @@ export async function runPerf({
   return { exitCode: failed.length > 0 ? 1 : 0, files, result, failed };
 }
 
-function parseArgs(argv) {
+/** コマンドラインの引数を読む。 */
+export function parseArgs(argv) {
   const opts = {};
   for (const arg of argv) {
-    const m = /^--app=(.+)$/.exec(arg);
-    if (m === null) throw new Error(`知らない引数: ${arg}`);
-    opts.appPath = path.resolve(m[1]);
+    const app = /^--app=(.+)$/.exec(arg);
+    if (app !== null) {
+      opts.appPath = path.resolve(app[1]);
+      continue;
+    }
+    const tree = /^--tree-files=(.+)$/.exec(arg);
+    if (tree !== null) {
+      const n = /^[0-9]+$/.test(tree[1]) ? Number(tree[1]) : Number.NaN;
+      if (!Number.isSafeInteger(n) || n < 100) throw new Error(`--tree-files は 100 以上の整数: ${tree[1]}`);
+      opts.treeFiles = n;
+      continue;
+    }
+    throw new Error(`知らない引数: ${arg}`);
   }
   return opts;
 }

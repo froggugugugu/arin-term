@@ -9,7 +9,7 @@ import path from "node:path";
 import { after, before, describe, it } from "node:test";
 
 import { PERF_PROJECT_COUNT, measureAppMemory, perfStateFixture, preparePerfState } from "./perf/app-memory.mjs";
-import { parsePerfLines, runPerf, stats } from "./perf/run.mjs";
+import { DEFAULT_TREE_FILES, TREE_FILES_ENV, defaultMeasures, parseArgs, parsePerfLines, runPerf, stats } from "./perf/run.mjs";
 import { STATE_FILE_NAME, describeDir, stateFixture } from "./smoke.mjs";
 
 let root;
@@ -39,6 +39,14 @@ const FAKE = {
     ],
   }),
   app: () => ({ status: "skipped", runs: [], note: "未計測(`npm run app` が先)" }),
+  tree: () => ({
+    status: "ok",
+    runs: [
+      ...[1, 2, 3].map((run) => ({ kind: "tree_list", fixture: "flat", run, fixture_files: 100_000, create_s: 4, raw_entries: 100_003, listed: 100_000, read_ms: 40, filter_ms: 0.1, sort_ms: 100 + run, total_ms: 140 + run })),
+      { kind: "tree_list", fixture: "nested_root", run: 1, fixture_files: 100_000, create_s: 3, raw_entries: 1003, listed: 1000, read_ms: 0.4, filter_ms: 0, sort_ms: 0.5, total_ms: 0.9 },
+      { kind: "tree_list", fixture: "nested_child", run: 1, fixture_files: 100_000, create_s: 3, raw_entries: 100, listed: 100, read_ms: 0.07, filter_ms: 0, sort_ms: 0.05, total_ms: 0.12 },
+    ],
+  }),
 };
 
 describe("runPerf", () => {
@@ -100,6 +108,47 @@ describe("runPerf", () => {
       log: quiet,
     });
     assert.equal(exitCode, 0);
+  });
+});
+
+describe("ツリーの読み込みの計測(T44a、NFR-005)", () => {
+  it("見本ごとに分けて集計し、Markdown に 4. の節を書く", async () => {
+    const outDir = path.join(root, "tree");
+    const { exitCode, result } = await runPerf({ measures: FAKE, environment: ENV, outDir, now: NOW, log: quiet });
+    assert.equal(exitCode, 0);
+    const [flat, , , , listed, nestedRoot, , nestedChild] = result.summary.tree_list;
+    assert.deepEqual([flat.median, flat.min, flat.max, flat.n], [142, 141, 143, 3], "flat の 3 回だけを集計する");
+    assert.equal(listed.median, 100_000);
+    assert.deepEqual([nestedRoot.median, nestedRoot.n], [0.9, 1]);
+    assert.deepEqual([nestedChild.median, nestedChild.n], [0.12, 1]);
+    const md = await readFile(path.join(outDir, "latest.md"), "utf8");
+    assert.match(md, /## 4\. ツリーのフォルダの読み込み/);
+    assert.ok(md.includes("| 1 フォルダに全ファイル: 読み込み+除外+並べ替え | 142.0 | 141.0 | 143.0 | ms | 3 |"), md);
+    assert.match(md, /NFR-005/);
+  });
+
+  it("ツリーの計測が無ければ 4. の節は未計測", async () => {
+    const { tree: _tree, ...withoutTree } = FAKE;
+    const outDir = path.join(root, "no-tree");
+    await runPerf({ measures: withoutTree, environment: ENV, outDir, now: NOW, log: quiet });
+    const md = await readFile(path.join(outDir, "latest.md"), "utf8");
+    assert.match(md, /## 4\. ツリーのフォルダの読み込み[^\n]*\n\n未計測。/);
+  });
+
+  it("--tree-files で見本のファイルの数を変えられ、既定は 10 万", () => {
+    assert.equal(DEFAULT_TREE_FILES, 100_000);
+    assert.equal(TREE_FILES_ENV, "ARIN_PERF_TREE_FILES");
+    assert.deepEqual(parseArgs([]), {});
+    assert.deepEqual(parseArgs(["--tree-files=20000"]), { treeFiles: 20_000 });
+    assert.equal(parseArgs(["--app=/x/Arin.app", "--tree-files=100"]).treeFiles, 100);
+    for (const bad of ["--tree-files=99", "--tree-files=abc", "--tree-files=1e5", "--tree-files=-5", "--tree-files="]) {
+      assert.throws(() => parseArgs([bad]), bad);
+    }
+    assert.throws(() => parseArgs(["--unknown"]));
+  });
+
+  it("既定の計測にツリーの読み込みが含まれる", () => {
+    assert.deepEqual(Object.keys(defaultMeasures()), ["pty_read", "sessions", "app", "tree"]);
   });
 });
 
