@@ -1,6 +1,6 @@
 //! `Workspace` のプロジェクトをまたぐ操作(計画書 T32b)。
 //! 起動時の復元(FR-004、FR-039・C-22)、切替(FR-002・FR-042)、削除の確認(FR-003)、終了の確認の材料(FR-063)、
-//! 保存する内容(FR-056。表示値を含めない)、ペインの寸法の規則(FR-009)、9 枚の検証画面。
+//! 保存する内容(FR-056。表示値を含めない)、ペインの寸法の規則(FR-009)。
 
 use std::path::{Path, PathBuf};
 
@@ -147,7 +147,7 @@ fn ルートが移動していたら新しいパスで開き_表示用のパス�
     assert_eq!(card.name, "a-renamed");
     assert_eq!(card.color, ProjectColor::Red);
     // 保存する内容も新しい参照になる。
-    let saved = ws.persisted_state().unwrap();
+    let saved = ws.persisted_state();
     assert_eq!(saved.projects[0].root(), &root("/Users/me/work/a-renamed"));
 }
 
@@ -189,7 +189,7 @@ fn 解決の結果が無いものとゴミ箱の中に解決されたものは�
     assert_eq!(ws.snapshot().terminals.len(), 1);
     // ゴミ箱の中のパスで保存し直さない。
     assert_eq!(
-        ws.persisted_state().unwrap().projects[0].root(),
+        ws.persisted_state().projects[0].root(),
         &root("/Users/me/dev/a")
     );
 }
@@ -215,7 +215,7 @@ fn 復元すると同じ順で同じものが選択される() {
     let ws = restore_abc();
 
     // AC-P04 の Rust 側: 保存した内容から起動し直しても、同じ順で B が選択されている。
-    let saved = ws.persisted_state().expect("保存する内容が無い");
+    let saved = ws.persisted_state();
     let text = codec::encode(&saved).unwrap();
     let codec::LoadOutcome::Loaded(loaded) = codec::decode(Some(text.as_bytes())) else {
         panic!("保存した内容を読めなかった");
@@ -231,7 +231,7 @@ fn 復元すると同じ順で同じものが選択される() {
     let order: Vec<&str> = snapshot.projects.iter().map(|p| p.name.as_str()).collect();
     assert_eq!(order, vec!["a", "b", "c"]);
     assert_eq!(snapshot.selected_project_id, Some(id(2)));
-    assert_eq!(again.persisted_state(), Some(saved));
+    assert_eq!(again.persisted_state(), saved);
 }
 
 #[test]
@@ -259,7 +259,7 @@ fn ペインの寸法は保存値に規則を当て_無ければ初期値() {
         }
     );
     assert_eq!(
-        ws.persisted_state().unwrap().layout,
+        ws.persisted_state().layout,
         PersistedLayout {
             sidebar_width: Some(180.0),
             sidebar_collapsed: true,
@@ -282,7 +282,7 @@ fn 退避の知らせは写しに載り_保存する内容には入らない() {
     );
     assert_eq!(
         ws.persisted_state(),
-        Some(PersistedState {
+        PersistedState {
             projects: Vec::new(),
             selected_project_id: None,
             layout: PersistedLayout {
@@ -291,7 +291,7 @@ fn 退避の知らせは写しに載り_保存する内容には入らない() {
                 card_area_height: Some(200.0),
                 display_mode: DisplayMode::Tabs,
             },
-        })
+        }
     );
 }
 
@@ -390,7 +390,7 @@ fn 確認して削除するとそのプロジェクトのタブが閉じる対�
     assert_eq!(snapshot.terminals.len(), 2);
     assert!(ws.check_exists(&b1).is_err());
     // 保存する内容からも消える。
-    assert_eq!(ws.persisted_state().unwrap().projects.len(), 2);
+    assert_eq!(ws.persisted_state().projects.len(), 2);
 }
 
 #[test]
@@ -504,7 +504,7 @@ fn 保存する内容に表示値_見つからない_表示用のパス_を含�
         notice: Some("知らせ".to_owned()),
     });
 
-    let saved = ws.persisted_state().unwrap();
+    let saved = ws.persisted_state();
 
     // 見つからないものも一覧に残し、保存値はそのまま(読んだとおりの参照・色・順)。
     assert_eq!(saved.projects, state.projects);
@@ -567,7 +567,7 @@ fn 隠しファイル表示は保存する内容に載り起動時に戻る() {
     let mut ws = restore_abc();
     ws.set_project_show_hidden(&id(3), true).unwrap();
 
-    let saved = ws.persisted_state().unwrap();
+    let saved = ws.persisted_state();
     let flags: Vec<bool> = saved.projects.iter().map(Project::show_hidden).collect();
     assert_eq!(flags, [false, false, true]);
 
@@ -600,7 +600,7 @@ fn 見つからないプロジェクトも隠しファイル表示を保つ() {
     });
 
     assert!(show_hidden_of(&ws, &id(1)));
-    assert!(ws.persisted_state().unwrap().projects[0].show_hidden());
+    assert!(ws.persisted_state().projects[0].show_hidden());
 }
 
 #[test]
@@ -613,45 +613,4 @@ fn 登録の無いプロジェクトの隠しファイル表示は変えられ�
         Err(ProjectError::NotFound(id(7)))
     );
     assert_eq!(ws.snapshot(), before);
-}
-
-// ---------------------------------------------------------------------------
-// 9 枚の検証画面
-// ---------------------------------------------------------------------------
-
-#[test]
-fn 検証画面は_9_枚でプロジェクトを持たず保存しない() {
-    let ws = Workspace::for_verify_grid("1.2.3", PathBuf::from(HOME), [("HOME", HOME)]);
-
-    let snapshot = ws.snapshot();
-    assert!(snapshot.projects.is_empty());
-    assert_eq!(snapshot.selected_project_id, None);
-    assert_eq!(snapshot.terminals.len(), 9);
-    let labels: Vec<&str> = snapshot
-        .terminals
-        .iter()
-        .map(|t| t.label.as_str())
-        .collect();
-    assert_eq!(labels[0], "ターミナル 1");
-    assert_eq!(labels[8], "ターミナル 9");
-    assert_eq!(snapshot.layout, PaneSizes::default());
-    assert_eq!(ws.persisted_state(), None);
-}
-
-#[test]
-fn 検証画面の終了の確認の材料はプロジェクト名を持たない() {
-    let ws = Workspace::for_verify_grid("1.2.3", PathBuf::from(HOME), [("HOME", HOME)]);
-    let first = ws.snapshot().terminals[0].id.clone();
-
-    let running = ws.running_terminals(std::slice::from_ref(&first));
-
-    assert_eq!(
-        running,
-        vec![RunningTerminal {
-            terminal_id: first,
-            project_id: None,
-            project_name: None,
-            label: "ターミナル 1".to_owned(),
-        }]
-    );
 }

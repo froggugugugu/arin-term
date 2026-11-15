@@ -103,9 +103,10 @@ pub enum AddProjectOutcome {
 pub struct RunningTerminal {
     /// ターミナルの識別子。
     pub terminal_id: TerminalId,
-    /// 持ち主のプロジェクト。検証画面では `null`。
+    /// 持ち主のプロジェクト。いまは必ず値がある(M1 の 9 枚の検証画面の `null` は M4 の T49d で無くなった。
+    /// 形を変えないため、型は `null` を取りうるままにしてある)。
     pub project_id: Option<ProjectId>,
-    /// 持ち主のプロジェクトの表示名。検証画面では `null`。
+    /// 持ち主のプロジェクトの表示名。いまは必ず値がある(型は `project_id` と同じ理由で `null` を取りうるまま)。
     pub project_name: Option<String>,
     /// タブの表示名。
     pub label: String,

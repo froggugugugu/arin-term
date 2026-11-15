@@ -1,8 +1,8 @@
 //! `Workspace` のターミナルの規則: 接続・入力・寸法・シェルの終了の判定と、タブの追加・閉じる・切替
 //! (設計書 §7.1「ターミナルの起動」、FR-039・FR-040・FR-044)。
 //!
-//! 起動の仕様は cwd(プロジェクトのルート、検証画面ではホーム)と親の環境変数から組み立てる。
-//! シェルが終わったタブは、通常は閉じ、検証画面では残す(`ExitPolicy`。計画書 M2 の【仮定】5)。
+//! 起動の仕様は cwd(プロジェクトのルート)と親の環境変数から組み立てる。
+//! シェルが終わったタブは閉じる(§15.2 #3 の A)。
 //! タブが増減・切り替わる口は、最後に表示の状態を合わせ直す(`sync_display`。ページはフォーカス中のタイルに付いていく。計画書 T46b)。
 
 use std::path::Path;
@@ -11,9 +11,7 @@ use super::outcome::WorkspaceError;
 use super::state::{TerminalEntry, Workspace};
 use crate::ports::ChildExit;
 use crate::project::{ProjectError, ProjectId};
-use crate::terminal::{
-    ExitAction, ShellLaunchSpec, TerminalError, TerminalId, TerminalStatus, TerminalTab,
-};
+use crate::terminal::{ShellLaunchSpec, TerminalError, TerminalId, TerminalStatus, TerminalTab};
 
 /// 接続のコマンドで行うこと。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,10 +89,9 @@ impl Workspace {
 
     /// シェルが終わった。`exit` は終わり方(確かめられなかったときは `None`)。
     ///
-    /// `Running` のときだけ `Exited` にし、`ExitPolicy` に従ってタブを閉じる(`ExitAction::Closed`。
-    /// セッションの後片付けは呼び出し側)か残す(`ExitAction::Kept`)。それ以外(ID が無い、既に終わっている)は
-    /// 何もせず `None` を返す。
-    pub fn mark_exited(&mut self, id: &TerminalId, exit: Option<ChildExit>) -> Option<ExitAction> {
+    /// `Running` のときだけ `Exited` にしてからタブを閉じ、閉じたタブを返す(セッションの後片付けは呼び出し側)。
+    /// それ以外(ID が無い、既に終わっている)は何もせず `None` を返す。
+    pub fn mark_exited(&mut self, id: &TerminalId, exit: Option<ChildExit>) -> Option<TerminalTab> {
         let entry = self.terminals.get_mut(id)?;
         if entry.status != TerminalStatus::Running {
             return None;
@@ -109,12 +106,10 @@ impl Workspace {
                 signal: None,
             },
         };
-        let action = self.tabs.on_shell_exited(id).ok()?;
-        if matches!(action, ExitAction::Closed(_)) {
-            self.terminals.remove(id);
-            self.sync_display();
-        }
-        Some(action)
+        let tab = self.tabs.close(id).ok()?;
+        self.terminals.remove(id);
+        self.sync_display();
+        Some(tab)
     }
 
     /// 入力を書き込めるか(シェルが動いているときだけ)。
@@ -188,10 +183,11 @@ impl Workspace {
         self.open_terminal(&project)
     }
 
-    /// 選択中のプロジェクト(無ければ持ち主の無いタブ)の表示中のタブ(⌘W で閉じるもの)。0 枚なら `None`。
+    /// 選択中のプロジェクトの表示中のタブ(⌘W で閉じるもの)。選んでいない・0 枚なら `None`。
     #[must_use]
     pub fn active_terminal(&self) -> Option<TerminalId> {
-        self.tabs.active(self.projects.selected()).cloned()
+        let project = self.projects.selected()?;
+        self.tabs.active(project).cloned()
     }
 
     /// タブを閉じ、閉じたタブを返す(FR-044)。表示中だったなら右隣(無ければ左)が表示中になる。最後の 1 枚なら 0 枚。
@@ -218,18 +214,18 @@ impl Workspace {
         Ok(())
     }
 
-    /// 選択中のプロジェクト(無ければ持ち主の無いタブ)の次のタブを表示中にし、その ID を返す。末尾の次は先頭。0 枚なら `None`。
+    /// 選択中のプロジェクトの次のタブを表示中にし、その ID を返す。末尾の次は先頭。選んでいない・0 枚なら `None`。
     pub fn select_next_terminal(&mut self) -> Option<TerminalId> {
-        let project = self.projects.selected().cloned();
-        let next = self.tabs.select_next(project.as_ref());
+        let project = self.projects.selected().cloned()?;
+        let next = self.tabs.select_next(&project);
         self.sync_display();
         next
     }
 
-    /// 選択中のプロジェクト(無ければ持ち主の無いタブ)の前のタブを表示中にし、その ID を返す。先頭の前は末尾。0 枚なら `None`。
+    /// 選択中のプロジェクトの前のタブを表示中にし、その ID を返す。先頭の前は末尾。選んでいない・0 枚なら `None`。
     pub fn select_previous_terminal(&mut self) -> Option<TerminalId> {
-        let project = self.projects.selected().cloned();
-        let previous = self.tabs.select_previous(project.as_ref());
+        let project = self.projects.selected().cloned()?;
+        let previous = self.tabs.select_previous(&project);
         self.sync_display();
         previous
     }

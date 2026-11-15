@@ -207,19 +207,70 @@ fn 写しに絶対パスとブックマークを載せない() {
 }
 
 #[test]
-fn 検証画面の写しのターミナルはプロジェクトを持たない() {
-    let ws = Workspace::for_verify_grid("1.2.3", PathBuf::from(HOME), [("HOME", HOME)]);
+fn 写しのターミナルはすべて持ち主のプロジェクトを持つ() {
+    // M1 の 9 枚の検証画面(持ち主の無いターミナル。`projectId` が null)は T49d で外した。
+    // 9 プロジェクト・各 1 タブ(タイル表示の 9 枚と同じ形)に、1 件目へタブを足し、2 件目を外したあとも見る。
+    let roots: Vec<RootReference> = (1..=9)
+        .map(|n| {
+            RootReference::new(
+                PathBuf::from(format!("/Users/me/dev/p{n}")),
+                Some("YQ==".to_owned()),
+            )
+        })
+        .collect();
+    let mut ws = Workspace::restore(
+        "1.2.3",
+        PathBuf::from(HOME),
+        [("HOME", HOME)],
+        Startup {
+            state: PersistedState {
+                projects: (1..=9u8)
+                    .zip(&roots)
+                    .map(|(n, root)| {
+                        Project::restore(id(n), root.clone(), None, ProjectColor::Green)
+                    })
+                    .collect(),
+                selected_project_id: Some(id(1)),
+                ..PersistedState::default()
+            },
+            roots: (1..=9u8)
+                .zip(&roots)
+                .map(|(n, root)| (id(n), RootResolution::Found(root.clone())))
+                .collect(),
+            notice: None,
+        },
+    );
+    ws.open_terminal(&id(1)).unwrap();
+    ws.remove_project(&id(2), &[], false).unwrap();
 
-    let value = serde_json::to_value(ws.snapshot()).unwrap();
-
-    assert_eq!(value["projects"], json!([]));
-    assert_eq!(value["selectedProjectId"], json!(null));
-    assert_eq!(value["notice"], json!(null));
+    let snapshot = ws.snapshot();
+    assert_eq!(
+        snapshot.terminals.len(),
+        9,
+        "1 件目に 2 枚、残りの 7 件に 1 枚ずつ"
+    );
+    for terminal in &snapshot.terminals {
+        let owner = terminal
+            .project_id
+            .as_ref()
+            .unwrap_or_else(|| panic!("{} に持ち主が無い", terminal.id));
+        let card = snapshot
+            .projects
+            .iter()
+            .find(|p| &p.id == owner)
+            .unwrap_or_else(|| panic!("{} の持ち主 {owner} が一覧に無い", terminal.id));
+        assert!(
+            card.terminal_ids.contains(&terminal.id),
+            "{} が持ち主のカードのタブに無い",
+            terminal.id
+        );
+    }
+    let value = serde_json::to_value(&snapshot).unwrap();
     assert_eq!(
         value["terminals"][0],
         json!({
             "id": "terminal-1",
-            "projectId": null,
+            "projectId": id(1).as_str(),
             "label": "ターミナル 1",
             "status": { "kind": "notStarted" },
             "attention": false,

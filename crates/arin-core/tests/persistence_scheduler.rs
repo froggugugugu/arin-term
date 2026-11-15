@@ -246,7 +246,7 @@ fn 保存に失敗したあとも前面でなくなったときと終了時に�
 
 #[test]
 fn 書かない設定では一度も保存しない() {
-    // 退避に失敗した回、検証画面。
+    // 退避に失敗した回。
     let clock = FakeClock::new();
     let mut scheduler = SaveScheduler::disabled();
     assert!(!scheduler.is_enabled());

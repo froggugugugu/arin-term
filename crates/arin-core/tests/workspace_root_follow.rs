@@ -97,7 +97,7 @@ fn 追従すると同じプロジェクトのまま表示用のパスと名前�
     assert_eq!(after.terminal_ids, before.terminal_ids);
     assert_eq!(after.display_path, "~/dev/a2");
     assert_eq!(after.name, "a2");
-    let saved = ws.persisted_state().expect("保存する内容が無い");
+    let saved = ws.persisted_state();
     assert_eq!(saved.projects[0].root(), &root("/Users/me/dev/a2"));
 }
 
@@ -203,10 +203,7 @@ fn 見つからないにするとカードとタブは残る() {
     assert!(after.missing);
     assert_eq!(after.terminal_ids, tabs);
     // 保存する内容は変わらない(見つからないは表示値)。
-    assert_eq!(
-        ws.persisted_state().expect("保存する内容が無い").projects[0].root(),
-        &root(A)
-    );
+    assert_eq!(ws.persisted_state().projects[0].root(), &root(A));
 }
 
 #[test]
@@ -258,7 +255,7 @@ fn 寸法を変えると写しと保存する内容に載る() {
     let layout = ws.snapshot().layout;
     assert_eq!(layout.sidebar_width, 300.0);
     assert_eq!(layout.card_area_height, 250.0);
-    let saved = ws.persisted_state().expect("保存する内容が無い").layout;
+    let saved = ws.persisted_state().layout;
     assert_eq!(saved.sidebar_width, Some(300.0));
     assert_eq!(saved.card_area_height, Some(250.0));
 }

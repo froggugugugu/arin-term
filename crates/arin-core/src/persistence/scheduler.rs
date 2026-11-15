@@ -57,7 +57,7 @@ impl SaveScheduler {
         }
     }
 
-    /// 書かない設定で作る(退避に失敗した回、検証画面)。一度も `Save` を返さない。
+    /// 書かない設定で作る(退避に失敗した回)。一度も `Save` を返さない。
     #[must_use]
     pub fn disabled() -> Self {
         Self {

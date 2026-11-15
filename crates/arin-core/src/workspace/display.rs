@@ -73,17 +73,17 @@ impl Workspace {
     ///
     /// # Errors
     ///
-    /// その ID のタブが無いとき、持ち主のプロジェクトが無いタブ(検証画面)のとき(どちらも `TerminalError::NotFound`)。
+    /// その ID のタブが無いとき、持ち主のプロジェクトが一覧に無いとき(どちらも `TerminalError::NotFound`)。
     /// どの場合も何も変えない。
     pub fn focus_terminal(&mut self, id: &TerminalId) -> Result<bool, TerminalError> {
         let project = self
             .tabs
             .tab(id)
-            .and_then(|tab| tab.project.clone())
+            .map(|tab| tab.project.clone())
             .filter(|project| self.projects.get(project).is_some())
             .ok_or_else(|| TerminalError::NotFound(id.clone()))?;
         let before = (self.projects.selected().cloned(), self.active_terminal());
-        self.focus_tile(id, Some(&project));
+        self.focus_tile(id, &project);
         Ok((self.projects.selected().cloned(), self.active_terminal()) != before)
     }
 
@@ -193,15 +193,11 @@ impl Workspace {
         };
         let tiles = self.tile_ids();
         let position = |id: &TerminalId| tiles.iter().position(|t| t == id);
-        let Some(first) = self.tabs.tabs(Some(&project)).first().map(|t| t.id.clone()) else {
+        let Some(first) = self.tabs.tabs(&project).first().map(|t| t.id.clone()) else {
             return;
         };
         let first_page = position(&first).map(page_of);
-        let active_page = self
-            .tabs
-            .active(Some(&project))
-            .and_then(position)
-            .map(page_of);
+        let active_page = self.tabs.active(&project).and_then(position).map(page_of);
         if first_page != active_page {
             // `first` は直前に並びから取ったものなので必ずある。
             let _ = self.tabs.activate(&first);
@@ -258,18 +254,18 @@ impl Workspace {
         let Some(first) = view.tiles.get(range.start).cloned() else {
             return false;
         };
-        let project = self.tabs.tab(&first).and_then(|tab| tab.project.clone());
+        let Some(project) = self.tabs.tab(&first).map(|tab| tab.project.clone()) else {
+            return false;
+        };
         self.display.page = page;
-        self.focus_tile(&first, project.as_ref());
+        self.focus_tile(&first, &project);
         true
     }
 
-    /// そのタイルの持ち主を選び(持ち主が無ければ選択は変えない)、タブを表示中にしてから表示を合わせ直す。
-    fn focus_tile(&mut self, id: &TerminalId, project: Option<&ProjectId>) {
-        if let Some(project) = project {
-            // 呼ぶ側が持ち主のプロジェクトがあることを確かめている。
-            let _ = self.projects.select(project);
-        }
+    /// そのタイルの持ち主を選び、タブを表示中にしてから表示を合わせ直す。
+    fn focus_tile(&mut self, id: &TerminalId, project: &ProjectId) {
+        // 呼ぶ側が持ち主のプロジェクトがあることを確かめている(ページ送りでは並びから取ったタイルの持ち主)。
+        let _ = self.projects.select(project);
         // 呼ぶ側がタブがあることを確かめている。
         let _ = self.tabs.activate(id);
         self.sync_display();

@@ -11,11 +11,12 @@ export type RunningTerminal = {
  */
 terminalId: TerminalId, 
 /**
- * 持ち主のプロジェクト。検証画面では `null`。
+ * 持ち主のプロジェクト。いまは必ず値がある(M1 の 9 枚の検証画面の `null` は M4 の T49d で無くなった。
+ * 形を変えないため、型は `null` を取りうるままにしてある)。
  */
 projectId: ProjectId | null, 
 /**
- * 持ち主のプロジェクトの表示名。検証画面では `null`。
+ * 持ち主のプロジェクトの表示名。いまは必ず値がある(型は `project_id` と同じ理由で `null` を取りうるまま)。
  */
 projectName: string | null, 
 /**

@@ -106,7 +106,7 @@ name = "tree_commands"
 harness = false
 
 # ツリーの監視の張り替えと tree-changed(T42b)。監視は偽物(実物の FSEvents は一時フォルダで 1 件)で、
-# 張り替えはセッション管理を直接操作して確かめ、最後に模擬のアプリで画面へ届くことと終了・検証画面を確かめる。理由は app_builder と同じ。
+# 張り替えはセッション管理を直接操作して確かめ、最後に模擬のアプリで画面へ届くことと終了を確かめる。理由は app_builder と同じ。
 [[test]]
 name = "tree_watch"
 harness = false

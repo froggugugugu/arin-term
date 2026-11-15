@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 use arin_core::ports::clock::Clock;
 use arin_core::ports::{ChildExit, Foreground, PtyError, PtyPort, PtySession, PtySize, SpawnedPty};
 use arin_core::terminal::{ShellLaunchSpec, TerminalId};
-use arin_core::workspace::{QuitRequest, Workspace};
+use arin_core::workspace::QuitRequest;
 use arin_lib::events::QUIT_REQUESTED_EVENT;
 use arin_lib::launch::LaunchConfig;
 use arin_lib::menu::{self, QUIT_ID};
@@ -448,11 +448,16 @@ impl PtySession for SlowSession {
 fn 九枚の後片付けがおよそ_1_枚ぶんの時間で終わる() {
     let killed = Arc::new(AtomicUsize::new(0));
     let feeds: Arc<Mutex<Vec<Sender<Vec<u8>>>>> = Arc::default();
+    // 9 プロジェクト・各 1 タブ(タイル表示の 9 枚と同じ形。M1 の 9 枚の検証画面の代わり。T49d)。
+    let roots: Vec<PathBuf> = (1..=9)
+        .map(|n| PathBuf::from(format!("/Users/someone/dev/p{n}")))
+        .collect();
     let registry = SessionRegistry::new(
-        Workspace::for_verify_grid(
+        support::workspace_with_projects(
             "0.0.0-test",
             PathBuf::from("/Users/someone"),
             [("HOME", "/Users/someone")],
+            &roots,
         ),
         Arc::new(SlowPty {
             killed: Arc::clone(&killed),

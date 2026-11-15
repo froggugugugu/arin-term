@@ -1,7 +1,8 @@
 //! `Workspace` が持つターミナルの状態と規則。
 //! 設計書 §1.3 #2、§5.1、§6.1、§7.1「ターミナルの起動」、FR-039・FR-040・FR-043・FR-044、計画書 T32b。
 //!
-//! プロジェクトのタブ(通常の起動)と、プロジェクトを持たない 9 枚の検証画面(`for_verify_grid`)の両方を見る。
+//! プロジェクトのタブ(通常の起動)を見る。9 枚は 9 プロジェクト・各 1 タブ(タイル表示の 9 枚と同じ形)で作る
+//! (M1 の 9 枚の検証画面 `for_verify_grid` は M4 の T49d で外した)。
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -10,7 +11,7 @@ use arin_core::persistence::codec::PersistedState;
 use arin_core::ports::{ChildExit, PtySize};
 use arin_core::project::{Project, ProjectColor, ProjectId, RootReference};
 use arin_core::terminal::{
-    ExitAction, ShellLaunchError, TerminalError, TerminalId, TerminalStatus, validate_size,
+    ShellLaunchError, TerminalError, TerminalId, TerminalStatus, validate_size,
 };
 use arin_core::workspace::{
     ConnectPlan, RootResolution, SNAPSHOT_SCHEMA_VERSION, Startup, Workspace, WorkspaceError,
@@ -54,8 +55,37 @@ fn workspace() -> Workspace {
     )
 }
 
-fn grid() -> Workspace {
-    Workspace::for_verify_grid("1.2.3", PathBuf::from(HOME), env())
+/// `count` 件のプロジェクト(ルートは `root_of(1)`〜)を各 1 タブで持ち、1 件目を選んだ `Workspace`。
+fn projects(count: u8) -> Workspace {
+    let roots: Vec<(ProjectId, RootReference)> = (1..=count)
+        .map(|n| (project_id(n), RootReference::new(root_of(n), None)))
+        .collect();
+    Workspace::restore(
+        "1.2.3",
+        PathBuf::from(HOME),
+        env(),
+        Startup {
+            state: PersistedState {
+                projects: roots
+                    .iter()
+                    .map(|(id, root)| {
+                        Project::restore(id.clone(), root.clone(), None, ProjectColor::Blue)
+                    })
+                    .collect(),
+                selected_project_id: Some(project_id(1)),
+                ..PersistedState::default()
+            },
+            roots: roots
+                .into_iter()
+                .map(|(id, root)| (id, RootResolution::Found(root)))
+                .collect(),
+            notice: None,
+        },
+    )
+}
+
+fn root_of(n: u8) -> PathBuf {
+    PathBuf::from(format!("/Users/someone/dev/p{n}"))
 }
 
 fn only_id(ws: &Workspace) -> TerminalId {
@@ -207,17 +237,6 @@ fn 起動の仕様を組み立てられなければ_failed_にして理由を返
     );
 }
 
-#[test]
-fn 検証画面でホームフォルダが分からなければ起動の計画は失敗する() {
-    let mut ws =
-        Workspace::for_verify_grid("1.2.3", PathBuf::new(), Vec::<(String, String)>::new());
-    let id = ids(&ws)[0].clone();
-
-    let err = ws.plan_connect(&id, Path::new(ZSH), None).unwrap_err();
-
-    assert_eq!(err, TerminalError::Launch(ShellLaunchError::EmptyCwd));
-}
-
 // ---------------------------------------------------------------------------
 // シェルの終了
 // ---------------------------------------------------------------------------
@@ -237,7 +256,7 @@ fn シェルが終わるとプロジェクトのタブは閉じ_写しから消�
     );
 
     assert!(
-        matches!(&action, Some(ExitAction::Closed(tab)) if tab.id == id),
+        matches!(&action, Some(tab) if tab.id == id),
         "タブを閉じなかった: {action:?}"
     );
     let snapshot = ws.snapshot();
@@ -249,53 +268,30 @@ fn シェルが終わるとプロジェクトのタブは閉じ_写しから消�
 }
 
 #[test]
-fn 検証画面ではシェルが終わっても_exited_のまま残り終わり方を持つ() {
-    let mut ws = grid();
-    let id = ids(&ws)[0].clone();
+fn 終わり方が分からなくてもタブを閉じる() {
+    let mut ws = workspace();
+    let id = only_id(&ws);
     ws.mark_running(&id).unwrap();
 
-    let action = ws.mark_exited(
-        &id,
-        Some(ChildExit {
-            exit_code: 1,
-            signal: Some("Hangup".to_owned()),
-        }),
-    );
+    let closed = ws.mark_exited(&id, None);
 
-    assert_eq!(action, Some(ExitAction::Kept));
-    assert_eq!(
-        status_of(&ws, &id),
-        Some(TerminalStatus::Exited {
-            code: Some(1),
-            signal: Some("Hangup".to_owned())
-        })
-    );
-}
-
-#[test]
-fn 終わり方が分からなくても_exited_にする() {
-    let mut ws = grid();
-    let id = ids(&ws)[0].clone();
-    ws.mark_running(&id).unwrap();
-
-    assert_eq!(ws.mark_exited(&id, None), Some(ExitAction::Kept));
-
-    assert_eq!(
-        status_of(&ws, &id),
-        Some(TerminalStatus::Exited {
-            code: None,
-            signal: None
-        })
-    );
+    assert_eq!(closed.map(|tab| tab.id), Some(id.clone()));
+    assert_eq!(status_of(&ws, &id), None, "写しに残っている");
 }
 
 #[test]
 fn 終了の反映は_running_のときだけ効き_2_回目は変化なし() {
-    let mut ws = grid();
-    let id = ids(&ws)[0].clone();
+    let mut ws = workspace();
+    let id = only_id(&ws);
 
-    assert_eq!(ws.mark_exited(&id, None), None, "起動前に exited になった");
+    assert_eq!(ws.mark_exited(&id, None), None, "起動前に閉じた");
     assert_eq!(status_of(&ws, &id), Some(TerminalStatus::NotStarted));
+    ws.mark_failed(&id, "x").unwrap();
+    assert_eq!(
+        ws.mark_exited(&id, None),
+        None,
+        "起動に失敗したタブを閉じた"
+    );
 
     ws.mark_running(&id).unwrap();
     assert!(ws.mark_exited(&id, None).is_some());
@@ -304,22 +300,22 @@ fn 終了の反映は_running_のときだけ効き_2_回目は変化なし() {
 }
 
 #[test]
-fn 終わったターミナルには接続できない() {
-    let mut ws = grid();
-    let id = ids(&ws)[0].clone();
+fn シェルが終わって閉じたターミナルには接続できない() {
+    let mut ws = workspace();
+    let id = only_id(&ws);
     ws.mark_running(&id).unwrap();
     ws.mark_exited(&id, None);
 
     assert_eq!(
         ws.plan_connect(&id, Path::new(ZSH), None),
-        Err(TerminalError::Exited(id))
+        Err(TerminalError::NotFound(id))
     );
 }
 
 #[test]
 fn 入力は_running_のときだけ受け付ける() {
-    let mut ws = grid();
-    let id = ids(&ws)[0].clone();
+    let mut ws = workspace();
+    let id = only_id(&ws);
 
     assert_eq!(
         ws.check_input(&id),
@@ -334,14 +330,15 @@ fn 入力は_running_のときだけ受け付ける() {
     ws.mark_running(&id).unwrap();
     assert_eq!(ws.check_input(&id), Ok(()));
 
+    // シェルが終わるとタブが閉じるので、見つからない。
     ws.mark_exited(&id, None);
-    assert_eq!(ws.check_input(&id), Err(TerminalError::Exited(id)));
+    assert_eq!(ws.check_input(&id), Err(TerminalError::NotFound(id)));
 }
 
 #[test]
-fn 寸法の変更は起動前なら断り_終了後なら何もしない() {
-    let mut ws = grid();
-    let id = ids(&ws)[0].clone();
+fn 寸法の変更は起動前なら断り_動いていれば受け付け_閉じたあとは見つからない() {
+    let mut ws = workspace();
+    let id = only_id(&ws);
 
     assert_eq!(
         ws.check_resize(&id),
@@ -350,8 +347,7 @@ fn 寸法の変更は起動前なら断り_終了後なら何もしない() {
     ws.mark_running(&id).unwrap();
     assert_eq!(ws.check_resize(&id), Ok(true));
     ws.mark_exited(&id, None);
-    // 終わったあとにウィンドウの大きさを変えても失敗にしない(画面にエラーを出し続けない)。
-    assert_eq!(ws.check_resize(&id), Ok(false));
+    assert_eq!(ws.check_resize(&id), Err(TerminalError::NotFound(id)));
 }
 
 #[test]
@@ -503,12 +499,12 @@ fn 選択中のプロジェクトの中で前後のタブに切り替わり端�
 }
 
 // ---------------------------------------------------------------------------
-// 9 枚の検証画面(T22。M4 の T49 で外す)
+// 9 プロジェクト・各 1 タブの 9 枚(NFR-006。M1 の 9 枚の検証画面の代わり。T49d)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn 検証画面は_terminal_1_から順に_9_枚がまだ起動していない状態で載る() {
-    let ws = grid();
+fn _9_プロジェクトの_9_枚は_terminal_1_から順にまだ起動していない状態で各プロジェクトに載る() {
+    let ws = projects(9);
 
     let snapshot = ws.snapshot();
 
@@ -522,20 +518,23 @@ fn 検証画面は_terminal_1_から順に_9_枚がまだ起動していない�
             .iter()
             .all(|t| t.status == TerminalStatus::NotStarted)
     );
-    assert!(snapshot.terminals.iter().all(|t| t.project_id.is_none()));
+    for (n, terminal) in (1..=9u8).zip(&snapshot.terminals) {
+        assert_eq!(terminal.project_id, Some(project_id(n)));
+        assert_eq!(terminal.label, "ターミナル 1");
+    }
 }
 
 #[test]
-fn _9_枚ともホームフォルダで起動を計画し_状態はそれぞれ別に変わる() {
-    let mut ws = grid();
+fn _9_枚ともそれぞれのルートで起動を計画し_状態はそれぞれ別に変わる() {
+    let mut ws = projects(9);
     let ids = ids(&ws);
 
-    for id in &ids {
+    for (n, id) in (1..=9u8).zip(&ids) {
         let spec = spawn_plan(&mut ws, id);
-        assert_eq!(spec.cwd(), Path::new(HOME));
+        assert_eq!(spec.cwd(), root_of(n));
         ws.mark_running(id).unwrap();
     }
-    // 1 枚が終わっても、ほかの 8 枚は動いたまま入力を受け付ける(NFR-006)。
+    // 1 枚が終わっても(そのタブは閉じる)、ほかの 8 枚は動いたまま入力を受け付ける(NFR-006)。
     assert!(
         ws.mark_exited(
             &ids[4],
@@ -550,7 +549,7 @@ fn _9_枚ともホームフォルダで起動を計画し_状態はそれぞれ�
 
     assert_eq!(
         ws.check_input(&ids[4]),
-        Err(TerminalError::Exited(ids[4].clone()))
+        Err(TerminalError::NotFound(ids[4].clone()))
     );
     for (i, id) in ids.iter().enumerate() {
         if i == 4 || i == 8 {
@@ -558,15 +557,16 @@ fn _9_枚ともホームフォルダで起動を計画し_状態はそれぞれ�
         }
         assert_eq!(ws.check_input(id), Ok(()), "{id} が入力を受け付けない");
     }
-    let running = ws
-        .snapshot()
+    let snapshot = ws.snapshot();
+    assert_eq!(snapshot.terminals.len(), 8);
+    let running = snapshot
         .terminals
         .iter()
         .filter(|t| t.status == TerminalStatus::Running)
         .count();
     assert_eq!(running, 7);
     // 起動に失敗した 1 枚は、次の接続で起動し直せる。
-    assert_eq!(spawn_plan(&mut ws, &ids[8]).cwd(), Path::new(HOME));
+    assert_eq!(spawn_plan(&mut ws, &ids[8]).cwd(), root_of(9));
 }
 
 // ---------------------------------------------------------------------------
@@ -604,13 +604,25 @@ fn _0_枚のプロジェクトにも選択中として新しいタブを開け�
 
 #[test]
 fn プロジェクトを選んでいなければ新しいタブを開けない() {
-    let mut ws = grid();
+    // プロジェクト 0 件の起動(選択なし)。
+    let mut ws = Workspace::restore(
+        "1.2.3",
+        PathBuf::from(HOME),
+        env(),
+        Startup {
+            state: PersistedState::default(),
+            roots: Vec::new(),
+            notice: None,
+        },
+    );
 
     let err = ws.open_terminal_in_selected().unwrap_err();
 
     assert_eq!(err, WorkspaceError::NoProjectSelected);
     assert!(err.to_string().contains("選ばれていない"), "{err}");
-    assert_eq!(ws.snapshot().terminals.len(), 9);
-    // 持ち主の無いタブ(検証画面)では、その表示中のタブ(最後に足した 9 枚目)を返す。
-    assert_eq!(ws.active_terminal(), Some(ids(&ws)[8].clone()));
+    assert!(ws.snapshot().terminals.is_empty());
+    // 選んでいなければ表示中のタブも無く、前後の切替も何もしない。
+    assert_eq!(ws.active_terminal(), None);
+    assert_eq!(ws.select_next_terminal(), None);
+    assert_eq!(ws.select_previous_terminal(), None);
 }

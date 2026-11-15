@@ -7,7 +7,6 @@
 //! - 失敗しても落ちない。標準エラーに `STATE_LOG_PREFIX` で 1 行出す
 //!
 //! 規則(読んだ結果の解釈、退避の名前、まとめの時間)は `arin_core::persistence` にあり、ここは順番とスレッドだけを持つ。
-//! 検証画面(`ARIN_VERIFY_GRID`)は読まず書かない(組み立て側が `Persistence::disabled` を使う)。
 
 use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
@@ -215,8 +214,8 @@ fn resolve_root(ports: &PersistencePorts, project: &Project) -> (RootResolution,
     (RootResolution::Found(reference), changed)
 }
 
-/// 保存する内容を取り出す関数(検証画面では `None`)。
-pub type StateSource = Box<dyn Fn() -> Option<PersistedState> + Send>;
+/// 保存する内容を取り出す関数。
+pub type StateSource = Box<dyn Fn() -> PersistedState + Send>;
 
 /// 保存の予約と書き込みのスレッド。Tauri の管理状態に登録する。複製しても同じものを指す。
 #[derive(Clone)]
@@ -259,12 +258,6 @@ impl Persistence {
                 worker: Mutex::new(None),
             }),
         }
-    }
-
-    /// 一度も書かない(検証画面)。
-    #[must_use]
-    pub fn disabled() -> Self {
-        Self::new(SaveScheduler::disabled(), Arc::new(SystemClock::new()))
     }
 
     /// 書く設定か。
@@ -384,9 +377,7 @@ fn run_worker(
 
 /// その時点の内容を書く。前回と同じ中身なら書かない。書けた(または書く必要が無かった)ら真。
 fn save(writer: &dyn StateFilePort, source: &StateSource, last: &mut Option<String>) -> bool {
-    let Some(state) = source() else {
-        return true;
-    };
+    let state = source();
     let text = match encode(&state) {
         Ok(text) => text,
         Err(e) => {

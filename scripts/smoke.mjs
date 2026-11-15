@@ -18,7 +18,7 @@
 // `npm run smoke` は続けてもう 1 回、壊れた state.json を置いて起動する(準備完了の印だけを待つ)。
 // 退避のファイル(state.json.broken-<日時>)が元の中身のままでき、新しい state.json が空の状態で書かれていることを確かめる。
 //
-// `--tiles` は、M1 の 9 枚の検証画面(ARIN_VERIFY_GRID。計画書 T49c で撤去)の代わりに、9 プロジェクト・各 1 タブで
+// `--tiles` は、M1 の 9 枚の検証画面(ARIN_VERIFY_GRID。計画書 T49c・T49d で撤去)の代わりに、9 プロジェクト・各 1 タブで
 // `ui.displayMode: "tiles"` の state.json(計画書 M4 の【仮定】18。形は scripts/perf/app-memory.mjs の計測と同じ)を置いて
 // 1 回だけ起動する。準備完了とターミナルの印に加えて、アプリの子プロセス(シェル)が 9 個揃うまで待つ(ターミナルの印は
 // 最初の 1 枚の出力で書かれるので、9 枚ぶんは子プロセスの数で確かめる)。終了後は 9 個のシェルが残っていないこと、
@@ -36,8 +36,7 @@
 // --env はアプリに渡す環境変数を足す(何度でも指定できる)。例: --env=ARIN_RENDERER=webgl(T21 の描画方式の指定)。
 // WebGL を作れずに DOM へ戻ると画面が診断に 1 行出すので、そのスモークは失敗になる(黙って DOM で通らない)。
 // 状態フォルダとスモークの印の環境変数(ARIN_STATE_DIR・ARIN_SMOKE)は、このスクリプトが決めるので指定できない。
-// 撤去した検証画面の指定(ARIN_VERIFY_GRID)も指定できない(Rust は T49d まで受け付けるが、画面はもう検証画面を描かない。
-// 9 枚の確認は --tiles で行う)。
+// 9 枚の確認は --tiles で行う(撤去した検証画面の指定 ARIN_VERIFY_GRID は、渡してもアプリが読まない)。
 
 import { spawn, spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
@@ -60,11 +59,6 @@ export const ENV_STATE_DIR = "ARIN_STATE_DIR";
 export const ENV_SMOKE = "ARIN_SMOKE";
 /** 一時の状態フォルダの名前の頭。 */
 export const TEMP_PREFIX = "arin-smoke-";
-/**
- * 撤去した 9 枚の検証画面の指定(crates/arin-core/src/launch_options.rs の ENV_VERIFY_GRID。計画書 T49c・T49d)。
- * --env で渡させない(9 枚の確認は --tiles)。
- */
-export const ENV_VERIFY_GRID = "ARIN_VERIFY_GRID";
 /** --tiles のプロジェクトの数(各 1 タブ。1 ページに並ぶ上限の 9 枚)。 */
 export const TILE_PROJECT_COUNT = 9;
 /** プロジェクトに割り当てる色(crates/arin-core/src/project/color.rs のパレットの先頭から)。 */
@@ -622,9 +616,6 @@ export function parseArgs(argv) {
       if (e === null) throw new Error(`--env は <名前>=<値> の形: ${m[2]}`);
       if (e[1] === ENV_STATE_DIR || e[1] === ENV_SMOKE) {
         throw new Error(`${e[1]} はスモークが決めるので --env で指定できない`);
-      }
-      if (e[1] === ENV_VERIFY_GRID) {
-        throw new Error(`${ENV_VERIFY_GRID}(9 枚の検証画面)は撤去したので --env で指定できない。9 枚の確認は --tiles で行う`);
       }
       opts.extraEnv = { ...opts.extraEnv, [e[1]]: e[2] };
     } else if (m[1] === "timeout-ms") {

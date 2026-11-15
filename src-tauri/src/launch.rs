@@ -3,15 +3,15 @@
 //! 環境変数を読むのは `from_env` だけにして薄くする。読んだ値の解釈は `from_inputs` に引数で渡し、
 //! 置き場所の規則そのものは `arin_core::paths::AppPaths` が持つ。テストは `from_inputs` を直接呼び、環境変数を書き換えない。
 //! ターミナルの起動に使う値(ホームフォルダ、`USER`、親の環境変数)もここで読み、`TerminalEnv` にして渡す。
-//! 画面の描画方式と全角幅の方式の指定(`ARIN_RENDERER`・`ARIN_UNICODE`。M1 の検証用、T27 で外す)と、
-//! 9 枚の検証画面の指定(`ARIN_VERIFY_GRID`。M1 の検証用、T27 / M4 の T49 で外す)もここで読み、
+//! 画面の描画方式と全角幅の方式の指定(`ARIN_RENDERER`・`ARIN_UNICODE`。M1 の検証用、M4 の T50b で外す)もここで読み、
 //! 解釈は `arin_core::launch_options::LaunchOptions::resolve` に任せる。
+//! 9 枚の検証画面の指定(`ARIN_VERIFY_GRID`)は M4 の T49c・T49d で外した。指定されていても読まない(通常の起動になる)。
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 use arin_core::launch_options::{
-    ENV_RENDERER, ENV_UNICODE, ENV_VERIFY_GRID, LaunchOptionInputs, LaunchOptions,
+    ENV_RENDERER, ENV_UNICODE, InvalidLaunchOption, LaunchOptionInputs, LaunchOptions,
 };
 use arin_core::paths::{AppPaths, AppPathsError};
 
@@ -94,8 +94,8 @@ impl LaunchConfig {
 
     /// 環境変数とホームディレクトリを読んで設定を作る。
     ///
-    /// 起動時の指定(`ARIN_RENDERER`・`ARIN_UNICODE`・`ARIN_VERIFY_GRID`)が使えない値なら既定に戻し、標準エラーに 1 行ずつ書く。
-    /// この指定は M1 の検証用で、配布用の `.app` でも比べられるようリリースビルドでも読む(T27 / M4 の T49 で外す)。
+    /// 起動時の指定(`ARIN_RENDERER`・`ARIN_UNICODE`)が使えない値なら既定に戻し、標準エラーに 1 行ずつ書く。
+    /// この指定は M1 の検証用で、配布用の `.app` でも比べられるようリリースビルドでも読む(M4 の T50b で外す)。
     ///
     /// # Errors
     ///
@@ -104,14 +104,7 @@ impl LaunchConfig {
         let home = std::env::home_dir();
         let state_dir = std::env::var_os(ENV_STATE_DIR);
         let smoke = std::env::var_os(ENV_SMOKE);
-        let renderer = std::env::var_os(ENV_RENDERER);
-        let unicode = std::env::var_os(ENV_UNICODE);
-        let verify_grid = std::env::var_os(ENV_VERIFY_GRID);
-        let (options, invalid) = LaunchOptions::resolve(LaunchOptionInputs {
-            renderer: renderer.as_deref(),
-            unicode: unicode.as_deref(),
-            verify_grid: verify_grid.as_deref(),
-        });
+        let (options, invalid) = launch_options_from(|name| std::env::var_os(name));
         for warning in invalid {
             eprintln!("{LAUNCH_WARNING_PREFIX} {warning}");
         }
@@ -156,6 +149,19 @@ impl LaunchConfig {
     pub fn options(&self) -> LaunchOptions {
         self.options
     }
+}
+
+/// 環境変数の値を返す関数(`var`)から起動時の指定を決める。読む名前は `ARIN_RENDERER`・`ARIN_UNICODE` だけ。
+/// `from_env` は `std::env::var_os` を渡す。テストは環境変数を書き換えずに、値を返す関数を渡す。
+fn launch_options_from(
+    var: impl Fn(&str) -> Option<OsString>,
+) -> (LaunchOptions, Vec<InvalidLaunchOption>) {
+    let renderer = var(ENV_RENDERER);
+    let unicode = var(ENV_UNICODE);
+    LaunchOptions::resolve(LaunchOptionInputs {
+        renderer: renderer.as_deref(),
+        unicode: unicode.as_deref(),
+    })
 }
 
 #[cfg(test)]
@@ -239,7 +245,7 @@ mod tests {
     }
 
     #[test]
-    fn 起動時の指定は既定で_dom_と_unicode11_と検証画面なしで_差し替えられる() {
+    fn 起動時の指定は既定で_dom_と_unicode11_で_差し替えられる() {
         use arin_core::launch_options::{RendererKind, UnicodeWidth};
 
         let c = config(None, None);
@@ -248,9 +254,65 @@ mod tests {
         let options = LaunchOptions {
             renderer: RendererKind::Webgl,
             unicode: UnicodeWidth::Graphemes,
-            verify_grid: true,
         };
         assert_eq!(c.with_launch_options(options).options(), options);
+    }
+
+    /// 名前と値の組から、環境変数の値を返す関数を作る。
+    fn vars(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<OsString> {
+        let pairs: Vec<(String, OsString)> = pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), OsString::from(v)))
+            .collect();
+        move |name| {
+            pairs
+                .iter()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| v.clone())
+        }
+    }
+
+    #[test]
+    fn 起動時の指定に_arin_verify_grid_があっても通常の起動になる() {
+        // 撤去した 9 枚の検証画面の指定(T49d)。読まないので、既定の指定のままで、使えない値の報告も出さない。
+        for value in ["1", "0", "yes"] {
+            let (options, invalid) = launch_options_from(vars(&[("ARIN_VERIFY_GRID", value)]));
+            assert_eq!(
+                options,
+                LaunchOptions::default(),
+                "ARIN_VERIFY_GRID={value:?}"
+            );
+            assert_eq!(invalid, Vec::new(), "ARIN_VERIFY_GRID={value:?}");
+        }
+        // 画面へ渡す起動時の指定にも項目が無い。
+        let json = serde_json::to_value(LaunchOptions::default()).expect("JSON にできるはず");
+        assert_eq!(
+            json,
+            serde_json::json!({ "renderer": "dom", "unicode": "unicode11" })
+        );
+    }
+
+    #[test]
+    fn 起動時の指定は描画方式と全角幅の方式の環境変数から決まる() {
+        use arin_core::launch_options::{RendererKind, UnicodeWidth};
+
+        let (options, invalid) = launch_options_from(vars(&[
+            ("ARIN_RENDERER", "webgl"),
+            ("ARIN_UNICODE", "graphemes"),
+        ]));
+        assert_eq!(
+            options,
+            LaunchOptions {
+                renderer: RendererKind::Webgl,
+                unicode: UnicodeWidth::Graphemes,
+            }
+        );
+        assert!(invalid.is_empty());
+
+        let (options, invalid) = launch_options_from(vars(&[("ARIN_RENDERER", "canvas")]));
+        assert_eq!(options, LaunchOptions::default());
+        assert_eq!(invalid.len(), 1);
+        assert_eq!(invalid[0].name, "ARIN_RENDERER");
     }
 
     #[test]

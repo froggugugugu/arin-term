@@ -60,16 +60,6 @@ pub enum TerminalStatus {
     },
 }
 
-/// 状態の写しに載せるターミナル 1 枚。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct TerminalSnapshot {
-    /// 識別子。接続・入力などのコマンドで指す。
-    pub id: TerminalId,
-    /// 状態。
-    pub status: TerminalStatus,
-}
-
 /// ターミナルの操作を受け付けられない理由。
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum TerminalError {

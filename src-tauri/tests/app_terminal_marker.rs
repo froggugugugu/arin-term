@@ -94,10 +94,13 @@ fn call(
 
 fn main() {
     let state_dir = support::TempDir::new("terminal-marker");
+    // 起動直後からターミナルが要るので、プロジェクトを 1 件持つ状態ファイルを置いて起動する(タブが 1 枚できる)。
+    let work = support::TempDir::new("terminal-marker-work");
+    let roots = support::make_project_roots(&work, 1);
     let received: Arc<Mutex<Vec<u8>>> = Arc::default();
     let sink = Arc::clone(&received);
     let app = arin_lib::builder_with_pty::<MockRuntime>(
-        support::launch_verify_grid_in(&state_dir, true).with_terminal_env(
+        support::launch_with_projects_in(&state_dir, &roots, true).with_terminal_env(
             arin_lib::launch::TerminalEnv {
                 home: Some(PathBuf::from("/Users/someone")),
                 user: None,
@@ -152,7 +155,7 @@ fn main() {
                 thread::sleep(Duration::from_millis(1));
             }
             assert_eq!(
-                state_dir.entries(),
+                state_dir.entries_except_state(),
                 Vec::<String>::new(),
                 "処理済みの通知より前にターミナルの印を書いた"
             );
@@ -164,7 +167,7 @@ fn main() {
                 json!({ "terminalId": id, "bytes": 0 }),
             );
             assert_eq!(
-                state_dir.entries(),
+                state_dir.entries_except_state(),
                 Vec::<String>::new(),
                 "0 バイトの通知でターミナルの印を書いた"
             );
@@ -177,7 +180,7 @@ fn main() {
                 json!({ "terminalId": id, "bytes": 2 }),
             );
             assert_eq!(
-                state_dir.entries(),
+                state_dir.entries_except_state(),
                 vec![SMOKE_TERMINAL_MARKER_FILE_NAME.to_string()],
                 "最初の処理済みの通知でターミナルの印だけが書かれるはず"
             );
@@ -194,14 +197,14 @@ fn main() {
                 "ack_terminal_output",
                 json!({ "terminalId": id, "bytes": 2 }),
             );
-            assert_eq!(state_dir.entries(), Vec::<String>::new());
+            assert_eq!(state_dir.entries_except_state(), Vec::<String>::new());
             println!("test 2_回目以降の処理済みの通知では印を書かない ... ok");
 
             // 準備完了の印とは別のファイル。
             get_ipc_response(&window, request(handle, "notify_app_ready"))
                 .unwrap_or_else(|e| panic!("notify_app_ready が失敗した: {e}"));
             assert_eq!(
-                state_dir.entries(),
+                state_dir.entries_except_state(),
                 vec![SMOKE_READY_MARKER_FILE_NAME.to_string()]
             );
             seen.set(true);

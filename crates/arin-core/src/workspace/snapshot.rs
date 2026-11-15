@@ -25,11 +25,11 @@ pub struct AppSnapshot {
     pub schema_version: u32,
     /// アプリの版(例: `0.1.0`)。
     pub app_version: String,
-    /// プロジェクトの一覧(並び順のとおり)。9 枚の検証画面では空。
+    /// プロジェクトの一覧(並び順のとおり)。
     pub projects: Vec<ProjectCardSnapshot>,
     /// 選択中のプロジェクト。
     pub selected_project_id: Option<ProjectId>,
-    /// ターミナルの一覧(プロジェクトの並び順、その中はタブの順。持ち主の無いもの=検証画面は最後)。
+    /// ターミナルの一覧(プロジェクトの並び順、その中はタブの順)。
     pub terminals: Vec<TerminalTabSnapshot>,
     /// ペインの寸法(保存値。表示値への調整は画面が行う)。
     pub layout: PaneSizes,
@@ -94,7 +94,8 @@ pub struct ProjectCardSnapshot {
 pub struct TerminalTabSnapshot {
     /// 識別子。接続・入力などのコマンドで指す。
     pub id: TerminalId,
-    /// 持ち主のプロジェクト。9 枚の検証画面では `null`。
+    /// 持ち主のプロジェクト。いまは必ず値がある(M1 の 9 枚の検証画面の `null` は M4 の T49d で無くなった。
+    /// 写しの形を変えないため、型は `null` を取りうるままにしてある)。
     pub project_id: Option<ProjectId>,
     /// タブの表示名(「ターミナル N」)。
     pub label: String,

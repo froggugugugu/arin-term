@@ -176,7 +176,7 @@ fn 登録したプロジェクトは保存する内容に入る() {
     ws.register_project(id(1), root("/Users/me/dev/app"))
         .expect("登録できなかった");
 
-    let saved = ws.persisted_state().expect("保存する内容が無い");
+    let saved = ws.persisted_state();
 
     assert_eq!(saved.projects.len(), 1);
     assert_eq!(saved.projects[0].id(), &id(1));
@@ -199,7 +199,7 @@ fn 色を変えると写しと保存する内容に出る() {
         .expect("色を変えられなかった");
 
     assert_eq!(ws.snapshot().projects[0].color, ProjectColor::Teal);
-    let saved = ws.persisted_state().expect("保存する内容が無い");
+    let saved = ws.persisted_state();
     assert_eq!(saved.projects[0].color(), ProjectColor::Teal);
 }
 

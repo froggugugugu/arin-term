@@ -18,7 +18,7 @@ schemaVersion: number,
  */
 appVersion: string, 
 /**
- * プロジェクトの一覧(並び順のとおり)。9 枚の検証画面では空。
+ * プロジェクトの一覧(並び順のとおり)。
  */
 projects: Array<ProjectCardSnapshot>, 
 /**
@@ -26,7 +26,7 @@ projects: Array<ProjectCardSnapshot>,
  */
 selectedProjectId: ProjectId | null, 
 /**
- * ターミナルの一覧(プロジェクトの並び順、その中はタブの順。持ち主の無いもの=検証画面は最後)。
+ * ターミナルの一覧(プロジェクトの並び順、その中はタブの順)。
  */
 terminals: Array<TerminalTabSnapshot>, 
 /**

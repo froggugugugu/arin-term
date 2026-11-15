@@ -489,7 +489,7 @@ export const CONDITIONS = [
   "WebKit の補助プロセスは launchd の子なので、起動の前後で増えたものをこのアプリのものとみなす(同時に別のアプリが WebKit を起動すると混ざる。JSON の webkit_exited_with_app が true なら、アプリの終了と一緒に消えた)",
   "メモリは footprint の phys_footprint(アクティビティモニタの「メモリ」と同じ)。MiB は 1024×1024 バイト",
   "ツリーの読み込みは見本を一時フォルダに 2 つ作って各 3 回(1 つのフォルダに全ファイル、全ファイルを 100 ファイルずつのフォルダに分けたもの。どちらも .git・node_modules・.DS_Store を足す)。見本は計測の後で消す。ファイルの数は --tree-files(既定 10 万)",
-  "2c・2d は Workspace::for_verify_grid の 9 枚(持ち主の無いタブ)で、シェルは /bin/zsh、HOME は一時フォルダ。各 3 回。`yes '<78 文字>' | head -c 4194304`(2d は 8 MiB)を 9 枚に順に書き込んで同時に流す。ベル入りは行の終わりに BEL を足したもの",
+  "2c・2d は 9 プロジェクト・各 1 タブの Workspace の 9 枚(ルートは一時フォルダの HOME の下のフォルダ。T49d より前の記録は M1 の 9 枚の検証画面=Workspace::for_verify_grid の持ち主の無い 9 枚で、cwd は HOME)で、シェルは /bin/zsh、HOME は一時フォルダ。各 3 回。`yes '<78 文字>' | head -c 4194304`(2d は 8 MiB)を 9 枚に順に書き込んで同時に流す。ベル入りは行の終わりに BEL を足したもの",
   "2a・2b の 1 枚の値の、アテンションの走査(T48c)を入れる前の記録: testreport/perf/perf-20261115-205753(2a の所要時間の中央値 39.8 ms、185.2 MiB/s、2b の頭打ち 525,184 B)",
   "3b は 3. と同じ起動で、9 プロジェクト・各 1 タブ・`ui.displayMode: \"tiles\"` の state.json。描画方式は ARIN_RENDERER で渡し、全角幅の方式は既定(unicode11)のまま。各 2 回。印が揃い、シェルが 9 個になってから 3 秒置いて測る",
   "3b の「流す」組は、一時フォルダの HOME(.zshrc だけ)をアプリに渡し、各シェルが起動直後に `yes | head -c 4194304` を流す。流し終えたシェルが HOME に書く印を 250ms ごとに見ながら、本体と WebKit の RSS(ps)の最大を取る。上限 60 秒",

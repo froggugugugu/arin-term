@@ -405,34 +405,6 @@ fn ウィンドウが前面でなくなったら待たずに書かれる() {
     });
 }
 
-fn 検証画面では読まず書かない() {
-    let fx = Fixture::new("persist-verify");
-    let original = fx.write_project_state();
-    let launch = fx
-        .launch()
-        .with_launch_options(arin_core::launch_options::LaunchOptions {
-            verify_grid: true,
-            ..arin_core::launch_options::LaunchOptions::default()
-        });
-    run_app(launch, fx.frozen_ports(), |handle| {
-        let s = snapshot(handle);
-        assert!(
-            s.projects.is_empty(),
-            "検証画面で状態ファイルを読んだ: {s:?}"
-        );
-        assert_eq!(s.terminals.len(), 9);
-        assert_eq!(s.notice, None);
-        arin_lib::lifecycle::on_window_focus_changed(handle, false);
-        thread::sleep(Duration::from_millis(200));
-    });
-    assert_eq!(fx.state_entries(), vec!["state.json".to_string()]);
-    assert_eq!(
-        fs::read(fx.state_file()).expect("読めなかった"),
-        original,
-        "検証画面で状態ファイルを書いた"
-    );
-}
-
 /// 表示モードの保存と復元(FR-048 の AC。計画書 T47b)。1 回目の起動で `set_display_mode` のコマンドでタイル表示にして終え、
 /// 2 回目の起動がタイル表示で開くことを確かめる。ページと拡大中は保存しない(2 回目は拡大していない)。
 fn 再起動すると前の表示モードで開く() {
@@ -483,7 +455,7 @@ fn 再起動すると前の表示モードで開く() {
 }
 
 fn main() {
-    let tests: [(&str, fn()); 9] = [
+    let tests: [(&str, fn()); 8] = [
         (
             "状態ファイルが無ければ空で始まる",
             状態ファイルが無ければ空で始まる,
@@ -506,7 +478,6 @@ fn main() {
             "ウィンドウが前面でなくなったら待たずに書かれる",
             ウィンドウが前面でなくなったら待たずに書かれる,
         ),
-        ("検証画面では読まず書かない", 検証画面では読まず書かない),
         (
             "再起動すると前の表示モードで開く",
             再起動すると前の表示モードで開く,

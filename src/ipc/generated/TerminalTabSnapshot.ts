@@ -12,7 +12,8 @@ export type TerminalTabSnapshot = {
  */
 id: TerminalId, 
 /**
- * 持ち主のプロジェクト。9 枚の検証画面では `null`。
+ * 持ち主のプロジェクト。いまは必ず値がある(M1 の 9 枚の検証画面の `null` は M4 の T49d で無くなった。
+ * 写しの形を変えないため、型は `null` を取りうるままにしてある)。
  */
 projectId: ProjectId | null, 
 /**

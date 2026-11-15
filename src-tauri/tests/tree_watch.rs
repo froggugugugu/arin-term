@@ -5,8 +5,8 @@
 //! - 監視のポートは偽物(`FakeWatcher`。張った場所と、捨てられたかを記録し、受け口へ束を流せる)。
 //!   実物(`FsEventsWatcher`)は一時フォルダで 1 件だけ
 //! - プロジェクトのフォルダは一時フォルダの中に作る(張る前に実パスにそろえるのを、本物のファイルシステムで確かめる)
-//! - 最後に Tauri の模擬ランタイムで、画面へ `tree-changed` が届くこと、終了で監視が捨てられること、
-//!   9 枚の検証画面では監視を張らないことを確かめる
+//! - 最後に Tauri の模擬ランタイムで、画面へ `tree-changed` が届くこと、終了で監視が捨てられることを確かめる
+//!   (M1 の 9 枚の検証画面で監視を張らないことの確かめは、検証画面と一緒に M4 の T49d で外した)
 //!
 //! macOS ではメニューの部品をメインスレッドでしか作れないため、`harness = false` で走らせる(`app_builder` と同じ)。
 
@@ -696,18 +696,13 @@ impl FolderPicker for FakePicker {
 /// 模擬のアプリを組み立てて走らせる。`on_ready` は起動の完了で 1 回呼ぶ。`on_exit` は終了の後片付けのあと。
 fn run_app(
     name: &str,
-    verify_grid: bool,
     watcher: Arc<FakeWatcher>,
     picker: Arc<FakePicker>,
     on_ready: impl Fn(&tauri::AppHandle<MockRuntime>, &tauri::WebviewWindow<MockRuntime>) + 'static,
     on_exit: impl Fn(&tauri::AppHandle<MockRuntime>) + 'static,
 ) {
     let temp = support::TempDir::new(name);
-    let launch = if verify_grid {
-        support::launch_verify_grid_in(&temp, false)
-    } else {
-        support::launch_in(&temp, false)
-    };
+    let launch = support::launch_in(&temp, false);
     let pasteboard = MacPasteboard::named(format!(
         "dev.arin.test.tree-watch.{name}.{}",
         std::process::id()
@@ -776,7 +771,6 @@ fn 画面へ_tree_changed_を送り終了で監視を捨てる() {
     let real_in_ready = real.clone();
     run_app(
         "tree-watch-app",
-        false,
         Arc::clone(&watcher),
         picker,
         move |handle, window| {
@@ -832,34 +826,10 @@ fn 画面へ_tree_changed_を送り終了で監視を捨てる() {
     assert_eq!(watcher.count(), 1);
 }
 
-fn 検証画面では監視を張らない() {
-    let watcher = Arc::new(FakeWatcher::default());
-    let in_ready = Arc::clone(&watcher);
-    run_app(
-        "tree-watch-verify",
-        true,
-        Arc::clone(&watcher),
-        Arc::new(FakePicker::default()),
-        move |handle, _window| {
-            assert!(
-                handle.try_state::<TreeWatch>().is_none(),
-                "検証画面で張り替えのスレッドを作った"
-            );
-            thread::sleep(QUIET);
-            assert_eq!(in_ready.count(), 0, "検証画面で監視を張った");
-        },
-        |_| {},
-    );
-    assert_eq!(watcher.count(), 0);
-}
-
-const APP_CHECKS: &[(&str, Check)] = &[
-    (
-        "画面へ_tree_changed_を送り終了で監視を捨てる",
-        画面へ_tree_changed_を送り終了で監視を捨てる,
-    ),
-    ("検証画面では監視を張らない", 検証画面では監視を張らない),
-];
+const APP_CHECKS: &[(&str, Check)] = &[(
+    "画面へ_tree_changed_を送り終了で監視を捨てる",
+    画面へ_tree_changed_を送り終了で監視を捨てる,
+)];
 
 fn main() {
     for (name, check) in CHECKS.iter().chain(APP_CHECKS) {

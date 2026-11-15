@@ -557,10 +557,6 @@ describe("parseArgs", () => {
     assert.throws(() => parseArgs(["--tiles=1"]), /知らない引数/);
   });
 
-  it("撤去した検証画面の指定_ARIN_VERIFY_GRID_は_--env_で渡せず_--tiles_を案内する", () => {
-    assert.throws(() => parseArgs(["--env=ARIN_VERIFY_GRID=1"]), /撤去した.*--tiles/);
-  });
-
   it("形の違う --env、スモークが決める環境変数、知らない引数は失敗する", () => {
     assert.throws(() => parseArgs(["--env=ARIN_RENDERER"]), /<名前>=<値>/);
     assert.throws(() => parseArgs(["--env==webgl"]), /<名前>=<値>/);

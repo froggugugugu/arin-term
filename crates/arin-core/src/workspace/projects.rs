@@ -167,7 +167,7 @@ impl Workspace {
         };
         let tabs: Vec<_> = self
             .tabs
-            .tabs(Some(id))
+            .tabs(id)
             .iter()
             .map(|tab| tab.id.clone())
             .collect();

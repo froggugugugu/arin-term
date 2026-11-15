@@ -18,8 +18,7 @@ describe("src/ipc の包み", () => {
   });
 
   it("起動時の指定の取得は get_launch_options を引数なしで呼び、描画方式と全角幅の方式だけを返す", async () => {
-    // Rust はまだ 9 枚の検証画面の項目(verifyGrid)を返す(T49d で外す)。画面は検証画面を撤去したので読まない(T49c)。
-    const fake = createFakeIpc({ get_launch_options: () => ({ renderer: "webgl", unicode: "graphemes", verifyGrid: true }) });
+    const fake = createFakeIpc({ get_launch_options: () => ({ renderer: "webgl", unicode: "graphemes" }) });
     const ipc = createIpc(fake.transport);
 
     const result = await ipc.getLaunchOptions();

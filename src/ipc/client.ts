@@ -159,8 +159,7 @@ export interface OutputSubscription {
 
 /**
  * 画面が使う起動時の指定(描画方式と全角幅の方式。M1 の検証用で、M4 の T50b で外す)。
- * Rust の応答(LaunchOptions)には 9 枚の検証画面の項目(verifyGrid)がまだあるが、画面は検証画面を撤去したので読まない
- * (計画書 T49c。Rust 側の項目は T49d で外す)。
+ * 9 枚の検証画面の項目(verifyGrid)は計画書 T49c(画面)・T49d(Rust)で外した。
  */
 export type ScreenLaunchOptions = Pick<LaunchOptions, "renderer" | "unicode">;
 

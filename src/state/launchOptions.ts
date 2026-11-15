@@ -2,7 +2,7 @@
 //
 // 検証用。人間が DOM と WebGL、unicode11 と graphemes を実機で比べるためのもので、M4 で決めて外す(ADR-001)。
 // 指定は Rust が環境変数(ARIN_RENDERER・ARIN_UNICODE)から読み、get_launch_options で 1 回だけ渡す。
-// 9 枚の検証画面(ARIN_VERIFY_GRID)は M4 の T49c で画面から外した。Rust の応答にはまだ項目があるが、src/ipc が読まない。
+// 9 枚の検証画面(ARIN_VERIFY_GRID)は M4 の T49c(画面)・T49d(Rust)で外した。
 // 取得に失敗しても起動は止めない。既定(dom・unicode11)で作り、診断に報告する(起動スモークが失敗として気づける)。
 
 import type { ArinIpc, ScreenLaunchOptions } from "../ipc/client";

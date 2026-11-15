@@ -18,7 +18,5 @@ pub use flow::{
 };
 pub use launch::{ShellLaunchError, ShellLaunchSpec};
 pub use osc::{OSC_CLIPBOARD, OSC_NOTIFY_9, OSC_NOTIFY_777, OscEvent, OscScanner, OscTerminator};
-pub use state::{
-    MAX_COLS, MAX_ROWS, TerminalError, TerminalId, TerminalSnapshot, TerminalStatus, validate_size,
-};
-pub use store::{ExitAction, ExitPolicy, TerminalStore, TerminalTab};
+pub use state::{MAX_COLS, MAX_ROWS, TerminalError, TerminalId, TerminalStatus, validate_size};
+pub use store::{TerminalStore, TerminalTab};

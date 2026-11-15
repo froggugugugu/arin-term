@@ -20,6 +20,8 @@
 //!
 //! 流す量は 1 枚あたり `MULTI_BYTES`(4 MiB)に限る(長く流しっぱなしにしない。テストのプロセスのメモリを見るため)。
 
+mod support;
+
 use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::fs;
@@ -31,7 +33,6 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use arin_core::terminal::{AttentionScanner, TerminalId};
-use arin_core::workspace::Workspace;
 use arin_lib::sessions::{OutputSink, SessionConfig, SessionRegistry, ShellDefaults};
 use arin_platform::pty::NativePty;
 
@@ -222,8 +223,12 @@ fn start(home: &TempHome, sink: &Arc<Sink>) -> (SessionRegistry, TerminalId) {
         .filter_map(|n| std::env::var_os(n).map(|v| (n.into(), v)))
         .collect();
     vars.push(("HOME".into(), home.path().as_os_str().to_owned()));
-    // 9 枚の検証画面の形で作り、1 枚目だけを使う(起動しないターミナルは計測に影響しない)。
-    let workspace = Workspace::for_verify_grid("0.0.0-perf", home.path().to_path_buf(), vars);
+    // 一時の HOME の下のフォルダをルートにしたプロジェクト 1 件・タブ 1 枚で作る
+    // (M1 の 9 枚の検証画面の 1 枚目の代わり。T49d)。
+    let root = home.path().join("project-1");
+    fs::create_dir_all(&root).expect("プロジェクトのフォルダを作れなかった");
+    let workspace =
+        support::workspace_with_projects("0.0.0-perf", home.path().to_path_buf(), vars, &[root]);
     // しきい値とまとめは製品の既定値のまま測る。
     let registry = SessionRegistry::new(
         workspace,
@@ -286,7 +291,7 @@ fn 処理済みをすぐ返す送り先で_10_万行を_cat_したときの所�
             .write(
                 &id,
                 format!(
-                    "{}; cat lines.txt; {}\r",
+                    "{}; cat ~/lines.txt; {}\r",
                     mark_command(&begin),
                     mark_command(&end)
                 )
@@ -339,7 +344,7 @@ fn 処理済みを返さない送り先では未処理の量が上限の付近�
         registry
             .write(
                 &id,
-                format!("cat lines.txt; {}\r", mark_command("end")).as_bytes(),
+                format!("cat ~/lines.txt; {}\r", mark_command("end")).as_bytes(),
             )
             .unwrap();
 
@@ -400,7 +405,7 @@ const MULTI_BYTES: u64 = 4 * 1024 * 1024;
 /// 9 枚の計測で流す行(`yes` の引数)。78 文字。
 const MULTI_LINE: &str =
     "arin perf tiles 0123456789 abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-/// 同時に流す枚数(NFR-009 の 9 枚。`Workspace::for_verify_grid` の枚数と同じ)。
+/// 同時に流す枚数(NFR-009 の 9 枚。タイル表示の 1 ページぶん)。
 const MULTI_TERMINALS: usize = 9;
 
 /// 一時の `HOME` で `/bin/zsh` を `count` 枚起動し、1 枚ごとに送り先をつなぐ。返す並びは写しの順。
@@ -414,8 +419,17 @@ fn start_many(
         .filter_map(|n| std::env::var_os(n).map(|v| (n.into(), v)))
         .collect();
     vars.push(("HOME".into(), home.path().as_os_str().to_owned()));
-    // 9 枚の検証画面の形で作る(持ち主の無い 9 枚。T49d で足場を置き換える)。使わない分は起動しない。
-    let workspace = Workspace::for_verify_grid("0.0.0-perf", home.path().to_path_buf(), vars);
+    // `count` 件のプロジェクト・各 1 タブで作る(タイル表示の 9 枚と同じ形。M1 の 9 枚の検証画面の代わり。T49d)。
+    // ルートは一時の HOME の下のフォルダ(同じフォルダのプロジェクトは見つからない扱いになるので分ける)。
+    let roots: Vec<PathBuf> = (1..=count)
+        .map(|n| {
+            let root = home.path().join(format!("project-{n}"));
+            fs::create_dir_all(&root).expect("プロジェクトのフォルダを作れなかった");
+            root
+        })
+        .collect();
+    let workspace =
+        support::workspace_with_projects("0.0.0-perf", home.path().to_path_buf(), vars, &roots);
     let registry = SessionRegistry::new(
         workspace,
         Arc::new(NativePty),

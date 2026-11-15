@@ -4,8 +4,9 @@
 //! - 出力のチャネルは、画面が渡すのと同じ `__CHANNEL__:<番号>` の文字列で渡し、Tauri の
 //!   `channel_interceptor` で送られたバイト列を受け取る
 //! - どの待ちにも上限時間を付ける
-//! - 模擬のアプリを 2 回、順に組み立てる。1 回目は 9 枚の検証画面(起動直後からターミナルがある)、2 回目は
-//!   一時フォルダのプロジェクトを 1 件持つ状態ファイルを置いた通常の起動(タブのコマンド。T33b)
+//! - 模擬のアプリを 2 回、順に組み立てる。1 回目は一時フォルダのプロジェクトを 9 件(各 1 タブ)持つ状態ファイルを置いた
+//!   起動(起動直後からターミナルが 9 枚ある。M1 の 9 枚の検証画面の代わり。T49d)、2 回目は
+//!   プロジェクトを 1 件持つ状態ファイルを置いた通常の起動(タブのコマンド。T33b)
 //!
 //! macOS ではメニューの部品をメインスレッドでしか作れないため、標準のテストハーネスを使わず
 //! (Cargo.toml で `harness = false`)、この `main` をメインスレッドで実行する。
@@ -187,8 +188,12 @@ fn 写しにまだ起動していないターミナルが載る(
 ) {
     let snapshot = snapshot(handle, window);
 
-    // 9 枚の検証画面の指定で組み立てた(support::launch_verify_grid_in)。
+    // 9 プロジェクト・各 1 タブの状態ファイルを置いて組み立てた(support::launch_with_projects_in)。
     assert_eq!(snapshot.terminals.len(), 9);
+    assert!(
+        snapshot.terminals.iter().all(|t| t.project_id.is_some()),
+        "持ち主の無いターミナルがある"
+    );
     assert_eq!(snapshot.terminals[0].status, TerminalStatus::NotStarted);
     assert!(lock(&ctx.control.spawned).is_empty(), "接続の前に起動した");
 }
@@ -356,7 +361,7 @@ fn バイト列の入力がそのまま_pty_に届く(
     assert_eq!(lock(&ctx.control.written).len(), before + bytes.len());
 }
 
-fn 検証画面ではタブを選べて閉じられ_新しいタブは開けない(
+fn _9_枚のうちほかのプロジェクトのタブを選べて閉じられ_新しいタブは選択中のプロジェクトに開く(
     handle: &AppHandle<MockRuntime>,
     window: &WebviewWindow<MockRuntime>,
     ctx: &Ctx,
@@ -364,6 +369,7 @@ fn 検証画面ではタブを選べて閉じられ_新しいタブは開けな�
     let before = snapshot(handle, window);
     let last = before.terminals[8].id.as_str().to_owned();
     let second = before.terminals[1].id.as_str().to_owned();
+    let first_project = before.projects[0].id.clone();
 
     call(
         handle,
@@ -390,13 +396,22 @@ fn 検証画面ではタブを選べて閉じられ_新しいタブは開けな�
         json!({ "terminalId": last }),
     ));
     assert!(missing.contains(&last), "{missing}");
-    let no_project = error_text(call(handle, window, "new_terminal", json!({})));
-    assert!(no_project.contains("選ばれていない"), "{no_project}");
-    assert_eq!(snapshot(handle, window).terminals.len(), 8);
+    // 選択中は 1 件目のまま(タブの選択はプロジェクトの選択を変えない)。新しいタブはその末尾に開く。
+    call(handle, window, "new_terminal", json!({}))
+        .unwrap_or_else(|e| panic!("new_terminal が失敗した: {e}"));
+    let after = snapshot(handle, window);
+    assert_eq!(after.terminals.len(), 9);
+    assert_eq!(after.selected_project_id, Some(first_project));
+    assert_eq!(after.projects[0].terminal_ids.len(), 2);
+    assert_eq!(
+        after.terminals[0].id.as_str(),
+        "terminal-1",
+        "1 枚目の並びが変わった"
+    );
     assert_eq!(
         lock(&ctx.control.spawned).len(),
         1,
-        "閉じた・選んだだけで起動した"
+        "閉じた・選んだ・開いただけで起動した"
     );
 }
 
@@ -460,8 +475,8 @@ const CHECKS: &[(&str, Check)] = &[
         二重の接続は起動し直さず新しいチャネルへ流す,
     ),
     (
-        "検証画面ではタブを選べて閉じられ_新しいタブは開けない",
-        検証画面ではタブを選べて閉じられ_新しいタブは開けない,
+        "_9_枚のうちほかのプロジェクトのタブを選べて閉じられ_新しいタブは選択中のプロジェクトに開く",
+        _9_枚のうちほかのプロジェクトのタブを選べて閉じられ_新しいタブは選択中のプロジェクトに開く,
     ),
     (
         "終了の処理でシェルを終わらせる",
@@ -711,12 +726,18 @@ fn run_checks(
 
 fn main() {
     let grid_dir = support::TempDir::new("terminal");
+    let grid_work = support::TempDir::new("terminal-work");
+    let grid_roots = support::make_project_roots(&grid_work, 9);
     let passed = run_checks(
-        support::launch_verify_grid_in(&grid_dir, false),
+        support::launch_with_projects_in(&grid_dir, &grid_roots, false),
         None,
         CHECKS,
     );
-    assert_eq!(passed, CHECKS.len(), "起動の完了まで進まなかった(検証画面)");
+    assert_eq!(
+        passed,
+        CHECKS.len(),
+        "起動の完了まで進まなかった(9 プロジェクト)"
+    );
 
     let project_dir = support::TempDir::new("terminal-project");
     let state_dir = project_dir.path().join("state");

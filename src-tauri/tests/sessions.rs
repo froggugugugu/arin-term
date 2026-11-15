@@ -5,6 +5,10 @@
 //! - どの待ちにも上限時間(`WAIT`)を付ける。待ちは条件が成り立つまでの見回りで、固定の時間に頼らない
 //! - 「止まったまま読まない」ことだけは、成り立たないことの確認なので短い時間(`QUIET`)を置いて見る
 //!   (読み取りが止まっていなければ必ず増えるので、遅いマシンでも誤って失敗することはない)
+//! - 9 枚は 9 プロジェクト・各 1 タブの通常の Workspace で作る(`support::workspace_with_projects`。
+//!   M1 の 9 枚の検証画面は M4 の T49d で外した)。シェルが終わったタブは閉じる
+
+mod support;
 
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -27,6 +31,17 @@ use arin_lib::verify_log::{FlowSummary, VerifyConfig, VerifyRecord, VerifySink};
 const WAIT: Duration = Duration::from_secs(10);
 const QUIET: Duration = Duration::from_millis(100);
 const HOME: &str = "/Users/someone";
+
+/// 9 プロジェクトの Workspace の `n` 番目(1 から)のプロジェクトのルート。
+fn grid_root(n: usize) -> PathBuf {
+    PathBuf::from(format!("{HOME}/dev/p{n}"))
+}
+
+/// 9 プロジェクト・各 1 タブ(`terminal-1`〜`terminal-9`。1 件目を選択中)の通常の起動の Workspace。
+fn nine_projects() -> Workspace {
+    let roots: Vec<PathBuf> = (1..=9).map(grid_root).collect();
+    support::workspace_with_projects("0.0.0-test", PathBuf::from(HOME), [("HOME", HOME)], &roots)
+}
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
@@ -147,7 +162,7 @@ impl PtyPort for FakePty {
     }
 }
 
-/// 偽の PTY を `control` で起動する(`FakePty` と、9 枚の検証画面の `GridPty` が共有する)。
+/// 偽の PTY を `control` で起動する(`FakePty` と、9 枚の `GridPty` が共有する)。
 fn spawn_on(
     control: &Arc<Control>,
     spec: &ShellLaunchSpec,
@@ -332,11 +347,9 @@ impl Fixture {
         let probes = Arc::new(AtomicUsize::new(0));
         let seen = Arc::clone(&snapshots);
         let probe_count = Arc::clone(&probes);
-        // シェルが終わってもタブを残す 9 枚の検証画面の形で作り、1 枚目だけを使う(タブを閉じる形のテストは下の T33b の節)。
-        let workspace =
-            Workspace::for_verify_grid("0.0.0-test", PathBuf::from(HOME), [("HOME", HOME)]);
+        // 9 プロジェクト・各 1 タブで作り、1 枚目(1 件目のプロジェクトのタブ)だけを使う。
         let registry = SessionRegistry::with_verify(
-            workspace,
+            nine_projects(),
             Arc::new(FakePty(Arc::clone(&control))),
             Arc::new(move || {
                 probe_count.fetch_add(1, Ordering::SeqCst);
@@ -365,15 +378,25 @@ impl Fixture {
             .expect("接続できなかった");
     }
 
-    fn status(&self) -> TerminalStatus {
-        self.registry.snapshot().terminals[0].status.clone()
+    /// 使っている 1 枚の状態。タブが閉じていれば `None`。
+    fn status(&self) -> Option<TerminalStatus> {
+        status_in(&self.registry.snapshot(), &self.id)
     }
 
+    /// 最後に知らせた写しでの、使っている 1 枚の状態。まだ知らせていない・タブが閉じていれば `None`。
     fn last_notified_status(&self) -> Option<TerminalStatus> {
         lock(&self.snapshots)
             .last()
-            .map(|s| s.terminals[0].status.clone())
+            .and_then(|s| status_in(s, &self.id))
     }
+}
+
+fn status_in(snapshot: &AppSnapshot, id: &TerminalId) -> Option<TerminalStatus> {
+    snapshot
+        .terminals
+        .iter()
+        .find(|t| &t.id == id)
+        .map(|t| t.status.clone())
 }
 
 impl Drop for Fixture {
@@ -392,13 +415,6 @@ fn test_config() -> SessionConfig {
     }
 }
 
-fn exited(code: u32) -> TerminalStatus {
-    TerminalStatus::Exited {
-        code: Some(code),
-        signal: None,
-    }
-}
-
 // ---------------------------------------------------------------------------
 // テスト
 // ---------------------------------------------------------------------------
@@ -413,13 +429,13 @@ fn 状態の写しにはまだ起動していないターミナルが載り_接�
 
     f.connect(&CollectSink::new());
 
-    assert_eq!(f.status(), TerminalStatus::Running);
+    assert_eq!(f.status(), Some(TerminalStatus::Running));
     assert_eq!(f.last_notified_status(), Some(TerminalStatus::Running));
     assert_eq!(f.control.spawn_count(), 1);
 }
 
 #[test]
-fn 最初の接続で接続の寸法とホームフォルダでシェルを起動する() {
+fn 最初の接続で接続の寸法とプロジェクトのルートでシェルを起動する() {
     let f = Fixture::new(OutputMode::Scripted);
 
     f.registry
@@ -436,7 +452,7 @@ fn 最初の接続で接続の寸法とホームフォルダでシェルを起�
         }
     );
     assert_eq!(spec.program(), Path::new("/bin/zsh"));
-    assert_eq!(spec.cwd(), Path::new(HOME));
+    assert_eq!(spec.cwd(), grid_root(1));
 }
 
 #[test]
@@ -624,7 +640,7 @@ fn 入力と寸法の変更が_pty_に届く() {
 }
 
 #[test]
-fn 出力が終わりシェルが終わったら_exited_を写しに反映して知らせる() {
+fn 出力が終わりシェルが終わったらタブを閉じて写しから消し_知らせる() {
     let f = Fixture::new(OutputMode::Scripted);
     let sink = CollectSink::new();
     f.connect(&sink);
@@ -633,17 +649,19 @@ fn 出力が終わりシェルが終わったら_exited_を写しに反映して
 
     f.control.close_output();
 
+    assert!(wait_until(|| f.status().is_none()), "終了を反映しなかった");
     assert!(
-        wait_until(|| f.status() == exited(0)),
-        "終了を反映しなかった"
+        wait_until(|| lock(&f.snapshots)
+            .last()
+            .is_some_and(|s| status_in(s, &f.id).is_none() && s.terminals.len() == 8)),
+        "閉じたことを知らせなかった"
     );
-    assert_eq!(f.last_notified_status(), Some(exited(0)));
     // 終わりの直前の出力も届いている。
     assert_eq!(sink.bytes(), b"bye");
 }
 
 #[test]
-fn 出力が終わらなくても見回りでシェルの終了に気づく() {
+fn 出力が終わらなくても見回りでシェルの終了に気づきタブを閉じる() {
     let f = Fixture::new(OutputMode::Scripted);
     f.connect(&CollectSink::new());
 
@@ -651,29 +669,44 @@ fn 出力が終わらなくても見回りでシェルの終了に気づく() {
     f.control.set_exit(3);
 
     assert!(
-        wait_until(|| f.status() == exited(3)),
+        wait_until(|| f.status().is_none()),
         "見回りで終了に気づかなかった"
+    );
+    assert!(
+        wait_until(|| f.control.killed.load(Ordering::SeqCst)),
+        "閉じたタブのシェルの後片付けをしなかった"
     );
 }
 
 #[test]
-fn シェルの終了後の書き込みは失敗し_寸法の変更は何もしない() {
+fn シェルが終わって閉じたタブへの書き込み_寸法の変更_接続は見つからないと返し_処理済みの通知は受け流す()
+ {
     let f = Fixture::new(OutputMode::Scripted);
     f.connect(&CollectSink::new());
     f.control.set_exit(0);
     f.control.close_output();
-    assert!(wait_until(|| f.status() == exited(0)));
+    assert!(wait_until(|| f.status().is_none()));
+    let not_found = || {
+        Err(SessionError::Terminal(TerminalError::NotFound(
+            f.id.clone(),
+        )))
+    };
 
-    assert_eq!(
-        f.registry.write(&f.id, b"ls\r"),
-        Err(SessionError::Terminal(TerminalError::Exited(f.id.clone())))
-    );
-    assert_eq!(f.registry.resize(&f.id, 10, 10), Ok(()));
+    assert_eq!(f.registry.write(&f.id, b"ls\r"), not_found());
+    assert_eq!(f.registry.resize(&f.id, 10, 10), not_found());
     assert!(lock(&f.control.sizes).is_empty());
+    // 処理済みの通知は、閉じたタブへ遅れて届くのが普通なので失敗にしない。
     assert_eq!(f.registry.ack(&f.id, 10), Ok(()));
     assert_eq!(
-        f.registry.connect(&f.id, 24, 80, CollectSink::new()),
-        Err(SessionError::Terminal(TerminalError::Exited(f.id.clone())))
+        f.registry
+            .connect(&f.id, 24, 80, CollectSink::new())
+            .map(|_| ()),
+        not_found()
+    );
+    assert_eq!(
+        f.control.spawn_count(),
+        1,
+        "閉じたタブのシェルを起動し直した"
     );
 }
 
@@ -750,7 +783,7 @@ fn 起動に失敗したら_failed_を知らせ_次の接続で起動し直す()
         SessionError::Pty(PtyError::Spawn("偽の起動の失敗".to_owned()))
     );
     assert!(
-        matches!(f.status(), TerminalStatus::Failed { message } if message.contains("偽の起動の失敗"))
+        matches!(f.status(), Some(TerminalStatus::Failed { message }) if message.contains("偽の起動の失敗"))
     );
     assert!(matches!(
         f.last_notified_status(),
@@ -759,7 +792,7 @@ fn 起動に失敗したら_failed_を知らせ_次の接続で起動し直す()
 
     f.control.fail_spawn.store(false, Ordering::SeqCst);
     f.connect(&CollectSink::new());
-    assert_eq!(f.status(), TerminalStatus::Running);
+    assert_eq!(f.status(), Some(TerminalStatus::Running));
     // シェルと言語設定の取得は 1 回だけ(dscl・defaults を何度も起動しない)。
     assert_eq!(f.probes.load(Ordering::SeqCst), 1);
 }
@@ -982,7 +1015,7 @@ fn 未処理の量の最大値と読み取りを止めた回数を記録する()
 }
 
 // ---------------------------------------------------------------------------
-// 9 枚の検証画面(T22。NFR-006。M4 の T49 で外す)
+// 9 枚(NFR-006。9 プロジェクト・各 1 タブ。M1 の 9 枚の検証画面の代わり。T49d)
 // ---------------------------------------------------------------------------
 
 /// 起動のたびに、用意した偽の PTY を順に 1 つずつ使う(1 枚目の起動に 1 つ目、…)。
@@ -1010,17 +1043,15 @@ struct GridFixture {
 }
 
 impl GridFixture {
-    /// 9 枚の Workspace を作る。`fail_spawn` の番号(0 から)の偽の PTY は起動に失敗する。
+    /// 9 プロジェクト・各 1 タブの Workspace を作る。`fail_spawn` の番号(0 から)の偽の PTY は起動に失敗する。
     fn new(fail_spawn: &[usize]) -> Self {
         let controls: Vec<Arc<Control>> =
             (0..9).map(|_| Control::new(OutputMode::Scripted)).collect();
         for &i in fail_spawn {
             controls[i].fail_spawn.store(true, Ordering::SeqCst);
         }
-        let workspace =
-            Workspace::for_verify_grid("0.0.0-test", PathBuf::from(HOME), [("HOME", HOME)]);
         let registry = SessionRegistry::new(
-            workspace,
+            nine_projects(),
             Arc::new(GridPty {
                 controls: controls.clone(),
                 next: AtomicUsize::new(0),
@@ -1059,8 +1090,9 @@ impl GridFixture {
             .collect()
     }
 
-    fn status(&self, i: usize) -> TerminalStatus {
-        self.registry.snapshot().terminals[i].status.clone()
+    /// `i` 枚目(0 から)の状態。タブが閉じていれば `None`。
+    fn status(&self, i: usize) -> Option<TerminalStatus> {
+        status_in(&self.registry.snapshot(), &self.ids[i])
     }
 
     /// `i` 枚目に入力を書き、出力を流し、両方が届くことを確かめる。
@@ -1095,7 +1127,7 @@ impl Drop for GridFixture {
 }
 
 #[test]
-fn _9_枚はそれぞれ最初の接続で別の_pty_をホームフォルダで起動し_それぞれ入出力できる() {
+fn _9_枚はそれぞれ最初の接続で別の_pty_をそれぞれのルートで起動し_それぞれ入出力できる() {
     let f = GridFixture::new(&[]);
     assert_eq!(f.ids.len(), 9);
     assert!(
@@ -1110,10 +1142,10 @@ fn _9_枚はそれぞれ最初の接続で別の_pty_をホームフォルダで
     for (i, control) in f.controls.iter().enumerate() {
         assert_eq!(control.spawn_count(), 1, "{} 枚目の起動の回数", i + 1);
         let spawned = lock(&control.spawned);
-        assert_eq!(spawned[0].0.cwd(), Path::new(HOME));
+        assert_eq!(spawned[0].0.cwd(), grid_root(i + 1));
         assert_eq!(spawned[0].1, PtySize { rows: 12, cols: 40 });
         drop(spawned);
-        assert_eq!(f.status(i), TerminalStatus::Running);
+        assert_eq!(f.status(i), Some(TerminalStatus::Running));
     }
     for i in 0..9 {
         f.assert_io(i, "全部動いているとき");
@@ -1131,20 +1163,21 @@ fn _9_枚のうち_1_枚のシェルが終わっても_残りの_8_枚は入出�
         result.expect("接続できなかった");
     }
 
-    // 5 枚目のシェルが終わる(出力も終わる)。
+    // 5 枚目のシェルが終わる(出力も終わる)。そのタブは閉じる。
     f.controls[4].set_exit(1);
     f.controls[4].close_output();
     assert!(
-        wait_until(|| f.status(4) == exited(1)),
+        wait_until(|| f.status(4).is_none()),
         "5 枚目の終了が反映されなかった"
     );
 
     assert!(matches!(
         f.registry.write(&f.ids[4], b"x"),
-        Err(SessionError::Terminal(TerminalError::Exited(_)))
+        Err(SessionError::Terminal(TerminalError::NotFound(_)))
     ));
+    assert_eq!(f.registry.snapshot().terminals.len(), 8);
     for i in (0..9).filter(|&i| i != 4) {
-        assert_eq!(f.status(i), TerminalStatus::Running);
+        assert_eq!(f.status(i), Some(TerminalStatus::Running));
         f.assert_io(i, "1 枚が終わったあと");
     }
 }
@@ -1165,9 +1198,9 @@ fn _9_枚のうち_1_枚の起動に失敗しても_残りの_8_枚は起動し�
             assert!(result.is_ok(), "{} 枚目の接続が失敗した: {result:?}", i + 1);
         }
     }
-    assert!(matches!(f.status(2), TerminalStatus::Failed { .. }));
+    assert!(matches!(f.status(2), Some(TerminalStatus::Failed { .. })));
     for i in (0..9).filter(|&i| i != 2) {
-        assert_eq!(f.status(i), TerminalStatus::Running);
+        assert_eq!(f.status(i), Some(TerminalStatus::Running));
         f.assert_io(i, "1 枚が起動に失敗したあと");
     }
 }
@@ -1684,9 +1717,20 @@ fn _0_枚のプロジェクトに新しいタブを開ける() {
 
 #[test]
 fn プロジェクトを選んでいなければ新しいタブは開けない() {
-    let f = Fixture::new(OutputMode::Scripted);
+    // プロジェクト 0 件の起動(選択なし)。M1 の 9 枚の検証画面(選択なし)の代わり(T49d)。
+    let control = Control::new(OutputMode::Scripted);
+    let registry = SessionRegistry::new(
+        support::workspace_with_projects("0.0.0-test", PathBuf::from(HOME), [("HOME", HOME)], &[]),
+        Arc::new(FakePty(Arc::clone(&control))),
+        Arc::new(|| ShellDefaults {
+            shell: PathBuf::from("/bin/zsh"),
+            locale: None,
+        }),
+        Arc::new(|_| {}),
+        test_config(),
+    );
 
-    let result = f.registry.new_terminal();
+    let result = registry.new_terminal();
 
     assert!(
         matches!(
@@ -1695,7 +1739,13 @@ fn プロジェクトを選んでいなければ新しいタブは開けない()
         ),
         "{result:?}"
     );
-    assert_eq!(f.registry.snapshot().terminals.len(), 9);
+    assert!(registry.snapshot().terminals.is_empty());
+    // 選んでいなければ ⌘W・⌘⇧[・⌘⇧] も何もしない。
+    assert_eq!(registry.close_active_terminal(), None);
+    assert_eq!(registry.select_next_terminal(), None);
+    assert_eq!(registry.select_previous_terminal(), None);
+    assert_eq!(control.spawn_count(), 0);
+    registry.shutdown();
 }
 
 #[test]

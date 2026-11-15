@@ -304,7 +304,6 @@ impl Fixture {
     fn saved_root(&self, n: u8) -> RootReference {
         self.sessions
             .persisted_state()
-            .expect("保存する内容が無い")
             .projects
             .iter()
             .find(|p| p.id() == &project_id(n))
@@ -645,7 +644,7 @@ fn 実物のフォルダを改名するとカードの表示用のパスが新�
         expected
     );
     // 作り直したブックマークは新しいパスへ解決される。
-    let saved = sessions.persisted_state().expect("保存する内容が無い");
+    let saved = sessions.persisted_state();
     let resolved = bookmarks
         .resolve(
             saved.projects[0]

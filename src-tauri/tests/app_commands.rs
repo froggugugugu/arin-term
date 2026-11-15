@@ -20,12 +20,14 @@ use tauri::test::{MockRuntime, get_ipc_response};
 use tauri::{AppHandle, Manager, RunEvent, WebviewWindow};
 
 /// この組み立てに渡す起動時の指定。既定と違う値にして、組み立てからコマンドまで通ることを見る。
-/// 9 枚の検証画面(T22)も有効にする(既定の起動=プロジェクト 0 件・ターミナル 0 枚は `app_builder.rs` が確かめる)。
 const LAUNCH_OPTIONS: LaunchOptions = LaunchOptions {
     renderer: RendererKind::Webgl,
     unicode: UnicodeWidth::Graphemes,
-    verify_grid: true,
 };
+
+/// 状態ファイルに置くプロジェクトの数(各 1 タブで 9 枚。既定の起動=プロジェクト 0 件・ターミナル 0 枚は
+/// `app_builder.rs` が確かめる。M1 の 9 枚の検証画面の指定の代わり。T49d)。
+const PROJECTS: u8 = 9;
 
 type Check = fn(&AppHandle<MockRuntime>, &WebviewWindow<MockRuntime>, &support::TempDir);
 
@@ -45,12 +47,16 @@ fn 写しの取得コマンドが_app_snapshot_を返す(
         snapshot.app_version,
         handle.package_info().version.to_string()
     );
-    // 9 枚の検証画面の指定で組み立てたので、ターミナルが 9 枚載る。
+    // 9 プロジェクトの状態ファイルを置いて組み立てたので、各プロジェクトに 1 枚ずつ、ターミナルが 9 枚載る。
     let ids: Vec<&str> = snapshot.terminals.iter().map(|t| t.id.as_str()).collect();
     assert_eq!(
         ids,
         (1..=9).map(|n| format!("terminal-{n}")).collect::<Vec<_>>()
     );
+    assert_eq!(snapshot.projects.len(), usize::from(PROJECTS));
+    for (n, terminal) in (1..=PROJECTS).zip(&snapshot.terminals) {
+        assert_eq!(terminal.project_id, Some(support::project_id(n)));
+    }
 }
 
 fn 起動時の指定の取得コマンドが組み立てに渡した指定を返す(
@@ -64,7 +70,7 @@ fn 起動時の指定の取得コマンドが組み立てに渡した指定を�
         body.clone()
             .deserialize::<serde_json::Value>()
             .unwrap_or_else(|e| panic!("JSON として読めなかった: {e}")),
-        json!({ "renderer": "webgl", "unicode": "graphemes", "verifyGrid": true })
+        json!({ "renderer": "webgl", "unicode": "graphemes" })
     );
     let options: LaunchOptions = body
         .deserialize()
@@ -93,7 +99,7 @@ fn スモークの指定が無ければ準備完了の通知で印のファイ�
         .unwrap_or_else(|e| panic!("notify_app_ready が失敗した: {e}"));
 
     assert_eq!(
-        state_dir.entries(),
+        state_dir.entries_except_state(),
         Vec::<String>::new(),
         "スモークの指定が無いのに状態フォルダに何か書いた"
     );
@@ -115,7 +121,7 @@ fn 画面の失敗の報告コマンドを画面から呼べて_null_を返し_�
     .unwrap_or_else(|e| panic!("report_frontend_error が失敗した: {e}"));
     body.deserialize::<()>()
         .unwrap_or_else(|e| panic!("戻り値が null ではなかった: {e}"));
-    assert_eq!(state_dir.entries(), Vec::<String>::new());
+    assert_eq!(state_dir.entries_except_state(), Vec::<String>::new());
 }
 
 fn 画面は状態の写しのイベントを購読と解除できるが_送信はできない(
@@ -193,7 +199,10 @@ const CHECKS: &[(&str, Check)] = &[
 fn main() {
     // 状態フォルダは一時フォルダに差し替え、スモークの印は有効にしない(通常の起動と同じ)。
     let state_dir = support::TempDir::new("commands");
-    let launch = support::launch_in(&state_dir, false).with_launch_options(LAUNCH_OPTIONS);
+    let work = support::TempDir::new("commands-work");
+    let roots = support::make_project_roots(&work, PROJECTS);
+    let launch = support::launch_with_projects_in(&state_dir, &roots, false)
+        .with_launch_options(LAUNCH_OPTIONS);
     let app = arin_lib::builder::<MockRuntime>(launch)
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| panic!("組み立てに失敗した: {e}"));

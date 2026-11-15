@@ -19,7 +19,7 @@
 //! (タブを閉じた・アプリの終了)の契機では何もしない。
 //!
 //! セッションの後片付け(T33b): タブを閉じたとき(`close_terminal`)とシェルが終わってタブが閉じたとき
-//! (`ExitAction::Closed`)に、セッションを一覧から外し、出力を閉じ(読み取りとまとめのスレッドが抜ける)、シェルを終わらせる。
+//! (`Workspace::mark_exited` が閉じたタブを返したとき)に、セッションを一覧から外し、出力を閉じ(読み取りとまとめのスレッドが抜ける)、シェルを終わらせる。
 //! 書き込みが止まっていて PTY のロックが取れなければ印(`PtyCell::closing`)だけを付け、ロックを持っていた側が
 //! 手放した時点で終わらせる。終了の処理(`shutdown`)が始まったあとの接続はシェルを起動しない。
 //! 複数のセッションを一度に終わらせるとき(アプリの終了、プロジェクトの削除)は、同時に終了を送って待ちを 1 回ぶんにする(T33e)。
@@ -39,7 +39,7 @@ use arin_core::persistence::codec::PersistedState;
 use arin_core::ports::{Foreground, PtyError, PtyPort, PtySession, SpawnedPty};
 use arin_core::project::{ProjectColor, ProjectError, ProjectId, RootReference};
 use arin_core::terminal::{
-    AttentionScanner, ExitAction, FlowControl, OUTPUT_BATCH_MAX_BYTES, OUTPUT_BATCH_WINDOW_MS,
+    AttentionScanner, FlowControl, OUTPUT_BATCH_MAX_BYTES, OUTPUT_BATCH_WINDOW_MS,
     OUTPUT_HIGH_WATER, OUTPUT_LOW_WATER, OscScanner, OutputBatch, TerminalError, TerminalId,
     validate_size,
 };
@@ -277,9 +277,9 @@ impl SessionRegistry {
         lock(&self.inner.workspace).snapshot()
     }
 
-    /// 状態ファイルに保存する内容(`Workspace::persisted_state`。検証画面では `None`)。
+    /// 状態ファイルに保存する内容(`Workspace::persisted_state`)。
     #[must_use]
-    pub fn persisted_state(&self) -> Option<PersistedState> {
+    pub fn persisted_state(&self) -> PersistedState {
         lock(&self.inner.workspace).persisted_state()
     }
 
@@ -519,7 +519,7 @@ impl SessionRegistry {
         Ok(())
     }
 
-    /// 選択中のプロジェクト(無ければ持ち主の無いタブ)の表示中のタブを閉じ、閉じたタブを返す(⌘W のメニュー)。
+    /// 選択中のプロジェクトの表示中のタブを閉じ、閉じたタブを返す(⌘W のメニュー)。
     /// 0 枚なら何もせず `None`。待つことは `close_terminal` と同じ。
     pub fn close_active_terminal(&self) -> Option<TerminalId> {
         let id = lock(&self.inner.workspace).active_terminal()?;
@@ -1186,7 +1186,7 @@ impl Pump {
     /// シェルが終わったかを確かめ、終わっていれば状態に反映して知らせる。見回りを終えてよければ `true`。
     ///
     /// 書き込みが PTY のロックを持っているときは待たずに次の機会に回す。
-    /// タブが閉じた(`ExitAction::Closed`。通常の起動)なら、セッションを一覧から外して資源を返す。
+    /// 終わったらタブが閉じるので、セッションを一覧から外して資源を返す。
     fn check_exit(&self) -> bool {
         let status = match self.pty.try_with(|pty| pty.try_wait()) {
             Err(Busy) | Ok(Some(Ok(None) | Err(_))) => return false,
@@ -1194,17 +1194,13 @@ impl Pump {
             Ok(None) => return true,
             Ok(Some(Ok(Some(exit)))) => exit,
         };
-        let action = lock(&self.registry.inner.workspace).mark_exited(&self.id, Some(status));
-        match action {
-            Some(ExitAction::Closed(_)) => {
-                let session = self.registry.detach(&self.id);
-                self.registry.notify();
-                if let Some(session) = session {
-                    end_session(&session);
-                }
+        let closed = lock(&self.registry.inner.workspace).mark_exited(&self.id, Some(status));
+        if closed.is_some() {
+            let session = self.registry.detach(&self.id);
+            self.registry.notify();
+            if let Some(session) = session {
+                end_session(&session);
             }
-            Some(ExitAction::Kept) => self.registry.notify(),
-            None => {}
         }
         true
     }

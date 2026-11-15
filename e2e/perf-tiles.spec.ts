@@ -50,10 +50,10 @@ const PROJECTS = 10;
 const VISIBLE = 9;
 
 const COMBOS: readonly LaunchOptions[] = [
-  { renderer: "dom", unicode: "unicode11", verifyGrid: false },
-  { renderer: "webgl", unicode: "unicode11", verifyGrid: false },
-  { renderer: "dom", unicode: "graphemes", verifyGrid: false },
-  { renderer: "webgl", unicode: "graphemes", verifyGrid: false },
+  { renderer: "dom", unicode: "unicode11" },
+  { renderer: "webgl", unicode: "unicode11" },
+  { renderer: "dom", unicode: "graphemes" },
+  { renderer: "webgl", unicode: "graphemes" },
 ];
 
 const COLORS: readonly ProjectColor[] = ["blue", "green", "orange", "purple", "teal", "pink", "red", "yellow"];

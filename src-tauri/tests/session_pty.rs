@@ -6,6 +6,8 @@
 //! - シェルは `/bin/zsh` に固定し、`HOME` を一時フォルダに向けて利用者の設定ファイルを読ませない
 //! - シェルの出力は、目印の文字列で囲ませて取り出す(入力のエコーには目印がそのままの形では現れない)
 
+mod support;
+
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,10 +18,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use arin_core::persistence::codec::PersistedState;
 use arin_core::project::{Project, ProjectColor, ProjectId, RootReference};
-use arin_core::terminal::{TerminalId, TerminalStatus};
+use arin_core::terminal::{TerminalError, TerminalId, TerminalStatus};
 use arin_core::workspace::{AppSnapshot, RootResolution, Startup, Workspace};
 use arin_lib::sessions::{
-    OutputSink, SessionConfig, SessionRegistry, ShellDefaults, SnapshotListener,
+    OutputSink, SessionConfig, SessionError, SessionRegistry, ShellDefaults, SnapshotListener,
 };
 use arin_platform::pty::NativePty;
 
@@ -93,8 +95,16 @@ impl Shell {
             .filter_map(|n| std::env::var_os(n).map(|v| (n.into(), v)))
             .collect();
         vars.push(("HOME".into(), home.path().as_os_str().to_owned()));
-        // シェルが終わってもタブを残す 9 枚の検証画面の形で作り、1 枚目だけを使う(タブを閉じる形のテストは下の T33b の節)。
-        let workspace = Workspace::for_verify_grid("0.0.0-test", home.path().to_path_buf(), vars);
+        // 一時の HOME の下のフォルダをルートにしたプロジェクト 1 件・タブ 1 枚で作る(M1 の 9 枚の検証画面の
+        // 1 枚目の代わり。T49d)。シェルが終わるとタブは閉じる。
+        let root = home.path().join("project");
+        fs::create_dir(&root).expect("プロジェクトのフォルダを作れなかった");
+        let workspace = support::workspace_with_projects(
+            "0.0.0-test",
+            home.path().to_path_buf(),
+            vars,
+            &[root],
+        );
         let registry = SessionRegistry::new(
             workspace,
             Arc::new(NativePty),
@@ -144,8 +154,14 @@ impl Shell {
         }
     }
 
-    fn status(&self) -> TerminalStatus {
-        self.registry.snapshot().terminals[0].status.clone()
+    /// このシェルのタブの状態。タブが閉じていれば `None`。
+    fn status(&self) -> Option<TerminalStatus> {
+        self.registry
+            .snapshot()
+            .terminals
+            .into_iter()
+            .find(|t| t.id == self.id)
+            .map(|t| t.status)
     }
 }
 
@@ -159,7 +175,7 @@ fn is_alive(pid: &str) -> bool {
 }
 
 #[test]
-fn 入力がシェルに届き_出力が送り先に届き_exit_で_exited_になる() {
+fn 入力がシェルに届き_出力が送り先に届き_exit_でタブが閉じる() {
     let _serial = serial();
     let shell = Shell::start("echo");
 
@@ -172,19 +188,19 @@ fn 入力がシェルに届き_出力が送り先に届き_exit_で_exited_に�
 
     shell.registry.write(&shell.id, b"exit 7\r").unwrap();
     let deadline = Instant::now() + WAIT;
-    while shell.status() == TerminalStatus::Running {
+    while shell.status() == Some(TerminalStatus::Running) {
         let _ = shell.registry.ack(&shell.id, u64::MAX);
         assert!(Instant::now() < deadline, "終了を反映しなかった");
         thread::sleep(Duration::from_millis(10));
     }
+    // シェルが終わるとタブが閉じる(終わり方は写しに残らない。M1 の検証画面の「終了しました」は T49d で外した)。
+    assert_eq!(shell.status(), None, "タブが閉じなかった");
     assert_eq!(
-        shell.status(),
-        TerminalStatus::Exited {
-            code: Some(7),
-            signal: None
-        }
+        shell.registry.write(&shell.id, b"ls\r"),
+        Err(SessionError::Terminal(TerminalError::NotFound(
+            shell.id.clone()
+        )))
     );
-    assert!(shell.registry.write(&shell.id, b"ls\r").is_err());
 }
 
 #[test]

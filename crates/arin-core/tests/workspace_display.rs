@@ -326,7 +326,7 @@ fn フォーカス中のタイルへのフォーカスは変わったと返さ�
 }
 
 #[test]
-fn 知らないターミナルと持ち主の無いターミナルへのフォーカスは失敗し何も変えない() {
+fn 知らないターミナルと閉じたターミナルへのフォーカスは失敗し何も変えない() {
     let mut ws = workspace(&[2]);
     let before = ws.snapshot();
     let unknown = TerminalId::new("no-such-terminal");
@@ -336,15 +336,16 @@ fn 知らないターミナルと持ち主の無いターミナルへのフォ�
     );
     assert_eq!(ws.snapshot(), before);
 
-    // 持ち主の無いターミナル(検証画面)はプロジェクトを選べないので失敗にする
-    let mut grid = Workspace::for_verify_grid("1.2.3", PathBuf::from(HOME), [("HOME", HOME)]);
-    let first = grid.snapshot().terminals[0].id.clone();
-    let before = grid.snapshot();
+    // 閉じたタブ(写しから消えた ID)へのフォーカスも失敗にする。M1 の検証画面の「持ち主の無いターミナル」は
+    // T49d で無くなったので、その場合の確かめは外した
+    let closed = ws.snapshot().terminals[0].id.clone();
+    ws.close_terminal(&closed).unwrap();
+    let before = ws.snapshot();
     assert_eq!(
-        grid.focus_terminal(&first),
-        Err(TerminalError::NotFound(first.clone()))
+        ws.focus_terminal(&closed),
+        Err(TerminalError::NotFound(closed.clone()))
     );
-    assert_eq!(grid.snapshot(), before);
+    assert_eq!(ws.snapshot(), before);
 }
 
 #[test]
@@ -789,7 +790,7 @@ fn 表示モードは保存する内容に入り復元すると同じモード�
     for mode in [DisplayMode::Tabs, DisplayMode::Tiles] {
         let mut ws = workspace(&[2, 1]);
         ws.set_display_mode(mode);
-        let saved = ws.persisted_state().expect("保存する");
+        let saved = ws.persisted_state();
         assert_eq!(saved.layout.display_mode, mode);
 
         let again = restore_saved(2, 1, saved.layout.display_mode);
@@ -816,15 +817,15 @@ fn ページと拡大中は保存する内容に入らない() {
     let first = tabs_of(&ws, &pid(1))[0].clone();
     ws.focus_terminal(&first).unwrap();
     assert_eq!(page(&ws), 0);
-    let before = ws.persisted_state().expect("保存する");
+    let before = ws.persisted_state();
 
     // ページを送り、拡大しても保存する内容は変わらない
     assert!(ws.next_page());
     assert_eq!(page(&ws), 1);
-    assert_eq!(ws.persisted_state().as_ref(), Some(&before));
+    assert_eq!(ws.persisted_state(), before);
     assert!(ws.toggle_maximize());
     assert!(ws.snapshot().display.maximized);
-    assert_eq!(ws.persisted_state().as_ref(), Some(&before));
+    assert_eq!(ws.persisted_state(), before);
 
     // 復元すると拡大はしていない
     let again = restore_saved(1, 1, before.layout.display_mode);

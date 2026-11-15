@@ -1,15 +1,15 @@
-//! 起動時の指定(画面の描画方式、全角幅の方式、9 枚の検証画面)の解釈(計画書 T21・T22、設計書 §2.2)。
+//! 起動時の指定(画面の描画方式、全角幅の方式)の解釈(計画書 T21、設計書 §2.2)。
 //!
-//! **M1 の検証用。** 人間が DOM 描画と WebGL 描画、`unicode11` と `graphemes` を実機で比べて決め、
-//! 9 枚同時表示と非表示のインスタンスを確かめる(T26 の Go/No-Go)ために、起動時の環境変数で切り替えられるようにする。
-//! 比べるのは配布用の `.app` なので、リリースビルドでも有効にする。
-//! 既定は DOM 描画と `unicode11`(ADR-001)。複数枚で実測する M4(T49)で方式を決め、3 つとも外すか設定に移す前提。
+//! **M1 の検証用。** 人間が DOM 描画と WebGL 描画、`unicode11` と `graphemes` を実機で比べて決めるために、
+//! 起動時の環境変数で切り替えられるようにする。比べるのは配布用の `.app` なので、リリースビルドでも有効にする。
+//! 既定は DOM 描画と `unicode11`(ADR-001)。複数枚で実測した M4 の T50b で方式を決め、2 つとも外すか設定に移す前提。
+//! 9 枚の検証画面の指定(`ARIN_VERIFY_GRID`)は M4 の T49c・T49d で外した(タイル表示が役目を引き継いだ)。
 //!
 //! 状態の写し(`AppSnapshot`)には混ぜない。写しは保存する状態の正本で、開発用の指定を入れないため、
 //! 画面は起動時に 1 回だけ別のコマンド(`get_launch_options`)で受け取る。
 //!
 //! 環境変数を読むのは `src-tauri/src/launch.rs`。ここは読んだ値を引数で受け、列挙に直すだけ(入出力をしない)。
-//! 項目を足すとき(T22 の検証画面の指定など)は、`LaunchOptions` に項目を、`LaunchOptionInputs` に値を足し、
+//! 項目を足すときは、`LaunchOptions` に項目を、`LaunchOptionInputs` に値を足し、
 //! `LaunchOptions::resolve` で `parse_choice` を 1 行足す。
 
 use std::ffi::OsStr;
@@ -22,14 +22,6 @@ use ts_rs::TS;
 pub const ENV_RENDERER: &str = "ARIN_RENDERER";
 /// 全角幅の方式を選ぶ環境変数。
 pub const ENV_UNICODE: &str = "ARIN_UNICODE";
-/// 9 枚の検証画面(T22)を有効にする環境変数。`1` で有効、`0` か指定なしで無効。
-///
-/// M1 の検証用(9 枚同時表示と非表示のインスタンスの確認)。リリースビルドでも有効。M4(T49)で外す前提。
-pub const ENV_VERIFY_GRID: &str = "ARIN_VERIFY_GRID";
-
-/// 9 枚の検証画面で持つターミナルの数(3 × 3)。
-pub const VERIFY_GRID_TERMINAL_COUNT: usize = 9;
-
 /// ターミナルの描画方式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
@@ -60,8 +52,6 @@ pub struct LaunchOptions {
     pub renderer: RendererKind,
     /// 全角幅の方式(`ARIN_UNICODE`)。
     pub unicode: UnicodeWidth,
-    /// 9 枚の検証画面(`ARIN_VERIFY_GRID`)。M1 の検証用で、M4(T49)で外す。
-    pub verify_grid: bool,
 }
 
 /// 環境変数から読んだままの値。無い・空なら既定になる。
@@ -71,8 +61,6 @@ pub struct LaunchOptionInputs<'a> {
     pub renderer: Option<&'a OsStr>,
     /// `ARIN_UNICODE` の値。
     pub unicode: Option<&'a OsStr>,
-    /// `ARIN_VERIFY_GRID` の値。
-    pub verify_grid: Option<&'a OsStr>,
 }
 
 /// 使えない値が指定されたこと。既定に戻して起動し、標準エラーに 1 行で出す。
@@ -119,12 +107,6 @@ impl Choice for UnicodeWidth {
     const VALUES: &'static [Self] = &[Self::Unicode11, Self::Graphemes];
 }
 
-/// 有効・無効の指定。`ARIN_SMOKE` と同じく `1` で有効にする。
-impl Choice for bool {
-    const NAMES: &'static [&'static str] = &["0", "1"];
-    const VALUES: &'static [Self] = &[false, true];
-}
-
 /// 値を列挙に直す。無い・空なら既定。大文字・小文字は区別しない。前後の空白は許さない(使えない値になる)。
 /// 使えない値なら既定にして、その旨を `invalid` に足す。
 fn parse_choice<T: Choice>(
@@ -164,19 +146,8 @@ impl LaunchOptions {
         let options = Self {
             renderer: parse_choice(ENV_RENDERER, inputs.renderer, &mut invalid),
             unicode: parse_choice(ENV_UNICODE, inputs.unicode, &mut invalid),
-            verify_grid: parse_choice(ENV_VERIFY_GRID, inputs.verify_grid, &mut invalid),
         };
         (options, invalid)
-    }
-
-    /// 起動時に持つターミナルの数。9 枚の検証画面なら `VERIFY_GRID_TERMINAL_COUNT`、そうでなければ 1。
-    #[must_use]
-    pub fn terminal_count(&self) -> usize {
-        if self.verify_grid {
-            VERIFY_GRID_TERMINAL_COUNT
-        } else {
-            1
-        }
     }
 }
 
@@ -185,36 +156,21 @@ mod tests {
     use super::*;
 
     fn resolve(renderer: Option<&str>, unicode: Option<&str>) -> (LaunchOptions, Vec<String>) {
-        resolve_all(renderer, unicode, None)
-    }
-
-    fn resolve_all(
-        renderer: Option<&str>,
-        unicode: Option<&str>,
-        verify_grid: Option<&str>,
-    ) -> (LaunchOptions, Vec<String>) {
         let (options, invalid) = LaunchOptions::resolve(LaunchOptionInputs {
             renderer: renderer.map(OsStr::new),
             unicode: unicode.map(OsStr::new),
-            verify_grid: verify_grid.map(OsStr::new),
         });
         (options, invalid.iter().map(ToString::to_string).collect())
     }
 
-    fn verify_grid(value: Option<&str>) -> (bool, Vec<String>) {
-        let (options, invalid) = resolve_all(None, None, value);
-        (options.verify_grid, invalid)
-    }
-
     #[test]
-    fn 指定が無ければ_dom_と_unicode11_で検証画面は無効() {
+    fn 指定が無ければ_dom_と_unicode11() {
         assert_eq!(
             resolve(None, None),
             (
                 LaunchOptions {
                     renderer: RendererKind::Dom,
                     unicode: UnicodeWidth::Unicode11,
-                    verify_grid: false,
                 },
                 vec![]
             )
@@ -224,39 +180,9 @@ mod tests {
     #[test]
     fn 空文字列は指定なしと同じで報告しない() {
         assert_eq!(
-            resolve_all(Some(""), Some(""), Some("")),
+            resolve(Some(""), Some("")),
             (LaunchOptions::default(), vec![])
         );
-    }
-
-    #[test]
-    fn 検証画面は_1_で有効_0_で無効() {
-        assert_eq!(verify_grid(Some("1")), (true, vec![]));
-        assert_eq!(verify_grid(Some("0")), (false, vec![]));
-        assert_eq!(verify_grid(None), (false, vec![]));
-    }
-
-    #[test]
-    fn 検証画面の使えない値は無効に戻して報告する() {
-        for value in ["yes", "true", " 1", "2"] {
-            let (enabled, invalid) = verify_grid(Some(value));
-            assert!(!enabled, "ARIN_VERIFY_GRID={value:?} で有効になった");
-            assert_eq!(
-                invalid,
-                vec![format!(
-                    "ARIN_VERIFY_GRID の値 {value:?} は使えない(使える値: 0・1)。既定の 0 で起動する"
-                )]
-            );
-        }
-    }
-
-    #[test]
-    fn ターミナルの数は検証画面なら_9_枚_そうでなければ_1_枚() {
-        let mut options = LaunchOptions::default();
-        assert_eq!(options.terminal_count(), 1);
-        options.verify_grid = true;
-        assert_eq!(options.terminal_count(), 9);
-        assert_eq!(VERIFY_GRID_TERMINAL_COUNT, 9);
     }
 
     #[test]
@@ -311,7 +237,6 @@ mod tests {
         let (options, invalid) = LaunchOptions::resolve(LaunchOptionInputs {
             renderer: Some(OsStr::from_bytes(b"web\xffgl")),
             unicode: None,
-            verify_grid: None,
         });
         assert_eq!(options.renderer, RendererKind::Dom);
         assert_eq!(invalid.len(), 1);
@@ -323,12 +248,8 @@ mod tests {
         let json = serde_json::to_string(&LaunchOptions {
             renderer: RendererKind::Webgl,
             unicode: UnicodeWidth::Graphemes,
-            verify_grid: true,
         })
         .expect("JSON にできるはず");
-        assert_eq!(
-            json,
-            r#"{"renderer":"webgl","unicode":"graphemes","verifyGrid":true}"#
-        );
+        assert_eq!(json, r#"{"renderer":"webgl","unicode":"graphemes"}"#);
     }
 }

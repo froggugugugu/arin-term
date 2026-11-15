@@ -210,7 +210,6 @@ pub fn builder_with_desktop<R: Runtime>(
     let ready = ReadyNotice::new(launch.ready_marker().map(ToOwned::to_owned));
     let first_output = FirstOutputNotice::new(launch.terminal_marker().map(ToOwned::to_owned));
     let terminal = launch.terminal().clone();
-    let verify_grid = launch.options().verify_grid;
     Builder::<R>::new()
         .manage(launch.paths().clone())
         .manage(launch.options())
@@ -225,26 +224,15 @@ pub fn builder_with_desktop<R: Runtime>(
         .setup(move |app| {
             let version = app.package_info().version.to_string();
             let home = terminal.home.unwrap_or_default();
-            let (workspace, persistence, needs_save) = if verify_grid {
-                // 9 枚の検証画面(`ARIN_VERIFY_GRID`。M1 の検証用、M4 の T49 で外す)。プロジェクトを持たず、状態ファイルを読まず書かない。
-                (
-                    Workspace::for_verify_grid(version, home, terminal.vars),
-                    Persistence::disabled(),
-                    false,
-                )
-            } else {
-                let load = load_startup(&ports);
-                let workspace = Workspace::restore(version, home, terminal.vars, load.startup);
-                let persistence = Persistence::new(load.scheduler, Arc::clone(&ports.clock));
-                (workspace, persistence, load.needs_save)
-            };
+            let load = load_startup(&ports);
+            let workspace = Workspace::restore(version, home, terminal.vars, load.startup);
+            let persistence = Persistence::new(load.scheduler, Arc::clone(&ports.clock));
+            let needs_save = load.needs_save;
             // いまの状態ファイルの中身とみなすもの。読んだまま変わっていなければ、同じ中身を書き直さない。
             let baseline = if needs_save {
                 None
             } else {
-                workspace
-                    .persisted_state()
-                    .and_then(|state| encode(&state).ok())
+                encode(&workspace.persisted_state()).ok()
             };
             let handle = app.handle().clone();
             let saver = persistence.clone();
@@ -303,18 +291,15 @@ pub fn builder_with_desktop<R: Runtime>(
                 Arc::clone(&desktop),
                 Arc::clone(&project_ports.pasteboard),
             ));
-            // 9 枚の検証画面ではプロジェクトが無いので監視しない(スレッドも作らない)。
-            if !verify_grid {
-                let emitter = app.handle().clone();
-                let emit: TreeChangeSink = Arc::new(move |change: TreeChange| {
-                    // 画面が無いときは送れない。画面は表示したときに読み込むので捨ててよい。
-                    let _ = emitter.emit(TREE_CHANGED_EVENT, change);
-                });
-                let watch = TreeWatch::spawn(sessions.clone(), watcher, fs, emit)?;
-                // 見回りより先に入れる(見回りの追従の写しで張り替えを頼めるように)。
-                let _ = tree_watch.set(watch.clone());
-                app.manage(watch);
-            }
+            let emitter = app.handle().clone();
+            let emit: TreeChangeSink = Arc::new(move |change: TreeChange| {
+                // 画面が無いときは送れない。画面は表示したときに読み込むので捨ててよい。
+                let _ = emitter.emit(TREE_CHANGED_EVENT, change);
+            });
+            let watch = TreeWatch::spawn(sessions.clone(), watcher, fs, emit)?;
+            // 見回りより先に入れる(見回りの追従の写しで張り替えを頼めるように)。
+            let _ = tree_watch.set(watch.clone());
+            app.manage(watch);
             // ルートへの追従の見回り(1 秒ごと。T33d)。開いたフォルダは見回りのスレッドが持ち、終了時に止める(`lifecycle.rs`)。
             let patrol = PatrolThread::spawn(
                 sessions.clone(),

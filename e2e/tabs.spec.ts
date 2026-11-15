@@ -8,7 +8,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
 import type { AppSnapshot } from "../src/ipc/generated/AppSnapshot";
-import type { LaunchOptions } from "../src/ipc/generated/LaunchOptions";
 import {
   emitEvent,
   installTauriMock,
@@ -384,24 +383,6 @@ test.describe("終了の確認(FR-063)", () => {
     await expect(dialog.getByRole("button", { name: "終了" })).toBeFocused();
     await page.keyboard.press("Enter");
 
-    await expect.poll(() => readCallArgs(page, "confirm_quit")).toHaveLength(1);
-  });
-
-  test("起動時の指定に検証画面の値があっても通常の画面を出し_終了の確認が出る", async ({ page }) => {
-    // Rust はまだ ARIN_VERIFY_GRID で verifyGrid: true を返しうる(T49d で外す)。画面は検証画面を撤去したので読まない(T49c)。
-    const verify: LaunchOptions = { renderer: "dom", unicode: "unicode11", verifyGrid: true };
-    await open(page, projectsSnapshot([APP, LOG]), { get_launch_options: { ok: verify } });
-    await expect(page.getByTestId("project-card")).toHaveCount(2);
-    await expect(tabs(page)).toHaveCount(2);
-    await expect(page.getByTestId("display-mode-switch")).toBeVisible();
-    await expect(page.getByTestId("terminal-host")).toHaveCount(1);
-    await expect(page.getByTestId("verify-grid")).toHaveCount(0);
-
-    await emitEvent(page, "quit-requested", { running });
-
-    const dialog = page.getByRole("alertdialog");
-    await expect(dialog.getByRole("listitem")).toHaveText(["app: ターミナル 1", "ribbitlog: ターミナル 1"]);
-    await dialog.getByRole("button", { name: "終了" }).click();
     await expect.poll(() => readCallArgs(page, "confirm_quit")).toHaveLength(1);
   });
 });
