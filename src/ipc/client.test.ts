@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { createFakeIpc, sampleSnapshot } from "../test/fakeIpc";
 import { createIpc, toBytes } from "./client";
+import type { DirListing } from "./generated/DirListing";
 
 describe("src/ipc の包み", () => {
   it("写しの取得は get_app_snapshot を引数なしで呼び、届いた写しを返す", async () => {
@@ -194,6 +195,39 @@ describe("プロジェクトの操作(T33c)", () => {
       { command: "select_project", args: { projectId: PROJECT } },
       { command: "set_project_color", args: { projectId: PROJECT, color: "teal" } },
       { command: "copy_project_path", args: { projectId: PROJECT } },
+    ]);
+  });
+
+  it("フォルダの中身は list_directory にプロジェクトの ID と相対パスだけを渡し、応答をそのまま返す", async () => {
+    const listing: DirListing = { kind: "listed", entries: [{ name: "src", kind: "directory" }] };
+    const fake = createFakeIpc({ list_directory: ({ path }) => (path === "" ? listing : { kind: "notFound" }) });
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.listDirectory(PROJECT, "")).resolves.toEqual(listing);
+    await expect(ipc.listDirectory(PROJECT, "src/gone")).resolves.toEqual({ kind: "notFound" });
+
+    expect(fake.calls).toEqual([
+      { command: "list_directory", args: { projectId: PROJECT, path: "" } },
+      { command: "list_directory", args: { projectId: PROJECT, path: "src/gone" } },
+    ]);
+  });
+
+  it("フォルダの中身の既定の応答は空の一覧", async () => {
+    const ipc = createIpc(createFakeIpc().transport);
+
+    await expect(ipc.listDirectory(PROJECT, "")).resolves.toEqual({ kind: "listed", entries: [] });
+  });
+
+  it("隠しファイル表示の切替は set_show_hidden に camelCase の引数で届く", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.setShowHidden(PROJECT, true)).resolves.toBeUndefined();
+    await expect(ipc.setShowHidden(PROJECT, false)).resolves.toBeUndefined();
+
+    expect(fake.calls).toEqual([
+      { command: "set_show_hidden", args: { projectId: PROJECT, showHidden: true } },
+      { command: "set_show_hidden", args: { projectId: PROJECT, showHidden: false } },
     ]);
   });
 

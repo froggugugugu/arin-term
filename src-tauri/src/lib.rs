@@ -3,6 +3,7 @@
 //! ここでは部品を生成して渡すことだけを行い、規則を書かない。
 //! 置き場所と起動の通知先を管理状態に登録し、起動時に状態ファイルを読んで(`persistence.rs`)`Workspace` と
 //! セッション管理と保存のスレッドとプロジェクトの操作(`projects.rs`)とルートへの追従の見回り(`patrol.rs`)を作って登録し、
+//! ツリーの操作(`tree.rs`)を登録し、
 //! コマンドとメニューバー(`menu.rs`。項目が選ばれたときも `menu.rs`)と終了の確認の状態(`lifecycle.rs`)を登録して
 //! tauri.conf.json のウィンドウを 1 枚出す。Finder からのドロップは `lifecycle.rs` が受ける。
 
@@ -16,6 +17,7 @@ pub mod patrol;
 pub mod persistence;
 pub mod projects;
 pub mod sessions;
+pub mod tree;
 pub mod verify_log;
 
 use std::path::PathBuf;
@@ -23,7 +25,9 @@ use std::sync::Arc;
 
 use arin_core::persistence::codec::encode;
 use arin_core::ports::PtyPort;
+use arin_core::ports::fs::FileSystemPort;
 use arin_core::workspace::{AppSnapshot, Workspace};
+use arin_platform::fs::LocalFileSystem;
 use arin_platform::pty::{FALLBACK_SHELL, NativePty, default_shell, system_locale};
 use tauri::{Builder, Emitter, Manager, Runtime};
 
@@ -34,6 +38,7 @@ use crate::patrol::{PATROL_INTERVAL, PatrolThread, RootPatrol};
 use crate::persistence::{Persistence, PersistencePorts, load_startup};
 use crate::projects::{FolderPicker, NativeFolderPicker, ProjectPorts, Projects};
 use crate::sessions::{SessionConfig, SessionRegistry, ShellDefaults, ShellProbe};
+use crate::tree::Tree;
 
 /// アプリの組み立て。ランタイムを型引数で受け取り、テストでは模擬ランタイムに差し替える。
 ///
@@ -79,6 +84,26 @@ pub fn builder_with_project_ports<R: Runtime>(
     probe: ShellProbe,
     ports: PersistencePorts,
     project_ports: ProjectPorts,
+) -> Builder<R> {
+    builder_with_file_system(
+        launch,
+        pty,
+        probe,
+        ports,
+        project_ports,
+        Arc::new(LocalFileSystem::new()),
+    )
+}
+
+/// `builder_with_project_ports` に加えて、ファイルシステムのポート(ツリーの読み込み)も差し替えて組み立てる(テスト用)。
+/// 本物は `LocalFileSystem`。
+pub fn builder_with_file_system<R: Runtime>(
+    launch: LaunchConfig,
+    pty: Arc<dyn PtyPort>,
+    probe: ShellProbe,
+    ports: PersistencePorts,
+    project_ports: ProjectPorts,
+    fs: Arc<dyn FileSystemPort>,
 ) -> Builder<R> {
     let ready = ReadyNotice::new(launch.ready_marker().map(ToOwned::to_owned));
     let first_output = FirstOutputNotice::new(launch.terminal_marker().map(ToOwned::to_owned));
@@ -154,6 +179,7 @@ pub fn builder_with_project_ports<R: Runtime>(
                 Arc::clone(&project_ports.pasteboard),
                 picker,
             ));
+            app.manage(Tree::new(sessions.clone(), fs));
             // ルートへの追従の見回り(1 秒ごと。T33d)。開いたフォルダは見回りのスレッドが持ち、終了時に止める(`lifecycle.rs`)。
             let patrol = PatrolThread::spawn(
                 sessions.clone(),
@@ -187,6 +213,8 @@ pub fn builder_with_project_ports<R: Runtime>(
             commands::project::copy_project_path,
             commands::layout::set_pane_sizes,
             commands::layout::set_sidebar_collapsed,
+            commands::tree::list_directory,
+            commands::tree::set_show_hidden,
         ])
 }
 

@@ -170,6 +170,8 @@ const DEFAULT_REPLIES: TauriMockConfig = {
   copy_project_path: { ok: null },
   set_pane_sizes: { ok: null },
   set_sidebar_collapsed: { ok: null },
+  list_directory: { ok: { kind: "listed", entries: [] } },
+  set_show_hidden: { ok: null },
 };
 
 /** 画面のページの中で、偽の Rust 側が記録を置く場所(テストの側からだけ読む)。 */

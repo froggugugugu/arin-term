@@ -9,4 +9,4 @@
 
 mod local;
 
-pub use local::LocalFileSystem;
+pub use local::{LocalFileSystem, STAGING_PREFIX};

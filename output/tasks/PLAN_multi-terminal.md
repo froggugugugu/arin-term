@@ -904,7 +904,7 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 27(逐次。Phase 25・26 完了後(T44a を除く)。`src-tauri/src/lib.rs` と `src/ipc/` を順に触る)
 
-- [ ] T42a — ツリーのコマンドと隠しファイル表示(変更ファイル: src-tauri/src/tree.rs, src-tauri/src/commands/tree.rs, src-tauri/src/commands/mod.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/tree_commands.rs, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T38c, T38e, T39a, T40a)
+- [x] T42a — ツリーのコマンドと隠しファイル表示(変更ファイル: src-tauri/src/tree.rs, src-tauri/src/commands/tree.rs, src-tauri/src/commands/mod.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/tree_commands.rs, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T38c, T38e, T39a, T40a)
   - 対応: FR-013、FR-017、FR-035、設計書 §5.2(ツリーの中身は写しに含めず、展開したときに問い合わせる)、§7.1「スレッドの分担」(読み込みはコマンドの非同期タスク)
   - コマンド: `list_directory`(プロジェクト ID と相対パス。除外と並び順を当てて返す。ルートが見つからなければ「見つからない」)、`set_show_hidden`(写しが変わり保存が予約される)
   - 安全: 相対パスは `RelPath` で受け、T39a の範囲の検査を通してから読む。絶対パスを受け取らず返さない

@@ -6,3 +6,4 @@ pub mod app;
 pub mod layout;
 pub mod project;
 pub mod terminal;
+pub mod tree;

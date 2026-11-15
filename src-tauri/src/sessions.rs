@@ -606,6 +606,21 @@ impl SessionRegistry {
         Ok(())
     }
 
+    /// ツリーの隠しファイル表示を切り替える(FR-017。計画書 T42a)。写しを送り、保存が予約される。
+    ///
+    /// # Errors
+    ///
+    /// その ID のプロジェクトが無いとき。
+    pub fn set_project_show_hidden(
+        &self,
+        id: &ProjectId,
+        show_hidden: bool,
+    ) -> Result<(), SessionError> {
+        lock(&self.inner.workspace).set_project_show_hidden(id, show_hidden)?;
+        self.notify();
+        Ok(())
+    }
+
     /// 本人が選んだフォルダにつなぎ直す(FR-007)。タブは開かない。
     ///
     /// # Errors

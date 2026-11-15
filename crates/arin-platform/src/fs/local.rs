@@ -25,7 +25,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use arin_core::ports::fs::{DirEntry, EntryKind, FileSystemPort, FsError};
 
 /// コピーの作業用フォルダの名前の頭。宛先と同じフォルダに一時的に現れる。
-const STAGING_PREFIX: &str = ".arin-copy-";
+/// ツリーの一覧はこの頭の名前を隠しファイル表示によらず出さない(`src-tauri/src/tree.rs`)。
+pub const STAGING_PREFIX: &str = ".arin-copy-";
 /// 作業用フォルダの名前が既に使われていたときに、別の名前で作り直す回数。
 const STAGING_ATTEMPTS: usize = 16;
 /// 作業用フォルダの権限(作る間だけ。中身の権限は写した元のまま)。

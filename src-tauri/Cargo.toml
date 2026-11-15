@@ -93,3 +93,9 @@ harness = false
 [[test]]
 name = "app_quit"
 harness = false
+
+# ツリーのコマンド(フォルダの中身・隠しファイル表示。T42a)。プロジェクトのフォルダは一時フォルダに作り、
+# 本物のファイルシステムを記録の包みで囲んで読んだ場所を確かめる。理由は app_builder と同じ。
+[[test]]
+name = "tree_commands"
+harness = false

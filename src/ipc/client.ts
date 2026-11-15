@@ -4,11 +4,13 @@
 import type { AddProjectOutcome } from "./generated/AddProjectOutcome";
 import type { AppSnapshot } from "./generated/AppSnapshot";
 import type { ConnectOutcome } from "./generated/ConnectOutcome";
+import type { DirListing } from "./generated/DirListing";
 import type { LaunchOptions } from "./generated/LaunchOptions";
 import type { MenuCommand } from "./generated/MenuCommand";
 import type { ProjectColor } from "./generated/ProjectColor";
 import type { ProjectId } from "./generated/ProjectId";
 import type { QuitRequest } from "./generated/QuitRequest";
+import type { RelPath } from "./generated/RelPath";
 import type { RemoveProjectOutcome } from "./generated/RemoveProjectOutcome";
 import type { TerminalId } from "./generated/TerminalId";
 
@@ -48,6 +50,9 @@ export interface CommandMap {
   copy_project_path: { args: { projectId: ProjectId }; result: null };
   set_pane_sizes: { args: { sidebarWidth: number; cardAreaHeight: number }; result: null };
   set_sidebar_collapsed: { args: { collapsed: boolean }; result: null };
+  /** path はルート基準の相対パス(ルートは空の文字列)。絶対パス・`..` は Rust が拒否する。 */
+  list_directory: { args: { projectId: ProjectId; path: RelPath }; result: DirListing };
+  set_show_hidden: { args: { projectId: ProjectId; showHidden: boolean }; result: null };
 }
 
 export type CommandName = keyof CommandMap;
@@ -179,6 +184,15 @@ export interface ArinIpc {
   setPaneSizes(sidebarWidth: number, cardAreaHeight: number): Promise<void>;
   /** 左ペインを折りたたむ・戻す。幅は Rust が覚えている。 */
   setSidebarCollapsed(collapsed: boolean): Promise<void>;
+  /**
+   * フォルダの中身を問い合わせる(ツリーの展開)。path はルート基準の相対パスで、ルートは空の文字列。
+   * Rust が除外(隠しファイル表示が OFF のとき)と並び順を当てて返す。プロジェクトやフォルダが見つからなければ notFound、
+   * ファイルを指したら notADirectory、シンボリックリンクでルートの外へ出るなら outsideRoot(中身は読まない)。
+   * 絶対パスは送らず、届かない。
+   */
+  listDirectory(projectId: ProjectId, path: RelPath): Promise<DirListing>;
+  /** ツリーの隠しファイル表示を切り替える(プロジェクトごと)。結果は写しの showHidden で届き、保存が予約される。 */
+  setShowHidden(projectId: ProjectId, showHidden: boolean): Promise<void>;
 }
 
 /**
@@ -256,5 +270,7 @@ export function createIpc(transport: IpcTransport): ArinIpc {
     setPaneSizes: (sidebarWidth, cardAreaHeight) =>
       done(invoke("set_pane_sizes", { sidebarWidth, cardAreaHeight })),
     setSidebarCollapsed: (collapsed) => done(invoke("set_sidebar_collapsed", { collapsed })),
+    listDirectory: (projectId, path) => invoke("list_directory", { projectId, path }),
+    setShowHidden: (projectId, showHidden) => done(invoke("set_show_hidden", { projectId, showHidden })),
   };
 }
