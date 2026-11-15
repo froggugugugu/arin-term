@@ -11,13 +11,19 @@
   },
   "app": {
     "withGlobalTauri": false,
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
         "title": "Arin",
         "width": 1280,
         "height": 800,
-        "backgroundThrottling": "disabled"
+        "backgroundThrottling": "disabled",
+        "transparent": true,
+        "windowEffects": {
+          "effects": ["sidebar"],
+          "state": "followsWindowActiveState"
+        }
       }
     ],
     "security": {

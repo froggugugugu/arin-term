@@ -21,7 +21,9 @@ tauri-build = { workspace = true }
 [dependencies]
 arin-core = { workspace = true }
 arin-platform = { workspace = true }
-tauri = { workspace = true }
+# macos-private-api: ウィンドウの透明(すりガラス。ADR-010)。tauri.conf.json の app.macOSPrivateApi と組で要る
+# (tauri-build が設定と機能の一致を検査する)。Tauri 2.12.1 以降は機能の中身が空で、足すクレートは無い。
+tauri = { workspace = true, features = ["macos-private-api"] }
 
 [dev-dependencies]
 # Tauri の模擬ランタイム(tauri::test)を使うため、テストのときだけ test の機能を有効にする。

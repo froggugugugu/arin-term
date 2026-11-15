@@ -11,5 +11,6 @@
 | ADR-007 | [M3 のゴミ箱の方式、アプリ内のドラッグ、ツリーの仮想スクロール、M3 で足す依存](ADR_007_finder-integration.md) | Proposed(ゴミ箱は【検証中】) | 2026-11-15 |
 | ADR-008 | [React のフックの検査に Biome を使う](ADR_008_hooks-lint.md) | Accepted | 2026-11-15 |
 | ADR-009 | [M2 で arin-platform に足す依存](ADR_009_m2-platform-deps.md) | Accepted | 2026-11-15 |
+| ADR-010 | [ウィンドウの地を macOS のすりガラス(vibrancy)にする](ADR_010_window-translucency.md) | Accepted(実機の見た目は確認待ち) | 2026-11-15 |
 
 候補の出どころは `ARCH_multi-terminal.md` §14。
