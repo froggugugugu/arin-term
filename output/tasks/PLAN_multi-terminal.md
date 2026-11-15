@@ -9,7 +9,7 @@
 
 - マイルストーンは PRD §9 の M0〜M6 をそのまま使う(`PRD_multi-terminal.md:689-701`)。実行順は M0→M1→M2→M3→M4→M5→M6。各マイルストーンの完了条件と人間ゲートは変えていない。
 - **M0 と M1 は 1 タスク=1 セッションで終わる粒度まで分解した(T1〜T27)。M2 以降(T28〜T62)は粗い分解にとどめた。** M1 の Go/No-Go の結果(描画方式、CSP、OSC 52、実装技術の見直しの有無)で中身が変わりうるため。各マイルストーンの最初のタスクで `/plan` を再実行し、1 セッション粒度に分解し直す。
-- タスク ID は全体で通し番号(T1〜T62)。Phase も全体で通し番号で、Phase 内のタスクは同時に着手できる。
+- タスク ID は全体で通し番号(T1〜T62。2026-11-15 の要件の追加で M4.5 の T63〜T66 を足した。既存の番号は変えていない)。Phase も全体で通し番号で、Phase 内のタスクは同時に着手できる。
 - 変更ファイルはリポジトリのルートからの相対パスで書いた(`src/` のほかに `crates/`、`src-tauri/`、`scripts/`、`e2e/` があるため)。
 - 「検証」は pass/fail を返すコマンド。入口は設計書 §13.1 の npm スクリプト(`ARCH_multi-terminal.md:884-895`)。npm スクリプトは T7 で用意するので、T2〜T6 だけは中身のコマンドを直接書いた。
 - 「未検証」は、この計画の作成時に動かして確かめていないこと。**本計画の作成では、コマンドの実行による確認は何もしていない**(読んだのは PRD、設計書、`project-config.md`、雛形だけ)。React・zustand などの最新版の番号も調べていない。
@@ -33,6 +33,7 @@
 - M2(マルチプロジェクト): FR-001〜004、007〜010、042、044、056、059〜061(タブ表示の部分)、063、064 の AC に合格する
 - M3(ツリーとファイル操作): FR-013〜018(Quick Look を除く)、024〜030、035〜037 の AC に合格し、VSCode を閉じて 1 週間ドッグフーディングする(人間ゲート)
 - M4(タイル表示): FR-048、051〜055、FR-060・061 のタイル部分の AC に合格し、9 枚同時表示の体感を人間が判定する
+- M4.5(ショートカットの設定。【要件の追加(本人。2026-11-15)】PRD に未反映): `settings.toml` でショートカットのキーを変えられる。設定ファイルの土台を M6 の T56 から前倒しする
 - M5(公証・配布): 別ユーザーアカウントで Gatekeeper の警告なく起動する。秘密情報を扱う作業は人間が行う
 - M6(日常の磨き): FR-005、006、011、012、019〜021、031〜034、038、045〜047、049、057、058、062、FR-018 の Quick Look の AC に合格し、ドッグフーディングの不満リストが空になる
 - FR-022、FR-023、FR-050(Could)は M6 以降で、本計画ではタスクにしない
@@ -647,46 +648,410 @@ T29〜T35 は親として残し、作業は子タスクで行う。親は子が�
 | Option を Meta にする設定(ADR-001) | M6(T56) | M2 では触らない |
 | `scripts/smoke.test.mjs` の一時フォルダの数の検査が、ほかのテストと同時に動かすと落ちる(既知) | 扱わない | 単独で再実行して確かめる運用のまま(`docs/development-patterns.md` §6)。T33a で `smoke.mjs` を触るときに、同じ検査を増やさない |
 
-### M3 ツリーとファイル操作(粗い分解。T37 で分解し直す)
+### M3 ツリーとファイル操作(T37 で 1 セッション粒度に分解し直した。2026-11-15)
 
-完了条件: FR-013〜018(Quick Look を除く)、024〜030、035〜037 の AC 合格と、VSCode を閉じて 1 週間のドッグフーディング。
+完了条件: FR-013〜018(Quick Look を除く)、024〜030、035〜037 の AC 合格と、VSCode を閉じて 1 週間のドッグフーディング(対応表は節の末尾)。
+
+#### M3 の前提
+
+T37 で決めたこと(ADR-007。【仮定】として扱い、異論があれば T45 までに直す):
+
+- (a) ゴミ箱の方式: **【検証中】**(司令塔が実機で検証している)。候補は `NSFileManager` の `trashItemAtURL` → `NSWorkspace` の `recycleURLs` → Finder に頼む、の順。**結果は ADR-007 の (a) の欄に書く。ゴミ箱の実装(T40c)とそれに依存するタスクは、結果が出るまで始めない**
+- (b) 【仮定】アプリ内のドラッグ(ツリー内の移動・コピー、ツリーからターミナルへの挿入)は pointer のイベントで自前に作る。HTML 標準のドラッグ&ドロップは使わない(設計書 §1.4 #8: Tauri が Finder からのドロップを受ける設定では画面に届かない見込み)。規則は `src/logic/dnd`(T41b)、確かめるのは Vitest と Playwright(WebKit。`page.mouse`)。実機の WKWebView での確認は本人が T45 で行う
+- (c) 【仮定】ツリーの仮想スクロールは、依存を足さずに自作する(行の高さを 1 つに固定した窓掛け。計算は `src/logic/tree` の純粋な関数。T41a)。React 用のライブラリは入れない
+- (d) M3 で足す依存は `notify`(T40b)だけ。正確な版は実装のときに `cargo search notify` と crates.io の公開日で確かめ、公開から 2 週間未満を避けて `=` で固定し、ADR-007 の追記に書く。`objc2-foundation`・`objc2-app-kit` は版を変えず feature だけ足す(T40c・T40d)
+- (e) 【要件の追加(本人。2026-11-15)】ショートカットのキーはあとで設定ファイルで変えられるようにする(M4.5)。そのため M3 で足すショートカットは、キーの文字列をコードのあちこちに直書きせず、「コマンドの ID → 既定のキーと受け口」の 1 つの表(`arin-core/shortcuts`。T38d)から引く。メニューバーの項目のアクセラレータ(`src-tauri/src/menu.rs`)は T42e で表から作るように替え、画面(`src/logic/keys`)は T41b で表を受け取って振り分けるように替える。OS のメニューで受けるキーと、画面(ツリーにフォーカスがあるとき)で受けるキーを、同じ ID で扱う
+
+安全に関わる決まり(M3 の全タスク共通。各タスクの「安全」にも書いた):
+
+- 画面から絶対パスを受け取らない。ファイルは「プロジェクト ID + ルート基準の相対パス」で指す(設計書 §5.2・§12)。絶対パスとブックマークを画面へ返さない(パスのコピーは Rust がペーストボードに書く)
+- ルートの外に出る経路を拒否する: 絶対パス、`..`・`.`・空の要素、NUL を含む相対パス、シンボリックリンクで親がルートの外に出るもの(設計書 §7.2)。ルート自体は名称変更・移動・切り取り・ゴミ箱の対象にしない(FR-035)
+- 上書きしない: 作成・移動・コピーは「既にあれば失敗する」API だけで行う。「置き換える」は既存をゴミ箱に入れてから置く(設計書 §1.3 #11)
+- 削除はゴミ箱だけ。ゴミ箱を経由しない削除の口をポートにも作らない(FR-028)
+- テストでファイルに触るのは、補助が作る一時フォルダの中だけ(補助は渡された経路がシステムの一時領域の下にあることを確かめる。設計書 §10.2)。本物のゴミ箱を使うテストは、自分が入れた項目だけを片付ける
+
+本計画が置いた【仮定】(M3 の分):
+
+1. ツリーのヘッダ(M2 の `TreeHeader`)をルートの行として扱う。クリックでルートが選択され、右クリックでフォルダの上のメニュー(名称変更・切り取り・ゴミ箱に入れるは無効)を出す。FR-035 の AC(ルートを選択したとき)をこれで満たす。ルートは常に開いている
+2. 並び順: フォルダ(とフォルダへのリンク)が先、その中は名前の順。名前は大文字・小文字を区別せずに比べ、同じならバイトの順(決定的にするため)。数字の自然順は使わない(Finder と違う)
+3. 隠しファイルの扱いは設計書 §15.2 #1 の A(既定で隠すのは `.git`・`node_modules`・`.DS_Store` の 3 つだけ。切替を ON にすると 3 つも出す)。切替はプロジェクトごとに `state.json` の `projects[].tree.showHidden` に保存する。展開状態(`tree.expanded`)は保存しない(FR-020 は M6 の T59)
+4. 画面はプロジェクトを切り替えてもツリーの読み込み済みの中身と展開を、起動中はメモリに持つ(戻ったら読み込み済みのフォルダを読み直す。設計書 §7.1「プロジェクトの切替」)。保存はしない
+5. 行の高さは 22px に固定する(`src/ui/design/tokens.css`。ADR-007 の (c))。値は T43b で本人が見て直してよい
+6. クリックで選択、ダブルクリックでファイルは既定のアプリで開き、フォルダは開閉する。開閉の印(▸)のクリックでも開閉する。矢印キーでの行の移動は PRD に無いので入れない(要ればドッグフーディングの不満として M6 で扱う)。選択は 1 つだけ(複数選択は FR-033。M6)
+7. M3 のメニューに出すのは PRD §6.4 の Must の項目だけ。Should の項目(このアプリケーションで開く、クイックルック、ここでターミナルを開く、複製)は M6 まで出さない(無効にして並べることもしない)
+8. 「ペースト」は常に有効にし、ペーストボードにファイルが無ければ何もしない(メニューを開くたびに Rust へ問い合わせない)
+9. インライン編集(新規作成・名称変更)は Enter で確定、Esc で取り消し。入力欄からフォーカスが外れたら取り消す(意図せずファイルを作らないため。VSCode は確定する)
+10. 名称変更の選択範囲: ファイルは最後の `.` の前まで(`a.tar.gz` は `a.tar`)。`.` で始まり他に `.` が無い名前(`.env`)と拡張子の無い名前、フォルダは全体
+11. 「両方残す」の名前は Finder にならい、拡張子の前に「空白 + 番号」を足す(`a.md` → `a 2.md`、`docs` → `docs 2`、`.env` → `.env 2`)。番号は 2 から空いている最小のもの
+12. 移動の確認(FR-029、C-05)は、ツリー内のドロップでの移動にだけ出す。⌥ でのコピーと、切り取り → ペーストでの移動には出さない(ペーストは利用者が明示した操作のため)。確認の省略の設定は M6(T56。下の「判断が要る点」)
+13. 切り取りはアプリ内の状態(切り取った項目とペーストボードの変更番号)で表し、ペーストボードにはファイルの URL を書く。ペーストのときにペーストボードが切り取り時から変わっていなければ移動、変わっていればコピー(設計書 §9.1)。ペーストのコピー元はルートの外(Finder でコピーしたもの)でもよい(コピー元は読むだけ。変更するのは貼り付け先=ルートの中だけ)。別のプロジェクトのルートへの切り取り → ペーストも許す(どちらも登録済みのルートの中)
+14. 別のボリュームへの移動(`EXDEV`)は失敗として「別のディスクへは移動できません」を出し、コピーしてから消すことはしない
+15. 大文字・小文字だけを変える名称変更(`a.ts` → `A.ts`)は、同じ項目なので衝突にしない(APFS は既定で大文字・小文字を区別しないため、`RENAME_EXCL` だけでは失敗する。T40a で確かめる)
+16. 「パスをターミナルに挿入」(⌘↩)の宛先は、選択中のプロジェクトの表示中のタブ(タブ表示では表示中=フォーカス中とみなす)。タブが無ければ項目は無効。別のプロジェクトのターミナルへの挿入(タイル表示。M4)は、設計書 §15.2 #6 の A(違うプロジェクトなら絶対パス)の規則を T38b で先に入れておく
+17. 制御文字(改行・タブなど C0 と DEL)を含む名前は、挿入の文字列を全体を `$'…'` で包み、制御文字を `\xNN` で書く(PTY に改行のバイトを送らない。設計書 §7.1・§12)。それ以外の特殊文字はバックスラッシュで 1 文字ずつエスケープする
+18. 更新の保留(FR-037)の理由は、ドラッグ中・名前の入力中・コンテキストメニューの表示中に加えて、確認ダイアログ(衝突・移動)の表示中も含める
+19. 監視の変更が 1 回に 1,000 件を超えたら、変わったフォルダの一覧ではなく「全部読み直し」の印だけを送る(設計書 §7.1。件数は【仮定】)
+20. ファイル操作が成功したら、画面は FSEvents を待たずに関わるフォルダをすぐ読み直す(操作の手応えを速くするため。後から届く変更は差分が無ければ何も変えない)
+21. ショートカットの受け口: ⌘C・⌘X・⌘V は標準の「編集」の項目(画面のコピー・切り取り・ペーストのイベント)で受け、フォーカス位置でターミナルかツリーに振り分ける(M1 の方式。「切り取り」の項目は T42e で足す)。ツリーのほかのキー(⌘⌫・⌘N・⇧⌘N・⌘O・⌥⌘R・⌘↩・⇧⌥⌘C・⌥⌘C・Enter)は、メニューバーに項目を足さず、ツリーにフォーカスがあるときに画面の keydown で受ける。WKWebView がメニューに無い ⌘ の組み合わせを画面へ渡すかは実機で確かめる(T45 の (5))。渡らないキーがあれば、表の受け口をそのキーだけ「メニューの項目」に替える(表の 1 行の変更で済む形にしておく)
+22. ⌥ を含むキー(⌥⌘R・⇧⌥⌘C・⌥⌘C)は、`KeyboardEvent.key` が ⌥ で別の文字になるため、文字のキーは `code`(物理的な位置。`KeyR` など)で比べる。US と JIS の配列で効くかを T45 で確かめる
+23. 本物のゴミ箱を使うテストは `#[ignore]` にし、T40c と T45 で `cargo test -p arin-platform --test trash -- --ignored` を明示して動かす(`npm test` のたびにユーザーのゴミ箱へ出し入れしないため)。コマンドの結合テスト(T42c)は偽のゴミ箱のポートを使う
+24. 名前が UTF-8 でない項目は扱わない(APFS は UTF-8 でない名前を作れない。HFS+ などの古いボリュームは確かめない)
+
+#### 現状のコードから分かった、M3 で足すところ・変えるところ
+
+- `arin-core` の `lib.rs` は `launch_options`・`layout`・`paths`・`persistence`・`ports`・`project`・`terminal`・`workspace` だけを宣言している。`tree`・`fileops`・`shortcuts` は無い → T38a で宣言と骨格を置く
+- `arin-core/paths` は状態の置き場所(`AppPaths`)だけ(`crates/arin-core/src/paths/mod.rs` の「相対・絶対パスの整形とシェルエスケープは M3 で足す」)→ T38a(相対パスの型)、T38b(整形とエスケープ)
+- `arin-core/ports` に `FileSystemPort`・`WatcherPort`・`DesktopPort` が無い。`PasteboardPort` は文字列を書く口だけ(`ports/pasteboard.rs`)→ T38a でポートを足す。ファイルの URL の読み書きは、既存の偽物(`src-tauri/tests/` など)を書き換えずに済むよう、別の trait(`FilePasteboardPort`)にする
+- `ProjectStore` と `state.json` の codec はツリーの保存設定を持たない。写しの `ProjectCardSnapshot` にも無い → T38e(`tree.showHidden` だけ)
+- `arin-platform` に `fs/` が無い(`lib.rs` は `bookmark`・`desktop`・`pty`・`storage`・`system`・`watch`)→ T40a。`watch/mod.rs` はルートの正規化と `F_GETPATH` だけで、FSEvents は「M3 で足す」とある → T40b。`desktop/` はペーストボードの文字列とフォルダ選択のダイアログだけ → T40d
+- ルートへの追従の見回り(`src-tauri/src/patrol.rs`)は、ルートの位置が変わったら `SessionRegistry::follow_project_root` で写しを送る。監視の張り替えは「M3」とある → T42b は見回りを変えず、写しのたびに選択中のプロジェクトとそのルートのパスを比べて張り替える(写しの受け口は `lib.rs` の `listener`)
+- `src-tauri/src/commands/` は `app`・`terminal`・`project`・`layout` だけ。イベントは `app-snapshot`・`menu-command`・`quit-requested` だけ(`events.rs`)→ T42a〜T42e
+- `src-tauri/src/menu.rs` は項目の ID とアクセラレータの文字列(`Cmd+T` など)を定数で直書きしている。「編集」は コピー・ペースト(標準)とすべてを選択(自前)だけで、「切り取り」が無い → T42e で表から作るように替え、「切り取り」を足す
+- `src/logic/keys/keyOwner.ts` は、アプリが受ける ⌘ のキーを集合(`COMMAND_KEYS`・`COMMAND_SHIFT_KEYS`)で直書きしている。`clipboard.ts` のフォーカス位置はターミナルかそれ以外だけで、「切り取り」が無い → T41b で表から作り、フォーカス位置に「ツリー」と、種類に「切り取り」を足す
+- `src/ui/tree/` は `TreeHeader.tsx` だけ。`src/ui/shell/TreePane.tsx` はヘッダと空の領域と「見つからない」の案内だけを出す(M2 の【仮定】16)→ T43b
+- `src/ui/menu/ContextMenu.tsx` は無効の項目とショートカットの表示を持たない(カードのメニュー用)→ T43c で足す。`src/ui/dialogs/` は削除と終了の確認だけ → T43c(衝突)、T43d(移動の確認)
+- `uiStore` はフォーカス位置を持たず、コピー・ペーストは `TerminalManager` がフォーカスのあるサーフェスを調べて振り分ける(`src/state/uiStore.ts` の冒頭)→ T43a でツリーにフォーカスがあるかを足す
+- 画面の自動テストの偽物(`e2e/fixtures/tauriMock.ts`)は、写しの形とプロジェクトのコマンドだけを持つ → T38e(写しの形)、T43b〜T43d(ツリーとファイル操作のコマンド、`tree-changed` イベント)
+
+#### 親タスクと子タスク
+
+T38〜T44 は親として残し、作業は子タスクで行う。親は子がすべて済んだら済みにする。T37 と T45 は分けない。T38 は「パスと除外の規則」に加えて、ショートカットの表(T38d、【要件の追加】)と隠しファイル表示の保存値(T38e)も受け持つ(`arin-core` の規則と型の土台をまとめるため)。
+
+| 親 | 子 |
+| -- | -- |
+| T37 — M3 の最初の検証と再分解 | 分けない((a) は司令塔が検証中。(b)(c)(d) は ADR-007 と本節) |
+| T38 — パスと除外の規則(と `arin-core` の土台) | T38a(ポートと型、モジュールの骨格、相対パスの型)、T38b(パスの整形とシェルエスケープ)、T38c(除外・並び順・変更のまとめ)、T38d(ショートカットの表)、T38e(隠しファイル表示の保存値と写し) |
+| T39 — ファイル操作の手順 | T39a(範囲・名前・重複しない名前の検査)、T39b(操作の手順・衝突・切り取り) |
+| T40 — OS 側の実装 | T40a(フォルダの読み込みと上書きしない作成・移動・コピー)、T40b(ファイル監視)、T40c(ゴミ箱。**T37 (a) の結果に従う**)、T40d(Finder で表示・既定のアプリで開く・ファイルのペーストボード) |
+| T41 — 画面の純粋ロジック | T41a(ツリーの行・差分・保留・仮想スクロール・名前の選択範囲)、T41b(ドラッグ・メニュー・キーの振り分け) |
+| T42 — コマンドとイベント、監視の張り替え | T42a(ツリーのコマンドと隠しファイル表示)、T42b(監視の張り替えと `tree-changed`)、T42c(ファイル操作のコマンド)、T42d(デスクトップとパスのコマンド)、T42e(メニューバーとショートカットの表) |
+| T43 — 画面 | T43a(ツリーのストアと操作)、T43b(ツリーの表示)、T43c(メニュー・ショートカット・インライン編集・衝突の確認)、T43d(ドラッグ) |
+| T44 — 同時操作のテスト、画面の自動テスト、NFR-005 の計測 | T44a(実ファイルの同時操作・シェルへの往復・NFR-005 の計測)、T44b(M3 のシナリオの画面の自動テスト) |
+| T45 — M3 の完了確認とドッグフーディング | 分けない |
+
+#### 共有のファイルの持ち回り
+
+同じ Phase で 2 つのタスクが同じファイルを触らないように割り当てた。下のファイルは表の順に逐次で触る。
+
+| ファイル | 触るタスク(この順) |
+| -------- | ------------------ |
+| `crates/arin-core/src/lib.rs`、`crates/arin-core/src/ports/mod.rs`、`crates/arin-core/src/paths/mod.rs`、`crates/arin-core/src/tree/mod.rs`、`crates/arin-core/src/fileops/mod.rs`、`crates/arin-core/src/shortcuts/mod.rs` | T38a だけ(Phase 25b の並行のため、子モジュールの宣言を先に済ませる) |
+| `crates/arin-core/src/ports/`(ポートの trait) | T38a だけ(後のタスクで足りない操作が出たら、T42c の後に逐次で足す) |
+| `crates/arin-core/src/tree/types.rs`、`crates/arin-core/src/fileops/types.rs`(画面とやり取りする型) | T38a だけ(T39b は型を変えない。足りなければ T42c で足す) |
+| `crates/arin-core/tests/generated_types.rs`、`src/ipc/generated/` | T38a → T38d → T38e → (T42a〜T42e で型を足すときだけ、その順) |
+| `crates/arin-core/src/project/store.rs`、`crates/arin-core/src/persistence/codec.rs`、`crates/arin-core/src/workspace/` | T38e だけ |
+| `crates/arin-core/tests/support/fake_fs.rs`(偽のファイルシステム) | T39a → T39b |
+| `Cargo.toml`、`Cargo.lock`、`crates/arin-platform/Cargo.toml` | T40b → T40d → T40c |
+| `crates/arin-platform/src/lib.rs` | T40a だけ(`fs` の宣言。`watch`・`desktop` は宣言済み) |
+| `crates/arin-platform/src/fs/mod.rs` | T40a → T40c |
+| `crates/arin-platform/src/watch/mod.rs` | T40b だけ |
+| `crates/arin-platform/src/desktop/mod.rs` | T40d だけ |
+| `src-tauri/src/lib.rs`、`src-tauri/src/commands/mod.rs`、`src-tauri/Cargo.toml`(`[[test]]`) | T42a → T42b → T42c → T42d → T42e |
+| `src-tauri/src/events.rs` | T42b だけ |
+| `src-tauri/src/menu.rs`、`src-tauri/tests/app_menu.rs` | T42e だけ |
+| `src/ipc/client.ts`、`src/ipc/client.test.ts` | T42a → T42b → T42c → T42d → T42e |
+| `src/logic/tree/` | T41a だけ |
+| `src/logic/dnd/`、`src/logic/menu/`、`src/logic/keys/` | T41b だけ |
+| `src/state/`、`src/test/fakeIpc.ts`、`src/main.tsx` | T38e(`fakeIpc.ts` の写しの形だけ)→ T43a(T43b〜T43d で足すものが出たら、その順) |
+| `e2e/fixtures/tauriMock.ts` | T38e(写しの形だけ)→ T43b → T43c → T43d → T44b |
+| `src/ui/tree/`、`src/ui/shell/TreePane.tsx` | T43b → T43c → T43d |
+| `src/ui/menu/`、`src/ui/terminals/clipboardRouting.ts` | T43c だけ |
+| `src/ui/dialogs/` | T43c → T43d |
+| `src/ui/terminals/TerminalHost.tsx` | T43d だけ |
+| `scripts/perf/`、`scripts/perf-run.test.mjs` | T44a だけ |
+| `scripts/check-boundaries.mjs` | M3 では触らない見込み(足す検査が出たら T42e の後に逐次で足す) |
+| `output/design/ADR_007_finder-integration.md` | T37 → T40b → T40d → T40c → T45 |
+| `output/design/ARCH_multi-terminal.md` | T45 だけ |
 
 #### Phase 24(逐次。M2 完了後)
 
 - [ ] T37 — M3 の最初の検証と再分解(変更ファイル: output/design/ADR_007_finder-integration.md, output/design/ADR_INDEX.md, output/tasks/PLAN_multi-terminal.md, output/tasks/PROGRESS.md | 依存: T36)
-  - (a) **ゴミ箱の「戻す」**(設計書 §15.3 #3。`ARCH_multi-terminal.md:997`): 一時ディレクトリのファイルで、`trashItemAtURL` → `NSWorkspace` の `recycleURLs` → Finder に頼む方式 の順に試す。Finder のゴミ箱に「戻す」が出るかは**人間が目で見る**。テストが入れた項目だけを片付ける
-  - (b) アプリ内のドラッグ(設計書 §15.3 #4): マウスのイベントによる自前の実装で、ツリーからターミナルへ(FR-016)とツリー内(FR-029)が成り立つかを実機で確かめる。HTML 標準のドロップが届かないこと(設計書 §1.4 #8)も実機で確かめる
-  - (c) ツリーの仮想スクロールを自作するか React 用のライブラリを使うかを決める(設計書 §9.1。足すなら ADR)
-  - (d) 結果を ADR-007 に書き、T38〜T45 を 1 セッション粒度に分解し直す
+  - (a) **ゴミ箱の「戻す」**(設計書 §15.3 #3。`ARCH_multi-terminal.md:1039`): 一時ディレクトリのファイルで、`trashItemAtURL` → `NSWorkspace` の `recycleURLs` → Finder に頼む方式 の順に試す。Finder のゴミ箱に「戻す」が出るかは**人間が目で見る**。テストが入れた項目だけを片付ける。**【検証中】(司令塔)。結果は ADR-007 の (a) の欄に書く**
+  - (b) アプリ内のドラッグ(設計書 §15.3 #4): 【仮定】pointer のイベントによる自前の実装にする(ADR-007 の (b))。実機の確認は T45 の人間の項目に回した
+  - (c) ツリーの仮想スクロール(設計書 §9.1): 【仮定】依存を足さず、固定の行の高さで自作する(ADR-007 の (c))
+  - (d) 結果を ADR-007 に書き、T38〜T45 を 1 セッション粒度に分解し直す(本節。2026-11-15)
   - 検証コードは使い捨てにする(スクラッチパッドに置き、リポジトリに入れない)
 
-#### Phase 25(並行可能。T37 完了後)
+#### Phase 25a(並行可能。T37 の (b)(c)(d) の完了後。(a) の結果は待たない)
 
-- [ ] T38 — パスと除外の規則(`arin-core/paths`、`arin-core/tree`)(変更ファイル: crates/arin-core/src/paths/, crates/arin-core/src/tree/ | 依存: T37)
-  - 対応: FR-015、016、017。先に書くテスト: 相対・絶対パス(`src/a b.ts`)、シェルエスケープ(`src/a\ b.ts` と末尾の空白、制御文字の無害化)、除外の判定。検証: `npm test`
-- [ ] T39 — ファイル操作の手順(`arin-core/fileops`)(変更ファイル: crates/arin-core/src/fileops/, crates/arin-core/src/ports/ | 依存: T37)
-  - 対応: FR-025〜030、035、036。先に書くテスト(偽のポート): 対象範囲の検査、名前の検証、実行時の存在確認、衝突の 3 択、切り取りとペースト。取り消しの履歴は M6(T59)。検証: `npm test`
-- [ ] T41 — 画面の純粋ロジック(`src/logic`)(変更ファイル: src/logic/tree/, src/logic/dnd/, src/logic/keys/, src/logic/menu/ | 依存: T37)
-  - 対応: FR-014、024、035、037。先に書くテスト: 差分の適用、更新の保留(100 ファイルの追加を保留して後からまとめて反映)、ドラッグの状態、メニュー項目と有効・無効。検証: `npm test`
+- [ ] T38a — `arin-core` に M3 のポートと型、モジュールの骨格、相対パスの型を置く(変更ファイル: crates/arin-core/src/lib.rs, crates/arin-core/src/ports/mod.rs, crates/arin-core/src/ports/fs.rs, crates/arin-core/src/ports/watch.rs, crates/arin-core/src/ports/desktop.rs, crates/arin-core/src/ports/pasteboard.rs, crates/arin-core/src/paths/mod.rs, crates/arin-core/src/paths/relative.rs, crates/arin-core/src/tree/mod.rs, crates/arin-core/src/tree/types.rs, crates/arin-core/src/fileops/mod.rs, crates/arin-core/src/fileops/types.rs, crates/arin-core/src/shortcuts/mod.rs, crates/arin-core/tests/rel_path.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/ | 依存: T37)
+  - 対応: 設計書 §5.1 の `arin-core/ports`(`FileSystemPort`・`WatcherPort`・`DesktopPort`)・`tree`・`fileops`・`paths`、§5.2(ファイルはプロジェクト ID と相対パスで指す)、§7.2「画面から届く相対パス」、§3.2(機能モジュールどうしは ID 型と `paths`・`ports` だけを共有する)
+  - 置くもの:
+    - `RelPath`(ルート基準の相対パス。`paths/relative.rs`): 画面から届く文字列から作る。区切りは `/`、空の文字列はルート。拒否: `/` で始まるもの、`..`・`.`・空の要素(`a//b`)、末尾の `/`、NUL。親と名前に分ける・子を足す操作。JSON は文字列
+    - ポートの trait: ファイルシステム(フォルダの中身=名前と種類、項目の種類=リンクをたどらない、フォルダの実パス、空のファイルを新しく作る、フォルダを新しく作る、上書きしない移動、上書きしないコピー、ゴミ箱。**消す操作と上書きする操作は置かない**)、監視(ルートに再帰の監視を張り、絶対パスの束を受け口へ渡す。返した値を捨てると止まる)、デスクトップ(Finder で表示、既定のアプリで開く)、ファイルのペーストボード(`FilePasteboardPort`: ファイルの URL を書く・読む、変更番号)。ゴミ箱の戻り値の形(ゴミ箱の中の場所が返るか)は T37 (a) の結果で変わりうるので、`Option` にしておく
+    - 画面とやり取りする型(ts-rs で生成する): 項目の種類(ファイル・フォルダ・フォルダへのリンク=展開しない(設計書 §15.2 #8)・ファイルへのリンク・その他)、項目(名前・種類)、フォルダの中身の結果(中身 / 見つからない / フォルダでない / ルートの外)、ツリーの変更(プロジェクト ID・変わったフォルダの相対パス・全部読み直し)、ファイル操作の結果(済み(選ぶ項目の相対パス)/ 見つからない / 衝突(名前)/ 名前が不正(理由)/ 対象にできない(ルートの外・ルート自体・自分の子孫)/ 失敗(文言))、衝突の対処(置き換える・両方残す)、パスの種類(相対・絶対)
+    - `tree`・`fileops`・`shortcuts` は子モジュールの宣言と空のファイルだけ置く。後のタスクは `lib.rs` と各 `mod.rs` を触らずに済む
+  - 安全: 型の段階で絶対パスを受けない(画面から届く経路は `RelPath` だけ)。ポートに削除と上書きの操作を置かない
+  - 並行: 可(T41a・T41b とファイルが重ならない)。Phase 25b・26a の全タスクの前提
+  - 先に書くテスト: `相対パスはスラッシュ区切りの名前の並びとして読める`、`空の文字列はルートを指す`、`スラッシュで始まるものは相対パスにできない`、`ドットドットとドットの要素は拒否する`、`空の要素と末尾のスラッシュは拒否する`、`nul_を含むものは拒否する`、`チルダで始まる名前はただの名前として読む`、`相対パスの_json_は文字列`、`親と名前に分けられ_ルートの親は無い`、`子を足しても検査を通る形のまま`。`generated_types.rs` に足した型を加える(生成し直して差分が出ない)
+  - 検証: `npm test && npm run lint`
+- [ ] T41a — 画面の純粋ロジック: ツリーの行、差分、保留、仮想スクロールの窓、名前の選択範囲(変更ファイル: src/logic/tree/ | 依存: T37)
+  - 対応: FR-013(展開時の読み込み)、FR-014(変更の反映)、FR-026(拡張子を除いた選択)、FR-037(更新の保留)、NFR-005(見える行だけ)、設計書 §5.1 の `src/logic/tree`(`TreeModel`・`applyDirListing`・`UpdateGate`)、§7.1「外部でのファイル変更」、ADR-007 の (c)、【仮定】4・6・10・18・19
+  - 置くもの: ツリーの表示モデル(読み込み済みのフォルダの中身、展開の集合、選択 1 つ、平らにした行の列=深さ・種類・開閉・読み込み中)。展開すると「読み込みが要る」を返す。折りたたんでも子の展開は覚えておき、もう一度開くと戻す。すべて折りたたむ。中身の差分の適用(消えたフォルダの子孫の中身・展開・選択を外す)。変更の受け取り(読み込み済みなら再読込に積む、未読込なら無視。目印は M6)。`UpdateGate`(保留の理由が 1 つでも残れば積むだけ、全部解けたら積んだフォルダを一度に返す)。仮想スクロールの窓(`scrollTop`・見える高さ・行の高さ・行の数・余分に描く数 → 描く範囲と上下の余白。選択した行を見える位置へ動かす量)。名称変更の選択範囲
+  - `src/logic` は他の `src/*` を import できないので、生成した型は使わず、必要な値だけの型をここで定める
+  - 並行: 可(`src/logic/tree/` だけを触る)
+  - 先に書くテスト(Vitest): `ルートを読み込むと直下の行が深さ_0_で並ぶ`、`フォルダを展開すると読み込みが要ると返し_読み込むと子の行が続く`(FR-013)、`折りたたむと子の行が消え_もう一度開くと前の展開も戻る`、`すべて折りたたむとルートの直下だけになる`、`中身の差分を当てると追加と削除だけが変わり選択は残る`、`選択していた項目が消えたら選択を外す`、`消えたフォルダの子孫の読み込み済みの中身を捨てる`、`読み込み済みのフォルダの変更は再読込に積む`、`読み込んでいないフォルダの変更は無視する`、`全部読み直しの印で読み込み済みのフォルダをすべて積む`、`保留中は変更を積むだけで行が変わらない`(AC-T25)、`ドラッグ_名前の入力_メニュー_確認のどれかが残っていれば保留が続く`、`保留が解けると_100_件の追加で変わったフォルダをまとめて_1_回で返す`(AC-T25)、`見える範囲は_scrollTop_と高さから決まり上下に余分を描く`、`10_万行でも計算は描く行の数だけで行の配列を作らない`、`端では範囲が行の数を超えない`、`選択した行が見えるように動かす量`、`名称変更の選択範囲は最後のドットの前まで`(`a.ts`→`a`、`a.tar.gz`→`a.tar`)、`ドットで始まる名前と拡張子の無い名前とフォルダは全体を選ぶ`(`.env`・`Makefile`)
+  - 検証: `npm test && npm run lint && npm run test:coverage`(`src/logic` の行 80%)
+- [ ] T41b — 画面の純粋ロジック: ドラッグ、ツリーのメニュー、キーの振り分け(変更ファイル: src/logic/dnd/, src/logic/menu/treeMenu.ts, src/logic/menu/treeMenu.test.ts, src/logic/keys/ | 依存: T37)
+  - 対応: FR-016・FR-029(ドラッグ)、FR-024(メニューの項目とショートカット)、FR-025(作成先)、FR-035(ルートで無効)、FR-037(ドラッグ中の印)、C-04(フォーカス位置での使い分け)、【要件の追加】(表から引く)、設計書 §5.1 の `src/logic/dnd`・`src/logic/menu`・`src/logic/keys`、ADR-007 の (b)、【仮定】1・7・8・12・16・21・22
+  - 置くもの:
+    - ドラッグの状態(`DragMachine`): 押した → しきい値(4px【仮定】)を超えたらドラッグ → 離した / Esc で取り消し。ドロップ先の判定(`resolveDropTarget`): フォルダの行はそのフォルダ、ファイルの行はその親、ヘッダはルート、ターミナルの置き場所は挿入、自分自身と子孫は不可、同じ親のフォルダは何もしない。離したときの ⌥ でコピー
+    - `buildTreeMenu`: ファイル・フォルダ・ルート(ヘッダ)・余白のそれぞれの項目と有効・無効(PRD §6.4 の Must の項目だけ。【仮定】7)。ルートでは名称変更・切り取り・ゴミ箱を無効(AC-T23)。タブが無ければ「パスをターミナルに挿入」を無効。各項目にショートカットの表のキーの表示を付ける。新規作成の作成先(フォルダならその中、ファイルなら同じ階層、余白ならルート)
+    - キー: 画面が受け取るショートカットの表(コマンドの ID → キーと受け口。T38d の形に合わせ、型はここで定める)と押されたキーとフォーカス位置(ツリー・ターミナル・名前の入力中・その他)から、コマンドの ID を返す関数。⌥ を含むキーは `code` で比べる(【仮定】22)。`terminalKeyOwner` は、受け口がメニューの項目・「編集」の項目のキーを表から集めて `app` にする形に替える(M2 の振る舞いは変えない。直書きの `COMMAND_KEYS`・`COMMAND_SHIFT_KEYS` を消す)。`routeClipboard` にフォーカス位置「ツリー」と種類「切り取り」を足す(ツリーではコピー・切り取り・ペーストがツリーの操作になる)
+  - 並行: 可(`src/logic/dnd/`・`src/logic/menu/treeMenu.ts`・`src/logic/keys/` だけ。T41a とは別のフォルダ)
+  - 先に書くテスト(Vitest): `しきい値より小さい動きはクリックのまま`、`しきい値を超えるとドラッグになる`、`フォルダの行に落とすとそのフォルダへ`、`ファイルの行に落とすとその親のフォルダへ`、`ヘッダに落とすとルートへ`、`自分自身と子孫には落とせない`、`同じ親のフォルダに落とすと何もしない`、`option_を押して離すとコピー`、`ターミナルの置き場所に落とすと挿入`、`esc_で取り消す`、`ファイルの上のメニューは_prd_の表の_must_の項目がこの順`、`フォルダの上のメニューも同じ`、`余白のメニューは新規ファイル_新規フォルダ_ペースト_finder_で表示_ルートの絶対パスをコピー_隠しファイルを表示_すべて折りたたむ`(FR-024)、`ルートでは名称変更_切り取り_ゴミ箱が無効`(AC-T23)、`タブが無いとパスをターミナルに挿入が無効`、`メニューの項目に表のキーが出る`、`新規作成の作成先はフォルダならその中_ファイルなら同じ階層_余白ならルート`(FR-025)、`ツリーにフォーカスがあると表のキーをコマンドの_id_にする`(表の全行)、`ターミナルにフォーカスがあるとツリーのキーは何もしない`、`名前の入力中はツリーのキーを受けない`、`option_を含むキーは押した文字が変わっても一致する`、`表から作ったターミナルのキーの受け手は_m2_と同じ`(既存の `keyOwner.test.ts` がそのまま通る)、`ツリーにフォーカスがあるとコピー_切り取り_ペーストはツリーの操作になる`
+  - 検証: `npm test && npm run lint && npm run test:coverage`
 
-#### Phase 26(逐次。T39 完了後)
+#### Phase 25b(並行可能。T38a 完了後)
 
-- [ ] T40 — OS 側の実装(フォルダの読み込み、上書きしない操作、ゴミ箱、監視、ペーストボード、Finder 連携)(変更ファイル: crates/arin-platform/src/fs/, crates/arin-platform/src/watch/, crates/arin-platform/src/desktop/, crates/arin-platform/tests/ | 依存: T38, T39)
-  - 対応: FR-013、014、018(Finder で表示、開く)、027、028、030、036。`notify` 8.2 系を足す。先に書くテスト(一時ディレクトリ): 既にあれば失敗する、ゴミ箱、監視の 2 秒以内の検知、操作の途中での外部からの削除・追加。検証: `npm test`
+- [ ] T38b — パスの整形とシェルエスケープ(`arin-core/paths`)(変更ファイル: crates/arin-core/src/paths/format.rs, crates/arin-core/src/paths/shell.rs, crates/arin-core/tests/path_format.rs, crates/arin-core/tests/shell_escape.rs | 依存: T38a)
+  - 対応: FR-015、FR-016、FR-024(挿入)、設計書 §5.1 の `PathFormatter`・`ShellEscaper`、§7.1「パスをターミナルへ」、§12「シェルへの注入」、§15.2 #6、【仮定】16・17
+  - 置くもの: 相対パスの文字列(先頭に `./` を付けない。フォルダの末尾に `/` を付けない)、絶対パス(ルートと相対パスをつなぐ)、挿入の文字列(同じプロジェクトなら相対・違うプロジェクトなら絶対、エスケープして末尾に半角スペース 1 つ。Enter を含めない)
+  - 安全: 挿入の文字列に改行(`\n`・`\r`)のバイトが入らないことをテストで保証する
+  - 並行: 可(`paths/format.rs`・`paths/shell.rs` だけ)
+  - 先に書くテスト: `相対パスはルート基準でスラッシュ区切り`(AC-T03 の `src/a b.ts`)、`絶対パスはルートと相対パスをつなぐ`(`/Users/x/dev/app/src/a b.ts`)、`空白はバックスラッシュでエスケープし末尾に半角スペースを付ける`(AC-T04 の `src/a\ b.ts `)、`シェルの特殊文字をすべてエスケープする`(`'`・`"`・`\`・`$`・`` ` ``・`!`・`&`・`*`・`?`・`(`・`)`・`[`・`]`・`{`・`}`・`;`・`<`・`>`・`|`・`#`・`^` を表で)、`先頭のチルダとイコールをエスケープする`、`改行やタブを含む名前はドル引用符で包み改行のバイトを含まない`、`日本語と絵文字はそのまま`、`別のプロジェクトのターミナルへは絶対パスにする`(§15.2 #6 の A)、`挿入の文字列は_enter_を含まない`。zsh に渡して元に戻るかの往復は T44a(実 zsh)
+  - 検証: `npm test && npm run test:coverage`(`arin-core` の行 80%)
+- [ ] T38c — 除外・並び順・監視の変更のまとめ(`arin-core/tree`)(変更ファイル: crates/arin-core/src/tree/exclusion.rs, crates/arin-core/src/tree/order.rs, crates/arin-core/src/tree/changes.rs, crates/arin-core/tests/tree_rules.rs | 依存: T38a)
+  - 対応: FR-013、FR-014、FR-017、C-07、PRD C7(除外のフォルダは監視の対象外)、設計書 §5.1 の `ExclusionRule`・`ChangeBatch`、§7.1「外部でのファイル変更」、§15.2 #1・#8、【仮定】2・3・19
+  - 置くもの: 除外の判定(名前の完全一致。どの階層でも)、並び順、監視で届いた絶対パスの束 → ルート基準の「変わったフォルダ」の集合(項目の親のフォルダ。除外の中は隠しファイル表示が OFF なら捨てる。ルートの外は捨てる。上限を超えたら全部読み直し)
+  - 並行: 可(`tree/` の子ファイルだけ)
+  - 先に書くテスト: `既定では_git_node_modules_ds_store_を隠す`(C-07)、`ほかのドットファイルは既定でも出す`(`.claude`・`.github`)、`隠しファイル表示をオンにすると_3_つも出す`、`入れ子の階層でも名前が一致すれば隠す`、`名前の一部が一致するだけなら隠さない`(`node_modules_backup`)、`フォルダが先でその中は名前の順`、`大文字小文字が違うだけの名前はバイトの順で決まる`、`フォルダへのシンボリックリンクはフォルダと同じ並びで展開しない種類`、`ファイルの変更はその親のフォルダの変更にまとまる`、`同じフォルダの変更は_1_つにまとまる`、`除外の中の変更は捨てる`、`隠しファイル表示がオンなら除外の中の変更も渡す`、`ルートの外のパスは捨てる`、`1000_件を超えたら全部読み直しの印だけにする`
+  - 検証: `npm test && npm run test:coverage`
+- [ ] T38d — ショートカットの表(`arin-core/shortcuts`。【要件の追加(本人。2026-11-15)】)(変更ファイル: crates/arin-core/src/shortcuts/table.rs, crates/arin-core/src/shortcuts/key.rs, crates/arin-core/tests/shortcuts.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/ | 依存: T38a)
+  - 対応: 【要件の追加】(M4.5 でキーを設定ファイルで変えるための土台)、FR-024(メニューの各操作をショートカットでも)、FR-044(M2 のタブ操作)、C-04、前提 (e)、【仮定】21・22
+  - 置くもの:
+    - コマンドの ID(列挙。文字列は M2 の `menu.rs` の ID をそのまま使う: `terminal.new-tab`・`terminal.close-tab`・`terminal.previous-tab`・`terminal.next-tab`・`edit.select-all`・`app.quit`。M3 で足す: `edit.copy`・`edit.cut`・`edit.paste`(ターミナルとツリーで共有)、`tree.open`・`tree.reveal-in-finder`・`tree.insert-path`・`tree.copy-relative-path`・`tree.copy-absolute-path`・`tree.rename`・`tree.trash`・`tree.new-file`・`tree.new-folder`)
+    - コマンドの ID → 既定のキーと受け口の表。受け口は「メニューの項目」(OS がアクセラレータで受ける)・「編集の項目」(標準の項目が画面のコピー・切り取り・ペーストのイベントになる)・「画面」(ツリーにフォーカスがあるときに画面の keydown で受ける)の 3 つ。既定のキーは PRD §6.4 と M2 のメニューのとおり(⌘T・⌘W・⌘⇧[・⌘⇧]・⌘A・⌘Q・⌘C・⌘X・⌘V・⌘O・⌥⌘R・⌘↩・⇧⌥⌘C・⌥⌘C・Enter・⌘⌫・⌘N・⇧⌘N)
+    - キーの文字列は Tauri(muda)のアクセラレータの書式(`Cmd+Shift+N`)にそろえ、修飾キーの集合とキーに分けて読む(M4.5 の T64 で設定の値を検査する土台)
+    - 生成: 表の型を ts-rs で生成し、既定の表を `src/ipc/generated/defaultShortcuts.json` にも書く(偽の Rust 側と Vitest が同じ値を使うため。`generated_types.rs` が差分を検査する)【仮定】
+  - 並行: 可(`shortcuts/` と生成物だけ。生成物を触るのは Phase 25b ではこのタスクだけ)
+  - 先に書くテスト: `すべてのコマンドの_id_が既定のキーを持つ`、`同じフォーカスで受けるキーに重なりが無い`、`既定のキーは_prd_の表と_m2_のメニューのとおり`(表で列挙)、`id_の文字列は_m2_のメニューの_id_と同じ`、`キーの文字列を修飾キーとキーに分けて読める`、`修飾キーの順が違っても同じキーとみなす`、`読めない文字列は理由つきで拒否する`、`表の_json_の形`。生成した型と既定の表の JSON が最新
+  - 検証: `npm test && npm run lint && npm run test:coverage`
+- [ ] T39a — ファイル操作の検査(範囲・名前・重複しない名前)(`arin-core/fileops`)(変更ファイル: crates/arin-core/src/fileops/scope.rs, crates/arin-core/src/fileops/name.rs, crates/arin-core/src/fileops/unique.rs, crates/arin-core/tests/fileops_scope.rs, crates/arin-core/tests/fileops_name.rs, crates/arin-core/tests/support/fake_fs.rs | 依存: T38a)
+  - 対応: FR-025・FR-026(名前の検証)、FR-030(両方残すの名前)、FR-035、設計書 §5.1 の `PathScopeGuard`・`NameValidator`・`UniqueNameGenerator`、§7.2、§15.2 #8、【仮定】11
+  - 置くもの: 範囲の検査(ルートの実パスと、対象の親フォルダの実パス=ファイルシステムのポートで解決したもの、を要素ごとに比べる。文字列の前方一致にしない。対象そのものはリンクをたどらない=リンク自体を操作する)。ルート自体を名称変更・移動・切り取り・ゴミ箱の対象にしない。フォルダを自分自身・子孫へ移さない。名前の検査(空でない、`/` と NUL を含まない、`.`・`..` でない、UTF-8 で 255 バイト以内)。両方残すの名前
+  - 偽のファイルシステム(`tests/support/fake_fs.rs`。メモリの中のフォルダとシンボリックリンク。**上書きや削除を求められたら panic する**)をここで作り、T39b が使う
+  - 安全: 経路の検査は `arin-core` で行い、画面からは迂回できない。シンボリックリンクでの脱出をテストで確かめる
+  - 並行: 可(`fileops/` の子ファイルと `tests/` だけ)
+  - 先に書くテスト(偽のポート): `ルートの中の相対パスは通す`、`シンボリックリンクで親がルートの外に出るものは拒否する`、`名前の前方が同じだけの別のフォルダはルートの外`(`/x/app` と `/x/app2`)、`ルート自体の名称変更_移動_切り取り_ゴミ箱は拒否する`、`ルートへの新規作成とペーストは通す`、`フォルダを自分自身や子孫へ移すことは拒否する`、`空の名前_スラッシュ_nul_ドット_ドットドットを拒否する`、`255_バイトを超える名前を拒否する`(日本語 85 文字=255 バイトは通り、86 文字は拒否)、`両方残すの名前は空白と番号を拡張子の前に足す`、`番号は_2_から空いている最小のもの`、`拡張子の無い名前とドットで始まる名前は末尾に足す`
+  - 検証: `npm test && npm run test:coverage`
 
-#### Phase 27(逐次。Phase 25・26 完了後)
+#### Phase 25c(並行可能)
 
-- [ ] T42 — ツリー・ファイル操作・デスクトップのコマンドとイベント、監視の張り替え(変更ファイル: src-tauri/src/commands/, src-tauri/src/events.rs, src-tauri/src/lib.rs, src/ipc/ | 依存: T40)
-  - 対応: FR-013〜018、024〜030、035、036。画面からは絶対パスを受け取らない。検証: `npm test && npm run lint`
-- [ ] T43 — 画面(ツリー、インライン編集、コンテキストメニュー、衝突の確認、ドラッグ)(変更ファイル: src/state/, src/ui/tree/, src/ui/menu/, src/ui/dialogs/, src/ui/terminals/ | 依存: T41, T42)
-  - 対応: FR-013〜018、024〜030、035〜037、FR-060(ツリーのヘッダ)。検証: `npm test && npm run e2e`
+- [ ] T38e — 隠しファイル表示の保存値と写し(変更ファイル: crates/arin-core/src/project/store.rs, crates/arin-core/src/persistence/codec.rs, crates/arin-core/src/workspace/, crates/arin-core/tests/persistence_codec.rs, crates/arin-core/tests/workspace_projects.rs, crates/arin-core/tests/app_snapshot.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/test/fakeIpc.ts, e2e/fixtures/tauriMock.ts | 依存: T38d)
+  - 対応: FR-017(切替の保存)、FR-056、設計書 §6.2 の `projects[].tree.showHidden`、【仮定】3
+  - 置くもの: `ProjectStore` のプロジェクトに隠しファイル表示(既定 false)、`state.json` の `projects[].tree.showHidden` の読み書き(キーの追加なので版は 1 のまま。`tree` が無い・形が違うときはそのプロジェクトを既定値にし、退避しない【仮定】)、写しの `ProjectCardSnapshot` に `showHidden`、`Workspace` に切替の操作。展開状態は足さない
+  - `fakeIpc.ts` と `tauriMock.ts` は写しの新しい項目を既定値で埋めるだけ(M2 の T32b と同じ)
+  - 並行: 可(T39b とファイルが重ならない)。生成物の後なので T38d の後
+  - 先に書くテスト: `隠しファイル表示の既定はオフ`、`隠しファイル表示を書いて読むと同じに戻る`、`tree_キーの無い状態ファイルも読める`、`tree_の形が違えばそのプロジェクトだけ既定値で退避しない`、`隠しファイル表示を変えると写しが変わる`、`写しの_json_に_showHidden_が載る`、`保存する内容に展開状態を含めない`。生成した型が最新
+  - 検証: `npm test && npm run lint && npm run build && npm run e2e`(既存の画面の自動テストが新しい写しの形で通る)
+- [ ] T39b — ファイル操作の手順(`FileOperationService`)、衝突、切り取り(変更ファイル: crates/arin-core/src/fileops/service.rs, crates/arin-core/src/fileops/clipboard.rs, crates/arin-core/tests/fileops_service.rs, crates/arin-core/tests/support/fake_fs.rs | 依存: T39a)
+  - 対応: FR-025〜030、FR-035、FR-036、設計書 §5.1 の `FileOperationService`・`ConflictResolution`・`FileClipboard`、§5.2(衝突は結果で返し、対処を付けて呼び直す)、§7.1「ファイル操作」、§9.1(切り取り)、【仮定】12〜15。取り消しの履歴(`FileOperationHistory`)は M6(T59)
+  - 操作: 新規ファイル(空)・新規フォルダ、名称変更、移動、コピー、ゴミ箱、ペースト(ペーストボードのファイルを貼り付け先へ。切り取りの状態とペーストボードの変更番号で移動かコピーかを決める)。どれも T39a の検査を先に通し、**実行の瞬間に**存在を確かめ、上書きしないポートの操作の失敗で衝突を判定する(事前の確認だけに頼らない)。置き換えるは既存をゴミ箱に入れてから置く(ゴミ箱に入れたあとにまた同名ができたら、もう一度衝突を返す)。両方残すは T39a の名前で置く
+  - T38a の型を変えない(足りなければ T42c で足す。生成物の持ち回りのため)
+  - 安全: 偽のポートは上書きと削除で panic するので、その経路が無いことがテストで分かる。ルートの外・ルート自体はポートを 1 回も呼ばずに拒否する
+  - 並行: 可(T38e とファイルが重ならない)
+  - 先に書くテスト(偽のポート): `新規ファイルは空で作られ作った相対パスを返す`(AC-T13 の規則)、`新規フォルダを作る`、`同名があれば作らず衝突を返す`、`名称変更でディスクの名前が変わる`、`名称変更の対象が実行の時点で無ければ何も変えず見つからないを返す`(AC-T24)、`メニューを開いたあとに同名ができていたら衝突を返す`(FR-036)、`移動は宛先に同名があれば何も変えず衝突を返す`(AC-T18)、`置き換えるは既存をゴミ箱に入れてから置き上書きしない`、`置き換えの途中でまた同名ができたら衝突を返す`、`両方残すは番号付きの名前で置く`、`コピーは元を残す`、`ゴミ箱に入れると対象が消えゴミ箱の操作だけが呼ばれる`、`ルートの外とルート自体への操作はポートを呼ばずに拒否する`、`切り取ってペーストボードが変わっていなければ移動になる`、`切り取ったあとにペーストボードが変わっていたらコピーになる`、`フォルダの上でペーストするとその中に置く`、`ルートの外のファイルをペーストでコピーできる`(Finder でコピーしたもの)、`ペーストボードにファイルが無ければ何もしない`、`別のボリュームへの移動は失敗を返し何も変えない`、`大文字小文字だけを変える名称変更は衝突にしない`
+  - 検証: `npm test && npm run test:coverage`
 
-#### Phase 28(逐次。Phase 27 完了後)
+#### Phase 26a(並行可能。T38a 完了後。Phase 25b・25c と同時に進めてよい)
 
-- [ ] T44 — 同時操作のテスト、画面の自動テスト、NFR-005 の計測(変更ファイル: crates/arin-platform/tests/, e2e/, scripts/perf/ | 依存: T43)
-  - 対応: FR-036、037、NFR-005(10 万ファイルの見本を生成して展開の時間を記録。合否にしない)。検証: `npm test && npm run e2e && npm run perf`
-- [ ] T45 — M3 の完了確認とドッグフーディング(変更ファイル: output/tasks/PROGRESS.md, output/tasks/DOGFOODING_NOTES.md, docs/, project-config.md | 依存: T44)
-  - AC の合否一覧を出す。**人間**: VSCode を閉じて 1 週間使い、不満を `DOGFOODING_NOTES.md` に書く(M6 の完了条件の「不満リスト」になる)。期間中は取り消し(FR-032)が無い点に注意する(PRD §11)
+- [ ] T40a — フォルダの読み込みと、上書きしない作成・移動・コピー(`arin-platform/fs`)(変更ファイル: crates/arin-platform/src/lib.rs, crates/arin-platform/src/fs/mod.rs, crates/arin-platform/src/fs/local.rs, crates/arin-platform/tests/fs.rs | 依存: T38a)
+  - 対応: FR-013、FR-025〜027、FR-029、FR-030、FR-036、設計書 §1.4 #14、§5.4「上書きしない移動・コピー」、§7.1「スレッドの分担」(読み込みはメインスレッドの外)、【仮定】14・15・24。依存は足さない(`libc` =0.2.191 の `renamex_np`・`copyfile`、標準ライブラリ)
+  - 置くもの: フォルダの中身(`read_dir` の種類で判定し、シンボリックリンクだけ先をたどってフォルダか調べる)、空のファイルの新規作成(`create_new`)、フォルダの新規作成、移動(`renamex_np` の `RENAME_EXCL`。宛先が同じ項目=大文字小文字だけの変更なら普通の改名)、コピー(`copyfile` の `COPYFILE_EXCL`。フォルダは中身ごと)、フォルダの実パス
+  - 安全: テストの補助は、使うパスがシステムの一時領域の下にあることを確かめてから使う。上書きしないことを実ファイルで確かめる
+  - 並行: 可(`arin-platform/src/lib.rs` を触るのは M3 ではこのタスクだけ。Cargo の 3 ファイルは触らない)
+  - 先に書くテスト(一時ディレクトリだけ): `フォルダの中身を名前と種類で返す`、`ファイルへのリンクとフォルダへのリンクを見分ける`、`壊れたリンクも項目として返す`、`新規作成は既にあれば失敗し中身を変えない`、`フォルダの作成は既にあれば失敗する`、`移動は宛先に同名があれば失敗しどちらも変えない`、`移動はフォルダごと動く`、`コピーは宛先に同名があれば失敗しどちらも変えない`、`フォルダのコピーは中身ごと複製される`、`大文字小文字だけを変える名称変更ができる`、`テスト用のパスが一時領域の外なら補助が拒否する`
+  - 検証: `npm test && npm run lint`
+- [ ] T40b — ファイル監視(FSEvents。`arin-platform/watch`)(変更ファイル: Cargo.toml, Cargo.lock, crates/arin-platform/Cargo.toml, crates/arin-platform/src/watch/mod.rs, crates/arin-platform/src/watch/fsevents.rs, crates/arin-platform/tests/watch.rs, output/design/ADR_007_finder-integration.md | 依存: T38a)
+  - 対応: FR-014、PRD C7、NFR-003(監視は選択中の 1 本だけ)、設計書 §1.3 #7、§5.4「ファイル監視」、前提 (d)
+  - 使うクレート: `notify`。**正確な版は着手のときに `cargo search notify` と crates.io の公開日で確かめ、公開から 2 週間未満を避けて `=` で固定する**(計画と設計書の「8.2 系」は目安)。既定の feature のうち FSEvents 以外を切れるか確かめる。`git diff Cargo.lock` で増えたクレートを数え、`cargo tree -i reqwest --target aarch64-apple-darwin` が空であることと合わせて ADR-007 の追記に書く。増えるクレートが多すぎる・通信を含むと分かったら、このタスクを止め、FSEvents を `objc2` 系で直接呼ぶ案と並べて本人に選んでもらう
+  - 置くもの: ルートに再帰の監視を 1 本張り、待ち時間 0.2 秒程度でまとめて絶対パスの束を受け口へ渡す。返した値を捨てると止まる。除外の判定は `arin-core`(T38c)を呼び出し側(T42b)が当てる
+  - 並行: 可(T40a とファイルが重ならない。Cargo の 3 ファイルを触るのは Phase 26a ではこのタスクだけ)
+  - 先に書くテスト(一時ディレクトリ。直列で、どの待ちにも上限時間): `ファイルを作ると_2_秒以内にそのパスが届く`(AC-T02 の土台)、`削除と名称変更も届く`、`監視をやめると届かなくなる`、`監視しているフォルダの外の変更は届かない`、`監視中のルートを改名しても落ちずにやめられる`
+  - 検証: `npm test && npm run lint`。`cargo tree -i reqwest --target aarch64-apple-darwin` が空
+
+#### Phase 26b(逐次。T40b 完了後。Phase 25c と同時に進めてよい)
+
+- [ ] T40d — Finder で表示、既定のアプリで開く、ファイルのペーストボード(`arin-platform/desktop`)(変更ファイル: Cargo.toml, Cargo.lock, crates/arin-platform/Cargo.toml, crates/arin-platform/src/desktop/mod.rs, crates/arin-platform/src/desktop/workspace.rs, crates/arin-platform/src/desktop/file_pasteboard.rs, crates/arin-platform/tests/desktop.rs, output/design/ADR_007_finder-integration.md | 依存: T38a, T40b)
+  - 対応: FR-018(Finder で表示、開く)、FR-027(Finder と互換のコピー・ペースト)、設計書 §1.4 #19、§5.4、§9.1(ツリーでコピーした項目はファイルの URL としてペーストボードに書く)
+  - 使うクレート: `objc2-app-kit` =0.3.2(版は変えない)の `NSWorkspace`(`activateFileViewerSelectingURLs`・`openURL`)と `NSPasteboard` のファイルの URL。足す feature を Tauri がすでに有効にしているか `cargo tree -e features -i objc2-app-kit --target aarch64-apple-darwin` で確かめ、ADR-007 の追記に書く
+  - 安全: テストはユーザーのクリップボード(一般のペーストボード)に触れず、名前付きのペーストボードを使って終わったら解放する(M2 の T31c と同じ)。Finder と既定のアプリを実際に開く確認は自動テストにしない(T45 の人間)
+  - 並行: 不可(Cargo の 3 ファイルを T40b・T40c と順に触る)。Phase 25c とはファイルが重ならない
+  - 先に書くテスト: `名前付きのペーストボードにファイルの_url_を書いて読み戻せる`、`複数のファイルの_url_を順のまま読み戻せる`、`文字列だけのときはファイルが無いと返す`、`書くと変更番号が変わる`、`無いパスの_finder_で表示と開くは失敗を返す`
+  - 検証: `npm test && npm run lint`。`cargo tree -i reqwest --target aarch64-apple-darwin` が空
+
+#### Phase 26c(逐次。T37 の (a) の結果と、T40a・T40d の完了後)
+
+- [ ] T40c — ゴミ箱(`arin-platform/fs`)(変更ファイル: Cargo.toml, Cargo.lock, crates/arin-platform/Cargo.toml, crates/arin-platform/src/fs/mod.rs, crates/arin-platform/src/fs/trash.rs, crates/arin-platform/tests/trash.rs, output/design/ADR_007_finder-integration.md | 依存: T37 の (a), T40a, T40d)
+  - **T37 の (a) の結果(ADR-007 の (a) の欄)に従う。結果が「【検証中】」のままなら始めない。** どの方式も「戻す」が出ないと分かったら、このタスクを止めて本人に方式を確かめる(FR-028 の AC が変わりうる)
+  - 対応: FR-028、FR-030(置き換える=既存をゴミ箱へ)、設計書 §1.3 #11、§5.4「ゴミ箱と Finder の「戻す」」、§15.3 #3
+  - 使うクレート: (a) で採った方式による(方式 1 は `objc2-foundation` の `NSFileManager`、方式 2 は `objc2-app-kit` の `NSWorkspace`、方式 3 は Apple Events)。版は変えず feature だけ足し、ADR-007 の追記に書く。方式 3 ならエンタイトルメント(設計書 §15.3 #2)を M5 の T51 に申し送る
+  - 安全: 本物のゴミ箱を使うテストは `#[ignore]`(【仮定】23)で、テストが入れた項目だけを片付ける。片付けに失敗したら残った名前を標準エラーに出して失敗にする。ゴミ箱に入れられなかったときは、別の方式や削除に切り替えない
+  - 並行: 不可(Cargo の 3 ファイルと `fs/mod.rs` を順に触る)
+  - 先に書くテスト(一時ディレクトリ。`#[ignore]`): `ゴミ箱に入れると元の場所から消えゴミ箱の中にある`、`フォルダもゴミ箱に入る`、`無いものをゴミ箱に入れると見つからないを返す`、`テストは自分が入れた項目だけを片付ける`。(方式 1・2 で)`ゴミ箱の中の場所が返る`
+  - 検証: `npm test && npm run lint && cargo test -p arin-platform --test trash -- --ignored`(終わったあとにテストの項目がゴミ箱に残っていない)
+
+#### Phase 26d(並行可能。T40c 完了後。Phase 27・28a と同時に進めてよい)
+
+- [ ] T44a — 実ファイルの同時操作、シェルへの往復、NFR-005 の計測(変更ファイル: crates/arin-platform/tests/fs_race.rs, crates/arin-platform/tests/shell_roundtrip.rs, crates/arin-platform/tests/perf_tree.rs, scripts/perf/, scripts/perf-run.test.mjs | 依存: T38b, T39b, T40c)
+  - 対応: FR-036(実ファイルでの同時操作)、FR-030(上書きしない)、FR-016(エスケープの往復)、NFR-005(10 万ファイルの見本で展開の時間を記録。合否にしない)、PRD §8「同時操作」
+  - 計測: 一時フォルダに見本を 2 つ作る(1 つのフォルダに 10 万ファイル、1,000 フォルダ × 100 ファイル)。フォルダの読み込み・除外・並べ替えの時間を記録する(`#[ignore]`、`npm run perf` が動かす)。画面側の時間は T44b
+  - 安全: 一時フォルダの中だけ。ゴミ箱は偽のポート(本物は T40c のテストだけ)
+  - 並行: 可(`crates/arin-platform/tests/` と `scripts/perf/` だけ。Phase 27・28a とファイルが重ならない)
+  - 先に書くテスト(実ファイル・実 zsh。直列、上限時間): `名称変更の直前に外から消すと何も変わらず見つからない`、`移動の直前に外から同名を作ると衝突になり両方残る`、`コピーの直前に宛先に同名ができても上書きしない`、`エスケープした挿入の文字列を_zsh_に渡すと元の名前に戻る`(T38b の表の名前すべてと、改行を含む名前。`HOME` は一時フォルダ、`/bin/zsh` 固定)、`10_万ファイルの見本でフォルダの読み込みの時間を記録する`(`#[ignore]`)
+  - 検証: `npm test && npm run perf`
+
+#### Phase 27(逐次。Phase 25・26 完了後(T44a を除く)。`src-tauri/src/lib.rs` と `src/ipc/` を順に触る)
+
+- [ ] T42a — ツリーのコマンドと隠しファイル表示(変更ファイル: src-tauri/src/tree.rs, src-tauri/src/commands/tree.rs, src-tauri/src/commands/mod.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/tree_commands.rs, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T38c, T38e, T39a, T40a)
+  - 対応: FR-013、FR-017、FR-035、設計書 §5.2(ツリーの中身は写しに含めず、展開したときに問い合わせる)、§7.1「スレッドの分担」(読み込みはコマンドの非同期タスク)
+  - コマンド: `list_directory`(プロジェクト ID と相対パス。除外と並び順を当てて返す。ルートが見つからなければ「見つからない」)、`set_show_hidden`(写しが変わり保存が予約される)
+  - 安全: 相対パスは `RelPath` で受け、T39a の範囲の検査を通してから読む。絶対パスを受け取らず返さない
+  - 並行: 不可
+  - 先に書くテスト(模擬ランタイム、一時フォルダ。`harness = false` の `[[test]]` を足す): `ルートの中身が除外と並び順のとおりに返る`、`隠しファイル表示をオンにすると_3_つも返り写しと状態ファイルに反映される`、`ドットドットや絶対パスを渡すと拒否し何も読まない`、`シンボリックリンクでルートの外を指すフォルダは中身を返さない`、`見つからないプロジェクトは見つからないを返す`、`ファイルを指すとフォルダでないを返す`。Vitest: 新しいコマンドの包みが正しい名前と引数で届く
+  - 検証: `npm test && npm run lint && npm run app && npm run smoke`
+- [ ] T42b — 監視の張り替えと `tree-changed` イベント(変更ファイル: src-tauri/src/tree_watch.rs, src-tauri/src/events.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/tree_watch.rs, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T38c, T40b, T42a)
+  - 対応: FR-014、FR-002 のツリーの部分と FR-007 の「ツリーも表示され続ける」(M2 から回した分)、設計書 §1.3 #7、§7.1「プロジェクトの切替」「ルートフォルダへの追従」「外部でのファイル変更」
+  - 張り替え: 写しを送るたびに、選択中のプロジェクト・そのルートのパス・見つからない・隠しファイル表示を前回と比べ、変わっていれば張り替える(プロジェクトの切替、再リンク、見回りでのルートの追従、見つからない、削除、0 件)。`patrol.rs` は変えない。張り替えの入出力は `Workspace` のロックの外。検証画面では張らない
+  - 送るもの: 届いたパスを T38c の規則でまとめ、`tree-changed`(プロジェクト ID・変わったフォルダの相対パス・全部読み直し)で送る。絶対パスは送らない
+  - 並行: 不可
+  - 先に書くテスト(偽の監視のポート。実物の一時フォルダで 1 件): `選択中のプロジェクトのルートにだけ監視を張る`、`プロジェクトを切り替えると前の監視をやめ新しいルートに張る`、`ルートが改名に追従すると新しいパスに張り替える`、`見つからないになると監視をやめ見つかると張り直す`、`除外の中の変更は送らない`、`変わったフォルダを相対パスでまとめて送る`、`実物の一時フォルダでファイルを作ると_2_秒以内に_tree-changed_が届く`(AC-T02 の Rust 側)、`検証画面では監視を張らない`
+  - 検証: `npm test && npm run lint && npm run app && npm run smoke`。`node scripts/smoke.mjs --env=ARIN_VERIFY_GRID=1`
+- [ ] T42c — ファイル操作のコマンド(変更ファイル: src-tauri/src/fileops.rs, src-tauri/src/commands/fileops.rs, src-tauri/src/commands/mod.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/fileops_commands.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/(型を足すときだけ), src/ipc/client.ts, src/ipc/client.test.ts | 依存: T39b, T40c, T40d, T42b)
+  - 対応: FR-025〜030、FR-035、FR-036、設計書 §5.2(衝突は結果で返し、対処を付けて呼び直す)、§7.1「ファイル操作」「スレッドの分担」、【仮定】12〜15・20
+  - コマンド: `create_entry`(作成先のフォルダ・名前・ファイルかフォルダか)、`rename_entry`、`move_entry`・`copy_entry`(ツリー内のドロップ。宛先のフォルダ)、`trash_entry`、`copy_entries`(ファイルの URL をペーストボードへ)、`cut_entries`、`paste_entries`(貼り付け先のフォルダ)。衝突の対処は任意の引数で受ける。どれもプロジェクト ID と相対パスで受け、T39b の手順を待ってよいスレッドで呼ぶ
+  - 安全: 絶対パスを受け取らない。範囲の検査は `arin-core` の手順の中で行い、コマンドは素通しする。コマンドの結合テストはゴミ箱を偽のポートにする(【仮定】23)
+  - 並行: 不可
+  - 先に書くテスト(模擬ランタイム、一時フォルダ、偽のゴミ箱、名前付きのペーストボード): `新規ファイルで空のファイルができ作った相対パスが返る`(AC-T13 の Rust 側)、`名称変更でディスクの名前が変わる`、`実行の時点で消えていた対象の名称変更は何も変えず見つからないを返す`(AC-T24)、`宛先に同名があると衝突を返し両方の中身が変わらない`(AC-T18)、`置き換えるを付けて呼び直すと既存がゴミ箱に渡ってから置かれる`、`両方残すを付けて呼び直すと番号付きの名前で置かれる`、`ゴミ箱はゴミ箱の操作だけを呼ぶ`、`ルート自体とルートの外は拒否し何も変えない`、`ドットドットと絶対パスとシンボリックリンクでの脱出を拒否する`、`ツリーでコピーするとペーストボードにファイルの_url_が載る`、`ペーストボードのファイルをフォルダへペーストできる`、`切り取ってペーストすると元の場所から無くなる`、`どの操作の前後でも一時フォルダの外が変わらない`。Vitest: 新しいコマンドの包み
+  - 検証: `npm test && npm run lint && npm run app && npm run smoke`
+- [ ] T42d — デスクトップとパスのコマンド(Finder で表示、開く、パスのコピー、ターミナルへの挿入)(変更ファイル: src-tauri/src/commands/desktop.rs, src-tauri/src/commands/mod.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/desktop_commands.rs, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T38b, T42c)
+  - 対応: FR-015、FR-016、FR-018、FR-024(パスをターミナルに挿入)、設計書 §7.1「パスをターミナルへ」、§12、【仮定】16
+  - コマンド: `reveal_entry`、`open_entry`(ファイルだけ。フォルダは画面が開閉する)、`copy_entry_path`(相対か絶対か。Rust がペーストボードに文字列を書く。ルートの絶対パスは相対パスを空にして呼ぶ)、`insert_entry_path`(宛先のターミナル ID。T38b の規則で作った文字列を PTY に書く。Enter は送らない。ターミナルが動いていなければ何もしない)
+  - 安全: 絶対パスは画面へ返さない。挿入は必ず T38b のエスケープを通す
+  - 並行: 不可
+  - 先に書くテスト(模擬ランタイム、偽 PTY、名前付きのペーストボード、偽のデスクトップのポート): `相対パスのコピーで_src/a_b.ts_がペーストボードに入る`(AC-T03)、`絶対パスのコピーでルートとつないだパスが入る`、`ルートの絶対パスをコピーできる`、`挿入で偽_pty_に_src/a\_b.ts_と空白が書かれ改行が書かれない`(AC-T04 の Rust 側)、`別のプロジェクトのターミナルへは絶対パスが書かれる`、`finder_で表示と開くは偽のポートに正しいパスで届く`、`ルートの外とドットドットは拒否する`。Vitest: 新しいコマンドの包み
+  - 検証: `npm test && npm run lint && npm run app && npm run smoke`
+- [ ] T42e — メニューバーとショートカットの表(変更ファイル: src-tauri/src/menu.rs, src-tauri/src/commands/app.rs, src-tauri/src/lib.rs, src-tauri/tests/app_menu.rs, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T38d, T42d)
+  - 対応: 【要件の追加】、FR-024(ショートカット)、FR-027(切り取り)、FR-044(M2 のタブ操作を壊さない)、C-04、前提 (e)、【仮定】21
+  - 変えるもの: `menu.rs` の項目のアクセラレータを T38d の表から作る(ID とキーの文字列を `menu.rs` に直書きしない。文言は `menu.rs` に残す)。表の受け口が「メニューの項目」のものだけをメニューに載せる。「編集」に標準の「切り取り」(⌘X)を足す(画面の `cut` イベントになる)。`get_shortcuts` で表を画面へ渡す(起動時に 1 回。M4.5 で設定の値を混ぜる口)
+  - 並行: 不可
+  - 先に書くテスト(模擬ランタイム): `メニューの項目のアクセラレータが表の既定のキーと同じ`、`受け口がメニューの項目のものだけがメニューに載る`、`編集に切り取り_コピー_ペースト_すべてを選択がこの順である`、`get_shortcuts_が既定の表を返す`。既存の `app_menu.rs` のテストがそのまま通る(タブ操作・終了・すべてを選択)
+  - 検証: `npm test && npm run lint && npm run app && npm run smoke`
+
+#### Phase 28a(逐次。T42e と T41a・T41b の完了後)
+
+- [ ] T43a — 画面のツリーのストアと操作(変更ファイル: src/state/treeStore.ts, src/state/treeStore.test.ts, src/state/actions.ts, src/state/actions.test.ts, src/state/uiStore.ts, src/state/uiStore.test.ts, src/state/selectors.ts, src/state/startApp.ts, src/state/startApp.test.ts, src/test/fakeIpc.ts, src/main.tsx | 依存: T41a, T41b, T42e)
+  - 対応: FR-013、FR-014、FR-025〜030、FR-036、FR-037、設計書 §6.1 の `treeStore`・`uiStore`、§6.3、§7.1「外部でのファイル変更」、【仮定】4・12・18・20
+  - 置くもの: `treeStore`(プロジェクトごとの T41a の表示モデルと保留。生成関数で作る)。`tree-changed` の購読と再読込、保留が解けたときのまとめての再読込。操作の結果の扱い(見つからない=1 行の知らせを出して親を読み直す、衝突=衝突の確認を開いて選んだ対処で呼び直す、済み=関わるフォルダを読み直して作った項目を選ぶ)。`uiStore` に、ツリーのメニュー、インライン編集(新規作成・名称変更)、衝突の確認、移動の確認、ツリーの知らせ、ツリーにフォーカスがあるか、を足す。起動時に `get_shortcuts` で表を受け取る
+  - 並行: 不可
+  - 先に書くテスト(Vitest。偽の通信): `選択したプロジェクトのルートを読み込む`、`展開でフォルダの中身を求め届いたら行が増える`、`tree-changed_で読み込み済みのフォルダを読み直す`、`保留中は読み直さず解けたらまとめて読み直す`、`名称変更が見つからないを返したら知らせを出し親を読み直す`(AC-T24)、`衝突を返したら衝突の確認を開き選んだ対処で呼び直す`、`衝突の確認で中止なら呼び直さない`、`新規作成が済んだら作った項目を選ぶ`(AC-T13)、`ドロップでの移動は確認を開き確認すると移動のコマンドを呼ぶ`(FR-029)、`option_のドロップは確認なしでコピーのコマンドを呼ぶ`、`プロジェクトを切り替えて戻ると読み込み済みのツリーを保ち読み直す`、`隠しファイル表示の切替でコマンドを呼び読み直す`、`起動時にショートカットの表を受け取る`
+  - 検証: `npm test && npm run lint && npm run build`
+- [ ] T43b — ツリーの表示(仮想スクロール、開閉、ルートの行、監視の反映)(変更ファイル: src/ui/tree/FileTreeView.tsx, src/ui/tree/TreeRow.tsx, src/ui/tree/TreeHeader.tsx, src/ui/tree/TreeView.css, src/ui/tree/icons.tsx, src/ui/shell/TreePane.tsx, src/ui/design/tokens.css, e2e/fixtures/tauriMock.ts, e2e/tree.spec.ts | 依存: T43a)
+  - 対応: FR-013、FR-014、FR-017(切替)、FR-018(ダブルクリックで開く)、FR-060(ツリーのヘッダの着色を保つ)、FR-002 のツリーの部分と FR-007 の「ツリーも表示され続ける」(M2 から回した分)、NFR-005(見える行だけを描く)、設計書 §9.1、§15.2 #12(アイコンは自作の少数の SVG)、ADR-007 の (c)、【仮定】1・5・6
+  - 作るもの: `FileTreeView`(コンテナ。T41a の窓で描く範囲を決め、上下の余白と見える行だけを描く)、`TreeRow`(字下げ・開閉の印・アイコン・名前。名前は文字として差し込む)、`TreeHeader` をルートの行として選べるようにする(色は M2 のまま)。偽の Rust 側にツリーのコマンドと `tree-changed` を足す
+  - 安全: ファイル名は信頼しない文字列として扱い、HTML として解釈させない(設計書 §12。境界検査が `dangerouslySetInnerHTML` を禁止している)
+  - 並行: 不可
+  - 先に書くテスト(Playwright。偽の Rust 側): `選択中のプロジェクトのルートの直下が並ぶ`(FR-013)、`フォルダを展開すると中身を求めるコマンドが呼ばれ子が並ぶ`(FR-013)、`tree-changed_で_src_に_new.txt_が現れる`(AC-T02 の画面側)、`削除と改名も反映される`(FR-014)、`隠しファイルを表示の切替でコマンドが呼ばれ返った項目が出る`、`ファイルをダブルクリックすると開くのコマンドが呼ばれる`、`フォルダをダブルクリックすると開閉する`、`1_万行のフォルダを展開しても描かれる行は見える数だけ`、`スクロールすると見える行が入れ替わる`、`html_のような名前もそのまま文字で出る`、`ヘッダを選ぶとルートが選ばれる`、`プロジェクトを切り替えるとツリーが切り替わる`(FR-002)、`ルートの表示用のパスが変わってもツリーの行が残る`(AC-P07)、`フォルダへのリンクには開閉の印が無い`、`見つからないプロジェクトはツリーの代わりに案内が出る`(M2 の既存)。`e2e/verify-grid.spec.ts` がそのまま通る
+  - 人間が見る範囲(T45): 行の高さ・字下げ・アイコンの見た目
+  - 検証: `npm test && npm run lint && npm run build && npm run e2e`
+- [ ] T43c — コンテキストメニュー、ショートカット、インライン編集、衝突の確認(変更ファイル: src/ui/menu/ContextMenu.tsx, src/ui/menu/ContextMenu.css, src/ui/menu/runTreeMenuCommand.ts, src/ui/menu/runTreeMenuCommand.test.ts, src/ui/tree/, src/ui/dialogs/ConflictDialog.tsx, src/ui/terminals/clipboardRouting.ts, src/ui/terminals/clipboardRouting.test.ts, e2e/fixtures/tauriMock.ts, e2e/tree-ops.spec.ts | 依存: T43b)
+  - 対応: FR-015、FR-018、FR-024〜028、FR-030、FR-035、FR-036、FR-037(メニュー・入力中)、【要件の追加】(キーは表から引く)、C-04、【仮定】7〜10・21
+  - 作るもの: `ContextMenu` に無効の項目とキーの表示を足す(カードのメニューは変わらない)。ツリーの右クリック(ファイル・フォルダ・ヘッダ・余白)でT41b の項目を出す。ツリーにフォーカスがあるときの keydown を T41b の関数で振り分ける(キーの文字列を部品に書かない)。コピー・切り取り・ペーストのイベントの入口(`clipboardRouting.ts`)にツリーを足す(ツリーにフォーカスがあればツリーの操作にし、ターミナルに貼り付けない)。インライン編集(`InlineNameInput`。T41a の選択範囲)。衝突の確認(置き換える・両方残す・中止)
+  - 並行: 不可
+  - 先に書くテスト(Playwright): `ファイルの上で右クリックすると表の項目が出る`(FR-024)、`余白の右クリックで_7_項目が出る`、`ルートでは名称変更_切り取り_ゴミ箱が無効`(AC-T23)、`新規ファイルで_src_に入力欄が出て_a.ts_と_enter_で作成のコマンドが呼ばれ作った行が選ばれる`(AC-T13)、`ファイルの上の新規ファイルは同じ階層_余白ではルート`(FR-025)、`esc_で取り消すと何も呼ばない`、`名称変更は拡張子を除いた部分が選ばれた入力欄になる`(FR-026)、`確定すると名称変更のコマンドが呼ばれ新しい名前が出る`、`相対パスをコピーと絶対パスをコピーで正しいコマンドが呼ばれる`(FR-015)、`cmd_backspace_でゴミ箱のコマンドが呼ばれ行が消える`(AC-T16 の画面側)、`見つからないが返ると見つかりませんと出て行が消える`(AC-T24)、`衝突が返ると置き換える_両方残す_中止が出て中止では何も呼ばない`(AC-T18)、`メニューの表示中と入力中は届いた変更で行が動かない`(FR-037)、`ツリーにフォーカスがあるとコピー_切り取り_ペーストのイベントがツリーの操作になりターミナルに貼り付かない`、`ターミナルにフォーカスがあるときのコピーとペーストは今までどおり`(`e2e/terminal.spec.ts` が通る)、`表の画面で受けるキーでメニューと同じ操作が呼ばれる`(FR-024。メニューの項目で受けるキーは OS が受けるので自動テストでは扱わない)、`パスをターミナルに挿入で表示中のターミナルへの挿入が呼ばれる`、`finder_で表示のコマンドが呼ばれる`
+  - 人間が見る範囲(T45): 実際のキー(US と JIS)、メニューの見た目
+  - 検証: `npm test && npm run lint && npm run build && npm run e2e`
+- [ ] T43d — ドラッグ(ツリー内の移動・コピー、ターミナルへの挿入)(変更ファイル: src/ui/tree/, src/ui/terminals/TerminalHost.tsx, src/ui/dialogs/MoveConfirmDialog.tsx, e2e/fixtures/tauriMock.ts, e2e/tree-dnd.spec.ts | 依存: T43c)
+  - 対応: FR-016、FR-029、FR-030、FR-037、ADR-007 の (b)、【仮定】12・16
+  - 作るもの: 行の pointer のイベントを T41b の `DragMachine` につなぐ(押した行に `setPointerCapture`、離した位置の要素からドロップ先を決める)。ドラッグ中は保留の理由を立てる。ドロップ先の目印の `data-` 属性をフォルダの行・ヘッダ・ターミナルの置き場所(`TerminalHost`。xterm.js の要素には手を入れない)に付ける。移動の確認ダイアログ
+  - 並行: 不可
+  - 先に書くテスト(Playwright。`page.mouse` の down・move・up): `ツリーの項目をターミナルへ落とすと挿入のコマンドが呼ばれる`(AC-T04 の画面側)、`ほかのフォルダへ落とすと移動の確認が出て中止なら何も呼ばない`(FR-029)、`確認すると移動のコマンドが呼ばれる`、`option_を押して落とすとコピーのコマンドが呼ばれる`、`ドラッグ中に_100_件の変更が届いても行が動かず落としたあとに反映される`(AC-T25)、`落とした先に同名があると衝突の確認が出る`(AC-T18 の経路)、`自分の子孫へは落とせない`、`esc_で取り消す`、`小さな動きはクリックのまま`
+  - 人間が見る範囲(T45): 実際のマウスとトラックパッドでの手触り(WKWebView)
+  - 検証: `npm test && npm run lint && npm run build && npm run e2e`
+
+#### Phase 28b(逐次。T43d 完了後)
+
+- [ ] T44b — M3 のシナリオの画面の自動テストと、画面側の展開の時間の記録(変更ファイル: e2e/m3-scenario.spec.ts, e2e/fixtures/tauriMock.ts | 依存: T43d)
+  - 対応: PRD §8「UI」(ツリーの操作)、FR-037(AC-T25)の通し、NFR-005 の画面側(記録だけ)
+  - 先に書くテスト(このタスク自体がテスト): `ツリーの展開_新規作成_名称変更_コピーとペースト_ゴミ箱_ドラッグでの移動_ターミナルへの挿入を通す`、`プロジェクトを切り替えるとツリーと読み込みの対象が切り替わる`、`10_万件のフォルダを展開して行が出るまでの時間を記録する`(偽の Rust 側が 10 万件を返す。数値で失敗させず `testreport/perf/` に書く)
+  - 並行: 可(T44a とファイルが重ならない)
+  - 検証: `npm run e2e`(3 回続けて合格)
+
+#### Phase 28c(逐次。人間ゲート)
+
+- [ ] T45 — M3 の完了確認とドッグフーディング(変更ファイル: output/tasks/PROGRESS.md, output/tasks/DOGFOODING_NOTES.md, output/reports/test/M3_acceptance.md, output/design/ADR_007_finder-integration.md, output/design/ARCH_multi-terminal.md, docs/, project-config.md | 依存: T44a, T44b)
+  - AI がやること: `npm run build && npm test && npm run lint && npm run test:coverage && npm run e2e && npm run app && npm run smoke && npm run perf` と `node scripts/smoke.mjs --env=ARIN_VERIFY_GRID=1`、`cargo test -p arin-platform --test trash -- --ignored` を通し、下の対応表に沿って AC の合否一覧を `output/reports/test/M3_acceptance.md` と `testreport/` に出す。NFR-005 を記録する(合否にしない)。`docs/`(`state.json` の `tree.showHidden`、写しの形、コマンドとイベント、`treeStore`・`uiStore`、ショートカットの表、新しい落とし穴)と `project-config.md` §2(`notify` の版)・§3 を同期する。設計書を直す: §2(`notify` の版)、§5.2 の通信の一覧(ツリー・ファイル操作・デスクトップ)、§6.1(`treeStore`・`uiStore`)、§6.2(`tree.expanded` は M6)、§9.1(ショートカットの表と受け口、ツリーのヘッダ=ルートの行、仮想スクロールは自作)、§15.3 #3・#4。ADR-007 の状態を本人の了承に合わせて直す。fresh context の `/code-review` と `verifier` を 1 回ずつ回す
+  - **人間がやること**(`npm run app` で作った `.app` を Finder から開く): (1) ツリーで ⌘⌫ でゴミ箱に入れたファイルを、Finder のゴミ箱の「戻す」で戻せる(AC-T16。T37 (a) で採った方式)。(2) `src/a b.ts` をツリーからターミナルへドラッグすると `src/a\ b.ts `(末尾に空白)が入り、Enter が送られない(AC-T04。マウスとトラックパッド)。(3) ツリー内のドラッグで移動の確認が出て、⌥ を押すとコピーになる(FR-029)。(4) Finder でコピーしたファイルをツリーにペーストでき、ツリーでコピーしたファイルを Finder にペーストできる(FR-027)。ツリーで ⌘C したあと、クリップボードの中身が WebKit に上書きされていない。(5) ツリーにフォーカスがあるときに ⌘⌫・⌘N・⇧⌘N・⌘O・⌥⌘R・⌘↩・⇧⌥⌘C・⌥⌘C・Enter・⌘C・⌘X・⌘V が効き、ターミナルにフォーカスがあるときのターミナルの動き(⌘C・⌘V・⌘T など)が M2 から変わっていない(US と JIS の配列。【仮定】21・22。効かないキーがあれば表の受け口を替える)。(6) ターミナルで `touch src/new.txt` を実行すると 2 秒以内にツリーに出る(AC-T02)。`git checkout` などで大量に変わっても固まらない。(7) 「Finder で表示」と「開く」・ダブルクリック(FR-018)。(8) 大きな実リポジトリでの展開の体感(NFR-005。参考)。(9) 行の見た目と、メニュー・ダイアログの見た目。(10) **VSCode を閉じて 1 週間使い、不満を `DOGFOODING_NOTES.md` に書く**(M6 の完了条件の「不満リスト」になる)。期間中は取り消し(FR-032)が無い点に注意する(PRD §11)
+  - 完了条件: 下の「M3 の完了条件」をすべて満たす
+
+#### M3 の完了条件
+
+- 下の対応表の AC が、自動テストと T45 の人間の確認で全件合格している(M6 に回した部分=FR-018 の Quick Look、FR-029 の「設定で確認を省略」を除く)
+- `npm run build`・`npm test`・`npm run lint`・`npm run test:coverage`(`arin-core` と `src/logic` のそれぞれで行 80%)・`npm run e2e`・`npm run smoke`(通常と `--env=ARIN_VERIFY_GRID=1`)が終了コード 0。`cargo test -p arin-platform --test trash -- --ignored` が通り、テストの項目がゴミ箱に残っていない
+- テストとスモークが、本物の `~/Library/Application Support/Arin/` と一時フォルダの外のファイルを作っていない・変えていない
+- `cargo tree -i reqwest --target aarch64-apple-darwin` が空(通信のクレートが増えていない)
+- ADR-007 の (a) の欄が埋まり、M3 で足した依存(`notify` の版、feature)が追記にある
+- `src-tauri/src/menu.rs` と `src/logic/keys/` にショートカットのキーの文字列の直書きが残っていない(表から引く。【要件の追加】)
+- 本人が T45 の (1)〜(9) を確認し、(10) のドッグフーディングを終えた
+
+#### FR の受け入れ基準とタスクの対応(漏れの確認用)
+
+| FR | 受け入れ基準 | 規則・OS | コマンド | 画面 | 人間(T45) |
+| -- | ------------ | -------- | -------- | ---- | ---------- |
+| FR-013 | ルートを起点にフォルダとファイルが階層表示される | T38c、T40a | T42a | T41a、T43b | (9) |
+| FR-013 | フォルダの中身は展開したときに読み込まれる | — | T42a | T41a、T43a、T43b | — |
+| FR-014 | `src` を展開中に `touch src/new.txt` で 2 秒以内に `new.txt` が現れる(AC-T02) | T38c、T40b | T42b | T41a、T43a、T43b | (6) |
+| FR-014 | 外部での削除・リネームも手動操作なしで反映される | T38c、T40b | T42b | T41a、T43b | (6) |
+| FR-015 | `src/a b.ts` の相対パスコピーでクリップボードが `src/a b.ts`(AC-T03) | T38b | T42d | T41b、T43c | — |
+| FR-015 | 絶対パスコピーで `/Users/x/dev/app/src/a b.ts` | T38b | T42d | T41b、T43c | — |
+| FR-016 | ターミナルへのドラッグで `src/a\ b.ts `(末尾に空白)が入り Enter が送られない(AC-T04) | T38b、T44a(zsh との往復) | T42d | T41b、T43d | (2) |
+| FR-017 | 切替で隠しファイルの表示/非表示が切り替わる | T38c、T38e | T42a | T43a、T43b | — |
+| FR-017 | 既定で `.git` `node_modules` `.DS_Store` が表示されない | T38c | T42a | — | — |
+| FR-018 | 「Finder で表示」で Finder が対象を選択して開く | T40d | T42d | T43c | (7) |
+| FR-018 | 「開く」・ダブルクリックで既定アプリで開く | T40d | T42d | T43b、T43c | (7) |
+| FR-018 | スペースで Quick Look(Should) | M6(T59) | | | |
+| FR-024 | ファイル/フォルダの右クリックで §6.4 の項目(M3 は Must の項目) | — | — | T41b、T43c | (9) |
+| FR-024 | 余白の右クリックで 7 項目 | — | — | T41b、T43c | — |
+| FR-024 | 「パスをターミナルに挿入」でフォーカス中のターミナルへ相対パス | T38b | T42d | T41b、T43c | — |
+| FR-024 | 各操作が割り当てたショートカットでも実行できる | T38d | T42e | T41b、T43c | (5) |
+| FR-025 | `src` で「新規ファイル…」→ `a.ts` → Enter で空ファイルができ選択される(AC-T13) | T39b、T40a | T42c | T41b、T43a、T43c | — |
+| FR-025 | ファイル上なら同じ階層、余白ならルート直下に作られる | T41b | T42c | T43c | — |
+| FR-026 | インライン編集で拡張子を除いた部分が選択される | — | — | T41a、T43c | — |
+| FR-026 | 確定でディスク上の名前とツリーの表示が新しい名前になる | T39b、T40a | T42c | T43c | — |
+| FR-027 | Finder でコピーしたファイルをツリーにペーストできる | T39b、T40d | T42c | T43c | (4) |
+| FR-027 | ツリーでコピーしたファイルを Finder にペーストできる | T40d | T42c | T43c | (4) |
+| FR-027 | フォルダ上でペーストするとその中に置かれる | T39b | T42c | T41b、T43c | — |
+| FR-027 | 切り取り後にペーストすると元から無くなり、ペースト先にある | T39b | T42c | T43c | — |
+| FR-028 | ⌘⌫ でゴミ箱へ移動し、ツリーから消える(AC-T16) | T40c | T42c | T43c | (1) |
+| FR-028 | Finder のゴミ箱の「戻す」で復元できる(AC-T16) | T40c(T37 の (a)) | — | — | (1) |
+| FR-028 | ゴミ箱を経由しない削除が存在しない | T38a(ポートに削除が無い)、T39b | T42c | — | — |
+| FR-029 | 別のフォルダへドロップすると移動する | T39b | T42c | T41b、T43d | (3) |
+| FR-029 | ⌥ を押しながらでコピー | T39b | T42c | T41b、T43d | (3) |
+| FR-029 | 移動の前に確認が出て、中止で何も変わらない | — | — | T43a、T43d | (3) |
+| FR-029 | 設定で確認を省略できる(C-05) | M6(T56。設定ファイル)【本人の判断】 | | | |
+| FR-030 | `docs/a.md` があるとき別の `a.md` をドロップすると 3 択が出て、中止でどちらも変わらない(AC-T18) | T39a、T39b、T40a | T42c | T43c、T43d | — |
+| FR-030 | 確認なしに上書きされる経路が無い | T38a、T39b、T40a、T44a | T42c | — | — |
+| FR-035 | ルートを選ぶと名称変更・切り取り・ゴミ箱が無効(AC-T23) | T39a | T42c | T41b、T43c | — |
+| FR-035 | ルート配下以外を変更しない | T38a、T39a | T42a、T42c、T42d | — | — |
+| FR-036 | メニューを開いたあとに外から消された対象の名称変更で、何も変わらず「見つかりません」と出て行が消える(AC-T24) | T39b、T44a | T42c | T43a、T43c | — |
+| FR-036 | メニューを開いたあとに外で同名ができたら FR-030 の確認が出る | T39b、T44a | T42c | T43a、T43c | — |
+| FR-037 | ドラッグ中に 100 ファイル追加されても行が動かず、ドロップ後に反映される(AC-T25) | — | — | T41a、T43d、T44b | — |
+| FR-037 | インライン入力中・メニュー表示中も同様 | — | — | T41a、T43c | — |
+| FR-002(M2 から) | 切替でツリーのルートが B になる | — | T42b | T43b | — |
+| FR-007(M2 から) | ルートを改名してもツリーが表示され続ける(AC-P07) | — | T42b | T43b | — |
+| FR-060 | ツリーのヘッダの着色(M2 で済み)を壊さない | — | — | T43b | (9) |
+| NFR-005 | 10 万ファイルで展開を計測して記録する(合否にしない) | T41a(窓)、T44a | — | T44b | (8) |
+| 【要件の追加】 | ショートカットのキーを 1 つの表から引く(M4.5 の土台) | T38d | T42e | T41b、T43c | (5) |
+
+#### M2 の残りの問題の割当(`output/reports/test/M2_acceptance.md` の「判断が要る点・残っている問題」から、ツリーに関わるもの)
+
+| 項目 | 扱うタスク | 扱い |
+| ---- | ---------- | ---- |
+| 見つからないプロジェクトは、同じパスにフォルダを作り直すと起動中は自動でつながる(FR-007 の仕様の確認が要る) | T42b、T45(本人) | T42b はつながったら監視を張り直す(いまの振る舞いに合わせる)。仕様として良いかは本人が T45 で判断する |
+| 状態の写しが作った順と違う順で届くことがあり得る | 扱わない | ツリーが写しから使うのは選択と隠しファイル表示だけで、中身は別のコマンドで取る。M6(T55)の再分解で扱いを決める |
+| 応答しないネットワークのボリュームで、終了時に見回りのスレッドを待って止まる恐れ | 扱わない | 監視(T40b)も同じ恐れがある。M3 ではネットワークのボリュームを確かめない。ドッグフーディングで出たら不具合として扱う |
+| それ以外(Dock の終了、書き込みが止まったタブ、ゾンビ、読み取りスレッド、使われない型) | 扱わない | ツリーに関わらない。M6(T55)の再分解で扱いを決める |
 
 ### M4 タイル表示(粗い分解。T46 の着手時に分解し直す)
 
@@ -712,18 +1077,52 @@ T29〜T35 は親として残し、作業は子タスクで行う。親は子が�
 - [ ] T50 — M4 の完了確認(変更ファイル: output/tasks/PROGRESS.md, docs/ | 依存: T49)
   - AC の合否一覧を出す。**人間**: 9 枚同時表示の体感を判定する
 
+### M4.5 ショートカットの設定(粗い分解。T63 の着手時に分解し直す)
+
+**【要件の追加(本人。2026-11-15)】** 「ショートカットのキーを設定ファイル(`settings.toml`)で変えられるようにする」。PRD に無い要件なので、PRD への反映(FR の追加と AC)は本人の判断を待つ。M3・M4 のあとに実装し、設定ファイルの土台(M6 の T56 の一部)を前倒しする。M3 では、キーを「コマンドの ID → 既定のキーと受け口」の 1 つの表(`arin-core/shortcuts`)から引く形にしておく(T38d・T41b・T42e)。M4 で足すショートカット(タイル表示の切替やページ送りなど)も同じ表に足す。
+
+完了条件(案。T63 で確定する): `settings.toml` でコマンドの ID ごとにキーを変えると、メニューバーの項目とツリー(画面で受けるキー)の両方に反映される。不正な値・重なり・OS が予約するキーは既定に戻り、理由が画面に出る。本人が実機で確かめる。
+
+T56 から前倒しする範囲: 設定ファイルの置き場所と読み込み(`SettingsFilePort`、`arin-platform` の `SettingsFileStore`)、`SettingsStore` の最小(読んだ結果と読み込みエラー)、TOML を解析するクレートの選定とその置き場所(ADR-005 の「未定の点」)、読み直しの契機(設計書 §1.3 #10 は「保存を検知して読み直す」)、エラーの画面への出し方。T56 にはそれ以外の設定の項目(フォント・配色・スクロールバック・目印の時間・移動の確認の省略など)を足す作業が残る。
+
+#### Phase 31.5a(逐次。M4 完了後)
+
+- [ ] T63 — M4.5 の着手時の確認と再分解、ADR(変更ファイル: output/tasks/PLAN_multi-terminal.md, output/tasks/PROGRESS.md, output/design/ADR_010_shortcut-settings.md, output/design/ADR_INDEX.md, output/design/ARCH_multi-terminal.md | 依存: T50)
+  - 決めること: (1) 設定ファイルの置き場所と読み込み(ADR-005、設計書 §6.2 の `settings.toml`・§7.2 の「設定ファイル」の行、FR-057 に合わせる)。(2) TOML を解析するクレートとその版(正確な版、公開から 2 週間未満を避ける。`arin-core` に足すか、`arin-platform` で解析して `arin-core` に値を渡すか)。(3) キーの書式(T38d の `Cmd+Shift+N` の形)と、設定の表の形(案: `[shortcuts]` の下に `"tree.trash" = "Cmd+Backspace"`)。(4) 重なり・不正な値・未知のコマンドの ID・OS が予約するキー(⌘Q を外す、⌘H・⌘⇥・⌘Space など)の扱い(既定に戻して理由を出すか、そのキーだけ無効にするか)。(5) 反映のタイミング(起動時だけか、保存を検知して読み直すか。メニューバーを作り直せるかを Tauri 2.12.5 のソースで確かめる)。(6) 既定に戻す方法(行を消す)。(7) M3 の T45 の (5) で分かった受け口(メニューの項目か画面か)との関係
+  - PRD への反映が要る点を本人に挙げる(FR の追加、AC、M4.5 という区切りの扱い)
+  - 検証: 文書だけ。`ls output/design/ADR_010_*.md` が 1 件
+
+#### Phase 31.5b(逐次。T63 完了後。同じクレートを触るものは再分解のときに逐次にする)
+
+- [ ] T64 — 規則(`arin-core/settings` の最小と `arin-core/shortcuts` のマージ)(変更ファイル: crates/arin-core/src/settings/, crates/arin-core/src/shortcuts/, crates/arin-core/tests/ | 依存: T63)
+  - 対応: 【要件の追加】、FR-057 の土台(T56 から前倒し)、設計書 §7.2「設定ファイル」(未知のキーは無視、範囲外は既定値に戻して理由を出す、構文エラーは直前の値を保つ)
+  - 先に書くテスト(案): キーの文字列の解析と検査、既定の表とのマージ、重なりの検出、OS が予約するキーの拒否、未知のコマンドの ID の無視、構文エラーのときは直前の表を保つ
+  - 検証: `npm test && npm run test:coverage`
+- [ ] T65 — 読み込みとメニュー・画面への反映(変更ファイル: crates/arin-platform/src/storage/, src-tauri/src/menu.rs, src-tauri/src/lib.rs, src-tauri/src/commands/app.rs, src/ipc/client.ts, src/state/, src/ui/menu/ | 依存: T64)
+  - 対応: 【要件の追加】、FR-057 の土台(T56 から前倒し)、設計書 §1.3 #10
+  - 中身(案): `arin-platform` の設定ファイルの読み込み(と、T63 で決めたら変更の検知)。`menu.rs` のアクセラレータを、既定ではなく有効な表から作る(M3 の T42e の口)。`get_shortcuts` が有効な表を返し、変わったら画面へ知らせる。画面はメニューの項目のキーの表示とツリーの振り分けを、受け取った表で行う(M3 の T41b・T43c の口)。読み込みのエラーを画面に 1 行で出す
+  - 安全: 設定ファイルは読むだけで書き換えない(設計書 §1.3 #10)。テストは一時の状態フォルダ(`ARIN_STATE_DIR`)の中だけ
+  - 検証: `npm test && npm run lint && npm run app && npm run smoke`
+
+#### Phase 31.5c(逐次。人間ゲート)
+
+- [ ] T66 — 自動テストと M4.5 の完了確認(変更ファイル: e2e/, scripts/smoke.mjs, output/tasks/PROGRESS.md, output/reports/test/, docs/, project-config.md | 依存: T65)
+  - AI がやること: 偽の Rust 側で変えた表を渡す画面の自動テスト、一時の状態フォルダに `settings.toml` を置いたスモーク。`docs/data-model.md`(`settings.toml` のショートカットの節)と `project-config.md` §2(TOML のクレート)を同期する
+  - **人間がやること**: `settings.toml` でキーを 1 つ変え、メニューバーとツリーの両方で効くこと、不正な値で理由が出て既定に戻ること、行を消すと既定に戻ることを確かめる
+  - 検証: `npm run build && npm test && npm run lint && npm run e2e && npm run app && npm run smoke`
+
 ### M5 公証・配布(粗い分解。秘密情報を扱う作業は人間)
 
-完了条件: 別ユーザーアカウントで Gatekeeper の警告なく起動する。PRD の依存は M0 だけなので前倒しもできるが、本計画では M4 の後に置いた。
+完了条件: 別ユーザーアカウントで Gatekeeper の警告なく起動する。PRD の依存は M0 だけなので前倒しもできるが、本計画では M4 の後に置いた。M4.5 を足したので、M4.5 の後に置く(2026-11-15。T51・T52 の依存を T50 から T66 に替えた)。
 
-#### Phase 32(並行可能。M4 完了後)
+#### Phase 32(並行可能。M4.5 完了後)
 
-- [ ] T51 — 署名・公証のスクリプトと手順書を書く(AI。実行はしない)(変更ファイル: scripts/package-mac.sh, package.json, src-tauri/tauri.conf.json, docs/release-notarization.md | 依存: T50)
+- [ ] T51 — 署名・公証のスクリプトと手順書を書く(AI。実行はしない)(変更ファイル: scripts/package-mac.sh, package.json, src-tauri/tauri.conf.json, docs/release-notarization.md | 依存: T66)
   - 対応: G5、PRD §7 C1・C2。tadcap の `scripts/package-mac.sh` と `docs/release-notarization.md` を下敷きにする(Tauri が `.app` を署名・公証し、スクリプトが `.dmg` を署名・公証・staple して検証する)。`npm run dist:mac` を足す
-  - 着手時に決める【要確認】: エンタイトルメント(設計書 §15.3 #2)、配布物の置き場所(同 #11)
+  - 着手時に決める【要確認】: エンタイトルメント(設計書 §15.3 #2。M3 のゴミ箱で Finder に頼む方式を採った場合は Apple Events のエンタイトルメントが要る。ADR-007 の (a))、配布物の置き場所(同 #11)
   - 秘密情報(証明書、API キー、パスワード)は読まない・書かない。スクリプトは環境変数の名前だけを参照する
   - 検証: `bash -n scripts/package-mac.sh`(構文だけ)。`npm run lint`
-- [ ] T52 — tag のときの公証のワークフローを書く(AI)(変更ファイル: .github/workflows/release.yml | 依存: T50)
+- [ ] T52 — tag のときの公証のワークフローを書く(AI)(変更ファイル: .github/workflows/release.yml | 依存: T66)
   - 対応: 設計書 §13.3。ビルドは読み取り権限だけ、使い捨てのキーチェーン、公証後の検証。Secrets は名前だけを参照する
   - 検証: 手元では構文の確認だけ。動作の確認は T54
 
@@ -748,6 +1147,7 @@ T29〜T35 は親として残し、作業は子タスクで行う。親は子が�
 
 - [ ] T56 — 設定ファイルと破損時の回復(変更ファイル: crates/arin-core/src/settings/, crates/arin-core/src/persistence/, crates/arin-platform/src/storage/, src/terminal/xterm/, src/ui/design/ | 依存: T55)
   - 対応: FR-049、057、058、062。`settings.toml` の読み込みと検証、保存の検知と読み直し、`state.json` の退避、ライト・ダークでのコントラスト(人間が両モードを確認)
+  - 注記(2026-11-15): 設定ファイルの土台(置き場所と読み込み、`SettingsFilePort`、`SettingsStore` の最小、TOML のクレート、読み直しの契機、エラーの出し方)は M4.5(T63〜T65)に前倒しした。T56 では、その土台に設定の項目(フォント・配色・スクロールバック・目印の時間)を足す。M3 で後回しにした FR-029 の「設定で移動の確認を省略できる」(`tree.confirm_move_on_drop`)もここで足す(本人の判断で M4.5 に寄せることもできる)
 - [ ] T57 — アテンション、実行中の印、タブ名、ブランチ名(変更ファイル: crates/arin-core/src/terminal/, crates/arin-platform/src/process/, crates/arin-platform/src/git/, crates/arin-platform/src/desktop/, src/ui/projects/, src/ui/terminals/ | 依存: T55)
   - 対応: FR-011、012、045、046
 - [ ] T58 — プロジェクトの操作の磨き(変更ファイル: crates/arin-core/src/project/, crates/arin-core/src/workspace/, src/ui/projects/, src/logic/keys/, src-tauri/src/menu.rs | 依存: T55)
@@ -769,7 +1169,7 @@ T29〜T35 は親として残し、作業は子タスクで行う。親は子が�
 マイルストーンの順(各「人間」は人間ゲート):
 
 ```text
-M0 ──→ M1 ──(Go)──→ M2 ──→ M3 ──→ M4 ──→ M5 ──→ M6
+M0 ──→ M1 ──(Go)──→ M2 ──→ M3 ──→ M4 ──→ M4.5 ──→ M5 ──→ M6
         │(No-Go)
         └──→ 本人が判断(描画方式の変更 / 実装技術の見直し)。T28 以降は止める
 ```
@@ -812,17 +1212,32 @@ T34b ──→ T34c ──→ T34d ──┬──→ T35a ──┐
                          └──→ T35b ──┴──→ T36(人間)
 ```
 
-M3〜M6(粗い):
+M3(T37 で分解し直した。T38〜T44 は親で、矢印は子タスクの間に引いた。「(a)」は T37 の (a) のゴミ箱の検証の結果):
 
 ```text
-T36 ──→ T37(人間の目視あり) ──┬──→ T38 ──┐
-                               ├──→ T39 ──┴──→ T40 ──→ T42 ──┐
-                               └──→ T41 ─────────────────────┴──→ T43 ──→ T44 ──→ T45(人間。1 週間)
+T36 ──→ T37 ──┬──→ T41a(ツリーの行)──────────────────────────────────────────────┐
+              ├──→ T41b(ドラッグ・メニュー・キー)────────────────────────────────┤
+              └──→ T38a ──┬──→ T38b(パス)────────────────────────┐                │
+                          ├──→ T38c(除外・変更)──────────────────┤                │
+                          ├──→ T38d(ショートカットの表)──→ T38e ─┤                │
+                          ├──→ T39a ──→ T39b ─────────────────────┤                │
+                          ├──→ T40a ───────────────────┐          │                │
+                          └──→ T40b ──→ T40d ──────────┴─(a)─→ T40c ──┬──→ T42a ──→ T42b ──→ T42c ──→ T42d ──→ T42e ──┴──→ T43a
+                                                                       └──→ T44a(同時操作・往復・計測)────────────┐
+T43a ──→ T43b ──→ T43c ──→ T43d ──→ T44b ──────────────────────────────────────────────────────────────────────────┴──→ T45(人間。1 週間)
+```
 
+細かい依存(図は省略して書いた): T42a ← T38c・T38e・T39a・T40a。T42b ← T38c・T40b・T42a。T42c ← T39b・T40c・T40d・T42b。T42d ← T38b・T42c。T42e ← T38d・T42d。T43a ← T41a・T41b・T42e。T44a ← T38b・T39b・T40c。T45 ← T44a・T44b。
+
+M4〜M6(粗い。M4.5 は 2026-11-15 の要件の追加):
+
+```text
 T45 ──┬──→ T46 ──┐
       └──→ T48 ──┴──→ T47 ──→ T49 ──→ T50(人間)
 
-T50 ──┬──→ T51 ──→ T53(人間) ──┐
+T50 ──→ T63 ──→ T64 ──→ T65 ──→ T66(人間)
+
+T66 ──┬──→ T51 ──→ T53(人間) ──┐
       └──→ T52 ────────────────┴──→ T54(人間)
 
 T54 ──→ T55 ──→ T56 / T57 / T58 / T59 / T60 / T61 ──→ T62(人間)
@@ -866,6 +1281,7 @@ T54 ──→ T55 ──→ T56 / T57 / T58 / T59 / T60 / T61 ──→ T62(人�
 | M2 | 実機の体感確認 | T36 |
 | M3 | ゴミ箱の「戻す」の目視(T37)。1 週間のドッグフーディング(T45) | T37、T45 |
 | M4 | 9 枚同時表示の体感の判定 | T50 |
+| M4.5 | 設定ファイルでキーを変え、メニューバーとツリーの両方で効くことの確認 | T66 |
 | M5 | 証明書と API キーの用意、署名・公証の実行、別アカウントでの起動確認 | T53、T54 |
 | M6 | ライト・ダークのコントラストの確認。不満リストが空になったことの確認 | T56、T62 |
 

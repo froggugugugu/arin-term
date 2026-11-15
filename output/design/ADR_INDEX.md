@@ -8,7 +8,7 @@
 | ADR-004 | [PTY のクレートと出力の流し方](ADR_004_pty.md) | Accepted | 2026-11-14 |
 | ADR-005 | [設定ファイルの形式](ADR_005_settings-format.md) | Accepted | 2026-11-14 |
 | ADR-006 | [テストの構成と画面の自動テストの方式](ADR_006_test-structure.md) | Accepted | 2026-11-14 |
-| ADR-007 | Finder 連携の実装方法 | 未作成(M3 の検証結果で作る) | — |
+| ADR-007 | [M3 のゴミ箱の方式、アプリ内のドラッグ、ツリーの仮想スクロール、M3 で足す依存](ADR_007_finder-integration.md) | Proposed(ゴミ箱は【検証中】) | 2026-11-15 |
 | ADR-008 | [React のフックの検査に Biome を使う](ADR_008_hooks-lint.md) | Accepted | 2026-11-15 |
 | ADR-009 | [M2 で arin-platform に足す依存](ADR_009_m2-platform-deps.md) | Accepted | 2026-11-15 |
 
