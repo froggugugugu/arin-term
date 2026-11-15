@@ -1273,7 +1273,8 @@ const CHECKS: &[(&str, Check)] = &[
 
 fn main() {
     let temp = support::TempDir::new("fileops-commands");
-    let temp_root = temp.path().to_path_buf();
+    // 書き込む操作には実パスを渡す約束(途中のリンクは拒否される)。macOS の一時領域は /var → /private/var のリンクを含む。
+    let temp_root = fs::canonicalize(temp.path()).expect("一時フォルダを正規化できなかった");
     let state_dir = temp_root.join("state");
     let work = temp_root.join("work");
     let trash_dir = temp_root.join("fake-trash");

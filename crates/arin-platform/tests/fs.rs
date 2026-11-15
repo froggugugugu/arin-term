@@ -571,6 +571,119 @@ fn コピーが途中で失敗したら作りかけを残さない() {
     assert_eq!(names_in(&from), vec!["a.txt", "z-unreadable.txt"]);
 }
 
+// ---- パスの途中のシンボリックリンク(書き込む操作は拒否する。FR-035、T44a) ----
+
+/// `tmp` の中に、フォルダ `target`(中に `sub/` と `a.txt`)と、それを指すリンク `link` を作る。
+/// `link` を通るパスは `tmp.at` で作らない(補助がリンクを解決してしまうため)。
+fn link_to_target(tmp: &TempDir) -> (PathBuf, PathBuf) {
+    let target = tmp.mkdir("target");
+    tmp.mkdir("target/sub");
+    tmp.write("target/a.txt", "先");
+    let link = tmp.0.join("link");
+    symlink(&target, &link).expect("リンクを作れなかった");
+    (target, link)
+}
+
+#[test]
+fn 途中にリンクがあるパスには作らない() {
+    let tmp = TempDir::new("nofollow-create");
+    let (target, link) = link_to_target(&tmp);
+    for path in [link.join("new.ts"), link.join("sub").join("new.ts")] {
+        assert!(
+            matches!(local().create_file(&path), Err(FsError::Io(_))),
+            "{}",
+            path.display()
+        );
+        assert!(
+            matches!(local().create_dir(&path), Err(FsError::Io(_))),
+            "{}",
+            path.display()
+        );
+    }
+    assert_eq!(names_in(&target), vec!["a.txt", "sub"]);
+    assert_eq!(names_in(&target.join("sub")), Vec::<String>::new());
+}
+
+#[test]
+fn 途中にリンクがあるパスとの間では移さず写さない() {
+    let tmp = TempDir::new("nofollow-transfer");
+    let (target, link) = link_to_target(&tmp);
+    let mine = tmp.write("mine.txt", "mine");
+    // 宛先の途中にリンク
+    assert!(matches!(
+        local().move_entry(&mine, &link.join("mine.txt")),
+        Err(FsError::Io(_))
+    ));
+    assert!(matches!(
+        local().copy_entry(&mine, &link.join("sub").join("mine.txt")),
+        Err(FsError::Io(_))
+    ));
+    // 元の途中にリンク(リンクの先の項目を動かさない)
+    assert!(matches!(
+        local().move_entry(&link.join("a.txt"), &tmp.at("moved.txt")),
+        Err(FsError::Io(_))
+    ));
+    assert!(matches!(
+        local().copy_entry(&link.join("a.txt"), &tmp.at("copied.txt")),
+        Err(FsError::Io(_))
+    ));
+    assert_eq!(read(&mine), "mine");
+    assert_eq!(names_in(&target), vec!["a.txt", "sub"]);
+    assert_eq!(names_in(&target.join("sub")), Vec::<String>::new());
+    assert_eq!(names_in(&tmp.at("")), vec!["link", "mine.txt", "target"]);
+}
+
+#[test]
+fn ゴミ箱は途中にリンクがあるパスを_os_に頼まない() {
+    // 無い名前を使う(検査が効かなくても本物のゴミ箱には何も入らない)。効けば「見つからない」より先に拒否する
+    let tmp = TempDir::new("nofollow-trash");
+    let (_target, link) = link_to_target(&tmp);
+    assert!(matches!(
+        local().trash(&link.join("does-not-exist.txt")),
+        Err(FsError::Io(_))
+    ));
+}
+
+#[test]
+fn 実パスでない一時領域のパスには書かない() {
+    // macOS の一時領域は /var → /private/var のリンクを含む。ポートには実パスを渡す約束
+    let raw = std::env::temp_dir();
+    if raw == temp_base() {
+        eprintln!(
+            "一時領域がもともと実パスのため確かめられない: {}",
+            raw.display()
+        );
+        return;
+    }
+    let tmp = TempDir::new("nofollow-raw");
+    let name = tmp.0.file_name().expect("名前").to_owned();
+    let via_link = raw.join(&name).join("a.ts");
+    assert!(matches!(
+        local().create_file(&via_link),
+        Err(FsError::Io(_))
+    ));
+    assert_eq!(names_in(&tmp.at("")), Vec::<String>::new());
+    // 同じ場所でも実パスなら作れる
+    local().create_file(&tmp.at("a.ts")).expect("作れなかった");
+    assert_eq!(names_in(&tmp.at("")), vec!["a.ts"]);
+}
+
+#[test]
+fn 最後の要素のリンクはこれまでどおりリンク自体を対象にする() {
+    let tmp = TempDir::new("nofollow-last");
+    let (target, link) = link_to_target(&tmp);
+    // フォルダを作る先の名前がリンクなら、先に作らず衝突
+    assert!(matches!(
+        local().create_dir(&link),
+        Err(FsError::AlreadyExists(_))
+    ));
+    // リンク自体の名称変更
+    let renamed = tmp.at("renamed-link");
+    local().move_entry(&link, &renamed).expect("移せなかった");
+    assert_eq!(fs::read_link(&renamed).expect("リンクでない"), target);
+    assert_eq!(names_in(&target), vec!["a.txt", "sub"]);
+}
+
 // ゴミ箱は tests/trash.rs(T40c。本物のゴミ箱を使うテストは `#[ignore]`)
 
 // ---- テストの補助 ----
