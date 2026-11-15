@@ -27,6 +27,17 @@ pub struct ChildExit {
     pub signal: Option<String>,
 }
 
+/// 端末の前面で動いているもの(設計書 §1.3 #15)。動作中かの判定(FR-003・FR-012・FR-063)の材料にする。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Foreground {
+    /// 前面のプロセスグループがシェル自身(コマンドを待っている)。
+    Shell,
+    /// 前面のプロセスグループがシェル以外(シェルから起動したコマンドが動いている)。
+    Other,
+    /// 分からない(シェルが終わった、調べられなかった、実装が調べ方を持たない)。
+    Unknown,
+}
+
 /// PTY の操作の失敗。原因は実装側の文言をそのまま持つ。
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum PtyError {
@@ -99,4 +110,43 @@ pub trait PtySession: Send {
     ///
     /// 確かめられなかったとき(`PtyError::Wait`)。
     fn try_wait(&mut self) -> Result<Option<ChildExit>, PtyError>;
+
+    /// 端末の前面のプロセスグループがシェル自身か。待たない。
+    ///
+    /// シェルが終わったあとと、調べられなかったときは `Foreground::Unknown`。
+    /// 既定の実装は調べ方を持たないので常に `Foreground::Unknown` を返す(偽の PTY はこれを使える)。
+    fn foreground(&mut self) -> Foreground {
+        Foreground::Unknown
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `foreground` を実装しないセッション。
+    struct Minimal;
+
+    impl PtySession for Minimal {
+        fn write(&mut self, _data: &[u8]) -> Result<(), PtyError> {
+            Ok(())
+        }
+
+        fn resize(&mut self, _size: PtySize) -> Result<(), PtyError> {
+            Ok(())
+        }
+
+        fn kill(&mut self) -> Result<(), PtyError> {
+            Ok(())
+        }
+
+        fn try_wait(&mut self) -> Result<Option<ChildExit>, PtyError> {
+            Ok(None)
+        }
+    }
+
+    #[test]
+    fn 前面を調べる既定の実装は不明を返す() {
+        assert_eq!(Minimal.foreground(), Foreground::Unknown);
+    }
 }

@@ -11,6 +11,6 @@ mod root;
 pub mod state_file;
 mod system;
 
-pub use pty::{ChildExit, PtyError, PtyPort, PtySession, PtySize, SpawnedPty};
+pub use pty::{ChildExit, Foreground, PtyError, PtyPort, PtySession, PtySize, SpawnedPty};
 pub use root::{BookmarkPort, OpenRoot, ResolvedBookmark, RootError, RootLocatorPort};
 pub use system::{IdSource, IdSourceError};

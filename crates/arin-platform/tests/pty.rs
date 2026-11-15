@@ -15,7 +15,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use arin_core::ports::{PtyError, PtyPort, PtySession, PtySize};
+use arin_core::ports::{Foreground, PtyError, PtyPort, PtySession, PtySize};
 use arin_core::terminal::ShellLaunchSpec;
 use arin_platform::pty::{FALLBACK_SHELL, NativePty, default_shell, system_locale};
 
@@ -188,6 +188,22 @@ impl Shell {
                 "シェルが {WAIT:?} 以内に終わらなかった"
             );
             thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// 前面のプロセスが `expected` になるのを待つ。上限を過ぎたら最後に見た値を添えて失敗させる。
+    fn wait_foreground(&mut self, expected: Foreground) {
+        let deadline = Instant::now() + WAIT;
+        loop {
+            let actual = self.session.foreground();
+            if actual == expected {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "前面が {WAIT:?} 以内に {expected:?} にならなかった(最後は {actual:?})"
+            );
+            thread::sleep(Duration::from_millis(10));
         }
     }
 
@@ -423,6 +439,89 @@ fn セッションを捨てるとシェルが終わり回収される() {
             Err(RecvTimeoutError::Timeout) => panic!("出力が {WAIT:?} 以内に終わらなかった"),
         }
     }
+}
+
+/// シェル `shell_pid` の子の `sleep` を終わらせ、残っていないことを確かめる。
+/// テストのあとに `sleep` を残さないため、失敗の前にも呼べるよう結果は見ない(`pkill` は該当なしで 1 を返す)。
+fn end_child_sleep(shell_pid: &str) {
+    let _ = Command::new("/usr/bin/pkill")
+        .args(["-TERM", "-x", "-P", shell_pid, "sleep"])
+        .status()
+        .expect("pkill を起動できなかった");
+}
+
+/// シェル `shell_pid` の子に `sleep` があるか。
+fn child_sleep_exists(shell_pid: &str) -> bool {
+    Command::new("/usr/bin/pgrep")
+        .args(["-x", "-P", shell_pid, "sleep"])
+        .output()
+        .expect("pgrep を起動できなかった")
+        .status
+        .success()
+}
+
+/// 落ちても子の `sleep` を残さないよう、抜けるときに終わらせる。
+struct SleepGuard(String);
+
+impl Drop for SleepGuard {
+    fn drop(&mut self) {
+        end_child_sleep(&self.0);
+    }
+}
+
+#[test]
+fn 起動直後の前面はシェル() {
+    let _serial = serial();
+    let sandbox = Sandbox::new("fg-shell");
+    let mut shell = Shell::spawn(&sandbox.spec(), SIZE);
+
+    // プロンプトを出すまで待ってから調べる(組み込みの printf は別のプロセスを作らない)。
+    assert_eq!(shell.query("ready"), "ready");
+    assert_eq!(shell.session.foreground(), Foreground::Shell);
+}
+
+#[test]
+fn sleep_を前面で動かすとシェル以外になる() {
+    let _serial = serial();
+    let sandbox = Sandbox::new("fg-sleep");
+    let mut shell = Shell::spawn(&sandbox.spec(), SIZE);
+    let pid = shell.query("\"$$\"");
+    let _guard = SleepGuard(pid.clone());
+
+    shell.send("/bin/sleep 30\n");
+    shell.wait_foreground(Foreground::Other);
+    assert!(child_sleep_exists(&pid), "前面の sleep が見つからない");
+}
+
+#[test]
+fn sleep_が終わるとシェルに戻る() {
+    let _serial = serial();
+    let sandbox = Sandbox::new("fg-back");
+    let mut shell = Shell::spawn(&sandbox.spec(), SIZE);
+    let pid = shell.query("\"$$\"");
+    let _guard = SleepGuard(pid.clone());
+
+    shell.send("/bin/sleep 30\n");
+    shell.wait_foreground(Foreground::Other);
+    end_child_sleep(&pid);
+
+    shell.wait_foreground(Foreground::Shell);
+    assert!(!child_sleep_exists(&pid), "sleep が残っている");
+    assert_eq!(shell.query("after"), "after", "シェルが入力を受け付ける");
+}
+
+#[test]
+fn シェルが終わったあとは不明を返す() {
+    let _serial = serial();
+    let sandbox = Sandbox::new("fg-exit");
+    let mut shell = Shell::spawn(&sandbox.spec(), SIZE);
+    assert_eq!(shell.query("ready"), "ready");
+
+    shell.send("exit\n");
+    assert_eq!(shell.wait_exit(), 0);
+    shell.wait_output_end();
+
+    assert_eq!(shell.session.foreground(), Foreground::Unknown);
 }
 
 #[test]

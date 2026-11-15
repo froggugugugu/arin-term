@@ -12,7 +12,7 @@
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 
-use arin_core::ports::{ChildExit, PtyError, PtyPort, PtySession, PtySize, SpawnedPty};
+use arin_core::ports::{ChildExit, Foreground, PtyError, PtyPort, PtySession, PtySize, SpawnedPty};
 use arin_core::terminal::ShellLaunchSpec;
 use portable_pty::{Child, CommandBuilder, MasterPty, native_pty_system};
 
@@ -152,6 +152,24 @@ impl PtySession for NativePtySession {
                 })
             })
             .map_err(|error| PtyError::Wait(error.to_string()))
+    }
+
+    /// 端末の前面のプロセスグループ(`tcgetpgrp`)の番号をシェルの pid と比べる。
+    /// シェルは新しいセッションの先頭として起動するので、コマンドを待つあいだは前面のグループの番号が自分の pid になる。
+    /// 終わったシェルには `Unknown` を返す(回収済みの pid が別のプロセスに使い回されている恐れがある)。
+    fn foreground(&mut self) -> Foreground {
+        if !self.is_running() {
+            return Foreground::Unknown;
+        }
+        let shell = self
+            .child
+            .process_id()
+            .and_then(|pid| i32::try_from(pid).ok());
+        match (self.master.process_group_leader(), shell) {
+            (Some(leader), Some(shell)) if leader == shell => Foreground::Shell,
+            (Some(_), Some(_)) => Foreground::Other,
+            _ => Foreground::Unknown,
+        }
     }
 }
 
