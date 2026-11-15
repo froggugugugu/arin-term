@@ -89,6 +89,8 @@ const DEFAULT_REPLIES: TauriMockConfig = {
   relink_project: { ok: false },
   set_project_color: { ok: null },
   copy_project_path: { ok: null },
+  set_pane_sizes: { ok: null },
+  set_sidebar_collapsed: { ok: null },
 };
 
 /** 画面のページの中で、偽の Rust 側が記録を置く場所(テストの側からだけ読む)。 */

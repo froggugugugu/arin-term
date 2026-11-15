@@ -5,14 +5,15 @@
 //! 削除と終了の確認に使う「動作中のターミナル」は呼び出し側(`src-tauri`)が調べて引数で渡す。
 
 mod outcome;
+mod panes;
 mod projects;
 mod snapshot;
 mod state;
 mod terminals;
 
 pub use outcome::{
-    AddProjectOutcome, ConnectOutcome, RemoveOutcome, RemoveProjectOutcome, RootResolution,
-    RunningTerminal, Startup, WorkspaceError,
+    AddProjectOutcome, ConnectOutcome, ProjectRoot, RemoveOutcome, RemoveProjectOutcome,
+    RootResolution, RunningTerminal, Startup, WorkspaceError,
 };
 pub use snapshot::{
     AppSnapshot, ProjectCardSnapshot, SNAPSHOT_SCHEMA_VERSION, TerminalTabSnapshot,

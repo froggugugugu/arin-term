@@ -28,6 +28,17 @@ pub enum RootResolution {
     Missing,
 }
 
+/// 見回りの対象のプロジェクト 1 件(`Workspace::project_roots`。計画書 T33d)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectRoot {
+    /// 識別子。
+    pub id: ProjectId,
+    /// いまのルートの参照(最後に分かっていたパスとブックマーク)。
+    pub root: RootReference,
+    /// ルートが見つからない。
+    pub missing: bool,
+}
+
 /// プロジェクトを削除しようとした結果(FR-003)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RemoveOutcome {

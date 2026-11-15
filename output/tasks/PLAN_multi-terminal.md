@@ -510,7 +510,7 @@ T29〜T35 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 不可
   - 先に書くテスト(模擬ランタイム、偽のダイアログ・偽のポート、一時フォルダ): `ダイアログで選んだフォルダが登録され_1_タブ開き選択される`、`ダイアログを取り消すと何も変わらない`、`同じフォルダは増えず既存が選択される`、`ドロップしたフォルダだけが登録されファイルは無視される`、`削除してもフォルダの中身は変わらない`(一時フォルダの中身を前後で比べる)、`動作中があれば確認を求め_中止なら何も変わらない`、`絶対パスのコピーは偽のペーストボードに正規化したパスを書き選択を変えない`、`再リンクで_id_と色を保つ`、`登録でプロジェクトのフォルダにファイルができない`
   - 検証: `npm test && npm run lint && npm run app && npm run smoke`。`cargo tree -i reqwest --target aarch64-apple-darwin` で通信のクレートが増えていない
-- [ ] T33d — ルートへの追従の見回りと、ペインの寸法の保存(変更ファイル: src-tauri/src/patrol.rs, src-tauri/src/commands/layout.rs, src-tauri/src/commands/mod.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/root_follow.rs, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T33c)
+- [x] T33d — ルートへの追従の見回りと、ペインの寸法の保存(変更ファイル: src-tauri/src/patrol.rs, src-tauri/src/commands/layout.rs, src-tauri/src/commands/mod.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/root_follow.rs, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T33c)
   - 対応: FR-007(AC-P07 と「見つからない」)、FR-009(寸法の保存)、設計書 §7.1「ルートフォルダへの追従」
   - 1 秒間隔で開いたフォルダの現在位置を調べ、変わっていたら `Workspace` に反映する(ブックマークを作り直し、写しを送り、保存を予約する)。取れなくなったら「見つからない」にする(カードは残す。C-06)。監視の張り替えは M3(T42)。見回りの時刻は注入できるようにする
   - コマンド: `set_pane_sizes`、`set_sidebar_collapsed`(最小寸法の検査は T30b の規則)

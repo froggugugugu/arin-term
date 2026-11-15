@@ -105,6 +105,8 @@ export function createFakeIpc(handlers: Partial<FakeHandlers> = {}): FakeIpc {
     relink_project: () => false,
     set_project_color: () => null,
     copy_project_path: () => null,
+    set_pane_sizes: () => null,
+    set_sidebar_collapsed: () => null,
     ...handlers,
   };
   const calls: RecordedCall[] = [];

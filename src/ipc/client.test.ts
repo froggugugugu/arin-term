@@ -195,6 +195,30 @@ describe("プロジェクトの操作(T33c)", () => {
   });
 });
 
+describe("ペインの寸法", () => {
+  it("寸法は set_pane_sizes に camelCase の引数で届く", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.setPaneSizes(300, 240)).resolves.toBeUndefined();
+
+    expect(fake.calls).toEqual([{ command: "set_pane_sizes", args: { sidebarWidth: 300, cardAreaHeight: 240 } }]);
+  });
+
+  it("折りたたみは set_sidebar_collapsed に collapsed で届く", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.setSidebarCollapsed(true)).resolves.toBeUndefined();
+    await expect(ipc.setSidebarCollapsed(false)).resolves.toBeUndefined();
+
+    expect(fake.calls).toEqual([
+      { command: "set_sidebar_collapsed", args: { collapsed: true } },
+      { command: "set_sidebar_collapsed", args: { collapsed: false } },
+    ]);
+  });
+});
+
 describe("connectTerminal", () => {
   it("接続の応答(寸法を反映したか)を connected で返す", async () => {
     const fake = createFakeIpc({ connect_terminal: () => ({ sizeApplied: false }) });

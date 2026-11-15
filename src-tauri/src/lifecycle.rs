@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::{AppHandle, DragDropEvent, Manager, RunEvent, Runtime, WindowEvent};
 
+use crate::patrol::PatrolThread;
 use crate::persistence::Persistence;
 use crate::projects::Projects;
 use crate::sessions::SessionRegistry;
@@ -17,7 +18,7 @@ use crate::sessions::SessionRegistry;
 /// - ウィンドウが前面でなくなったら、保存できていない変更を待たずに書く(設計書 §6.2「書き込みの契機」)
 /// - ウィンドウに Finder から落とされたら、フォルダだけを登録する(FR-001、計画書 M2 の【仮定】7)。
 ///   フォルダを調べるのに待つことがあるので、メインスレッドの外で行う
-/// - 終了するときは、状態を書き終えてから、全ターミナルのシェルを終わらせる(PTY を残さない)
+/// - 終了するときは、ルートの見回りのスレッドを止め、状態を書き終えてから、全ターミナルのシェルを終わらせる(PTY を残さない)
 pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
     match event {
         RunEvent::WindowEvent {
@@ -32,6 +33,10 @@ pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
             tauri::async_runtime::spawn_blocking(move || on_paths_dropped(&app, paths));
         }
         RunEvent::Exit => {
+            // 見回りを先に止める(止めたあとに状態が変わらず、最後の追従も保存に入る)。
+            if let Some(patrol) = app.try_state::<PatrolThread>() {
+                patrol.stop();
+            }
             if let Some(persistence) = app.try_state::<Persistence>() {
                 persistence.shutdown();
             }

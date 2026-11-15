@@ -21,7 +21,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::io::{ErrorKind, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError, TryLockError};
@@ -36,7 +36,7 @@ use arin_core::terminal::{
     OUTPUT_LOW_WATER, OscScanner, OutputBatch, TerminalError, TerminalId, validate_size,
 };
 use arin_core::workspace::{
-    AddProjectOutcome, AppSnapshot, ConnectOutcome, ConnectPlan, RemoveOutcome,
+    AddProjectOutcome, AppSnapshot, ConnectOutcome, ConnectPlan, ProjectRoot, RemoveOutcome,
     RemoveProjectOutcome, RunningTerminal, Workspace, WorkspaceError,
 };
 
@@ -648,6 +648,66 @@ impl SessionRegistry {
             self.end_sessions(&terminals);
         }
         Ok(reply)
+    }
+
+    /// 見回りの対象(全プロジェクトのルートと、見つからないかどうか。T33d)。
+    #[must_use]
+    pub fn project_roots(&self) -> Vec<ProjectRoot> {
+        lock(&self.inner.workspace).project_roots()
+    }
+
+    /// 見回りで分かったいまの位置に追従する(FR-007。`Workspace::follow_project_root`)。変わったときだけ写しを送る。
+    /// `expected` は調べたときのルートのパス(調べているあいだに再リンクされていたら何もしない)。
+    ///
+    /// # Errors
+    ///
+    /// その ID が無いとき、別のプロジェクトのフォルダと同じときなど。何も変えない。
+    pub fn follow_project_root(
+        &self,
+        id: &ProjectId,
+        expected: &Path,
+        root: RootReference,
+    ) -> Result<bool, SessionError> {
+        let changed = lock(&self.inner.workspace).follow_project_root(id, expected, root)?;
+        if changed {
+            self.notify();
+        }
+        Ok(changed)
+    }
+
+    /// 見回りでルートが取れなくなったプロジェクトを見つからないにする(FR-007。カードとタブは残す)。
+    /// 変わったときだけ写しを送る。
+    ///
+    /// # Errors
+    ///
+    /// その ID が無いとき。
+    pub fn mark_project_missing(
+        &self,
+        id: &ProjectId,
+        expected: &Path,
+    ) -> Result<bool, SessionError> {
+        let changed = lock(&self.inner.workspace).mark_project_missing(id, expected)?;
+        if changed {
+            self.notify();
+        }
+        Ok(changed)
+    }
+
+    /// 左ペインの幅とカード領域の高さを変える(FR-009。不正な値は `PaneSizes` の規則で直す)。変わったときだけ写しを送る
+    /// (写しを送ると保存が予約される)。
+    pub fn set_pane_sizes(&self, sidebar_width: f64, card_area_height: f64) {
+        let changed = lock(&self.inner.workspace).set_pane_sizes(sidebar_width, card_area_height);
+        if changed {
+            self.notify();
+        }
+    }
+
+    /// 左ペインを折りたたむ・戻す(FR-009)。変わったときだけ写しを送る。
+    pub fn set_sidebar_collapsed(&self, collapsed: bool) {
+        let changed = lock(&self.inner.workspace).set_sidebar_collapsed(collapsed);
+        if changed {
+            self.notify();
+        }
     }
 
     /// Workspace から外したタブのセッションを一覧から外し、写しを送ってから終わらせる(待つのはロックの外)。

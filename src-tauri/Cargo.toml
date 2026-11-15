@@ -82,3 +82,9 @@ harness = false
 [[test]]
 name = "project_commands"
 harness = false
+
+# ルートへの追従の見回りとペインの寸法のコマンド(T33d)。見回りの 1 回分は偽のフォルダで直接呼び、
+# 最後に模擬のアプリで寸法のコマンドと終了時に見回りのスレッドが止まることを確かめる。理由は app_builder と同じ。
+[[test]]
+name = "root_follow"
+harness = false

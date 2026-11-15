@@ -43,6 +43,8 @@ export interface CommandMap {
   relink_project: { args: { projectId: ProjectId }; result: boolean };
   set_project_color: { args: { projectId: ProjectId; color: ProjectColor }; result: null };
   copy_project_path: { args: { projectId: ProjectId }; result: null };
+  set_pane_sizes: { args: { sidebarWidth: number; cardAreaHeight: number }; result: null };
+  set_sidebar_collapsed: { args: { collapsed: boolean }; result: null };
 }
 
 export type CommandName = keyof CommandMap;
@@ -148,6 +150,13 @@ export interface ArinIpc {
   setProjectColor(id: ProjectId, color: ProjectColor): Promise<void>;
   /** ルートの絶対パスを Rust がクリップボードに書く。選択は変えない。パスは画面に届かない。 */
   copyProjectPath(id: ProjectId): Promise<void>;
+  /**
+   * 左ペインの幅とカード領域の高さ(CSS ピクセル)を Rust へ送る。Rust が最小寸法などの規則で直し、写しで返す。
+   * 変わったら保存が予約される(0.5 秒まとめ)。
+   */
+  setPaneSizes(sidebarWidth: number, cardAreaHeight: number): Promise<void>;
+  /** 左ペインを折りたたむ・戻す。幅は Rust が覚えている。 */
+  setSidebarCollapsed(collapsed: boolean): Promise<void>;
 }
 
 /**
@@ -218,5 +227,8 @@ export function createIpc(transport: IpcTransport): ArinIpc {
     relinkProject: (projectId) => invoke("relink_project", { projectId }),
     setProjectColor: (projectId, color) => done(invoke("set_project_color", { projectId, color })),
     copyProjectPath: (projectId) => done(invoke("copy_project_path", { projectId })),
+    setPaneSizes: (sidebarWidth, cardAreaHeight) =>
+      done(invoke("set_pane_sizes", { sidebarWidth, cardAreaHeight })),
+    setSidebarCollapsed: (collapsed) => done(invoke("set_sidebar_collapsed", { collapsed })),
   };
 }

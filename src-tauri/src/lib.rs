@@ -2,7 +2,8 @@
 //!
 //! ここでは部品を生成して渡すことだけを行い、規則を書かない。
 //! 置き場所と起動の通知先を管理状態に登録し、起動時に状態ファイルを読んで(`persistence.rs`)`Workspace` と
-//! セッション管理と保存のスレッドとプロジェクトの操作(`projects.rs`)を作って登録し、コマンドとメニューバー(`menu.rs`)を登録して
+//! セッション管理と保存のスレッドとプロジェクトの操作(`projects.rs`)とルートへの追従の見回り(`patrol.rs`)を作って登録し、
+//! コマンドとメニューバー(`menu.rs`)を登録して
 //! tauri.conf.json のウィンドウを 1 枚出す。Finder からのドロップは `lifecycle.rs` が受ける。
 
 mod commands;
@@ -10,6 +11,7 @@ pub mod diagnostics;
 pub mod launch;
 pub mod lifecycle;
 pub mod menu;
+pub mod patrol;
 pub mod persistence;
 pub mod projects;
 pub mod sessions;
@@ -27,6 +29,7 @@ use tauri::{Builder, Emitter, Manager, Runtime};
 pub use crate::commands::app::SNAPSHOT_EVENT;
 use crate::launch::LaunchConfig;
 use crate::lifecycle::{FirstOutputNotice, ReadyNotice};
+use crate::patrol::{PATROL_INTERVAL, PatrolThread, RootPatrol};
 use crate::persistence::{Persistence, PersistencePorts, load_startup};
 use crate::projects::{FolderPicker, NativeFolderPicker, ProjectPorts, Projects};
 use crate::sessions::{SessionConfig, SessionRegistry, ShellDefaults, ShellProbe};
@@ -148,6 +151,13 @@ pub fn builder_with_project_ports<R: Runtime>(
                 Arc::clone(&project_ports.pasteboard),
                 picker,
             ));
+            // ルートへの追従の見回り(1 秒ごと。T33d)。開いたフォルダは見回りのスレッドが持ち、終了時に止める(`lifecycle.rs`)。
+            let patrol = PatrolThread::spawn(
+                sessions.clone(),
+                RootPatrol::new(Arc::clone(&ports.roots), Arc::clone(&ports.bookmarks)),
+                PATROL_INTERVAL,
+            )?;
+            app.manage(patrol);
             app.manage(sessions);
             app.manage(persistence);
             Ok(())
@@ -171,6 +181,8 @@ pub fn builder_with_project_ports<R: Runtime>(
             commands::project::relink_project,
             commands::project::set_project_color,
             commands::project::copy_project_path,
+            commands::layout::set_pane_sizes,
+            commands::layout::set_sidebar_collapsed,
         ])
 }
 
