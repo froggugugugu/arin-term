@@ -112,6 +112,10 @@ export function createFakeIpc(handlers: Partial<FakeHandlers> = {}): FakeIpc {
     copy_entries: () => ({ kind: "done", select: null }),
     cut_entries: () => ({ kind: "done", select: null }),
     paste_entries: () => ({ kind: "done", select: null }),
+    reveal_entry: () => ({ kind: "done", select: null }),
+    open_entry: () => ({ kind: "done", select: null }),
+    copy_entry_path: () => ({ kind: "done", select: null }),
+    insert_entry_path: () => ({ kind: "done", select: null }),
     ...handlers,
   };
   const calls: RecordedCall[] = [];

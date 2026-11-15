@@ -925,7 +925,7 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 不可
   - 先に書くテスト(模擬ランタイム、一時フォルダ、偽のゴミ箱、名前付きのペーストボード): `新規ファイルで空のファイルができ作った相対パスが返る`(AC-T13 の Rust 側)、`名称変更でディスクの名前が変わる`、`実行の時点で消えていた対象の名称変更は何も変えず見つからないを返す`(AC-T24)、`宛先に同名があると衝突を返し両方の中身が変わらない`(AC-T18)、`置き換えるを付けて呼び直すと既存がゴミ箱に渡ってから置かれる`、`両方残すを付けて呼び直すと番号付きの名前で置かれる`、`ゴミ箱はゴミ箱の操作だけを呼ぶ`、`ルート自体とルートの外は拒否し何も変えない`、`ドットドットと絶対パスとシンボリックリンクでの脱出を拒否する`、`ツリーでコピーするとペーストボードにファイルの_url_が載る`、`ペーストボードのファイルをフォルダへペーストできる`、`切り取ってペーストすると元の場所から無くなる`、`どの操作の前後でも一時フォルダの外が変わらない`。Vitest: 新しいコマンドの包み
   - 検証: `npm test && npm run lint && npm run app && npm run smoke`
-- [ ] T42d — デスクトップとパスのコマンド(Finder で表示、開く、パスのコピー、ターミナルへの挿入)(変更ファイル: src-tauri/src/commands/desktop.rs, src-tauri/src/commands/mod.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/desktop_commands.rs, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T38b, T42c)
+- [x] T42d — デスクトップとパスのコマンド(Finder で表示、開く、パスのコピー、ターミナルへの挿入)(変更ファイル: src-tauri/src/commands/desktop.rs, src-tauri/src/commands/mod.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/desktop_commands.rs, src/ipc/client.ts, src/ipc/client.test.ts | 依存: T38b, T42c)
   - 対応: FR-015、FR-016、FR-018、FR-024(パスをターミナルに挿入)、設計書 §7.1「パスをターミナルへ」、§12、【仮定】16
   - コマンド: `reveal_entry`、`open_entry`(ファイルだけ。フォルダは画面が開閉する)、`copy_entry_path`(相対か絶対か。Rust がペーストボードに文字列を書く。ルートの絶対パスは相対パスを空にして呼ぶ)、`insert_entry_path`(宛先のターミナル ID。T38b の規則で作った文字列を PTY に書く。Enter は送らない。ターミナルが動いていなければ何もしない)
   - 安全: 絶対パスは画面へ返さない。挿入は必ず T38b のエスケープを通す

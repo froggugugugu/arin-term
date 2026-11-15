@@ -180,6 +180,10 @@ const DEFAULT_REPLIES: TauriMockConfig = {
   copy_entries: { ok: { kind: "done", select: null } },
   cut_entries: { ok: { kind: "done", select: null } },
   paste_entries: { ok: { kind: "done", select: null } },
+  reveal_entry: { ok: { kind: "done", select: null } },
+  open_entry: { ok: { kind: "done", select: null } },
+  copy_entry_path: { ok: { kind: "done", select: null } },
+  insert_entry_path: { ok: { kind: "done", select: null } },
 };
 
 /** 画面のページの中で、偽の Rust 側が記録を置く場所(テストの側からだけ読む)。 */

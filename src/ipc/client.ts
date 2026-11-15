@@ -10,6 +10,7 @@ import type { FileOpOutcome } from "./generated/FileOpOutcome";
 import type { LaunchOptions } from "./generated/LaunchOptions";
 import type { MenuCommand } from "./generated/MenuCommand";
 import type { NewEntryKind } from "./generated/NewEntryKind";
+import type { PathKind } from "./generated/PathKind";
 import type { ProjectColor } from "./generated/ProjectColor";
 import type { ProjectId } from "./generated/ProjectId";
 import type { QuitRequest } from "./generated/QuitRequest";
@@ -82,6 +83,14 @@ export interface CommandMap {
   cut_entries: { args: { projectId: ProjectId; paths: RelPath[] }; result: FileOpOutcome };
   paste_entries: {
     args: { projectId: ProjectId; destDir: RelPath; resolution?: ConflictResolution };
+    result: FileOpOutcome;
+  };
+  /** デスクトップとパス(T42d)。項目はルート基準の相対パス(ルートは空の文字列)。絶対パスも挿入する文字列も送らない。 */
+  reveal_entry: { args: { projectId: ProjectId; path: RelPath }; result: FileOpOutcome };
+  open_entry: { args: { projectId: ProjectId; path: RelPath }; result: FileOpOutcome };
+  copy_entry_path: { args: { projectId: ProjectId; path: RelPath; kind: PathKind }; result: FileOpOutcome };
+  insert_entry_path: {
+    args: { projectId: ProjectId; paths: RelPath[]; terminalId: TerminalId };
     result: FileOpOutcome;
   };
 }
@@ -278,6 +287,28 @@ export interface ArinIpc {
    * ペーストボードにファイルが無ければ何もせず done(select は null)。
    */
   pasteEntries(projectId: ProjectId, destDir: RelPath, resolution?: ConflictResolution): Promise<FileOpOutcome>;
+  /*
+   * デスクトップとパス(FR-015・FR-016・FR-018・FR-024)。応答は FileOpOutcome(done の select は常に null)。
+   * notFound=項目が無い、notAllowed=ルートの外(リンク経由を含む)・ルート自体、failed=1 行の文言。絶対パスは届かない。
+   */
+  /** 項目 path を Finder で選んだ状態で表示する。ルート(空の文字列)も表示できる。 */
+  revealEntry(projectId: ProjectId, path: RelPath): Promise<FileOpOutcome>;
+  /**
+   * ファイル path を既定のアプリで開く。フォルダ(画面が開閉する)・リンク・実行できるファイル・ルートは開かず
+   * failed か notAllowed を返す。
+   */
+  openEntry(projectId: ProjectId, path: RelPath): Promise<FileOpOutcome>;
+  /**
+   * 項目 path のパスを Rust がクリップボードに書く(kind が relative なら相対、absolute なら絶対)。パスは画面に届かない。
+   * ルートの絶対パスは path を空の文字列にして呼ぶ(ルートの相対パスは notAllowed)。
+   */
+  copyEntryPath(projectId: ProjectId, path: RelPath, kind: PathKind): Promise<FileOpOutcome>;
+  /**
+   * 項目 paths のパスを、Rust がエスケープして末尾に空白を 1 つ付け、ターミナル terminalId の入力行に書く。Enter は送らない。
+   * 宛先が同じプロジェクトのターミナルなら相対パス、違えば絶対パス。宛先が無い・動いていなければ何も書かず failed。
+   * M3 の宛先は、選択中のプロジェクトの表示中のタブ(パスをターミナルに挿入)か、ドロップ先のターミナル。
+   */
+  insertEntryPath(projectId: ProjectId, paths: RelPath[], terminalId: TerminalId): Promise<FileOpOutcome>;
 }
 
 /**
@@ -379,5 +410,10 @@ export function createIpc(transport: IpcTransport): ArinIpc {
     cutEntries: (projectId, paths) => invoke("cut_entries", { projectId, paths }),
     pasteEntries: (projectId, destDir, resolution) =>
       invoke("paste_entries", withResolution({ projectId, destDir }, resolution)),
+    revealEntry: (projectId, path) => invoke("reveal_entry", { projectId, path }),
+    openEntry: (projectId, path) => invoke("open_entry", { projectId, path }),
+    copyEntryPath: (projectId, path, kind) => invoke("copy_entry_path", { projectId, path, kind }),
+    insertEntryPath: (projectId, paths, terminalId) =>
+      invoke("insert_entry_path", { projectId, paths, terminalId }),
   };
 }

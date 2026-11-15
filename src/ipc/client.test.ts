@@ -316,6 +316,61 @@ describe("プロジェクトの操作(T33c)", () => {
     ]);
   });
 
+  it("finder_で表示と開くは_reveal_entry_と_open_entry_に_id_と相対パスだけを渡し、応答をそのまま返す", async () => {
+    const fake = createFakeIpc({ open_entry: () => ({ kind: "failed", message: "フォルダは開けません" }) });
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.revealEntry(PROJECT, "")).resolves.toEqual({ kind: "done", select: null });
+    await expect(ipc.revealEntry(PROJECT, "src/a b.ts")).resolves.toEqual({ kind: "done", select: null });
+    await expect(ipc.openEntry(PROJECT, "src")).resolves.toEqual({ kind: "failed", message: "フォルダは開けません" });
+
+    expect(fake.calls).toEqual([
+      { command: "reveal_entry", args: { projectId: PROJECT, path: "" } },
+      { command: "reveal_entry", args: { projectId: PROJECT, path: "src/a b.ts" } },
+      { command: "open_entry", args: { projectId: PROJECT, path: "src" } },
+    ]);
+  });
+
+  it("パスのコピーは_copy_entry_path_に相対か絶対かを渡し、パスは受け取らない", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.copyEntryPath(PROJECT, "src/a b.ts", "relative")).resolves.toEqual({
+      kind: "done",
+      select: null,
+    });
+    await ipc.copyEntryPath(PROJECT, "", "absolute");
+
+    expect(fake.calls).toEqual([
+      { command: "copy_entry_path", args: { projectId: PROJECT, path: "src/a b.ts", kind: "relative" } },
+      { command: "copy_entry_path", args: { projectId: PROJECT, path: "", kind: "absolute" } },
+    ]);
+  });
+
+  it("ターミナルへの挿入は_insert_entry_path_に相対パスと宛先の_id_だけを渡し、挿入する文字列を送らない", async () => {
+    const fake = createFakeIpc({
+      insert_entry_path: ({ terminalId }) =>
+        terminalId === "gone" ? { kind: "failed", message: "挿入先のターミナルが見つかりません" } : { kind: "done", select: null },
+    });
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.insertEntryPath(PROJECT, ["src/a b.ts"], "terminal-1")).resolves.toEqual({
+      kind: "done",
+      select: null,
+    });
+    await expect(ipc.insertEntryPath(PROJECT, ["a.md"], "gone")).resolves.toEqual({
+      kind: "failed",
+      message: "挿入先のターミナルが見つかりません",
+    });
+
+    expect(fake.calls).toEqual([
+      { command: "insert_entry_path", args: { projectId: PROJECT, paths: ["src/a b.ts"], terminalId: "terminal-1" } },
+      { command: "insert_entry_path", args: { projectId: PROJECT, paths: ["a.md"], terminalId: "gone" } },
+    ]);
+    // 画面が作った文字列(エスケープ済みのパスなど)を PTY へ書くコマンドは呼ばない。
+    expect(fake.calls.some((c) => c.command === "write_terminal" || c.command === "write_terminal_bytes")).toBe(false);
+  });
+
   it("ファイル操作の Rust 側の失敗はそのまま呼び出し元に返す", async () => {
     const fake = createFakeIpc({
       rename_entry: () => {

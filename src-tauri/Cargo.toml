@@ -112,3 +112,10 @@ harness = false
 [[test]]
 name = "fileops_commands"
 harness = false
+
+# デスクトップとパスのコマンド(Finder で表示・開く・パスのコピー・ターミナルへの挿入。T42d)。Finder とアプリは偽のデスクトップのポートに、
+# ペーストボードは名前付きのものに、PTY は書かれたバイト列を記録する偽物に差し替える(本物の Finder・アプリ・利用者のクリップボードに触れない)。
+# プロジェクトのフォルダは一時フォルダに作る。理由は app_builder と同じ。
+[[test]]
+name = "desktop_commands"
+harness = false

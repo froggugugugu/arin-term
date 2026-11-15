@@ -4,6 +4,7 @@
 //! 置き場所と起動の通知先を管理状態に登録し、起動時に状態ファイルを読んで(`persistence.rs`)`Workspace` と
 //! セッション管理と保存のスレッドとプロジェクトの操作(`projects.rs`)とルートへの追従の見回り(`patrol.rs`)を作って登録し、
 //! ツリーの操作(`tree.rs`)とファイル操作(`fileops.rs`。切り取りの状態をアプリに 1 つ持つ)と、選択中のプロジェクトのツリーの監視の張り替え(`tree_watch.rs`。写しを送るたびに張り替えを頼む)を登録し、
+//! デスクトップとパスの操作(`commands/desktop.rs`。Finder で表示・開く・パスのコピー・ターミナルへの挿入)を登録し、
 //! コマンドとメニューバー(`menu.rs`。項目が選ばれたときも `menu.rs`)と終了の確認の状態(`lifecycle.rs`)を登録して
 //! tauri.conf.json のウィンドウを 1 枚出す。Finder からのドロップは `lifecycle.rs` が受ける。
 
@@ -27,18 +28,20 @@ use std::sync::{Arc, OnceLock};
 
 use arin_core::persistence::codec::encode;
 use arin_core::ports::PtyPort;
+use arin_core::ports::desktop::DesktopPort;
 use arin_core::ports::fs::FileSystemPort;
 use arin_core::ports::pasteboard::FilePasteboardPort;
 use arin_core::ports::watch::WatcherPort;
 use arin_core::tree::TreeChange;
 use arin_core::workspace::{AppSnapshot, Workspace};
-use arin_platform::desktop::MacFilePasteboard;
+use arin_platform::desktop::{MacDesktop, MacFilePasteboard};
 use arin_platform::fs::LocalFileSystem;
 use arin_platform::pty::{FALLBACK_SHELL, NativePty, default_shell, system_locale};
 use arin_platform::watch::FsEventsWatcher;
 use tauri::{Builder, Emitter, Manager, Runtime};
 
 pub use crate::commands::app::SNAPSHOT_EVENT;
+use crate::commands::desktop::Desktop;
 use crate::events::TREE_CHANGED_EVENT;
 use crate::fileops::FileOps;
 use crate::launch::LaunchConfig;
@@ -163,6 +166,7 @@ pub struct TreePorts {
 }
 
 /// `builder_with_watcher` に加えて、ファイルのペーストボードも差し替えて組み立てる(テスト用)。
+/// Finder とアプリへの受け渡しは本物(`MacDesktop`)。
 pub fn builder_with_tree_ports<R: Runtime>(
     launch: LaunchConfig,
     pty: Arc<dyn PtyPort>,
@@ -170,6 +174,29 @@ pub fn builder_with_tree_ports<R: Runtime>(
     ports: PersistencePorts,
     project_ports: ProjectPorts,
     tree_ports: TreePorts,
+) -> Builder<R> {
+    builder_with_desktop(
+        launch,
+        pty,
+        probe,
+        ports,
+        project_ports,
+        tree_ports,
+        Arc::new(MacDesktop::new()),
+    )
+}
+
+/// `builder_with_tree_ports` に加えて、Finder で表示・既定のアプリで開くのポートも差し替えて組み立てる(テスト用。
+/// 自動テストで Finder を開いたりアプリを起動したりしないため)。本物は `MacDesktop`。
+/// パスのコピーは `project_ports` の文字列のペーストボードに書く。
+pub fn builder_with_desktop<R: Runtime>(
+    launch: LaunchConfig,
+    pty: Arc<dyn PtyPort>,
+    probe: ShellProbe,
+    ports: PersistencePorts,
+    project_ports: ProjectPorts,
+    tree_ports: TreePorts,
+    desktop: Arc<dyn DesktopPort>,
 ) -> Builder<R> {
     let TreePorts {
         fs,
@@ -263,6 +290,12 @@ pub fn builder_with_tree_ports<R: Runtime>(
                 Arc::clone(&fs),
                 Arc::clone(&file_pasteboard),
             ));
+            app.manage(Desktop::new(
+                sessions.clone(),
+                Arc::clone(&fs),
+                Arc::clone(&desktop),
+                Arc::clone(&project_ports.pasteboard),
+            ));
             // 9 枚の検証画面ではプロジェクトが無いので監視しない(スレッドも作らない)。
             if !verify_grid {
                 let emitter = app.handle().clone();
@@ -318,6 +351,10 @@ pub fn builder_with_tree_ports<R: Runtime>(
             commands::fileops::copy_entries,
             commands::fileops::cut_entries,
             commands::fileops::paste_entries,
+            commands::desktop::reveal_entry,
+            commands::desktop::open_entry,
+            commands::desktop::copy_entry_path,
+            commands::desktop::insert_entry_path,
         ])
 }
 
