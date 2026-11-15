@@ -11,7 +11,9 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 
+import { DEFAULT_SHORTCUT_TABLE } from "../../logic/keys/defaultShortcuts";
 import { terminalKeyOwner } from "../../logic/keys/keyOwner";
+import type { ShortcutTable } from "../../logic/keys/shortcutTable";
 import type {
   RendererKind,
   TerminalEngine,
@@ -38,21 +40,28 @@ export interface XtermEngineOptions {
   readonly renderer?: RendererKind;
   /** 描画方式を DOM に戻したことの報告先。既定は console.error。 */
   readonly reportError?: (message: string) => void;
+  /**
+   * ショートカットの表を返す関数。キーを押すたびに呼び、受け口がメニューの項目・「編集」の項目のキーを xterm.js に処理させない。
+   * 既定は src/logic/keys/defaultShortcuts.ts の見本(Rust から表を受け取るまでの仮の値。計画 T43a で `get_shortcuts` の表に替える)。
+   */
+  readonly getShortcuts?: () => ShortcutTable;
 }
 
 export class XtermEngine implements TerminalEngine {
   readonly #unicode: UnicodeWidth;
   readonly #renderer: RendererKind;
   readonly #reportError: (message: string) => void;
+  readonly #getShortcuts: () => ShortcutTable;
 
   constructor(options: XtermEngineOptions = {}) {
     this.#unicode = options.unicode ?? "unicode11";
     this.#renderer = options.renderer ?? "dom";
     this.#reportError = options.reportError ?? ((message) => console.error(message));
+    this.#getShortcuts = options.getShortcuts ?? (() => DEFAULT_SHORTCUT_TABLE);
   }
 
   createSurface(id: TerminalId): TerminalSurface {
-    return new XtermSurface(id, this.#unicode, this.#renderer, this.#reportError);
+    return new XtermSurface(id, this.#unicode, this.#renderer, this.#reportError, this.#getShortcuts);
   }
 }
 
@@ -71,6 +80,7 @@ class XtermSurface implements TerminalSurface {
     unicode: UnicodeWidth,
     renderer: RendererKind,
     reportError: (message: string) => void,
+    getShortcuts: () => ShortcutTable,
   ) {
     // xterm.js の要素を入れる箱。UI はこの箱を置き場所に入れるだけ(ADR-003)。
     // 寸法合わせは箱の大きさを見るので、置き場所いっぱいに広げる。
@@ -88,10 +98,10 @@ class XtermSurface implements TerminalSurface {
     });
     this.#terminal.loadAddon(this.#fitAddon);
     loadUnicodeAddon(this.#terminal, unicode);
-    // ⌘C・⌘V は xterm.js に処理させず、取り消しもしない。WKWebView はキーを画面に渡したあと、
-    // 取り消されていなければメニューの「編集」の項目へ回し、それが画面のコピー・ペーストのイベントになる(設計書 §9.1)。
-    // ほかのキー(Ctrl の組み合わせ、Option)は xterm.js の既定のまま。
-    this.#terminal.attachCustomKeyEventHandler((event) => terminalKeyOwner(event) === "terminal");
+    // 表の受け口がメニューの項目・「編集」の項目のキー(⌘C・⌘V など)は xterm.js に処理させず、取り消しもしない。
+    // WKWebView はキーを画面に渡したあと、取り消されていなければメニューの項目へ回し、「編集」の項目は画面の
+    // コピー・切り取り・ペーストのイベントになる(設計書 §9.1)。ほかのキー(Ctrl の組み合わせ、Option)は xterm.js の既定のまま。
+    this.#terminal.attachCustomKeyEventHandler((event) => terminalKeyOwner(getShortcuts(), event) === "terminal");
     this.#terminal.open(this.element);
     // WebGL のアドオンは端末を開いたあとに読み込む(開く前だと、開くまで描画の部品を作らない)。
     this.#renderer = new RendererControl({

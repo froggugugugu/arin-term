@@ -1,16 +1,14 @@
 // ターミナルにフォーカスがあるときのキーの受け手(設計書 §9.1、PRD C-04、FR-043、FR-044)。DOM を使わない純粋な関数。
 //
-// アプリのショートカットはメニューバーの項目のアクセラレータで受ける(計画 M2 の決定 (b))。
-// ここで `app` にしたキーは xterm.js に処理させず、メニューの項目と画面のイベントに任せる。
+// アプリのショートカットはメニューバーの項目のアクセラレータと、「編集」の項目(画面のコピー・切り取り・ペーストのイベント)で受ける
+// (計画 M2 の決定 (b)、M3 の【仮定】21)。ここで `app` にしたキーは xterm.js に処理させず、メニューの項目と画面のイベントに任せる。
+// どのキーを `app` にするかは、ショートカットの表(./shortcutTable)の受け口が `menu-item`・`edit-item` の行から決める
+// (キーを直書きしない。前提 (e))。受け口が `screen` の行(ツリーのキー)はターミナルでは使わないので xterm.js に任せる。
 
-/** キーの押し下げのうち、振り分けに使う部分(KeyboardEvent はこの形を満たす)。 */
-export interface KeyChord {
-  readonly key: string;
-  readonly metaKey: boolean;
-  readonly ctrlKey: boolean;
-  readonly altKey: boolean;
-  readonly shiftKey: boolean;
-}
+import { findBinding, type PressedKey, type ShortcutTable } from "./shortcutTable";
+
+/** キーの押し下げのうち、振り分けに使う部分(KeyboardEvent はこの形を満たす)。`code` は ⌥ を含むキーを比べるときに使う。 */
+export type KeyChord = PressedKey;
 
 /**
  * キーの受け手。
@@ -19,18 +17,10 @@ export interface KeyChord {
  */
 export type KeyOwner = "app" | "terminal";
 
-/** ⌘ だけを押したときにアプリが受けるキー: コピー・ペースト・すべてを選択・新規タブ・タブを閉じる。 */
-const COMMAND_KEYS: ReadonlySet<string> = new Set(["c", "v", "a", "t", "w"]);
-
-/**
- * ⌘⇧ を押したときにアプリが受けるキー: 前のタブ・次のタブ。
- * ⇧ を押した `key` は配列によって「[」「]」のままのことも「{」「}」になることもあるので、両方を受ける。
- */
-const COMMAND_SHIFT_KEYS: ReadonlySet<string> = new Set(["[", "]", "{", "}"]);
+/** ターミナルの上で、アプリが受けるキーの受け口。 */
+const APP_RECEIVERS = ["menu-item", "edit-item"] as const;
 
 /** ターミナルにフォーカスがあるときに、押されたキーを誰が受けるか。 */
-export function terminalKeyOwner(chord: KeyChord): KeyOwner {
-  if (!chord.metaKey || chord.ctrlKey || chord.altKey) return "terminal";
-  const keys = chord.shiftKey ? COMMAND_SHIFT_KEYS : COMMAND_KEYS;
-  return keys.has(chord.key.toLowerCase()) ? "app" : "terminal";
+export function terminalKeyOwner(table: ShortcutTable, chord: KeyChord): KeyOwner {
+  return findBinding(table, chord, APP_RECEIVERS) === null ? "terminal" : "app";
 }

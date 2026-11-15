@@ -1,6 +1,23 @@
 import { describe, expect, it } from "vitest";
 
-import { type KeyChord, terminalKeyOwner } from "./keyOwner";
+import { DEFAULT_SHORTCUT_TABLE } from "./defaultShortcuts";
+import { type KeyChord, terminalKeyOwner as ownerFromTable } from "./keyOwner";
+import type { ShortcutCommandId } from "./shortcutTable";
+
+/** M2 のメニューにあった行(M2 の直書きの集合と同じ範囲)。M2 の振る舞いと同じかを、この表で確かめる。 */
+const M2_COMMANDS: readonly ShortcutCommandId[] = [
+  "terminal.new-tab",
+  "terminal.close-tab",
+  "terminal.previous-tab",
+  "terminal.next-tab",
+  "edit.select-all",
+  "edit.copy",
+  "edit.paste",
+];
+const M2_TABLE = DEFAULT_SHORTCUT_TABLE.filter((binding) => M2_COMMANDS.includes(binding.command));
+
+/** M2 のテストをそのまま使うため、M2 の表を渡した受け手。 */
+const terminalKeyOwner = (keys: KeyChord) => ownerFromTable(M2_TABLE, keys);
 
 const chord = (key: string, mods: Partial<Omit<KeyChord, "key">> = {}): KeyChord => ({
   key,
@@ -11,7 +28,7 @@ const chord = (key: string, mods: Partial<Omit<KeyChord, "key">> = {}): KeyChord
   ...mods,
 });
 
-describe("terminalKeyOwner(ターミナルにフォーカスがあるときのキーの受け手)", () => {
+describe("terminalKeyOwner(ターミナルにフォーカスがあるときのキーの受け手。表から作ったターミナルのキーの受け手は_m2_と同じ)", () => {
   it("⌘C と ⌘V はアプリが受ける(メニューから画面のコピー・ペーストのイベントにする)", () => {
     expect(terminalKeyOwner(chord("c", { metaKey: true }))).toBe("app");
     expect(terminalKeyOwner(chord("v", { metaKey: true }))).toBe("app");
@@ -73,5 +90,30 @@ describe("terminalKeyOwner(ターミナルにフォーカスがあるときの�
     expect(terminalKeyOwner(chord("x", { metaKey: true }))).toBe("terminal");
     expect(terminalKeyOwner(chord("1", { metaKey: true }))).toBe("terminal");
     expect(terminalKeyOwner(chord("Meta", { metaKey: true }))).toBe("terminal");
+  });
+});
+
+describe("terminalKeyOwner(M3 の表)", () => {
+  const owner = (keys: KeyChord) => ownerFromTable(DEFAULT_SHORTCUT_TABLE, keys);
+
+  it("受け口がメニューの項目と編集の項目のキーはアプリが受ける(⌘X の切り取りと ⌘Q も)", () => {
+    expect(owner(chord("x", { metaKey: true }))).toBe("app");
+    expect(owner(chord("q", { metaKey: true }))).toBe("app");
+    expect(owner(chord("c", { metaKey: true }))).toBe("app");
+    expect(owner(chord("{", { metaKey: true, shiftKey: true }))).toBe("app");
+  });
+
+  it("受け口が画面のキー(ツリーのキー)はターミナルに任せる", () => {
+    expect(owner(chord("n", { metaKey: true }))).toBe("terminal");
+    expect(owner(chord("N", { metaKey: true, shiftKey: true }))).toBe("terminal");
+    expect(owner(chord("o", { metaKey: true }))).toBe("terminal");
+    expect(owner(chord("Enter"))).toBe("terminal");
+    expect(owner(chord("Enter", { metaKey: true }))).toBe("terminal");
+    expect(owner(chord("Backspace", { metaKey: true }))).toBe("terminal");
+    expect(owner(chord("®", { metaKey: true, altKey: true, code: "KeyR" }))).toBe("terminal");
+  });
+
+  it("表が空ならすべてターミナルに任せる", () => {
+    expect(ownerFromTable([], chord("c", { metaKey: true }))).toBe("terminal");
   });
 });

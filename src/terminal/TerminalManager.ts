@@ -313,6 +313,7 @@ export class TerminalManager {
    * 画面のコピー・ペーストのイベントを、フォーカスのあるターミナルへ振り分ける(設計書 §9.1、FR-043)。
    * - コピー: 選択があれば、その文字列を text/plain に書く
    * - ペースト: text/plain をそのターミナルに貼り付ける(PTY への入力になる)。文字列が無ければ貼り付けない
+   * - 切り取り: ターミナルでは何もしない(false)
    *
    * 処理したら true を返す。呼び出し側はイベントの既定の動作と、xterm.js 自身の受け取りを止める。
    * false のとき(フォーカスがターミナルに無い、選択の無いコピー)は何もしていないので、既定の動作に任せる。
@@ -331,6 +332,11 @@ export class TerminalManager {
         if (text !== "") surface?.paste(text);
         return true;
       }
+      // ツリーの操作は、ツリーにフォーカスがあるときだけ。ここではフォーカス位置をターミナルかそれ以外でしか作らないので届かない
+      // (ツリーへの振り分けは計画 T43c で入口の clipboardRouting に足す)
+      case "tree-copy":
+      case "tree-cut":
+      case "tree-paste":
       case "none":
         return false;
     }
