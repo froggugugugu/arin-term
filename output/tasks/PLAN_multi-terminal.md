@@ -811,7 +811,7 @@ T38〜T44 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 可(`paths/format.rs`・`paths/shell.rs` だけ)
   - 先に書くテスト: `相対パスはルート基準でスラッシュ区切り`(AC-T03 の `src/a b.ts`)、`絶対パスはルートと相対パスをつなぐ`(`/Users/x/dev/app/src/a b.ts`)、`空白はバックスラッシュでエスケープし末尾に半角スペースを付ける`(AC-T04 の `src/a\ b.ts `)、`シェルの特殊文字をすべてエスケープする`(`'`・`"`・`\`・`$`・`` ` ``・`!`・`&`・`*`・`?`・`(`・`)`・`[`・`]`・`{`・`}`・`;`・`<`・`>`・`|`・`#`・`^` を表で)、`先頭のチルダとイコールをエスケープする`、`改行やタブを含む名前はドル引用符で包み改行のバイトを含まない`、`日本語と絵文字はそのまま`、`別のプロジェクトのターミナルへは絶対パスにする`(§15.2 #6 の A)、`挿入の文字列は_enter_を含まない`。zsh に渡して元に戻るかの往復は T44a(実 zsh)
   - 検証: `npm test && npm run test:coverage`(`arin-core` の行 80%)
-- [ ] T38c — 除外・並び順・監視の変更のまとめ(`arin-core/tree`)(変更ファイル: crates/arin-core/src/tree/exclusion.rs, crates/arin-core/src/tree/order.rs, crates/arin-core/src/tree/changes.rs, crates/arin-core/tests/tree_rules.rs | 依存: T38a)
+- [x] T38c — 除外・並び順・監視の変更のまとめ(`arin-core/tree`)(変更ファイル: crates/arin-core/src/tree/exclusion.rs, crates/arin-core/src/tree/order.rs, crates/arin-core/src/tree/changes.rs, crates/arin-core/tests/tree_rules.rs | 依存: T38a)
   - 対応: FR-013、FR-014、FR-017、C-07、PRD C7(除外のフォルダは監視の対象外)、設計書 §5.1 の `ExclusionRule`・`ChangeBatch`、§7.1「外部でのファイル変更」、§15.2 #1・#8、【仮定】2・3・19
   - 置くもの: 除外の判定(名前の完全一致。どの階層でも)、並び順、監視で届いた絶対パスの束 → ルート基準の「変わったフォルダ」の集合(項目の親のフォルダ。除外の中は隠しファイル表示が OFF なら捨てる。ルートの外は捨てる。上限を超えたら全部読み直し)
   - 並行: 可(`tree/` の子ファイルだけ)
