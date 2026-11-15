@@ -294,6 +294,29 @@ describe("connectTerminal", () => {
     expect(received).toEqual([[104, 105]]);
   });
 
+  it("バイト列にできない中身は onUnreadable に渡す(close の後は渡さない)", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+    const received: Uint8Array[] = [];
+    const unreadable: unknown[] = [];
+
+    const sub = ipc.connectTerminal(
+      "t1",
+      24,
+      80,
+      (data) => received.push(data),
+      (message) => unreadable.push(message),
+    );
+    await sub.connected;
+    fake.channels[0]?.send("文字列");
+    fake.channels[0]?.send([256]);
+    sub.close();
+    fake.channels[0]?.send("閉じた後");
+
+    expect(received).toEqual([]);
+    expect(unreadable).toEqual(["文字列", [256]]);
+  });
+
   it("close の後に届いた出力は捨て、チャネルを閉じる。2 回呼んでもよい", async () => {
     const fake = createFakeIpc();
     const ipc = createIpc(fake.transport);

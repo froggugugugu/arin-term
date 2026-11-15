@@ -33,6 +33,12 @@ export interface FakeSurface extends TerminalSurface {
   emitInput(data: string): void;
   /** 登録された寸法の受け取り手へ、寸法の変更を流す。 */
   emitResize(cols: number, rows: number): void;
+  /** 登録されたバイト列の入力の受け取り手へ、xterm.js の onBinary と同じ文字列を流す。 */
+  emitBinary(data: string): void;
+  /** resize に渡された順の行・桁数。 */
+  readonly resized: TerminalSize[];
+  /** selectAll が呼ばれた回数。 */
+  selectAllCount: number;
 }
 
 export interface FakeTerminalEngine extends TerminalEngine {
@@ -52,6 +58,7 @@ export function createFakeTerminalEngine(): FakeTerminalEngine {
       engine.failDisposeOnNext = false;
       const inputListeners: ((data: string) => void)[] = [];
       const resizeListeners: ((cols: number, rows: number) => void)[] = [];
+      const binaryListeners: ((data: string) => void)[] = [];
       const rendererListeners = new Set<(renderer: RendererKind) => void>();
       const surface: FakeSurface = {
         id,
@@ -68,6 +75,8 @@ export function createFakeTerminalEngine(): FakeTerminalEngine {
         visible: true,
         visibleCalls: [],
         rendererKind: "dom",
+        resized: [],
+        selectAllCount: 0,
         write(data) {
           // 隠している間も取り込む(xterm.js と同じ)。
           surface.written.push(data);
@@ -78,6 +87,19 @@ export function createFakeTerminalEngine(): FakeTerminalEngine {
         },
         onResize(listener) {
           resizeListeners.push(listener);
+        },
+        onBinary(listener) {
+          binaryListeners.push(listener);
+        },
+        resize(size) {
+          // xterm.js の resize と同じく、変われば寸法の受け取り手へ流す(隠していても変える)。
+          surface.resized.push(size);
+          if (size.rows === surface.current.rows && size.cols === surface.current.cols) return;
+          surface.current = size;
+          surface.emitResize(size.cols, size.rows);
+        },
+        selectAll() {
+          surface.selectAllCount += 1;
         },
         fit() {
           // xterm.js の実装と同じく、隠している間は寸法を決め直さない(置き場所の大きさが 0 になるため)。
@@ -132,6 +154,9 @@ export function createFakeTerminalEngine(): FakeTerminalEngine {
         },
         emitResize(cols, rows) {
           for (const listener of resizeListeners) listener(cols, rows);
+        },
+        emitBinary(data) {
+          for (const listener of binaryListeners) listener(data);
         },
       };
       created.push(surface);

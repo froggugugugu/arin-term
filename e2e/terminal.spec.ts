@@ -9,6 +9,7 @@
 
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+import type { AppSnapshot } from "../src/ipc/generated/AppSnapshot";
 import type { TerminalStatus } from "../src/ipc/generated/TerminalStatus";
 import {
   emitEvent,
@@ -16,8 +17,9 @@ import {
   type OutputChunk,
   parseChannelId,
   readCallArgs,
-  type RecordedArgs,
   sampleSnapshot,
+  type RecordedArgs,
+  projectSnapshot,
   sampleTerminal,
   sendChannelBytes,
 } from "./fixtures/tauriMock";
@@ -27,7 +29,7 @@ const TERMINAL_ID = "t-e2e-1";
 const SCROLLBACK_LINES = 10_000;
 
 function snapshotWith(status: TerminalStatus) {
-  return sampleSnapshot({ terminals: [sampleTerminal(TERMINAL_ID, status)] });
+  return projectSnapshot([sampleTerminal(TERMINAL_ID, status)]);
 }
 
 interface StartedTerminal {
@@ -309,4 +311,65 @@ test("ターミナルにフォーカスが無いときのペーストは、タ�
   await page.getByTestId("terminal-host").locator(".xterm-screen").click();
   await page.keyboard.type("z");
   await expect.poll(() => writtenInput(page)).toBe("z");
+});
+
+test("メニューの「すべてを選択」で、フォーカスのあるターミナルの全体が選択される(T34b)", async ({ page }) => {
+  const { channelId } = await openTerminal(page);
+  await sendAndWait(page, channelId, ["alpha\r\n", "beta"]);
+  await page.getByTestId("terminal-host").locator(".xterm-screen").click();
+  await expect(page.locator(".xterm-helper-textarea")).toBeFocused();
+
+  await emitEvent(page, "menu-command", "select-all");
+  const copied = await fireClipboard(page, "copy");
+
+  expect(copied.prevented).toBe(true);
+  expect(copied.text).toContain("alpha");
+  expect(copied.text).toContain("beta");
+});
+
+/** プロジェクト A(t-a)と B(t-b)が 1 タブずつの写し。selected を選択中にする。 */
+function twoProjects(selected: "A" | "B", terminalsOfB: string[] = ["t-b"]): AppSnapshot {
+  const project = (id: string, terminalIds: string[]) => ({
+    id,
+    name: id,
+    color: "blue" as const,
+    displayPath: `~/${id}`,
+    missing: false,
+    terminalIds,
+    activeTerminalId: terminalIds[0] ?? null,
+  });
+  return sampleSnapshot({
+    projects: [project("A", ["t-a"]), project("B", terminalsOfB)],
+    selectedProjectId: selected,
+    terminals: [
+      sampleTerminal("t-a", { kind: "running" }, { projectId: "A" }),
+      ...terminalsOfB.map((id) => sampleTerminal(id, { kind: "running" }, { projectId: "B" })),
+    ],
+  });
+}
+
+test("選択していないプロジェクトのターミナルも表示中と同じ寸法で接続し、切り替えても両方が取り込みを続ける(FR-042)", async ({
+  page,
+}) => {
+  await installTauriMock(page, { get_app_snapshot: { ok: twoProjects("A") } });
+  await page.goto("/");
+  await expect.poll(async () => (await readCallArgs(page, "connect_terminal")).length).toBe(2);
+  const connects = await readCallArgs(page, "connect_terminal");
+  const [a, b] = ["t-a", "t-b"].map((id) => connects.find((c) => c.terminalId === id));
+  if (a === undefined || b === undefined) throw new Error("接続が足りない");
+  // 隠したまま作った B は、表示中の A と同じ寸法で始める。
+  expect([b.rows, b.cols]).toEqual([a.rows, a.cols]);
+  await expect(page.getByTestId("terminal-host")).toHaveCount(1);
+
+  await sendAndWait(page, parseChannelId(b.onOutput), ["hidden output\r\n"]);
+
+  // B に切り替える: B が表示され、隠した間に取り込んだ文字が画面にある。A は隠したまま取り込みを続ける。
+  await emitEvent(page, "app-snapshot", twoProjects("B"));
+  await expect(screenRows(page).nth(0)).toHaveText("hidden output");
+  await sendAndWait(page, parseChannelId(a.onOutput), ["still running\r\n"]);
+  expect(await readCallArgs(page, "connect_terminal")).toHaveLength(2);
+
+  // B のタブが閉じた写し(シェルが終わった・閉じた): B は破棄され、画面は例外を出さない。
+  await emitEvent(page, "app-snapshot", twoProjects("A", []));
+  await expect(screenRows(page).nth(0)).toHaveText("still running");
 });

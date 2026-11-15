@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createIpc } from "../ipc/client";
+import type { ConnectOutcome } from "../ipc/generated/ConnectOutcome";
 import { INPUT_QUEUE_LIMIT } from "../logic/serialSender";
 import { type GridView, SHOW_ALL, showOnly, visibilityChanges } from "../logic/verifyGrid";
 import { createFakeIpc, type FakeHandlers } from "../test/fakeIpc";
@@ -215,7 +216,7 @@ describe("TerminalManager(入出力)", () => {
       connect_terminal: (args) => {
         send = (m) => fake.channelOf(args.onOutput)?.send(m);
         send(new Uint8Array([37, 32]).buffer);
-        return null;
+        return { sizeApplied: true };
       },
     });
 
@@ -256,8 +257,8 @@ describe("TerminalManager(入出力)", () => {
     let finish: (() => void) | undefined;
     const { engine, fake, manager } = setup({
       connect_terminal: () =>
-        new Promise<null>((resolve) => {
-          finish = () => resolve(null);
+        new Promise<ConnectOutcome>((resolve) => {
+          finish = () => resolve({ sizeApplied: true });
         }),
     });
 
@@ -293,8 +294,8 @@ describe("TerminalManager(入出力)", () => {
     let finish: (() => void) | undefined;
     const { engine, fake, manager } = setup({
       connect_terminal: () =>
-        new Promise<null>((resolve) => {
-          finish = () => resolve(null);
+        new Promise<ConnectOutcome>((resolve) => {
+          finish = () => resolve({ sizeApplied: true });
         }),
     });
 
@@ -339,7 +340,7 @@ describe("TerminalManager(境界値)", () => {
     const { engine, fake, errors, manager } = setup({
       connect_terminal: () => {
         if (fail) throw "シェルを起動できなかった";
-        return null;
+        return { sizeApplied: true };
       },
     });
 
@@ -405,8 +406,8 @@ describe("TerminalManager(境界値)", () => {
     let finish: (() => void) | undefined;
     const { engine, fake, manager } = setup({
       connect_terminal: () =>
-        new Promise<null>((resolve) => {
-          finish = () => resolve(null);
+        new Promise<ConnectOutcome>((resolve) => {
+          finish = () => resolve({ sizeApplied: true });
         }),
     });
 
@@ -653,7 +654,7 @@ describe("TerminalManager(シェルの終了のあとは送らない。S-3)", ()
     const { engine, fake, manager } = setup({
       connect_terminal: () => {
         if (fail) throw "シェルを起動できなかった";
-        return null;
+        return { sizeApplied: true };
       },
     });
     await manager.connect("t1");
@@ -686,8 +687,8 @@ describe("TerminalManager(送信待ちの入力の上限。C-1)", () => {
     let finish: (() => void) | undefined;
     const { engine, fake, errors, manager } = setup({
       connect_terminal: () =>
-        new Promise<null>((resolve) => {
-          finish = () => resolve(null);
+        new Promise<ConnectOutcome>((resolve) => {
+          finish = () => resolve({ sizeApplied: true });
         }),
     });
     const connecting = manager.connect("t1");
@@ -985,5 +986,324 @@ describe("TerminalManager(9 枚の検証画面。T22、設計書 §2.2「非表�
 
     manager.focus("none");
     expect(engine.created).toHaveLength(9);
+  });
+});
+
+/** 偽のエンジンが作った ID のサーフェス(最後に作ったもの)。無ければ例外。 */
+function fakeSurface(engine: ReturnType<typeof createFakeTerminalEngine>, id: string) {
+  const surface = engine.created.findLast((s) => s.id === id);
+  if (surface === undefined) throw new Error(`${id} のサーフェスが無い`);
+  return surface;
+}
+
+describe("TerminalManager(写しとの同期。T34b、FR-042)", () => {
+  it("写しから消えたターミナルは破棄され購読が外れる(exited を経ずに消えても)", async () => {
+    const { engine, fake, manager } = setup();
+    await manager.connect("a");
+    await manager.connect("b");
+
+    manager.retain(["b"]);
+    fake.channels[0]?.send(new Uint8Array([1, 2]).buffer);
+    await flush();
+
+    expect(engine.created.find((s) => s.id === "a")?.disposeCount).toBe(1);
+    expect(engine.created.find((s) => s.id === "b")?.disposeCount).toBe(0);
+    expect(fake.channels[0]?.closed).toBe(true);
+    expect(fake.channels[1]?.closed).toBe(false);
+    expect(manager.get("a")).toBeUndefined();
+    expect(commands(fake)).toEqual(["connect_terminal", "connect_terminal"]);
+  });
+
+  it("破棄に失敗したターミナルがあっても、残りの破棄を続けて報告する", () => {
+    const { engine, errors, manager } = setup();
+    engine.failDisposeOnNext = true;
+    manager.getOrCreate("a");
+    manager.getOrCreate("b");
+
+    manager.retain([]);
+
+    expect(manager.size).toBe(0);
+    expect(engine.created[1]?.disposeCount).toBe(1);
+    expect(errors).toEqual(["ターミナル a を破棄できなかった: 偽のサーフェス a の破棄に失敗した"]);
+  });
+
+  it("プロジェクトを切り替えてもサーフェスを破棄しない。前の表示中は隠し、出力は取り込み続ける", async () => {
+    const { engine, fake, manager } = setup();
+    manager.present("a", []);
+    manager.attach("a", fakeSlot().slot);
+    await flush();
+
+    // B に切り替えた写し: B が表示中、A は隠して取り込みだけ。
+    manager.present("b", ["a"]);
+    manager.attach("b", fakeSlot().slot);
+    await flush();
+    fake.channels[0]?.send(new Uint8Array([7]).buffer);
+    await flush();
+
+    const a = engine.created.find((s) => s.id === "a");
+    expect(a?.disposeCount).toBe(0);
+    expect(a?.visible).toBe(false);
+    expect(a?.written.map((d) => [...d])).toEqual([[7]]);
+    expect(fake.calls.filter((c) => c.command === "ack_terminal_output").map((c) => c.args)).toEqual([
+      { terminalId: "a", bytes: 1 },
+    ]);
+
+    // A に戻す: 同じサーフェスを表示に戻す。
+    manager.present("a", ["b"]);
+    expect(engine.created.filter((s) => s.id === "a")).toHaveLength(1);
+    expect(a?.visible).toBe(true);
+    expect(engine.created.find((s) => s.id === "b")?.visible).toBe(false);
+  });
+
+  it("隠したまま作ったサーフェスは表示中の寸法で接続する(表示中の接続を待ってからつなぐ)", async () => {
+    const { engine, fake, manager } = setup();
+    // 起動時: A を表示、B・C は隠したまま。A はまだ置き場所に入っていない。
+    manager.present("a", ["b", "c"]);
+    await flush();
+    expect(commands(fake)).toEqual([]);
+
+    manager.getOrCreate("a");
+    fakeSurface(engine, "a").fitTo = { rows: 30, cols: 100 };
+    manager.attach("a", fakeSlot().slot);
+    await flush();
+
+    const connects = fake.calls
+      .filter((c) => c.command === "connect_terminal")
+      .map((c) => c.args as { terminalId: string; rows: number; cols: number });
+    expect(connects.map((c) => [c.terminalId, c.rows, c.cols])).toEqual([
+      ["a", 30, 100],
+      ["b", 30, 100],
+      ["c", 30, 100],
+    ]);
+    for (const id of ["b", "c"]) {
+      const surface = engine.created.find((s) => s.id === id);
+      expect(surface?.visible, id).toBe(false);
+      expect(surface?.size(), id).toEqual({ rows: 30, cols: 100 });
+    }
+    // 隠したまま作った分は、接続の前に寸法を合わせたので、寸法のコマンドを別に送らない。
+    expect(commands(fake).filter((c) => c === "resize_terminal")).toEqual([]);
+  });
+
+  it("表示中が後から変わったら、隠したターミナルは最後に表示していた寸法で始める", async () => {
+    const { engine, fake, manager } = setup();
+    manager.getOrCreate("a");
+    const surfaceA = fakeSurface(engine, "a");
+    surfaceA.fitTo = { rows: 30, cols: 100 };
+    manager.present("a", []);
+    manager.attach("a", fakeSlot().slot);
+    await flush();
+    surfaceA.fitTo = { rows: 40, cols: 120 };
+    manager.fit("a");
+    await flush();
+
+    // 別のプロジェクトのタブ(写しで新しく届いた)を隠したまま作る。
+    manager.present("a", ["z"]);
+    await flush();
+
+    const z = fake.calls
+      .filter((c) => c.command === "connect_terminal")
+      .map((c) => c.args as { terminalId: string; rows: number; cols: number })
+      .find((c) => c.terminalId === "z");
+    expect(z).toMatchObject({ rows: 40, cols: 120 });
+  });
+
+  it("表示中が無ければエンジンの既定の寸法で接続する", async () => {
+    const { engine, fake, manager } = setup();
+
+    manager.present(null, ["b"]);
+    await flush();
+
+    expect(fake.calls.map((c) => c.args)).toEqual([
+      expect.objectContaining({ terminalId: "b", rows: 24, cols: 80 }),
+    ]);
+    expect(engine.created[0]?.visible).toBe(false);
+    expect(engine.created[0]?.resized).toEqual([]);
+  });
+
+  it("隠したターミナルの接続は 1 回だけ試す(写しが届くたびに接続し直さない)", async () => {
+    const { fake, errors, manager } = setup({
+      connect_terminal: () => {
+        throw "失敗";
+      },
+    });
+
+    manager.present(null, ["b"]);
+    await flush();
+    manager.present(null, ["b"]);
+    await flush();
+
+    expect(commands(fake)).toEqual(["connect_terminal"]);
+    expect(errors).toEqual(["ターミナル b に接続できなかった: 失敗"]);
+  });
+
+  it("待たせていた隠したターミナルが表示中になったら、その置き場所の寸法で接続する", async () => {
+    const { engine, fake, manager } = setup();
+    manager.present("a", ["b"]);
+    await flush();
+
+    // A を置き場所に入れる前に B へ切り替わった。
+    manager.present("b", ["a"]);
+    manager.getOrCreate("b");
+    fakeSurface(engine, "b").fitTo = { rows: 33, cols: 99 };
+    manager.attach("b", fakeSlot().slot);
+    await flush();
+
+    const connects = fake.calls
+      .filter((c) => c.command === "connect_terminal")
+      .map((c) => c.args as { terminalId: string; rows: number; cols: number });
+    expect(connects.map((c) => [c.terminalId, c.rows, c.cols])).toEqual([
+      ["b", 33, 99],
+      ["a", 33, 99],
+    ]);
+  });
+
+  it("接続を待たせているうちに写しから消えたターミナルは、破棄して接続しない", async () => {
+    const { engine, fake, manager } = setup();
+    manager.present("a", ["b"]);
+    manager.retain(["a"]);
+    manager.attach("a", fakeSlot().slot);
+    await flush();
+
+    expect(fakeSurface(engine, "b").disposeCount).toBe(1);
+    expect(manager.get("b")).toBeUndefined();
+    expect(fake.calls.map((c) => (c.args as { terminalId: string }).terminalId)).toEqual(["a"]);
+  });
+});
+
+describe("TerminalManager(バイト列の入力。onBinary、M1 の見送り)", () => {
+  it("onBinary_のバイト列が順に送られる(文字の値をそのままバイトにし、文字列の入力と同じ列で直列に送る)", async () => {
+    const write = deferred();
+    const { engine, fake, manager } = setup({ write_terminal: write.handler });
+    await manager.connect("t1");
+    const surface = engine.created[0];
+    if (surface === undefined) throw new Error("サーフェスが無い");
+
+    surface.emitInput("a");
+    surface.emitBinary("\x1b[M\xff\x80");
+    surface.emitInput("b");
+    surface.emitInput("c");
+    await flush();
+    expect(commands(fake).slice(1)).toEqual(["write_terminal"]);
+    await write.settle();
+    await flush();
+    await write.settle();
+    await flush();
+
+    expect(
+      fake.calls.slice(1).map((c) => [c.command, (c.args as { data: unknown }).data]),
+    ).toEqual([
+      ["write_terminal", "a"],
+      ["write_terminal_bytes", [0x1b, 0x5b, 0x4d, 0xff, 0x80]],
+      ["write_terminal", "bc"],
+    ]);
+  });
+
+  it("接続の前のバイト列も溜めて、接続のあとに送る。終わったシェルには送らない", async () => {
+    let finish: (() => void) | undefined;
+    const { engine, fake, manager } = setup({
+      connect_terminal: () =>
+        new Promise<ConnectOutcome>((resolve) => {
+          finish = () => resolve({ sizeApplied: true });
+        }),
+    });
+    const connecting = manager.connect("t1");
+    engine.created[0]?.emitBinary("\x01\x02");
+    engine.created[0]?.emitBinary("\x03");
+    finish?.();
+    await connecting;
+    await flush();
+    manager.setStatus("t1", { kind: "exited", code: 0, signal: null });
+    engine.created[0]?.emitBinary("\x04");
+    await flush();
+
+    expect(fake.calls.slice(1)).toEqual([
+      { command: "write_terminal_bytes", args: { terminalId: "t1", data: [1, 2, 3] } },
+    ]);
+  });
+
+  it("バイト列の送信の失敗は報告する", async () => {
+    const { engine, errors, manager } = setup({
+      write_terminal_bytes: () => {
+        throw new Error("塞がっている");
+      },
+    });
+    await manager.connect("t1");
+
+    engine.created[0]?.emitBinary("\x01");
+    await flush();
+
+    expect(errors).toEqual(["ターミナル t1 への入力を送れなかった: 塞がっている"]);
+  });
+});
+
+describe("TerminalManager(すべてを選択。M1 の見送り、設計書 §9.1)", () => {
+  it("すべてを選択はフォーカスのあるターミナルを全選択する", () => {
+    const { engine, manager } = setup();
+    manager.getOrCreate("a");
+    manager.getOrCreate("b");
+    manager.focus("b");
+
+    expect(manager.handleMenuCommand("select-all")).toBe(true);
+
+    expect(engine.created.map((s) => s.selectAllCount)).toEqual([0, 1]);
+  });
+
+  it("どのターミナルにもフォーカスが無ければ何もしない(画面の既定に任せる)", () => {
+    const { engine, manager } = setup();
+    manager.getOrCreate("a");
+
+    expect(manager.handleMenuCommand("select-all")).toBe(false);
+
+    expect(engine.created[0]?.selectAllCount).toBe(0);
+  });
+});
+
+describe("TerminalManager(接続の応答で寸法を反映していないとき。M1 の見送り)", () => {
+  it("寸法を反映していない応答なら寸法を送り直す(寸法が変わっていなくても 1 回)", async () => {
+    const { fake, manager } = setup({ connect_terminal: () => ({ sizeApplied: false }) });
+
+    await manager.connect("t1");
+    await flush();
+
+    expect(fake.calls.slice(1)).toEqual([
+      { command: "resize_terminal", args: { terminalId: "t1", rows: 24, cols: 80 } },
+    ]);
+  });
+
+  it("寸法を反映した応答で寸法が変わっていなければ送らない", async () => {
+    const { fake, manager } = setup();
+
+    await manager.connect("t1");
+    await flush();
+
+    expect(commands(fake)).toEqual(["connect_terminal"]);
+  });
+
+  it("寸法を反映していなくても、終わったシェルには送らない", async () => {
+    const { fake, manager } = setup({ connect_terminal: () => ({ sizeApplied: false }) });
+    manager.setStatus("t1", { kind: "exited", code: 0, signal: null });
+
+    await manager.connect("t1");
+    await flush();
+
+    expect(commands(fake)).toEqual(["connect_terminal"]);
+  });
+});
+
+describe("TerminalManager(バイト列にできない出力。M1 の見送り、報告だけ)", () => {
+  it("バイト列にできない中身は報告する(取り込まず、処理済みも返さない)", async () => {
+    const { engine, errors, fake, manager } = setup();
+    await manager.connect("t1");
+
+    fake.channels[0]?.send("文字列");
+    fake.channels[0]?.send({ data: 1 });
+    await flush();
+
+    expect(engine.created[0]?.written).toEqual([]);
+    expect(commands(fake)).toEqual(["connect_terminal"]);
+    expect(errors).toEqual([
+      "ターミナル t1 の出力をバイト列にできなかったので捨てた(string)",
+      "ターミナル t1 の出力をバイト列にできなかったので捨てた(object)",
+    ]);
   });
 });

@@ -11,7 +11,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 
-import { terminalKeyOwner } from "../../logic/keys/clipboard";
+import { terminalKeyOwner } from "../../logic/keys/keyOwner";
 import type {
   RendererKind,
   TerminalEngine,
@@ -121,8 +121,19 @@ class XtermSurface implements TerminalSurface {
     this.#terminal.onData(listener);
   }
 
+  onBinary(listener: (data: string) => void): void {
+    this.#terminal.onBinary(listener);
+  }
+
   onResize(listener: (cols: number, rows: number) => void): void {
     this.#terminal.onResize(({ cols, rows }) => listener(cols, rows));
+  }
+
+  resize(size: TerminalSize): void {
+    if (this.#disposed) return;
+    if (size.rows === this.#terminal.rows && size.cols === this.#terminal.cols) return;
+    // 変われば xterm.js が onResize を流す。
+    this.#terminal.resize(size.cols, size.rows);
   }
 
   fit(): void {
@@ -162,6 +173,11 @@ class XtermSurface implements TerminalSurface {
   getSelection(): string {
     if (this.#disposed) return "";
     return this.#terminal.getSelection();
+  }
+
+  selectAll(): void {
+    if (this.#disposed) return;
+    this.#terminal.selectAll();
   }
 
   paste(text: string): void {

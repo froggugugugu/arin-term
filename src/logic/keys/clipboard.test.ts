@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { routeClipboard, terminalKeyOwner } from "./clipboard";
-import { terminalKeyOwner as movedTerminalKeyOwner } from "./keyOwner";
-
-describe("clipboard からの再公開", () => {
-  it("terminalKeyOwner は ./keyOwner と同じ関数", () => {
-    expect(terminalKeyOwner).toBe(movedTerminalKeyOwner);
-  });
-});
+import { routeClipboard } from "./clipboard";
 
 describe("routeClipboard(画面のコピー・ペーストのイベントの振り分け)", () => {
   it("フォーカスがターミナルで選択があれば、コピーは選択のコピーになる", () => {

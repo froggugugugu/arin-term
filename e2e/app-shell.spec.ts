@@ -5,7 +5,13 @@
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { installTauriMock, readRecordedCalls, sampleSnapshot, sampleTerminal } from "./fixtures/tauriMock";
+import {
+  installTauriMock,
+  projectSnapshot,
+  readRecordedCalls,
+  sampleSnapshot,
+  sampleTerminal,
+} from "./fixtures/tauriMock";
 
 /** 画面のコンソールのエラーと、捕まえられなかった例外を集める。 */
 function collectPageErrors(page: Page): string[] {
@@ -87,7 +93,7 @@ test("写しの取得が失敗すると、失敗が alert で表示され、準�
 test("起動時の指定を取得できなくても既定で起動し、準備完了を通知し、診断に 1 行だけ出す", async ({ page }) => {
   await installTauriMock(page, {
     get_launch_options: { error: "command get_launch_options not found" },
-    get_app_snapshot: { ok: sampleSnapshot({ terminals: [sampleTerminal("t-1", { kind: "running" })] }) },
+    get_app_snapshot: { ok: projectSnapshot([sampleTerminal("t-1", { kind: "running" })]) },
   });
 
   await page.goto("/");

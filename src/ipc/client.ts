@@ -127,13 +127,15 @@ export interface ArinIpc {
   confirmQuit(): Promise<void>;
   /**
    * 出力のチャネルをつなぐ。最初の接続で Rust が rows × cols の PTY を起動する。
-   * 届いた出力は 1 回ぶんずつ onOutput に渡す。
+   * 届いた出力は 1 回ぶんずつ onOutput に渡す。バイト列にできない中身(toBytes が null)は onOutput に渡さず、
+   * onUnreadable があればそこへ渡す(診断に報告するため)。
    */
   connectTerminal(
     id: TerminalId,
     rows: number,
     cols: number,
     onOutput: (data: Uint8Array) => void,
+    onUnreadable?: (message: unknown) => void,
   ): OutputSubscription;
   /** キー入力・貼り付けの文字列を PTY に書き込む。 */
   writeTerminal(id: TerminalId, data: string): Promise<void>;
@@ -208,12 +210,13 @@ export function createIpc(transport: IpcTransport): ArinIpc {
     onMenuCommand: (listener) => transport.listen("menu-command", listener),
     onQuitRequested: (listener) => transport.listen("quit-requested", listener),
     confirmQuit: () => done(invoke("confirm_quit", undefined)),
-    connectTerminal: (terminalId, rows, cols, onOutput) => {
+    connectTerminal: (terminalId, rows, cols, onOutput, onUnreadable) => {
       let closed = false;
       const channel = transport.openChannel((message) => {
         if (closed) return;
         const bytes = toBytes(message);
         if (bytes !== null) onOutput(bytes);
+        else onUnreadable?.(message);
       });
       const close = () => {
         if (closed) return;

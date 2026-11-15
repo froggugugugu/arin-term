@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { TerminalStatus } from "../ipc/generated/TerminalStatus";
-import { sampleSnapshot, sampleTerminal } from "../test/fakeIpc";
-import { createAppStore } from "./appStore";
-import { describeTerminalStatus, forwardTerminalStatuses } from "./terminalStatus";
+import { describeTerminalStatus } from "./terminalStatus";
 
 describe("describeTerminalStatus(シェルの状態を画面に出す文にする)", () => {
   it("起動前と実行中は何も出さない", () => {
@@ -26,39 +23,5 @@ describe("describeTerminalStatus(シェルの状態を画面に出す文にす�
     expect(describeTerminalStatus({ kind: "failed", message: "PTY を開けなかった" })).toBe(
       "シェルを起動できなかった: PTY を開けなかった",
     );
-  });
-});
-
-describe("forwardTerminalStatuses(写しの状態をターミナルの送信側へ伝える。S-3)", () => {
-  const terminal = (id: string, status: TerminalStatus) => sampleTerminal(id, status);
-
-  it("いまの写しと、届いた写しごとに、全ターミナルの状態を伝える。外したら伝えない", () => {
-    const store = createAppStore();
-    store.getState().replaceSnapshot(sampleSnapshot({ terminals: [terminal("t1", { kind: "running" })] }));
-    const seen: [string, string][] = [];
-
-    const stop = forwardTerminalStatuses(store, (id, status) => seen.push([id, status.kind]));
-    store.getState().replaceSnapshot(
-      sampleSnapshot({
-        terminals: [terminal("t1", { kind: "exited", code: 0, signal: null }), terminal("t2", { kind: "running" })],
-      }),
-    );
-    store.getState().reportStartupError("写しは変わらない");
-    stop();
-    store.getState().replaceSnapshot(sampleSnapshot({ terminals: [terminal("t2", { kind: "exited", code: 1, signal: null })] }));
-
-    expect(seen).toEqual([
-      ["t1", "running"],
-      ["t1", "exited"],
-      ["t2", "running"],
-    ]);
-  });
-
-  it("写しがまだ無ければ何も伝えない", () => {
-    const seen: string[] = [];
-
-    forwardTerminalStatuses(createAppStore(), (id) => seen.push(id));
-
-    expect(seen).toEqual([]);
   });
 });

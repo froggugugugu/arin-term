@@ -21,16 +21,8 @@ export interface RecordedCall {
   args: unknown;
 }
 
-/**
- * 偽の応答の型。connect_terminal だけは M1 の形(null)も受ける(T33b で応答に寸法の反映を足した。
- * src/terminal のテストを新しい形に合わせるのは T34b。null は「反映した」とみなしてよい)。
- */
-type FakeResult<C extends CommandName> = C extends "connect_terminal"
-  ? CommandMap[C]["result"] | null
-  : CommandMap[C]["result"];
-
 export type FakeHandlers = {
-  [C in CommandName]: (args: CommandMap[C]["args"]) => FakeResult<C> | Promise<FakeResult<C>>;
+  [C in CommandName]: (args: CommandMap[C]["args"]) => CommandMap[C]["result"] | Promise<CommandMap[C]["result"]>;
 };
 
 /** 偽のチャネル 1 本。 */
@@ -59,6 +51,8 @@ export interface FakeIpc {
   emit<E extends EventName>(event: E, payload: EventMap[E]): void;
   /** 次の listen を失敗させる。 */
   failListen: unknown;
+  /** このイベントの listen を失敗させる(cause で失敗する)。 */
+  failListenOf: { event: EventName; cause: unknown } | undefined;
 }
 
 /** テスト用の写し。既定はプロジェクト 0 件・ターミナル 0 枚で、ペインの寸法は Rust の初期値と同じ。 */
@@ -116,8 +110,7 @@ export function createFakeIpc(handlers: Partial<FakeHandlers> = {}): FakeIpc {
 
   const invoke: InvokeFn = async (command, args) => {
     calls.push({ command, args });
-    // connect_terminal の null(M1 の形)は FakeResult のとおり通す。
-    return all[command](args) as CommandMap[typeof command]["result"];
+    return all[command](args);
   };
 
   const fake: FakeIpc = {
@@ -125,6 +118,7 @@ export function createFakeIpc(handlers: Partial<FakeHandlers> = {}): FakeIpc {
     calls,
     channels,
     failListen: undefined,
+    failListenOf: undefined,
     transport: {
       invoke,
       openChannel(onMessage): OutputChannel {
@@ -148,6 +142,7 @@ export function createFakeIpc(handlers: Partial<FakeHandlers> = {}): FakeIpc {
           fake.failListen = undefined;
           throw cause;
         }
+        if (fake.failListenOf?.event === event) throw fake.failListenOf.cause;
         const set = listeners.get(event) ?? new Set();
         listeners.set(event, set);
         const entry = handler as (payload: never) => void;

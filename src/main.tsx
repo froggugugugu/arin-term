@@ -2,7 +2,8 @@
 //
 // 部品はここで生成して props で渡す。モジュールの読み込み時にストアを作らない。
 // 起動の手順そのもの(写しの購読と取得 → 準備完了の通知、失敗の扱い)は src/state/startApp.ts にある。
-// ターミナルの接続は、写しにあるターミナルの置き場所(TerminalHost)が描かれたときに TerminalManager が行う。
+// ターミナルの接続: 表示中のターミナルは置き場所(TerminalHost)が描かれたときに、隠したままのターミナル(他のタブ・
+// 他のプロジェクト。FR-042)は写しが届いたときに、TerminalManager が行う(src/state/terminalSync.ts)。
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -10,11 +11,13 @@ import { flushSync } from "react-dom";
 
 import type { ArinIpc } from "./ipc/client";
 import { createTauriIpc } from "./ipc/tauri";
+import { createActions } from "./state/actions";
 import { createAppStore } from "./state/appStore";
 import { installErrorReporter } from "./state/errorReporter";
 import { createWithLaunchOptions } from "./state/launchOptions";
 import { startApp, type StartAppResult } from "./state/startApp";
-import { forwardTerminalStatuses } from "./state/terminalStatus";
+import { syncTerminals } from "./state/terminalSync";
+import { createUiStore } from "./state/uiStore";
 import { TerminalManager } from "./terminal/TerminalManager";
 import { XtermEngine } from "./terminal/xterm/XtermEngine";
 import { AppShell } from "./ui/shell/AppShell";
@@ -32,6 +35,8 @@ export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartA
     report: (message) => ipc.reportFrontendError(message),
   });
   const store = createAppStore();
+  const ui = createUiStore();
+  const actions = createActions({ ipc, ui, reportError: reporter.report });
   // 描画方式と全角幅の方式は起動時の指定で選ぶ(検証用。既定は DOM と unicode11。M4 で決めて外す。ADR-001)。
   // 指定を取ってからエンジンを作る。取れなければ既定で作り、報告する。WebGL を作れなかったときの報告も同じ口へ流す。
   const { engine, verifyGrid } = await createWithLaunchOptions(ipc, reporter.report, (options) => ({
@@ -40,19 +45,25 @@ export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartA
     verifyGrid: options.verifyGrid,
   }));
   const terminals = new TerminalManager(engine, ipc, { reportError: reporter.report });
-  // 終わったシェル(写しの状態が exited / failed)には入力と寸法を送らない。
-  forwardTerminalStatuses(store, (id, status) => terminals.setStatus(id, status));
+  // 写しの状態(終わったシェルには入力と寸法を送らない)、消えたターミナルの破棄、表示中と隠すものを伝える。
+  syncTerminals(store, terminals, { verifyGrid });
   // ⌘C・⌘V(メニューの「編集」から来る copy・paste のイベント)を、フォーカス位置で振り分ける。
   installClipboardRouting(document, terminals);
   return startApp({
     ipc,
     store,
+    events: {
+      // メニューの「すべてを選択」を、フォーカス位置で振り分ける(ターミナルなら xterm.js の全選択)。
+      onMenuCommand: (command) => terminals.handleMenuCommand(command),
+      // 動作中のターミナルがあって終了が止められたら、終了の確認を開く(ダイアログの部品は T34d)。
+      onQuitRequested: (request) => ui.getState().openQuitConfirmation(request.running),
+    },
     mount: () => {
       // 描き終えてから準備完了を通知するため、描画を同期で済ませる。
       flushSync(() => {
         createRoot(container).render(
           <StrictMode>
-            <AppShell store={store} terminals={terminals} verifyGrid={verifyGrid} />
+            <AppShell store={store} ui={ui} actions={actions} terminals={terminals} verifyGrid={verifyGrid} />
           </StrictMode>,
         );
       });

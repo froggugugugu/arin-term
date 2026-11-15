@@ -70,6 +70,32 @@ export function sampleTerminal(
   return { id, projectId: null, label: "ターミナル 1", status, ...overrides };
 }
 
+/** テスト用のプロジェクトの ID(projectSnapshot が使う)。 */
+export const SAMPLE_PROJECT_ID = "p-e2e-1";
+
+/**
+ * ターミナルを 1 つのプロジェクトのタブとして載せた写し。プロジェクトを選択中にし、最初のタブを表示中にする
+ * (画面は選択中のプロジェクトの表示中のタブを出す。T34b)。
+ */
+export function projectSnapshot(terminals: readonly TerminalTabSnapshot[], overrides: Partial<AppSnapshot> = {}): AppSnapshot {
+  return sampleSnapshot({
+    projects: [
+      {
+        id: SAMPLE_PROJECT_ID,
+        name: "e2e",
+        color: "blue",
+        displayPath: "~/e2e",
+        missing: false,
+        terminalIds: terminals.map((t) => t.id),
+        activeTerminalId: terminals[0]?.id ?? null,
+      },
+    ],
+    selectedProjectId: SAMPLE_PROJECT_ID,
+    terminals: terminals.map((t) => ({ ...t, projectId: SAMPLE_PROJECT_ID })),
+    ...overrides,
+  });
+}
+
 const DEFAULT_REPLIES: TauriMockConfig = {
   get_app_snapshot: { ok: sampleSnapshot() },
   get_launch_options: { ok: { renderer: "dom", unicode: "unicode11", verifyGrid: false } },

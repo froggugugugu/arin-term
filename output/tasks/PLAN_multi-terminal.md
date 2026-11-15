@@ -528,7 +528,7 @@ T29〜T35 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 22(逐次。Phase 21 と T34a の完了後)
 
-- [ ] T34b — 画面のストアと操作、ターミナルの管理の複数化(変更ファイル: src/state/, src/terminal/TerminalManager.ts, src/terminal/TerminalManager.test.ts, src/terminal/engine.ts, src/terminal/xterm/XtermEngine.ts, src/test/fakeTerminalEngine.ts, src/test/fakeIpc.ts, src/ui/terminals/clipboardRouting.ts, src/main.tsx | 依存: T33e, T34a)
+- [x] T34b — 画面のストアと操作、ターミナルの管理の複数化(変更ファイル: src/state/, src/terminal/TerminalManager.ts, src/terminal/TerminalManager.test.ts, src/terminal/engine.ts, src/terminal/xterm/XtermEngine.ts, src/test/fakeTerminalEngine.ts, src/test/fakeIpc.ts, src/ui/terminals/clipboardRouting.ts, src/main.tsx | 依存: T33e, T34a)
   - 対応: FR-002・FR-042(切替でサーフェスを破棄しない)、FR-044、設計書 §6.1 の `uiStore`・`actions`、§9.1、M1 の見送り(隠したまま作るインスタンスの寸法、`onBinary`、「すべてを選択」、出力のバイト列への変換の失敗、再接続で寸法を諦めたとき)
   - `uiStore`(開いている確認・メニュー、フォーカス位置)と `actions`(コマンドの包み)を生成関数で作る(設計書 §11)。写しから表示用の値を取り出す関数。`TerminalManager`: 写しから消えたターミナルを破棄して購読を外す。隠したまま作るサーフェスは、最後に表示していたターミナルの寸法で始める(エンジンに行・桁を指定する操作を足す)。`onBinary` を `write_terminal_bytes` へ直列で送る。`selectAll` を足す。接続の応答が「寸法を反映していない」なら寸法を 1 回送り直す。チャネルの中身をバイト列にできなかったら診断に報告する(回復は先送り。下の割当表)
   - 並行: 不可

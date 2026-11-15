@@ -29,8 +29,18 @@ export interface TerminalSurface {
   write(data: Uint8Array): Promise<number>;
   /** キー入力・貼り付けで PTY へ送る文字列を受け取る。 */
   onInput(listener: (data: string) => void): void;
+  /**
+   * PTY へそのまま送るバイト列を受け取る(xterm.js の onBinary。古い形式のマウスの報告など)。
+   * 文字列の各文字の値(0〜255)が 1 バイトを表す。
+   */
+  onBinary(listener: (data: string) => void): void;
   /** 行・桁数が変わったときに受け取る(FR-043 のリサイズ追従)。 */
   onResize(listener: (cols: number, rows: number) => void): void;
+  /**
+   * 行・桁数を指定して変える(置き場所の大きさを測らない)。隠しているときも変える。
+   * 変われば onResize の受け取り手に届く。隠したまま作ったサーフェスを、表示中のターミナルの寸法で始めるのに使う(設計書 §2.2)。
+   */
+  resize(size: TerminalSize): void;
   /** 置き場所の大きさに合わせて行・桁数を決め直す。置き場所が画面に無いとき・隠しているときは何もしない。 */
   fit(): void;
   /**
@@ -51,6 +61,8 @@ export interface TerminalSurface {
   size(): TerminalSize;
   /** 選択している文字列。選択が無ければ空文字列。 */
   getSelection(): string;
+  /** 画面とスクロールバックの全体を選択する(メニューの「すべてを選択」)。破棄の後は何もしない。 */
+  selectAll(): void;
   /**
    * 文字列を貼り付ける。PTY への入力として onInput の受け取り手に届く。
    * 改行を CR にそろえ、ブラケットペーストのモードならその印で囲む(xterm.js の paste)。

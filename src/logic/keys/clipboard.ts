@@ -3,9 +3,7 @@
 // ⌘C・⌘V は、メニューバーの「編集」の項目が画面のコピー・ペーストのイベントにする。
 // 画面はそのイベントを入口にして、フォーカス位置で振り分ける。
 // M1 のフォーカス位置はターミナルかそれ以外だけ。ツリー(M2・M3)は ClipboardFocus に種類を足す。
-
-// キーの受け手は ./keyOwner に移した。既存の import 元(src/terminal/xterm/XtermEngine.ts)のために残す。
-export { type KeyChord, type KeyOwner, terminalKeyOwner } from "./keyOwner";
+// キーの受け手(terminalKeyOwner)は ./keyOwner にある。
 
 /** 画面のコピー・ペーストのイベントの種類。 */
 export type ClipboardKind = "copy" | "paste";

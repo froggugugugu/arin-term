@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createIpc } from "../ipc/client";
 import { createFakeIpc, sampleSnapshot } from "../test/fakeIpc";
 import { createAppStore } from "./appStore";
-import { startApp } from "./startApp";
+import { type StartAppDeps, startApp } from "./startApp";
 
 /** 起動の手順を、偽の通信と記録用の描画・記録用のログで動かす。 */
 function setup(handlers: Parameters<typeof createFakeIpc>[0] = {}) {
@@ -11,10 +11,11 @@ function setup(handlers: Parameters<typeof createFakeIpc>[0] = {}) {
   const store = createAppStore();
   const events: string[] = [];
   const logged: unknown[][] = [];
-  const run = () =>
+  const run = (listeners: NonNullable<StartAppDeps["events"]> = {}) =>
     startApp({
       ipc: createIpc(fake.transport),
       store,
+      events: listeners,
       mount: () => {
         // 描いた時点で、ストアに写しが入っているかどうかも記録する。
         events.push(`mount(snapshot=${store.getState().snapshot === null ? "null" : "set"})`);
@@ -140,5 +141,61 @@ describe("startApp(画面側の起動の手順)", () => {
     );
     expect(fake.calls).toEqual([]);
     expect(events).toEqual(["mount(snapshot=null)"]);
+  });
+
+  it("メニューの操作と終了の確認の要求を、準備完了の通知より先に購読して受け手に渡す", async () => {
+    let listenersAtReady = -1;
+    let fakeRef: ReturnType<typeof setup>["fake"] | undefined;
+    const ctx = setup({
+      notify_app_ready: () => {
+        listenersAtReady =
+          (fakeRef?.listenerCount("menu-command") ?? 0) + (fakeRef?.listenerCount("quit-requested") ?? 0);
+        return null;
+      },
+    });
+    fakeRef = ctx.fake;
+    const seen: string[] = [];
+
+    await ctx.run({
+      onMenuCommand: (command) => seen.push(`menu ${command}`),
+      onQuitRequested: (request) => seen.push(`quit ${request.running.map((r) => r.terminalId).join(",")}`),
+    });
+    ctx.fake.emit("menu-command", "select-all");
+    ctx.fake.emit("quit-requested", {
+      running: [{ terminalId: "t1", projectId: null, projectName: null, label: "ターミナル 1" }],
+    });
+
+    expect(listenersAtReady).toBe(2);
+    expect(seen).toEqual(["menu select-all", "quit t1"]);
+  });
+
+  it("受け手を渡さなければ、メニューの操作と終了の確認の要求を購読しない", async () => {
+    const { fake, run } = setup();
+
+    await run();
+
+    expect(fake.listenerCount("menu-command")).toBe(0);
+    expect(fake.listenerCount("quit-requested")).toBe(0);
+  });
+
+  it("終了の確認の要求を購読できなかったら、原因を残し、準備完了を通知しない", async () => {
+    const { fake, store, run } = setup();
+    fake.failListenOf = { event: "quit-requested", cause: "not allowed" };
+
+    const result = await run({ onQuitRequested: () => {} });
+
+    expect(result).toEqual({ ok: false, error: "終了の確認の要求を購読できなかった: not allowed" });
+    expect(store.getState().startupError).toBe("終了の確認の要求を購読できなかった: not allowed");
+    expect(fake.calls).toEqual([]);
+  });
+
+  it("メニューの操作を購読できなかったら、原因を残し、準備完了を通知しない", async () => {
+    const { fake, run } = setup();
+    fake.failListenOf = { event: "menu-command", cause: "not allowed" };
+
+    const result = await run({ onMenuCommand: () => {} });
+
+    expect(result).toEqual({ ok: false, error: "メニューの操作を購読できなかった: not allowed" });
+    expect(fake.calls).toEqual([]);
   });
 });
