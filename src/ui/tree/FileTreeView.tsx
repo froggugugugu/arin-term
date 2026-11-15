@@ -48,7 +48,8 @@ interface FileTreeViewProps {
   project: ProjectCard;
   tree: TreeStore;
   ui: UiStore;
-  actions: TreeMenuActions & Pick<Actions, "selectTreePath" | "toggleDir" | "commitInlineEdit" | "dropEntry">;
+  actions: TreeMenuActions &
+    Pick<Actions, "selectTreePath" | "toggleDir" | "commitInlineEdit" | "dropEntry" | "focusTile">;
 }
 
 /** 見える範囲の上下に余分に描く行の数。 */
@@ -143,6 +144,9 @@ function menuLabel(target: TreeMenuTarget, projectName: string): string {
  * - ドラッグ(T43d。./useTreeDrag.ts): 行を押して 4px を超えて動かすと、項目の写しをカーソルに付けて動かし、落とせる先
  *   (フォルダの行・ヘッダ・ターミナルの置き場所)を強調する。フォルダとヘッダに落とすと移す(確認を開く)か、⌥ で写す。
  *   ターミナルに落とすとパスを挿入し(Enter は送らない。文字列は Rust が作る)、そのターミナルにフォーカスを移す。
+ *   タイル表示で別のタイルへ落としたときは、挿入のあとそのタイルを focusTile でフォーカス中にする(タイルのクリックと同じ。
+ *   フォーカス中のタイルの輪・カード・ツリー・メニューの宛先を、キー入力の行き先とそろえる)。タブ表示と、フォーカス中の
+ *   タイルへ落としたときは、focusTile が何もしない(落とした先が既にフォーカス中)
  *   ドラッグ中は uiStore.setTreeDragging でツリーの更新を保留する(FR-037)
  */
 export function FileTreeView({ project, tree, ui, actions }: FileTreeViewProps) {
@@ -272,8 +276,12 @@ export function FileTreeView({ project, tree, ui, actions }: FileTreeViewProps) 
           void actions.dropEntry(projectId, result.source, result.destination, result.type === "copy");
           return;
         case "insert":
-          void actions.insertEntryPath(projectId, [result.source], result.terminalId);
-          // 続けて入力できるよう、落としたターミナルにフォーカスを移す。次の描画のフレームで移す
+          // 挿入のあと、落とした先をフォーカス中のタイルにする(既にフォーカス中なら focusTile は何も呼ばない)。
+          void actions
+            .insertEntryPath(projectId, [result.source], result.terminalId)
+            .then(() => actions.focusTile(result.terminalId));
+          // 続けて入力できるよう、落としたターミナルに入力のフォーカスも移す。写しが届いたときの移し替え(TerminalArea)は
+          // ツリーにフォーカスがあると止まるので、ここで明示的に移す。次の描画のフレームで移す
           // (同じ処理の中で移すと、WebKit が押下の続きの処理でフォーカスを戻すことがある。TerminalArea と同じ)。
           if (terminalElement !== null) requestAnimationFrame(() => requestTerminalFocus(terminalElement));
           return;

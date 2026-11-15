@@ -164,14 +164,24 @@ fn check_invariants(ws: &Workspace) {
         );
     }
 
-    // 表示中のターミナルにアテンションの印は残らない(計画書 T48b)。ページの番号は印のあるタイルのページ
-    let visible = ws.visible_terminals();
+    // いま見ているのはフォーカス中のターミナル(0 枚か 1 枚。ADR-011 の 7)
+    let attended = ws.attended_terminals();
+    assert_eq!(
+        attended,
+        display
+            .focused_terminal_id
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+    );
+
+    // フォーカス中のターミナルにアテンションの印は残らない(計画書 T48b)。ページの番号は印のあるタイルのページ
     let mut pages: Vec<u32> = Vec::new();
     for (index, terminal) in snapshot.terminals.iter().enumerate() {
         if terminal.attention {
             assert!(
-                !visible.contains(&terminal.id),
-                "表示中の {:?} に印が残っている",
+                !attended.contains(&terminal.id),
+                "フォーカス中の {:?} に印が残っている",
                 terminal.id
             );
             let page = u32::try_from(index / TILES_PER_PAGE).unwrap();
@@ -899,12 +909,21 @@ fn どの操作の列のあとも不変条件が成り立つ() {
                 ws.remove_project(&projects[next(projects.len())], &[], true)
                     .unwrap();
             }
-            // アテンションの契機(計画書 T48b)。表示中なら立たない
+            // アテンションの契機(計画書 T48b)。フォーカス中なら立たず、それ以外は(見えていても)立つ
             11 if !all.is_empty() => {
                 let id = all[next(all.len())].clone();
-                let visible = ws.visible_terminals().contains(&id);
+                let attended = ws.attended_terminals().contains(&id);
+                let already = ws
+                    .snapshot()
+                    .terminals
+                    .iter()
+                    .any(|t| t.id == id && t.attention);
                 let changed = ws.note_attention(&id);
-                assert!(!(visible && changed), "表示中の {id:?} に印が立った");
+                assert_eq!(
+                    changed,
+                    !attended && !already,
+                    "{id:?} の印(フォーカス中: {attended}、既に: {already})"
+                );
             }
             // 登録済みのフォルダを登録し直す(既存が選ばれる。FR-010)
             12 if !projects.is_empty() => {

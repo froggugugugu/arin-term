@@ -162,7 +162,12 @@ export function projectsSnapshot(projects: readonly SampleProject[], overrides: 
       });
     });
   }
-  return sampleSnapshot({ projects: cards, selectedProjectId: projects[0]?.id ?? null, terminals, ...overrides });
+  const snapshot = sampleSnapshot({ projects: cards, selectedProjectId: projects[0]?.id ?? null, terminals, ...overrides });
+  if (overrides.display !== undefined) return snapshot;
+  // Rust の写しは、タブ表示でもフォーカス中のターミナル(選択中のプロジェクトの表示中のタブ)を載せる
+  // (crates/arin-core/src/workspace/display.rs)。空のままだと、画面が「まだフォーカスしていない」と読んでしまう。
+  const selected = snapshot.projects.find((p) => p.id === snapshot.selectedProjectId);
+  return { ...snapshot, display: { ...snapshot.display, focusedTerminalId: selected?.activeTerminalId ?? null } };
 }
 
 // ── 表示(タイル。T47f)。Rust の規則(crates/arin-core/src/layout/tiles.rs と workspace/display.rs)をテスト用に写したもの ──
@@ -195,9 +200,9 @@ export interface TileDisplayOptions {
   /** フォーカスするタイル(Rust の focus_terminal と同じく、そのプロジェクトを選び、そのタブを表示中にする)。 */
   focusedTerminalId?: string;
   /**
-   * アテンションの契機があったターミナル(T47g)。Rust の規則(計画【仮定】14)と同じく、表示中のターミナル
-   * (タイル表示は表示中のページのタイル、拡大中は拡大したタイル、タブ表示は表示中のタブ)には印を立てない・消す。
-   * 省略すると写しのターミナルの attention をそのまま使う(表示中のものは同じく消す)。
+   * アテンションの契機があったターミナル(T47g)。Rust の規則(計画【仮定】14、ADR-011 の 7)と同じく、
+   * フォーカス中のターミナル(どの表示モードでも 1 枚)には印を立てない・消す。タイル表示で見えているだけのタイルには立つ。
+   * 省略すると写しのターミナルの attention をそのまま使う(フォーカス中のものは同じく消す)。
    */
   attention?: readonly string[];
 }
@@ -236,10 +241,9 @@ export function withTileDisplay(snapshot: AppSnapshot, options: TileDisplayOptio
   const focusedTerminalId = projects.find((p) => p.id === selectedProjectId)?.activeTerminalId ?? null;
   const mode = options.mode ?? "tiles";
   const maximized = mode === "tiles" && (options.maximized ?? false);
-  const visible = new Set(mode === "tiles" && !maximized ? tileIds : focusedTerminalId === null ? [] : [focusedTerminalId]);
   const marked = options.attention === undefined ? null : new Set(options.attention);
   const terminals = snapshot.terminals.map((t) => {
-    const attention = !visible.has(t.id) && (marked === null ? t.attention : marked.has(t.id));
+    const attention = t.id !== focusedTerminalId && (marked === null ? t.attention : marked.has(t.id));
     return attention === t.attention ? t : { ...t, attention };
   });
   const attentionPages = [

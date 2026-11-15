@@ -8,8 +8,8 @@
 //! 不変条件(どの口のあとも成り立つ):
 //! - ページは範囲内(0 枚なら 0)。フォーカス中のタイルがあれば、ページはそのタイルのページ
 //! - 拡大中はタイル表示で、拡大しているのはフォーカス中のタイル。拡大していたターミナルが消えたら拡大を解く
-//! - 表示中のターミナルにアテンションの印は無い(計画書 T48b。`note_attention` は表示中なら立てず、
-//!   `sync_display` が表示中になったものの印を消す)
+//! - フォーカス中のターミナルにアテンションの印は無い(計画書 T48b、ADR-011 の 7。`note_attention` はフォーカス中なら
+//!   立てず、`sync_display` がフォーカス中になったものの印を消す)。タイル表示で見えているだけのタイルには立つ
 //!
 //! 読み取りは `resolve` で保存値から毎回計算するので、`sync_display` を呼び忘れた口があっても範囲の外を指さない。
 //! `sync_display` は計算した結果を保存値に戻す(フォーカスが無くなったときのページと、拡大の付いていく先を覚える)。
@@ -125,7 +125,8 @@ impl Workspace {
         true
     }
 
-    /// 表示中のターミナルの並び(NFR-009。T48b のアテンションの判定と画面の表示に使う)。
+    /// 表示中のターミナルの並び(NFR-009。画面がどのターミナルを描くかに使う。アテンションの判定には使わない。
+    /// そちらは `attended_terminals`)。
     ///
     /// タブ表示は選択中のプロジェクトの表示中のタブ(0 枚なら空)、タイル表示は表示中のページのタイル(並びの順)、
     /// 拡大中は拡大した 1 枚。
@@ -139,13 +140,23 @@ impl Workspace {
         }
     }
 
+    /// アテンションの判定で「いま見ている」とみなすターミナルの並び(FR-055、ADR-011 の 7。0 枚か 1 枚)。
+    ///
+    /// どの表示モードでもフォーカス中のターミナル(タブ表示=選択中のプロジェクトの表示中のタブ、
+    /// タイル表示=フォーカス中のタイル、拡大中=拡大した 1 枚)。タイル表示で同じページに見えているだけのタイルは含めない
+    /// (含めると、FR-055 の「アテンションのあるタイルのタイトルにバッジが付く」が満たせない)。
+    #[must_use]
+    pub fn attended_terminals(&self) -> Vec<TerminalId> {
+        self.resolve().focused.into_iter().collect()
+    }
+
     /// アテンションの契機があった(FR-055。読み取りスレッドが `AttentionScanner` の契機のあとに呼ぶ。計画書 T48c)。
     ///
-    /// そのターミナルが表示中でなければ印を立てる(`AttentionPolicy`。§15.2 #10 の A)。印が立ったら `true`
-    /// (このときだけ写しを送る)。表示中のとき・既に立っているとき・その ID のタブが無いとき(閉じたあとに届いた契機)は
-    /// 何もせず `false`。
+    /// そのターミナルがフォーカス中(`attended_terminals`)でなければ印を立てる(`AttentionPolicy`。§15.2 #10 の A)。
+    /// 印が立ったら `true`(このときだけ写しを送る)。フォーカス中のとき・既に立っているとき・その ID のタブが無いとき
+    /// (閉じたあとに届いた契機)は何もせず `false`。
     pub fn note_attention(&mut self, id: &TerminalId) -> bool {
-        AttentionPolicy::should_mark(id, &self.visible_terminals()) && self.tabs.set_attention(id)
+        AttentionPolicy::should_mark(id, &self.attended_terminals()) && self.tabs.set_attention(id)
     }
 
     /// 写しの `display`。
@@ -198,13 +209,14 @@ impl Workspace {
     }
 
     /// 保存値を、いまのタブから決まる表示に合わせ直す(選択・タブの追加・閉じる・切替・削除・シェルの終了のあとに呼ぶ)。
-    /// 表示中になったターミナルのアテンションの印を消す(設計書 §7.1「アテンション」の 5)。
+    /// フォーカス中になったターミナルのアテンションの印を消す(設計書 §7.1「アテンション」の 5)。
+    /// ページを送っただけで見えるようになったタイルの印は消さない。
     pub(super) fn sync_display(&mut self) {
         let view = self.resolve();
         self.display.page = view.layout.page;
         self.display.maximized = view.maximized;
-        for id in self.visible_terminals() {
-            self.tabs.clear_attention(&id);
+        if let Some(focused) = &view.focused {
+            self.tabs.clear_attention(focused);
         }
     }
 

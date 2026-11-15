@@ -1,7 +1,11 @@
-//! 表示中かの判定(`AttentionPolicy`)とアテンションの印(`Workspace::note_attention`、写しの `attention`・`attentionPages`)。
-//! FR-055、設計書 §7.1「アテンション」の 2・3・5、§15.2 #10 の A、計画書 T48b(【仮定】13・14)。
+//! いま見ているかの判定(`AttentionPolicy`、`Workspace::attended_terminals`)とアテンションの印
+//! (`Workspace::note_attention`、写しの `attention`・`attentionPages`)。
+//! FR-055、設計書 §7.1「アテンション」の 2・3・5、§15.2 #10 の A、ADR-011 の 7、計画書 T48b(【仮定】13・14)。
 //!
-//! 不変条件: 表示中のターミナルに印は残らない(印を立てる口でも、表示が変わる口のあとでも)。
+//! 規則: いま見ているのはフォーカス中のターミナル 1 枚(タブ表示=表示中のタブ、タイル表示=フォーカス中のタイル、
+//! 拡大中=拡大した 1 枚)。タイル表示で同じページに見えているだけのタイルには印が立ち、ページを送って見えただけでは消えない。
+//!
+//! 不変条件: フォーカス中のターミナルに印は残らない(印を立てる口でも、表示が変わる口のあとでも)。
 //! 無作為な操作の列での確かめは `workspace_display.rs` の `どの操作の列のあとも不変条件が成り立つ`。
 
 use std::path::PathBuf;
@@ -93,11 +97,14 @@ fn tid(n: u32) -> TerminalId {
     TerminalId::new(format!("terminal-{n}"))
 }
 
-/// 表示中のターミナルに印が無いこと。
-fn assert_no_mark_on_visible(ws: &Workspace) {
+/// フォーカス中のターミナルに印が無いこと。
+fn assert_no_mark_on_focused(ws: &Workspace) {
     let marks = marked(ws);
-    for id in ws.visible_terminals() {
-        assert!(!marks.contains(&id), "表示中の {id:?} に印が残っている");
+    for id in ws.attended_terminals() {
+        assert!(
+            !marks.contains(&id),
+            "フォーカス中の {id:?} に印が残っている"
+        );
     }
 }
 
@@ -105,13 +112,36 @@ fn assert_no_mark_on_visible(ws: &Workspace) {
 // 判定(AttentionPolicy)
 
 #[test]
-fn 表示中の並びに無いターミナルだけが印の対象() {
-    let visible = [tid(1), tid(2)];
+fn いま見ている並びに無いターミナルだけが印の対象() {
+    let attended = [tid(1)];
 
-    assert!(!AttentionPolicy::should_mark(&tid(1), &visible));
-    assert!(!AttentionPolicy::should_mark(&tid(2), &visible));
-    assert!(AttentionPolicy::should_mark(&tid(3), &visible));
+    assert!(!AttentionPolicy::should_mark(&tid(1), &attended));
+    assert!(AttentionPolicy::should_mark(&tid(2), &attended));
     assert!(AttentionPolicy::should_mark(&tid(1), &[]));
+}
+
+#[test]
+fn いま見ているのはどの表示モードでもフォーカス中の_1_枚() {
+    // 4 枚とも 1 ページ目。タイル表示でもページの全タイルではなくフォーカス中の 1 枚
+    let mut ws = workspace(&[4]);
+    let focused = ws.active_terminal().unwrap();
+    assert_eq!(ws.attended_terminals(), vec![focused.clone()], "タブ表示");
+
+    ws.set_display_mode(DisplayMode::Tiles);
+    assert_eq!(ws.visible_terminals().len(), 4, "画面には 4 枚とも描く");
+    assert_eq!(ws.attended_terminals(), vec![focused.clone()], "タイル表示");
+
+    ws.toggle_maximize();
+    assert_eq!(ws.attended_terminals(), vec![focused], "拡大中");
+}
+
+#[test]
+fn タブが無ければいま見ているターミナルは無い() {
+    let mut ws = workspace(&[1]);
+    let only = ws.active_terminal().unwrap();
+    ws.close_terminal(&only).unwrap();
+
+    assert!(ws.attended_terminals().is_empty());
 }
 
 // ---------------------------------------------------------------------------
@@ -167,18 +197,46 @@ fn 知らないターミナルの契機は何もしない() {
 // 印が立つ(タイル表示・拡大)
 
 #[test]
-fn タイル表示では表示中のページのタイルに立たない() {
-    // 10 枚: 1 ページ目に 9 枚
+fn タイル表示ではフォーカス中のタイルに立たない() {
+    let mut ws = workspace(&[10]);
+    ws.set_display_mode(DisplayMode::Tiles);
+    let focused = ws.active_terminal().unwrap();
+
+    assert!(!ws.note_attention(&focused));
+
+    assert!(marked(&ws).is_empty());
+}
+
+#[test]
+fn タイル表示で同じページのフォーカスの無いタイルに印が立つ() {
+    // FR-055: 9 枚並べて、どのタイルが入力待ちになったかに気づける。10 枚: 1 ページ目に 9 枚
     let mut ws = workspace(&[10]);
     ws.set_display_mode(DisplayMode::Tiles);
     let page = ws.snapshot().display.tile_ids;
     assert_eq!(page.len(), 9);
+    let focused = ws.active_terminal().unwrap();
+    let others: Vec<TerminalId> = page.into_iter().filter(|id| *id != focused).collect();
 
-    for id in &page {
-        assert!(!ws.note_attention(id), "表示中のページの {id:?}");
+    for id in &others {
+        assert!(ws.note_attention(id), "同じページのフォーカスの無い {id:?}");
     }
 
-    assert!(marked(&ws).is_empty());
+    assert_eq!(marked(&ws), others);
+    // 印のあるタイルは表示中のページ(0)にある
+    assert_eq!(ws.snapshot().display.attention_pages, vec![0]);
+}
+
+#[test]
+fn タイル表示で別のプロジェクトの見えているタイルに印が立つ() {
+    // A に 2 枚、B に 1 枚。3 枚とも 1 ページ目で、フォーカスは A の 1 枚目
+    let mut ws = workspace(&[2, 1]);
+    ws.set_display_mode(DisplayMode::Tiles);
+    let b1 = tabs_of(&ws, &pid(2))[0].clone();
+    assert!(ws.visible_terminals().contains(&b1));
+
+    assert!(ws.note_attention(&b1));
+
+    assert_eq!(marked(&ws), vec![b1]);
 }
 
 #[test]
@@ -210,10 +268,24 @@ fn 拡大中は拡大したタイルのほかに立つ() {
 }
 
 // ---------------------------------------------------------------------------
-// 印が消える(そのターミナルが表示中になったとき)
+// 印が消える(そのターミナルがフォーカス中になったとき)
 
 #[test]
-fn ページを送ってそのタイルが見えると消える() {
+fn タイル表示でフォーカスすると消える() {
+    let mut ws = workspace(&[10]);
+    ws.set_display_mode(DisplayMode::Tiles);
+    let ids = all_ids(&ws);
+    ws.note_attention(&ids[3]);
+    ws.note_attention(&ids[5]);
+
+    assert!(ws.focus_terminal(&ids[3]).unwrap());
+
+    // フォーカスしなかった ids[5] の印は残る
+    assert_eq!(marked(&ws), vec![ids[5].clone()]);
+}
+
+#[test]
+fn ページを送って先頭のタイルにフォーカスが移ると消える() {
     let mut ws = workspace(&[10]);
     ws.set_display_mode(DisplayMode::Tiles);
     let tenth = all_ids(&ws)[9].clone();
@@ -221,7 +293,25 @@ fn ページを送ってそのタイルが見えると消える() {
 
     assert!(ws.next_page());
 
+    assert_eq!(ws.active_terminal(), Some(tenth));
     assert!(marked(&ws).is_empty());
+}
+
+#[test]
+fn ページを送っただけではフォーカスの無いタイルの印は消えない() {
+    // 12 枚: 2 ページ目は 10〜12 枚目。送るとフォーカスは 10 枚目へ移り、11・12 枚目は見えるだけ
+    let mut ws = workspace(&[12]);
+    ws.set_display_mode(DisplayMode::Tiles);
+    let ids = all_ids(&ws);
+    ws.note_attention(&ids[10]);
+    ws.note_attention(&ids[11]);
+
+    assert!(ws.next_page());
+
+    assert!(ws.visible_terminals().contains(&ids[10]));
+    assert_eq!(marked(&ws), vec![ids[10].clone(), ids[11].clone()]);
+    assert_eq!(ws.snapshot().display.page, 1);
+    assert_eq!(ws.snapshot().display.attention_pages, vec![1]);
 }
 
 #[test]
@@ -296,7 +386,7 @@ fn タイルにフォーカスすると消える() {
 }
 
 #[test]
-fn 拡大を解いて見えたタイルの印が消える() {
+fn 拡大を解いて見えただけのタイルの印は残る() {
     let mut ws = workspace(&[3]);
     ws.set_display_mode(DisplayMode::Tiles);
     ws.toggle_maximize();
@@ -305,12 +395,13 @@ fn 拡大を解いて見えたタイルの印が消える() {
 
     assert!(ws.toggle_maximize());
 
-    assert!(marked(&ws).is_empty());
+    assert!(ws.visible_terminals().contains(&other));
+    assert_eq!(marked(&ws), vec![other]);
 }
 
 #[test]
-fn タイル表示に切り替えて見えたタイルの印が消える() {
-    // タブ表示では A の 2 枚目は隠れている。タイル表示にすると同じページに並ぶ
+fn タイル表示に切り替えて見えただけのタイルの印は残る() {
+    // タブ表示では A の 2 枚目は隠れている。タイル表示にすると同じページに並ぶが、フォーカスは A の 1 枚目のまま
     let mut ws = workspace(&[2, 1]);
     let a2 = tabs_of(&ws, &pid(1))[1].clone();
     let b1 = tabs_of(&ws, &pid(2))[0].clone();
@@ -319,7 +410,7 @@ fn タイル表示に切り替えて見えたタイルの印が消える() {
 
     assert!(ws.set_display_mode(DisplayMode::Tiles));
 
-    assert!(marked(&ws).is_empty());
+    assert_eq!(marked(&ws), vec![a2, b1]);
 }
 
 #[test]
@@ -446,7 +537,7 @@ fn 印が無ければアテンションのあるページは空() {
 }
 
 #[test]
-fn 表示が変わる操作のあとも表示中のターミナルに印は無い() {
+fn 表示が変わる操作のあともフォーカス中のターミナルに印は無い() {
     // すべてのターミナルに印を立てようとしてから、表示が変わる口を順に通す
     let mut ws = workspace(&[4, 7, 2]);
     ws.set_display_mode(DisplayMode::Tiles);
@@ -454,28 +545,28 @@ fn 表示が変わる操作のあとも表示中のターミナルに印は無�
         for id in all_ids(ws) {
             ws.note_attention(&id);
         }
-        assert_no_mark_on_visible(ws);
+        assert_no_mark_on_focused(ws);
     };
 
     mark_all(&mut ws);
     ws.next_page();
-    assert_no_mark_on_visible(&ws);
+    assert_no_mark_on_focused(&ws);
     mark_all(&mut ws);
     ws.toggle_maximize();
-    assert_no_mark_on_visible(&ws);
+    assert_no_mark_on_focused(&ws);
     mark_all(&mut ws);
     ws.select_project(&pid(3)).unwrap();
-    assert_no_mark_on_visible(&ws);
+    assert_no_mark_on_focused(&ws);
     mark_all(&mut ws);
     ws.toggle_maximize();
-    assert_no_mark_on_visible(&ws);
+    assert_no_mark_on_focused(&ws);
     mark_all(&mut ws);
     ws.previous_page();
-    assert_no_mark_on_visible(&ws);
+    assert_no_mark_on_focused(&ws);
     mark_all(&mut ws);
     ws.set_display_mode(DisplayMode::Tabs);
-    assert_no_mark_on_visible(&ws);
+    assert_no_mark_on_focused(&ws);
     mark_all(&mut ws);
     ws.select_previous_terminal();
-    assert_no_mark_on_visible(&ws);
+    assert_no_mark_on_focused(&ws);
 }

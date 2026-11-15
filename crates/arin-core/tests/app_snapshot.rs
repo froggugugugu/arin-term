@@ -161,6 +161,27 @@ fn 写しにアテンションのあるページの番号が載る() {
 }
 
 #[test]
+fn 写しのアテンションのあるページに表示中のページも載る() {
+    // ADR-011 の 7。A に 10 枚でタイル表示。フォーカスは 1 枚目。同じページのフォーカスの無い 2 枚目に印が立つ
+    let mut ws = sample();
+    for _ in 1..10 {
+        ws.open_terminal(&id(1)).expect("開ける");
+    }
+    ws.activate_terminal(&arin_core::terminal::TerminalId::new("terminal-1"))
+        .unwrap();
+    assert!(ws.set_display_mode(DisplayMode::Tiles));
+    assert!(!ws.note_attention(&arin_core::terminal::TerminalId::new("terminal-1")));
+    assert!(ws.note_attention(&arin_core::terminal::TerminalId::new("terminal-2")));
+
+    let value = serde_json::to_value(ws.snapshot()).unwrap();
+
+    assert_eq!(value["display"]["page"], json!(0));
+    assert_eq!(value["display"]["attentionPages"], json!([0]));
+    assert_eq!(value["terminals"][0]["attention"], json!(false));
+    assert_eq!(value["terminals"][1]["attention"], json!(true));
+}
+
+#[test]
 fn 写しの_json_に_show_hidden_が載る() {
     // 計画書 T38e。隠しファイル表示(FR-017)はカードごとの真偽で、既定はオフ
     let mut ws = sample();

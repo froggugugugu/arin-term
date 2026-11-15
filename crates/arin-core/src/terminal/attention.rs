@@ -16,7 +16,7 @@
 //! 状態の大きさは一定(終わらない OSC が続いてもメモリは増えない)。確保をしない。
 //!
 //! 契機のあとに印を立てるかは `AttentionPolicy`(§7.1「アテンション」の 2。計画書 T48b)が決める。
-//! 印そのものは `TerminalStore` が持ち、表示中になったら `Workspace` が消す。
+//! 印そのものは `TerminalStore` が持ち、フォーカス中になったら `Workspace` が消す。
 
 use super::TerminalId;
 use super::osc::{OscEvent, OscScanner};
@@ -49,16 +49,17 @@ impl AttentionScanner {
 
 /// 契機があったターミナルに印を立てるかの判定(設計書 §7.1「アテンション」の 2、§15.2 #10 の A、計画書 T48b)。
 ///
-/// 表示中のターミナルには立てない。アプリが背面にあっても同じ(画面上で表示中なら立てない)。
-/// 表示中の並びは `Workspace::visible_terminals`(タブ表示=選択中のプロジェクトの表示中のタブ、
-/// タイル表示=表示中のページのタイル、拡大中=拡大した 1 枚)。
+/// いま見ている(フォーカス中の)ターミナルには立てない。アプリが背面にあっても同じ。
+/// いま見ている並びは `Workspace::attended_terminals`(タブ表示=選択中のプロジェクトの表示中のタブ、
+/// タイル表示=フォーカス中のタイル、拡大中=拡大した 1 枚。ADR-011 の 7)。タイル表示で同じページに見えているだけの
+/// タイルには立てる(FR-055 の「アテンションのあるタイルのタイトルにバッジが付く」を満たすため)。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AttentionPolicy;
 
 impl AttentionPolicy {
-    /// `terminal` が `visible`(表示中のターミナルの並び)に無ければ `true`(印を立てる)。
+    /// `terminal` が `attended`(いま見ているターミナルの並び)に無ければ `true`(印を立てる)。
     #[must_use]
-    pub fn should_mark(terminal: &TerminalId, visible: &[TerminalId]) -> bool {
-        !visible.contains(terminal)
+    pub fn should_mark(terminal: &TerminalId, attended: &[TerminalId]) -> bool {
+        !attended.contains(terminal)
     }
 }

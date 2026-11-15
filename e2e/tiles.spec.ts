@@ -577,17 +577,20 @@ test.describe("拡大と復帰(FR-054)", () => {
 
 test.describe("アテンションの印(FR-055)", () => {
   test("アテンションのあるタイルのタイトルに印が付く", async ({ page }) => {
-    // 画面は写しの attention をそのまま映す。Rust は表示中のタイルの印を消して送るので(計画【仮定】14)、
-    // ここでは部品の約束として、印の付いたタイルを直接載せる。
-    const snapshot = withTileDisplay(projectsSnapshot([A, B, ...projects(2)]));
-    snapshot.terminals = snapshot.terminals.map((t) =>
-      t.id === "p-b-t1" || t.id === "p2-t1" ? { ...t, attention: true } : t,
+    // Rust の規則(計画【仮定】14、ADR-011 の 7): いま見ているのはフォーカス中のタイル(app: ターミナル 1)だけ。
+    // 同じページに見えているほかのタイルの契機には印が立つ。5 枚とも 1 ページ目で、すべてのタイルで契機があった。
+    await open(
+      page,
+      withTileDisplay(projectsSnapshot([A, B, ...projects(2)]), {
+        attention: ["p-a-t1", "p-a-t2", "p-b-t1", "p2-t1"],
+      }),
     );
-    await open(page, snapshot);
     await expect(attentionMark(titleBar(page, "ribbitlog: ターミナル 1"))).toBeVisible();
     await expect(attentionMark(titleBar(page, "proj2: ターミナル 1"))).toBeVisible();
+    await expect(attentionMark(titleBar(page, "app: ターミナル 2"))).toBeVisible();
+    // フォーカス中のタイルと、契機の無かったタイルには付かない。
     await expect(attentionMark(titleBar(page, "app: ターミナル 1"))).toHaveCount(0);
-    await expect(attentionMark(titleBar(page, "app: ターミナル 2"))).toHaveCount(0);
+    await expect(attentionMark(titleBar(page, "proj1: ターミナル 1"))).toHaveCount(0);
     // 印はタイトルの右端(名前の後ろ)にあり、プロジェクト色の印とは色が違う。
     const bar = await box(titleBar(page, "ribbitlog: ターミナル 1"));
     const mark = await box(attentionMark(titleBar(page, "ribbitlog: ターミナル 1")));
@@ -603,8 +606,10 @@ test.describe("アテンションの印(FR-055)", () => {
 
   test("別のページのアテンションはページ表示の前後のボタンに印が付く", async ({ page }) => {
     const list = projects(19);
-    // 1 ページ目を表示中に、2 ページ目(p10)のタイルでベルが鳴った。
-    await open(page, withTileDisplay(projectsSnapshot(list), { attention: ["p10-t1"] }));
+    // 1 ページ目を表示中に、2 ページ目(p10)と、同じページのフォーカスの無い p2 のタイルでベルが鳴った。
+    // 表示中のページの印(p2)はタイトルに付き、前後のボタンには数えない。
+    await open(page, withTileDisplay(projectsSnapshot(list), { attention: ["p10-t1", "p2-t1"] }));
+    await expect(attentionMark(titleBar(page, "proj2: ターミナル 1"))).toBeVisible();
     await expect(pageMark(nextButton(page))).toBeVisible();
     await expect(pageMark(previousButton(page))).toHaveCount(0);
     await expect(nextButton(page)).toHaveAttribute("aria-label", /新しい通知があります/);
@@ -617,18 +622,31 @@ test.describe("アテンションの印(FR-055)", () => {
     await expect(pageMark(nextButton(page))).toHaveCount(0);
   });
 
-  test("表示すると印が消える", async ({ page }) => {
-    const list = projects(10);
-    await open(page, withTileDisplay(projectsSnapshot(list), { attention: ["p10-t1"] }));
+  test("フォーカスすると印が消え_ページを送って見えただけのタイルの印は残る", async ({ page }) => {
+    // 12 枚: 2 ページ目は p10〜p12。p10 と p11 で契機があった
+    const list = projects(12);
+    const attention = ["p10-t1", "p11-t1"];
+    await open(page, withTileDisplay(projectsSnapshot(list), { attention }));
     await expect(pageMark(nextButton(page))).toBeVisible();
 
     await nextButton(page).click();
-    // Rust が返す写し: 2 ページ目を表示し、表示中になった p10 の印を消している。
-    await emitEvent(page, "app-snapshot", withTileDisplay(projectsSnapshot(list), { page: 1, attention: ["p10-t1"] }));
+    // Rust が返す写し: 2 ページ目を表示し、フォーカスの移った先頭の p10 の印だけを消している。
+    await emitEvent(page, "app-snapshot", withTileDisplay(projectsSnapshot(list), { page: 1, attention }));
     await expect(page.getByTestId("tile-page-label")).toHaveText("2/2");
     await expect(attentionMark(titleBar(page, "proj10: ターミナル 1"))).toHaveCount(0);
+    await expect(attentionMark(titleBar(page, "proj11: ターミナル 1"))).toBeVisible();
     await expect(pageMark(previousButton(page))).toHaveCount(0);
     await expect(pageMark(nextButton(page))).toHaveCount(0);
+
+    // p11 のタイルをクリックしてフォーカスすると、Rust はその印を消して返す。
+    await titleBar(page, "proj11: ターミナル 1").click();
+    await expect.poll(() => readCallArgs(page, "focus_terminal")).toEqual([{ terminalId: "p11-t1" }]);
+    await emitEvent(
+      page,
+      "app-snapshot",
+      withTileDisplay(projectsSnapshot(list), { focusedTerminalId: "p11-t1", attention: ["p11-t1"] }),
+    );
+    await expect(attentionMark(titleBar(page, "proj11: ターミナル 1"))).toHaveCount(0);
   });
 });
 
@@ -831,9 +849,36 @@ test.describe("パスの挿入の宛先(FR-016・FR-024。M3 の申し送り)", 
     await expect(dropActive(page)).toHaveCount(0);
     // 続けて入力できるよう、落としたタイルのターミナルに入力のフォーカスが移る。
     await expect(tileInput(page, "ribbitlog: ターミナル 1")).toBeFocused();
-    // 【仮定】フォーカス中のタイル(選択中のプロジェクト)は替えない(ツリーは a のまま。続けて a から落とせる)。
+    // 挿入のあと、落とした先のタイルをフォーカス中にする(タイルのクリックと同じ。キー入力の行き先とフォーカス中のタイルをそろえる)。
+    await expect.poll(() => readCallArgs(page, "focus_terminal")).toEqual([{ terminalId: "p-b-t1" }]);
+    const calls = (await readRecordedCalls(page)).map((c) => c.command);
+    expect(calls.indexOf("insert_entry_path")).toBeLessThan(calls.indexOf("focus_terminal"));
+
+    // Rust が返す写し: b を選び、b のタイルがフォーカス中。カード・ツリー・タイルの輪がそろい、入力のフォーカスはそのまま。
+    await emitEvent(page, "app-snapshot", withTileDisplay(projectsSnapshot([A, B]), { focusedTerminalId: "p-b-t1" }));
+    await expect(tile(page, "ribbitlog: ターミナル 1")).toHaveAttribute("aria-current", "true");
+    await expect(tile(page, "app: ターミナル 1")).not.toHaveAttribute("aria-current", "true");
+    await expect(card(page, "ribbitlog")).toHaveAttribute("aria-current", "true");
+    await expect(page.getByTestId("tree-header")).toHaveText("ribbitlog");
+    await expect(tileInput(page, "ribbitlog: ターミナル 1")).toBeFocused();
+  });
+
+  test("ツリーの項目をフォーカス中のタイルへ落としてもフォーカスのコマンドを呼ばない", async ({ page }) => {
+    await openWithTree(page, withTileDisplay(projectsSnapshot([A, B])));
+    await settleFocus(page, "app: ターミナル 1");
+    await connectOf(page, "p-a-t1");
+
+    await startDrag(page, treeRow(page, "README.md"));
+    await hoverOver(page, tile(page, "app: ターミナル 1").locator(".xterm-screen"));
+    await expect(dropActive(page)).toHaveAttribute("data-terminal-id", "p-a-t1");
+    await page.mouse.up();
+
+    await expect
+      .poll(() => readCallArgs(page, "insert_entry_path"))
+      .toEqual([{ projectId: A.id, paths: ["README.md"], terminalId: "p-a-t1" }]);
+    await expect(tileInput(page, "app: ターミナル 1")).toBeFocused();
+    await page.waitForTimeout(SETTLE_MS);
     expect(await readCallArgs(page, "focus_terminal")).toEqual([]);
-    await expect(page.getByTestId("tree-header")).toHaveText("app");
   });
 
   test("ドラッグ中にタイルの上を通っても行が動かない", async ({ page }) => {

@@ -24,6 +24,7 @@ label: string,
  */
 status: TerminalStatus, 
 /**
- * アテンションの印(表示していないあいだに BEL・OSC 9・OSC 777 があった。表示されると消える。FR-055、計画書 T48b)。
+ * アテンションの印(フォーカス中でないあいだに BEL・OSC 9・OSC 777 があった。フォーカス中になると消える。
+ * タイル表示では見えているタイルにも立つ。FR-055、計画書 T48b)。
  */
 attention: boolean, };

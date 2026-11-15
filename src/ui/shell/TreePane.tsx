@@ -29,6 +29,7 @@ interface TreePaneProps {
       | "dropEntry"
       | "confirmMove"
       | "cancelMove"
+      | "focusTile"
     >;
 }
 

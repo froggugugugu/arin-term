@@ -62,7 +62,7 @@ pub struct DisplaySnapshot {
     pub focused_terminal_id: Option<TerminalId>,
     /// アテンションの印(`TerminalTabSnapshot::attention`)のあるタイルのページ(0 から。昇順で重なりなし。計画書 T48b)。
     /// 画面はページ表示の前後のボタンの印に使う(`page` より小さいものがあれば前、大きいものがあれば次。FR-055)。
-    /// タブ表示・拡大中は表示中のページにも印のあるタイルがありうるので、`page` が含まれることもある。
+    /// 印はフォーカス中のターミナルだけに立たないので、表示中のページの番号(`page`)が含まれることもある(前後には数えない)。
     pub attention_pages: Vec<u32>,
 }
 
@@ -100,6 +100,7 @@ pub struct TerminalTabSnapshot {
     pub label: String,
     /// 状態。
     pub status: TerminalStatus,
-    /// アテンションの印(表示していないあいだに BEL・OSC 9・OSC 777 があった。表示されると消える。FR-055、計画書 T48b)。
+    /// アテンションの印(フォーカス中でないあいだに BEL・OSC 9・OSC 777 があった。フォーカス中になると消える。
+    /// タイル表示では見えているタイルにも立つ。FR-055、計画書 T48b)。
     pub attention: bool,
 }

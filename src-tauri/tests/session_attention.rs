@@ -490,24 +490,42 @@ fn 表示すると印が消え_また隠れたあとの_bel_でもう一度立�
 }
 
 #[test]
-fn タイル表示で表示中のページのタイルの_bel_では写しを送らない() {
+fn タイル表示でフォーカス中のタイルの_bel_では写しを送らず_同じページの別のタイルでは送る() {
+    // ADR-011 の 7: いま見ているのはフォーカス中のタイル(A)だけ。B は同じページに見えていても印が立つ(FR-055)
     let f = Fixture::new();
     assert!(f.registry.set_display_mode(DisplayMode::Tiles));
+    assert!(
+        f.registry.snapshot().display.tile_ids.contains(&f.ids[B]),
+        "B が同じページに無い"
+    );
     let before = f.sent().len();
 
-    // 2 枚とも 1 ページ目に並ぶので、どちらも表示中。
-    f.feed_and_settle(B, &[b"\x07"]);
     f.feed_and_settle(A, &[b"\x07"]);
+    assert_eq!(
+        f.sent().len(),
+        before,
+        "フォーカス中の A のベルで写しを送った"
+    );
+    assert!(!f.attention(A));
 
-    assert_eq!(f.sent().len(), before);
-    assert!(!f.attention(A) && !f.attention(B));
+    f.controls[B].feed(b"\x07");
+    assert!(
+        wait_until(|| f.sent_with_attention(B) == 1),
+        "同じページの B のベルで印の載った写しが送られなかった"
+    );
+    assert!(f.attention(B));
 
-    // 拡大すると、拡大していない B は隠れるので立つ。
+    // B のタイルにフォーカスすると消える(写しで画面へ伝わる)。
+    assert!(f.registry.focus_terminal(&f.ids[B]).unwrap());
+    assert!(!f.attention(B));
+    assert!(!attention_in(f.sent().last().unwrap(), &f.ids[B]));
+
+    // 拡大すると、拡大していない A に立つ。
     assert!(f.registry.toggle_tile_maximize());
     let before = f.sent().len();
-    f.controls[B].feed(b"\x07");
+    f.controls[A].feed(b"\x07");
     assert!(wait_until(|| f.sent().len() == before + 1));
-    assert!(f.attention(B));
+    assert!(f.attention(A));
 }
 
 #[test]
