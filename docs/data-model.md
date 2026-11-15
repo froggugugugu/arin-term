@@ -19,6 +19,7 @@
 | `projects[].bookmark` | base64 の文字列 / `null` | `arin-core` は中身を見ない。`null` なら起動時に `lastKnownPath` から作り直す |
 | `projects[].lastKnownPath` | 文字列 | 最後に分かっていた絶対パス |
 | `projects[].customName` | 文字列 / `null` | `null` はフォルダ名に追従 |
+| `projects[].tree.showHidden` | 真偽 | 隠しファイルの表示。ON のときだけ書く。無ければ OFF |
 | `projects[].colorId` | 文字列 | `red`・`orange`・`yellow`・`green`・`teal`・`blue`・`purple`・`pink`(パレット順。色の値は `src/ui/design/palette.ts`) |
 | `ui.selectedProjectId` | 文字列 / `null` | |
 | `ui.sidebarWidth` / `ui.cardAreaHeight` | 数値(CSS ピクセル) | 無ければ書かない |
@@ -40,7 +41,7 @@ Rust から画面へ渡す状態の写し。画面は届いたもので丸ごと
 | `layout` | `PaneSizes` | 保存値(`sidebarWidth`・`sidebarCollapsed`・`cardAreaHeight`)。表示値への調整は画面 |
 | `notice` | 文字列 / `null` | 状態ファイルを退避したときの 1 行の知らせ |
 
-- `ProjectCardSnapshot`: `id`、`name`(表示名)、`color`、`displayPath`(ホームの中は `~` で始める)、`missing`、`terminalIds`(タブの順)、`activeTerminalId`(0 枚なら `null`)
+- `ProjectCardSnapshot`: `id`、`name`(表示名)、`color`、`displayPath`(ホームの中は `~` で始める)、`missing`、`showHidden`、`terminalIds`(タブの順)、`activeTerminalId`(0 枚なら `null`)
 - `TerminalTabSnapshot`: `id`、`projectId`(検証画面では `null`)、`label`(「ターミナル N」)、`status`
 - `TerminalStatus`(`crates/arin-core/src/terminal/state.rs`): `kind` で区別する: `notStarted` → `running` → `exited`(`code`・`signal`)/ `failed`(`message`。次の接続で再起動を試す)
 
@@ -62,7 +63,12 @@ Rust から画面へ渡す状態の写し。画面は届いたもので丸ごと
 - ターミナル: `connect_terminal`(応答 `ConnectOutcome` の `sizeApplied`)、`write_terminal`、`write_terminal_bytes`、`ack_terminal_output`、`resize_terminal`、`new_terminal`(選択中のプロジェクトに足し、ID を返す)、`close_terminal`、`select_terminal`
 - プロジェクト: `add_project_by_dialog`(応答 `added` / `alreadyRegistered` / `cancelled`。パスは画面を経由しない)、`select_project`、`remove_project`(`confirmed` が偽で動作中があれば `needsConfirmation` と動作中の一覧、ほかは `removed`)、`relink_project`(真偽)、`set_project_color`、`copy_project_path`(Rust がペーストボードに書く)
 - ペイン: `set_pane_sizes`、`set_sidebar_collapsed`
-- イベント: `app-snapshot`(状態が変わるたびに `AppSnapshot` 全体)、`menu-command`(`MenuCommand`。いまは `"select-all"` だけ)、`quit-requested`(`QuitRequest`。動作中のターミナルの一覧。画面が確認したら `confirm_quit`)。出力はイベントではなくチャネルで生のバイト列を送る
+- ツリー: `list_directory`(応答 `DirListing`)、`set_show_hidden`
+- ファイル操作(応答 `FileOpOutcome`): `create_entry`、`rename_entry`、`move_entry`、`copy_entry`、`trash_entry`、`copy_entries`、`cut_entries`、`paste_entries`
+- デスクトップ: `reveal_entry`、`open_entry`(ふつうのファイルだけ。`src-tauri/src/commands/desktop.rs`)、`copy_entry_path`、`insert_entry_path`(ターミナルへ書く文字列は Rust の `insertion_text` が作る)
+- ショートカット: `get_shortcuts`(応答 `ShortcutTable`)
+- 引数のパスはプロジェクトの ID と `RelPath`(ルートからの相対パス)。絶対パスは画面に渡さない
+- イベント: `app-snapshot`(状態が変わるたびに `AppSnapshot` 全体)、`tree-changed`(`TreeChange { projectId, dirs, fullReload }`)、`menu-command`(`MenuCommand`。いまは `"select-all"` だけ)、`quit-requested`(`QuitRequest`。動作中のターミナルの一覧。画面が確認したら `confirm_quit`)。出力はイベントではなくチャネルで生のバイト列を送る
 - Finder からのドロップはコマンドではなく `src-tauri/src/lifecycle.rs` が受ける
 
 ### AppPaths(`crates/arin-core/src/paths/app_paths.rs`)
@@ -82,4 +88,6 @@ Rust から画面へ渡す状態の写し。画面は届いたもので丸ごと
 - ペインの寸法(`PaneSizes::sanitized`、`crates/arin-core/src/layout/panes.rs`): 数でない・無限大・負は初期値(幅 260、カード領域 200)、最小(幅 180、カード領域 72)未満は最小。上限は持たない(画面が表示値で留める)。最小値は `src/logic/panes/paneLayout.ts` と揃える
 - `state.json` の読み込み: 欠けたキーは既定値、未知のキーは無視。JSON でない・最上位がオブジェクトでない・`schemaVersion` が無い/1 以上の整数でない/新しすぎる・形が違うときは `state.json.broken-<UTC の日時>`(`20261115T093000Z`。同名があれば `-2`、`-3`)に改名して空で始める。同じ ID は先のものだけ残し、一覧に無い選択は外す
 - プロジェクトのパス(`normalize_root`): 絶対パス・UTF-8・`..` を含まない・ゴミ箱の中でない。同じフォルダの二重登録は `AlreadyRegistered`
+- 相対パス(`RelPath`): 規則は `crates/arin-core/src/paths/relative.rs`。名前の規則は `fileops/name.rs`、ツリーの除外は `tree/exclusion.rs`
+- 監視の変更: 変わったフォルダが `MAX_CHANGED_DIRS`(1,000)を超えたら `fullReload`(`tree/changes.rs`)
 - スモークの印(状態フォルダ直下の `smoke-ready`、最初の処理済みの通知で書く `smoke-terminal`)は、`ARIN_SMOKE` が厳密に `1` かつ状態フォルダが差し替えられているときだけ書く

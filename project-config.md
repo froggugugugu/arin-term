@@ -85,6 +85,7 @@ flowchart LR
 | フレームワーク   | Tauri 2.12 系（Rust 1.98.1 + TypeScript 6.0 系）。画面は React 19.3.1 + zustand 5.0.16。Electron は不採用 |
 | ビルド           | Cargo ワークスペース（`arin-core` / `arin-platform` / `src-tauri`）と Vite 8 系。パッケージ管理は npm |
 | ターミナルエンジン | xterm.js 6.0.0（第一候補。M1 の Go/No-Go で最終判断し ADR-001 に残す）。描画方式（DOM / WebGL）は M1 の Go/No-Go で決める（切り替え用に `@xterm/addon-webgl` 0.19.0 を入れてある）。アドオンは `addon-fit` 0.11.0、`addon-unicode11` 0.9.0、`addon-unicode-graphemes` 0.4.0。PTY は Rust 側の `portable-pty` 0.9.0 |
+| ファイルの監視   | `notify` 8.2.1（`arin-platform` だけが使う） |
 | macOS の API     | `arin-platform` だけが使う: `objc2` 0.6.5、`objc2-foundation` 0.3.2、`objc2-app-kit` 0.3.2、`libc` 0.2.191、`base64` 0.23.1（どれも Tauri と同じ版。ADR-009）。フォルダ選択は `NSOpenPanel` を直接呼ぶ（`tauri-plugin-dialog` は使わない） |
 | スタイリング     | 素の CSS とカスタムプロパティ（システムのライト／ダークに追従） |
 | 状態管理         | Rust の `arin-core` が正本。画面側は zustand のストアに写しを持つ。永続化は JSON ファイル、設定ファイルは TOML |
@@ -116,7 +117,7 @@ npm run app:debug      # デバッグ版の .app（検証用の記録 [arin:veri
 npm run dev            # 開発用に起動（tauri dev。人間が体感確認するとき）
 npm run e2e            # Playwright（ブラウザ方式。出力先 testreport/e2e/）
 npm run smoke          # 実アプリの起動スモーク（-- --env=NAME=VALUE、-- --app=<パス> を付けられる）
-npm run perf           # 性能の計測（出力先 testreport/perf/。合否にしない）
+npm run perf           # 性能の計測（出力先 testreport/perf/。合否にしない。-- --tree-files=<数> でツリーの見本の数）
 # npm run dist:mac     # 署名・公証。人間のみ実行（秘密情報を扱うため AI は実行しない）
 ```
 
