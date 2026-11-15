@@ -83,7 +83,7 @@ export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapsho
   };
 }
 
-/** テスト用の写しのターミナル 1 枚。既定はプロジェクトを持たない(検証画面と同じ形)。 */
+/** テスト用の写しのターミナル 1 枚。既定はプロジェクトを持たない(持ち主の無いタブ。Rust 側は T49d で無くす)。 */
 export function sampleTerminal(
   id: string,
   status: TerminalStatus,

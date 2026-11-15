@@ -1311,7 +1311,7 @@ T46〜T50 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 31b(逐次。T49a・T49b 完了後)
 
-- [ ] T49c — M1 の検証画面の撤去(画面とスモーク)(変更ファイル: src/ui/terminals/VerificationGrid.tsx(削除), src/ui/terminals/VerificationGrid.css(削除), src/logic/verifyGrid.ts(削除), src/logic/verifyGrid.test.ts(削除), src/ui/shell/AppShell.tsx, src/main.tsx, src/state/terminalSync.ts, src/state/terminalSync.test.ts, src/state/launchOptions.ts, src/state/launchOptions.test.ts, src/ipc/client.ts, src/ipc/client.test.ts, src/test/fakeIpc.ts, e2e/verify-grid.spec.ts(削除), e2e/fixtures/tauriMock.ts, scripts/smoke.mjs, scripts/smoke.test.mjs | 依存: T49a, T49b)
+- [x] T49c — M1 の検証画面の撤去(画面とスモーク)(変更ファイル: src/ui/terminals/VerificationGrid.tsx(削除), src/ui/terminals/VerificationGrid.css(削除), src/logic/verifyGrid.ts(削除), src/logic/verifyGrid.test.ts(削除), src/ui/shell/AppShell.tsx, src/main.tsx, src/state/terminalSync.ts, src/state/terminalSync.test.ts, src/state/launchOptions.ts, src/state/launchOptions.test.ts, src/ipc/client.ts, src/ipc/client.test.ts, src/test/fakeIpc.ts, e2e/verify-grid.spec.ts(削除), e2e/fixtures/tauriMock.ts, scripts/smoke.mjs, scripts/smoke.test.mjs | 依存: T49a, T49b)
   - 対応: §リスク #10(検証用の仕組みをリリースビルドに残さない)、ADR-001「起動時の指定の扱い」、前提 (h)、【仮定】18
   - 変えるもの: 画面は `ARIN_VERIFY_GRID` を読まない(起動時の指定の `verifyGrid` を使わない。型の項目は T49d まで残る)。検証画面の部品・純粋ロジック・画面の自動テストを消す。スモークの `--env=ARIN_VERIFY_GRID=1` の代わりに、9 プロジェクトとタイル表示の `state.json` を置いて起動し、9 枚の準備完了と出力を確かめる `--tiles`(シェルがアプリの終了後に残らないことの確認を引き継ぐ)
   - 並行: 不可

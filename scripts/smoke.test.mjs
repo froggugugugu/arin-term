@@ -1,7 +1,6 @@
 // scripts/smoke.mjs のテスト。本物の Arin.app は使わず、一時フォルダに作った偽の .app で動かす。
 // 偽の実行ファイルは node のスクリプト。環境変数で渡された状態フォルダに印を書くかどうかを振る舞いで変える。
-// 偽のアプリは、本物と同じように state.json を扱う(読めればブックマークを入れて書き直し、読めなければ退避して空で書く。
-// 検証画面の指定があれば触らない)。
+// 偽のアプリは、本物と同じように state.json を扱う(読めればブックマークを入れて書き直し、読めなければ退避して空で書く)。
 
 import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
@@ -18,9 +17,11 @@ import {
   STATE_FILE_NAME,
   TEMP_PREFIX,
   TERMINAL_MARKER_FILE_NAME,
+  TILE_PROJECT_COUNT,
   checkStateAfterExit,
   createOutputWatcher,
   parseArgs,
+  numberedProjectId,
   prepareStateDir,
   readBundleExecutable,
   runSmoke,
@@ -63,12 +64,12 @@ async function fakeApp(name, body) {
   return app;
 }
 
-/** 本物と同じように state.json を扱う(検証画面では触らない)。 */
+/** 本物と同じように state.json を扱う(ほかの項目は読んだまま書き戻す)。 */
 const HANDLE_STATE = `
 (() => {
   const dir = process.env.ARIN_STATE_DIR;
   const file = path.join(dir, "${STATE_FILE_NAME}");
-  if (!dir || process.env.ARIN_VERIFY_GRID === "1" || !fs.existsSync(file)) return;
+  if (!dir || !fs.existsSync(file)) return;
   let state = null;
   try { state = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
   if (state === null) {
@@ -100,6 +101,17 @@ const WRITE_MARKER = writeMarkers([MARKER_FILE_NAME, TERMINAL_MARKER_FILE_NAME])
 const SPAWN_POLITE_CHILD = `
 const { spawn } = require("node:child_process");
 spawn(process.execPath, ["-e", "const p = process.ppid; setInterval(() => { try { process.kill(p, 0); } catch { process.exit(0); } }, 50);"], { stdio: "ignore" });
+`;
+
+/**
+ * 親(偽のアプリ)が終わったら終わる子プロセスを n 個起こす(タイル表示の 9 枚のシェルの代わり)。
+ * node より軽い /bin/sh で、親がいなくなるまで待つ。
+ */
+const spawnPoliteShells = (n) => `
+const { spawn: spawnShell } = require("node:child_process");
+for (let i = 0; i < ${n}; i += 1) {
+  spawnShell("/bin/sh", ["-c", "while kill -0 $PPID 2>/dev/null; do sleep 0.05; done"], { stdio: "ignore" });
+}
 `;
 
 /** 親が終わっても残る子プロセスを起こす。起こした子の ID を状態フォルダの外(root)に書く。 */
@@ -307,7 +319,18 @@ describe("状態ファイルの用意と終了後の確認", () => {
   async function prepared(name, kind) {
     const dir = path.join(root, name);
     await mkdir(dir);
-    return { dir, ...(await prepareStateDir(dir, kind)) };
+    const p = await prepareStateDir(dir, kind);
+    return { dir, ...p, projectDir: p.projectDirs[0] };
+  }
+
+  /** アプリが書いたように、置いた state.json の全件にブックマークを入れ lastKnownPath を正規化して書く。 */
+  async function writeBookmarked(p, edit = (state) => state) {
+    const state = JSON.parse(p.fixture);
+    for (const [i, project] of state.projects.entries()) {
+      project.bookmark = "ZmFrZQ==";
+      project.lastKnownPath = await realpath(p.projectDirs[i]);
+    }
+    await writeFile(path.join(p.stateDir, STATE_FILE_NAME), JSON.stringify(edit(state)));
   }
 
   it("プロジェクト 1 件の state.json は bookmark が null で lastKnownPath がプロジェクトのフォルダ", async () => {
@@ -321,8 +344,32 @@ describe("状態ファイルの用意と終了後の確認", () => {
       { id: SMOKE_PROJECT_ID, bookmark: null, lastKnownPath: projectDir, customName: null, colorId: "green" },
     ]);
     assert.equal(state.ui.selectedProjectId, SMOKE_PROJECT_ID);
+    assert.equal("displayMode" in state.ui, false);
     assert.match(SMOKE_PROJECT_ID, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     assert.deepEqual(await readdir(projectDir), []);
+  });
+
+  it("タイルの指定で_9_プロジェクトとタイル表示の状態ファイルを置く", async () => {
+    const { dir, stateDir, projectDirs, fixture } = await prepared("fixture-tiles", "tiles");
+
+    assert.equal(TILE_PROJECT_COUNT, 9);
+    assert.deepEqual(projectDirs, Array.from({ length: 9 }, (_, i) => path.join(dir, "projects", `p${i + 1}`)));
+    const text = await readFile(path.join(stateDir, STATE_FILE_NAME), "utf8");
+    assert.equal(text, fixture);
+    const state = JSON.parse(text);
+    assert.equal(state.schemaVersion, 1);
+    assert.equal(state.ui.displayMode, "tiles");
+    assert.deepEqual(
+      state.projects.map((p) => [p.id, p.bookmark, p.lastKnownPath]),
+      projectDirs.map((d, i) => [numberedProjectId(i + 1), null, d]),
+    );
+    assert.equal(state.ui.selectedProjectId, numberedProjectId(1));
+    for (const p of state.projects) {
+      assert.match(p.id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    }
+    // 色は 8 色のパレットから順に(9 件目は先頭に戻る)。
+    assert.equal(new Set(state.projects.slice(0, 8).map((p) => p.colorId)).size, 8);
+    for (const d of projectDirs) assert.deepEqual(await readdir(d), []);
   });
 
   it("壊れた state.json は JSON として読めない", async () => {
@@ -344,40 +391,59 @@ describe("状態ファイルの用意と終了後の確認", () => {
     state.projects[0].lastKnownPath = await realpath(p.projectDir);
     await writeFile(path.join(p.stateDir, STATE_FILE_NAME), JSON.stringify(state));
 
-    assert.equal(await checkStateAfterExit({ ...p, kind: "project", verifyGrid: false }), null);
+    assert.equal(await checkStateAfterExit({ ...p, kind: "project" }), null);
   });
 
   it("ブックマークが null のままなら失敗", async () => {
     const p = await prepared("check-no-bookmark", "project");
 
-    assert.match(await checkStateAfterExit({ ...p, kind: "project", verifyGrid: false }), /ブックマーク/);
+    assert.match(await checkStateAfterExit({ ...p, kind: "project" }), /ブックマーク/);
   });
 
   it("プロジェクトのフォルダに何かできたら失敗", async () => {
     const p = await prepared("check-project-touched", "project");
+    await writeBookmarked(p);
     await writeFile(path.join(p.projectDir, ".arin"), "x");
 
-    assert.match(await checkStateAfterExit({ ...p, kind: "project", verifyGrid: true }), /プロジェクトのフォルダ/);
+    assert.match(await checkStateAfterExit({ ...p, kind: "project" }), /プロジェクトのフォルダ/);
   });
 
-  it("検証画面では置いたままなら問題なし_書き換えたら失敗", async () => {
-    const p = await prepared("check-verify", "project");
-    assert.equal(await checkStateAfterExit({ ...p, kind: "project", verifyGrid: true }), null);
+  it("タイル表示は_9_件にブックマークが入り表示モードがタイルのままなら問題なし", async () => {
+    const p = await prepared("check-tiles-ok", "tiles");
+    await writeBookmarked(p);
 
-    await writeFile(path.join(p.stateDir, STATE_FILE_NAME), p.fixture.replace("null", '"x"'));
-    assert.match(await checkStateAfterExit({ ...p, kind: "project", verifyGrid: true }), /検証画面/);
+    assert.equal(await checkStateAfterExit({ ...p, kind: "tiles" }), null);
+  });
+
+  it("タイル表示は_1_件でもブックマークが無い_表示モードが変わった_件数が違う_フォルダに何かできたら失敗", async () => {
+    const p = await prepared("check-tiles-bad", "tiles");
+    await writeBookmarked(p, (state) => {
+      state.projects[8].bookmark = null;
+      return state;
+    });
+    assert.match(await checkStateAfterExit({ ...p, kind: "tiles" }), /9 件目にブックマーク/);
+
+    await writeBookmarked(p, (state) => ({ ...state, ui: { ...state.ui, displayMode: "tabs" } }));
+    assert.match(await checkStateAfterExit({ ...p, kind: "tiles" }), /表示モードがタイルでない/);
+
+    await writeBookmarked(p, (state) => ({ ...state, projects: state.projects.slice(0, 8) }));
+    assert.match(await checkStateAfterExit({ ...p, kind: "tiles" }), /置いたものと違う/);
+
+    await writeBookmarked(p);
+    await writeFile(path.join(p.projectDirs[4], ".arin"), "x");
+    assert.match(await checkStateAfterExit({ ...p, kind: "tiles" }), /p5 に \.arin ができた/);
   });
 
   it("壊れたものは退避のファイルが無ければ失敗_元の中身で退避され空で書かれていれば問題なし", async () => {
     const p = await prepared("check-broken", "broken");
     const statePath = path.join(p.stateDir, STATE_FILE_NAME);
-    assert.match(await checkStateAfterExit({ ...p, kind: "broken", verifyGrid: false }), /版 1 の形でない/);
+    assert.match(await checkStateAfterExit({ ...p, kind: "broken" }), /版 1 の形でない/);
 
     await writeFile(statePath, JSON.stringify({ schemaVersion: 1, projects: [] }));
-    assert.match(await checkStateAfterExit({ ...p, kind: "broken", verifyGrid: false }), /退避のファイル/);
+    assert.match(await checkStateAfterExit({ ...p, kind: "broken" }), /退避のファイル/);
 
     await writeFile(path.join(p.stateDir, `${BROKEN_PREFIX}20261115T093000Z`), p.fixture);
-    assert.equal(await checkStateAfterExit({ ...p, kind: "broken", verifyGrid: false }), null);
+    assert.equal(await checkStateAfterExit({ ...p, kind: "broken" }), null);
   });
 });
 
@@ -391,18 +457,42 @@ describe("runSmoke と状態ファイル", () => {
     assert.match(result.message, /ブックマーク/);
   });
 
-  it("検証画面の指定で state.json を触らなければ成功し_触れば失敗する", async () => {
-    const quiet = await fakeApp("verify-quiet", WRITE_MARKER);
-    const ok = await runSmoke(options(quiet, { extraEnv: { ARIN_VERIFY_GRID: "1" } }));
-    assert.equal(ok.ok, true, ok.message);
+  it("9_枚の印が揃うまで待つ_シェルが_9_個揃えば成功し_終了後に_9_個とも残らない", async () => {
+    const app = await fakeApp("tiles-nine", `${spawnPoliteShells(TILE_PROJECT_COUNT)}\n${WRITE_MARKER}`);
 
-    const noisy = await fakeApp(
-      "verify-noisy",
-      `delete process.env.ARIN_VERIFY_GRID;\n${WRITE_MARKER}`,
+    const result = await runSmoke(options(app, { stateKind: "tiles" }));
+
+    assert.equal(result.ok, true, result.message);
+    assert.match(result.message, /シェル 9 個/);
+    assert.equal(result.shells.length, TILE_PROJECT_COUNT);
+    for (const pid of result.shells) assert.equal(isAlive(pid), false, `子プロセス ${pid} が残っている`);
+  });
+
+  it("タイル表示でシェルが_9_個揃わなければ印があっても上限時間で失敗し_数えた数を伝える", async () => {
+    const app = await fakeApp("tiles-eight", `${spawnPoliteShells(TILE_PROJECT_COUNT - 1)}\n${WRITE_MARKER}`);
+
+    const result = await runSmoke(options(app, { stateKind: "tiles", timeoutMs: 1500 }));
+
+    assert.equal(result.ok, false);
+    assert.match(result.message, /シェル 9 個\(数えたのは 8 個\)/);
+    assert.doesNotMatch(result.message, /準備完了の印|ターミナルの印/);
+  });
+
+  it("タイル表示でアプリが表示モードをタブに書き換えたら失敗する", async () => {
+    const app = await fakeApp(
+      "tiles-mode-lost",
+      `${spawnPoliteShells(TILE_PROJECT_COUNT)}\n${WRITE_MARKER}\nsetTimeout(() => {
+  const file = path.join(process.env.ARIN_STATE_DIR, "${STATE_FILE_NAME}");
+  const state = JSON.parse(fs.readFileSync(file, "utf8"));
+  state.ui.displayMode = "tabs";
+  fs.writeFileSync(file, JSON.stringify(state));
+}, 50);`,
     );
-    const bad = await runSmoke(options(noisy, { extraEnv: { ARIN_VERIFY_GRID: "1" } }));
-    assert.equal(bad.ok, false);
-    assert.match(bad.message, /検証画面/);
+
+    const result = await runSmoke(options(app, { stateKind: "tiles" }));
+
+    assert.equal(result.ok, false);
+    assert.match(result.message, /表示モードがタイルでない/);
   });
 
   it("壊れた state.json の起動は準備完了の印だけで判定し_退避と空の書き直しを確かめる", async () => {
@@ -413,7 +503,7 @@ describe("runSmoke と状態ファイル", () => {
     assert.equal(result.ok, true, result.message);
   });
 
-  it("一揃いは通常と壊れたものの 2 回_検証画面では 1 回だけ起動する", async () => {
+  it("一揃いは通常と壊れたものの 2 回_タイルの指定では_9_プロジェクトのタイル表示で_1_回だけ起動する", async () => {
     const app = await fakeApp("suite", WRITE_MARKER);
 
     const normal = await runSmokeSuite(options(app));
@@ -424,10 +514,11 @@ describe("runSmoke と状態ファイル", () => {
         ["broken", true],
       ],
     );
-    const verify = await runSmokeSuite(options(app, { extraEnv: { ARIN_VERIFY_GRID: "1" } }));
+    const nine = await fakeApp("suite-tiles", `${spawnPoliteShells(TILE_PROJECT_COUNT)}\n${WRITE_MARKER}`);
+    const tiles = await runSmokeSuite(options(nine, { tiles: true }));
     assert.deepEqual(
-      verify.map((r) => [r.kind, r.result.ok]),
-      [["project", true]],
+      tiles.map((r) => [r.kind, r.result.ok, r.result.shells.length]),
+      [["tiles", true, TILE_PROJECT_COUNT]],
     );
   });
 });
@@ -458,6 +549,16 @@ describe("parseArgs", () => {
 
   it("--timeout-ms と --app もこれまでどおり受ける", () => {
     assert.deepEqual(parseArgs(["--timeout-ms=500", "--app=/tmp/x.app"]), { timeoutMs: 500, appPath: "/tmp/x.app" });
+  });
+
+  it("--tiles を受け_ほかの指定と並べられる", () => {
+    assert.deepEqual(parseArgs(["--tiles"]), { tiles: true });
+    assert.deepEqual(parseArgs(["--tiles", "--env=ARIN_RENDERER=webgl"]), { tiles: true, extraEnv: { ARIN_RENDERER: "webgl" } });
+    assert.throws(() => parseArgs(["--tiles=1"]), /知らない引数/);
+  });
+
+  it("撤去した検証画面の指定_ARIN_VERIFY_GRID_は_--env_で渡せず_--tiles_を案内する", () => {
+    assert.throws(() => parseArgs(["--env=ARIN_VERIFY_GRID=1"]), /撤去した.*--tiles/);
   });
 
   it("形の違う --env、スモークが決める環境変数、知らない引数は失敗する", () => {

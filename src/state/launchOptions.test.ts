@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createIpc } from "../ipc/client";
+import { createIpc, type ScreenLaunchOptions } from "../ipc/client";
 import type { LaunchOptions } from "../ipc/generated/LaunchOptions";
 import { createFakeIpc } from "../test/fakeIpc";
 import { createWithLaunchOptions, DEFAULT_LAUNCH_OPTIONS } from "./launchOptions";
@@ -40,16 +40,30 @@ describe("createWithLaunchOptions(起動時の指定を取ってからエンジ�
       },
     });
     const reported: string[] = [];
-    const created: LaunchOptions[] = [];
+    const created: ScreenLaunchOptions[] = [];
 
     await createWithLaunchOptions(createIpc(fake.transport), (m) => reported.push(m), (options) => {
       created.push(options);
     });
 
     expect(created).toEqual([DEFAULT_LAUNCH_OPTIONS]);
-    expect(DEFAULT_LAUNCH_OPTIONS).toEqual({ renderer: "dom", unicode: "unicode11", verifyGrid: false });
+    expect(DEFAULT_LAUNCH_OPTIONS).toEqual({ renderer: "dom", unicode: "unicode11" });
     expect(reported).toEqual([
       "起動時の指定を取得できなかったので、既定(dom・unicode11)で起動する: command get_launch_options not found",
     ]);
+  });
+
+  it("起動時の指定に検証画面の値があっても通常の画面を出す", async () => {
+    // Rust はまだ ARIN_VERIFY_GRID を受け付けて verifyGrid: true を返しうる(T49d で外す)。画面は描画方式と
+    // 全角幅の方式だけを受け取り、検証画面に切り替える値を持たない(AppShell は通常の画面だけを描く)。
+    const fake = createFakeIpc({ get_launch_options: () => ({ renderer: "dom", unicode: "unicode11", verifyGrid: true }) });
+    const created: ScreenLaunchOptions[] = [];
+
+    await createWithLaunchOptions(createIpc(fake.transport), () => {}, (options) => {
+      created.push(options);
+    });
+
+    expect(created).toEqual([{ renderer: "dom", unicode: "unicode11" }]);
+    expect(Object.keys(created[0] ?? {})).not.toContain("verifyGrid");
   });
 });

@@ -157,12 +157,19 @@ export interface OutputSubscription {
   close(): void;
 }
 
+/**
+ * 画面が使う起動時の指定(描画方式と全角幅の方式。M1 の検証用で、M4 の T50b で外す)。
+ * Rust の応答(LaunchOptions)には 9 枚の検証画面の項目(verifyGrid)がまだあるが、画面は検証画面を撤去したので読まない
+ * (計画書 T49c。Rust 側の項目は T49d で外す)。
+ */
+export type ScreenLaunchOptions = Pick<LaunchOptions, "renderer" | "unicode">;
+
 /** 画面が使う Rust の操作。 */
 export interface ArinIpc {
   /** 状態の写しを取得する。 */
   getAppSnapshot(): Promise<AppSnapshot>;
-  /** 起動時の指定(描画方式と全角幅の方式。M1 の検証用)を取得する。起動時に 1 回だけ呼ぶ。 */
-  getLaunchOptions(): Promise<LaunchOptions>;
+  /** 起動時の指定(描画方式と全角幅の方式。M1 の検証用)を取得する。起動時に 1 回だけ呼ぶ。ほかの項目は読まない。 */
+  getLaunchOptions(): Promise<ScreenLaunchOptions>;
   /**
    * ショートカットの表(コマンドの ID → キーと受け口)を取得する。起動時に 1 回だけ呼ぶ。
    * メニューバーのアクセラレータと同じ表(M4.5 では設定ファイルの値をまとめたもの)。
@@ -373,7 +380,8 @@ export function createIpc(transport: IpcTransport): ArinIpc {
   };
   return {
     getAppSnapshot: () => invoke("get_app_snapshot", undefined),
-    getLaunchOptions: () => invoke("get_launch_options", undefined),
+    getLaunchOptions: () =>
+      invoke("get_launch_options", undefined).then(({ renderer, unicode }) => ({ renderer, unicode })),
     getShortcuts: () => invoke("get_shortcuts", undefined),
     notifyAppReady: () => done(invoke("notify_app_ready", undefined)),
     onAppSnapshot: (listener) => transport.listen("app-snapshot", listener),

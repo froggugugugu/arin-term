@@ -575,6 +575,76 @@ test.describe("拡大と復帰(FR-054)", () => {
   });
 });
 
+test.describe("拡大中に隠したタイル(NFR-009。M1 の検証画面のテストから引き継ぎ。T49c)", () => {
+  const list = projects(9);
+  const ids = list.map((p) => `${p.id}-t1`);
+  const hidden = ids.slice(1);
+
+  test("拡大中に隠した_8_枚にも出力が届き続け_戻すと隠す前と隠していた間の文字がある", async ({ page }) => {
+    await open(page, withTileDisplay(projectsSnapshot(list)));
+    const channels = new Map<string, number>();
+    for (const id of ids) channels.set(id, parseChannelId((await connectOf(page, id)).onOutput));
+    /** 9 枚それぞれに流し、9 枚とも取り込みが済んだ量が追いつくまで待つ。 */
+    const sendToAll = async (text: (id: string) => string) => {
+      for (const id of ids) {
+        const before = await ackedBytes(page, id);
+        const sent = await sendChannelBytes(page, channels.get(id) ?? -1, [text(id)]);
+        await expect.poll(() => ackedBytes(page, id), { message: id }).toBe(before + sent);
+      }
+    };
+    await sendToAll((id) => `before ${id}\r\n`);
+
+    await emitEvent(page, "app-snapshot", withTileDisplay(projectsSnapshot(list), { maximized: true }));
+    await expect(terminalHosts(page)).toHaveCount(1);
+    await expect(terminalHosts(page)).toHaveAttribute("data-terminal-id", "p1-t1");
+    await sendToAll((id) => `hidden ${id}\r\n`);
+
+    await emitEvent(page, "app-snapshot", withTileDisplay(projectsSnapshot(list)));
+    await expect(tiles(page)).toHaveCount(9);
+    for (const id of ids) {
+      const rows = page.locator(`[data-testid="terminal-host"][data-terminal-id="${id}"] .xterm-rows > div`);
+      await expect(rows.nth(0), id).toHaveText(`before ${id}`);
+      await expect(rows.nth(1), id).toHaveText(`hidden ${id}`);
+    }
+    // 戻したあとも 9 枚とも取り込みを続け、接続は作り直さない。
+    await sendToAll((id) => `after ${id}\r\n`);
+    for (const id of ids) {
+      expect((await readCallArgs(page, "connect_terminal")).filter((c) => c.terminalId === id), id).toHaveLength(1);
+    }
+  });
+
+  test("拡大中にウィンドウの大きさを変えると_隠した_8_枚の寸法は送らず_戻したときに小さくなったタイルに合わせ直す", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await open(page, withTileDisplay(projectsSnapshot(list)));
+    const connects = new Map<string, { cols: number; rows: number }>();
+    for (const id of ids) connects.set(id, await connectOf(page, id));
+    const resizesOf = async (id: string) => (await readCallArgs(page, "resize_terminal")).filter((r) => r.terminalId === id);
+
+    await emitEvent(page, "app-snapshot", withTileDisplay(projectsSnapshot(list), { maximized: true }));
+    await expect(terminalHosts(page)).toHaveCount(1);
+    // 全面に広がった寸法が届いてから、ウィンドウを小さくする。
+    await expect.poll(async () => (await resizesOf("p1-t1")).length).toBeGreaterThan(0);
+    const before = (await resizesOf("p1-t1")).length;
+    await page.setViewportSize({ width: 900, height: 560 });
+    await expect.poll(async () => (await resizesOf("p1-t1")).length).toBeGreaterThan(before);
+    for (const id of hidden) expect(await resizesOf(id), id).toEqual([]);
+
+    await emitEvent(page, "app-snapshot", withTileDisplay(projectsSnapshot(list)));
+    await expect(tiles(page)).toHaveCount(9);
+    for (const id of hidden) {
+      await expect.poll(async () => (await resizesOf(id)).length, { message: id }).toBe(1);
+      const [resized] = await resizesOf(id);
+      const connected = connects.get(id);
+      expect(resized?.cols ?? 0, id).toBeGreaterThan(0);
+      expect(resized?.rows ?? 0, id).toBeGreaterThan(0);
+      expect(resized?.cols ?? Number.POSITIVE_INFINITY, id).toBeLessThan(connected?.cols ?? 0);
+      expect(resized?.rows ?? Number.POSITIVE_INFINITY, id).toBeLessThan(connected?.rows ?? 0);
+    }
+  });
+});
+
 test.describe("アテンションの印(FR-055)", () => {
   test("アテンションのあるタイルのタイトルに印が付く", async ({ page }) => {
     // Rust の規則(計画【仮定】14、ADR-011 の 7): いま見ているのはフォーカス中のタイル(app: ターミナル 1)だけ。

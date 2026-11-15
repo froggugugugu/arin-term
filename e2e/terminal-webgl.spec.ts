@@ -6,19 +6,26 @@
 // WebGL では文字が canvas に描かれ、DOM 描画の行の要素(.xterm-rows)が無いので、表示の中身(文字・色・幅)は読めない。
 // ここでは描画方式に依存しないこと(入力・寸法・処理済みの量・選択とコピー)と、WebGL を作れない・失ったときに
 // DOM に戻して報告することを確かめる。見た目の比較(にじみ・罫線)は人間が実機で行う(T25・T26)。
+// タイル表示(M4)では、9 枚とも WebGL のコンテキストを作れることと、ページ送りで隠したタイルがコンテキストを手放し、
+// 戻すと作り直すこと(DOM 戻りとして報告しない)を確かめる(M1 の検証画面のテストから引き継いだ。T49c)。
 
 import { expect, test, type Page } from "@playwright/test";
 
 import type { LaunchOptions } from "../src/ipc/generated/LaunchOptions";
 import {
+  emitEvent,
   installTauriMock,
   type OutputChunk,
   parseChannelId,
+  projectsSnapshot,
   readCallArgs,
+  readRecordedCalls,
   type RecordedArgs,
   projectSnapshot,
+  type SampleProject,
   sampleTerminal,
   sendChannelBytes,
+  withTileDisplay,
 } from "./fixtures/tauriMock";
 
 const TERMINAL_ID = "t-e2e-webgl";
@@ -201,4 +208,116 @@ test("WebGL のコンテキストを失ったら DOM に戻し、表示が dom �
   expect(await reportedErrors(page)).toEqual([
     `ターミナル ${TERMINAL_ID}: WebGL の描画コンテキストを失ったので、DOM の描画に戻した`,
   ]);
+});
+
+test.describe("タイル表示の WebGL(NFR-009。M1 の検証画面のテストから引き継ぎ。T49c)", () => {
+  /** 1 枚ずつタブを持つプロジェクトを n 件。ターミナルの ID は `p<番号>-t1`。 */
+  const projects = (n: number): SampleProject[] =>
+    Array.from({ length: n }, (_, i) => ({ id: `p${i + 1}`, name: `proj${i + 1}`, tabs: ["ターミナル 1"] }));
+  const idsOf = (list: readonly SampleProject[]) => list.map((p) => `${p.id}-t1`);
+  const hostOf = (page: Page, id: string) => page.locator(`[data-testid="terminal-host"][data-terminal-id="${id}"]`);
+
+  /** タイル表示の写しで開き、準備完了と、渡した ID の接続が届くまで待つ。ID → チャネルの番号を返す。 */
+  async function openTiles(page: Page, snapshot: ReturnType<typeof withTileDisplay>, ids: readonly string[]) {
+    await installTauriMock(page, { get_launch_options: { ok: WEBGL }, get_app_snapshot: { ok: snapshot } });
+    await page.goto("/");
+    await expect.poll(async () => (await readRecordedCalls(page)).map((c) => c.command)).toContain("notify_app_ready");
+    await expect
+      .poll(async () => new Set((await readCallArgs(page, "connect_terminal")).map((c) => c.terminalId)).size)
+      .toBeGreaterThanOrEqual(ids.length);
+    const connects = await readCallArgs(page, "connect_terminal");
+    return new Map(connects.map((c) => [c.terminalId, parseChannelId(c.onOutput)]));
+  }
+
+  /** その置き場所の中の、WebGL2 のコンテキストを持つ canvas の数。 */
+  const webglCount = (page: Page, id: string) =>
+    hostOf(page, id)
+      .locator(".xterm-screen canvas")
+      .evaluateAll((canvases) => canvases.filter((c) => (c as HTMLCanvasElement).getContext("webgl2") !== null).length);
+
+  async function ackedOf(page: Page, id: string): Promise<number> {
+    const acks = await readCallArgs(page, "ack_terminal_output");
+    return acks.filter((a) => a.terminalId === id).reduce((sum, a) => sum + a.bytes, 0);
+  }
+
+  /** それぞれに流し、取り込みが済んだ量が追いつくまで待つ。 */
+  async function sendToEach(page: Page, channels: Map<string, number>, ids: readonly string[], text: (id: string) => string) {
+    for (const id of ids) {
+      const before = await ackedOf(page, id);
+      const sent = await sendChannelBytes(page, channels.get(id) ?? -1, [text(id)]);
+      await expect.poll(() => ackedOf(page, id), { message: id }).toBe(before + sent);
+    }
+  }
+
+  test.afterEach(async ({ page }) => {
+    expect(await reportedErrors(page), "画面の失敗(DOM 戻りを含む)が Rust へ報告された").toEqual([]);
+    const sizes = [...(await readCallArgs(page, "connect_terminal")), ...(await readCallArgs(page, "resize_terminal"))];
+    expect(sizes.filter((s) => s.rows <= 0 || s.cols <= 0), "行・桁が 0 の寸法を送った").toEqual([]);
+  });
+
+  test("タイル表示の_9_枚とも_WebGL_のコンテキストを作って描き_DOM_描画の行は作られない", async ({ page }) => {
+    const list = projects(9);
+    const ids = idsOf(list);
+    const channels = await openTiles(page, withTileDisplay(projectsSnapshot(list)), ids);
+
+    await expect(page.getByTestId("tile")).toHaveCount(9);
+    for (const id of ids) {
+      await expect.poll(() => webglCount(page, id), { message: id }).toBe(1);
+      await expect(hostOf(page, id).locator(".xterm-rows > div"), id).toHaveCount(0);
+    }
+    await sendToEach(page, channels, ids, (id) => `webgl ${id}\r\n`);
+  });
+
+  test("ページ送りで隠したタイルは_WebGL_のコンテキストを手放し_戻すと作り直す_DOM_戻りとして報告しない", async ({ page }) => {
+    // 10 件: 1 ページ目に 9 枚、2 ページ目に 1 枚。
+    const list = projects(10);
+    const ids = idsOf(list);
+    const first = ids.slice(0, 9);
+    const channels = await openTiles(page, withTileDisplay(projectsSnapshot(list)), ids);
+    for (const id of first) await expect.poll(() => webglCount(page, id), { message: id }).toBe(1);
+    // 1 ページ目の canvas に印を付け、描画の要素(.xterm-screen)を覚えておく(隠すと DOM の外へ出るので、要素で追う)。
+    await page.evaluate((list) => {
+      const screens: Record<string, Element> = {};
+      for (const id of list) {
+        const screen = document.querySelector(`[data-testid="terminal-host"][data-terminal-id="${id}"] .xterm-screen`);
+        if (screen === null) throw new Error(`${id} の描画の要素が無い`);
+        for (const c of screen.querySelectorAll("canvas")) c.setAttribute("data-e2e-first", "1");
+        screens[id] = screen;
+      }
+      (window as unknown as { __E2E_SCREENS__: Record<string, Element> }).__E2E_SCREENS__ = screens;
+    }, first);
+    const canvasesInHidden = () =>
+      page.evaluate(() => {
+        const screens = (window as unknown as { __E2E_SCREENS__: Record<string, Element> }).__E2E_SCREENS__;
+        return Object.fromEntries(Object.entries(screens).map(([id, s]) => [id, s.querySelectorAll("canvas").length]));
+      });
+
+    // 2 ページ目へ: 1 ページ目の 9 枚は隠れてアドオンを破棄し(canvas が外れる)、2 ページ目の 1 枚は WebGL で描く。
+    await emitEvent(page, "app-snapshot", withTileDisplay(projectsSnapshot(list), { page: 1 }));
+    await expect(page.getByTestId("tile")).toHaveCount(1);
+    await expect.poll(() => webglCount(page, "p10-t1")).toBe(1);
+    await expect.poll(canvasesInHidden).toEqual(Object.fromEntries(first.map((id) => [id, 0])));
+    // 隠しているあいだも取り込みを続ける。
+    await sendToEach(page, channels, first, (id) => `hidden ${id}\r\n`);
+
+    // 1 ページ目へ戻す: 9 枚とも WebGL のコンテキストを作り直す(印の付いた古い canvas は無い)。DOM には戻さない。
+    await emitEvent(page, "app-snapshot", withTileDisplay(projectsSnapshot(list), { page: 0 }));
+    await expect(page.getByTestId("tile")).toHaveCount(9);
+    for (const id of first) {
+      await expect.poll(() => webglCount(page, id), { message: id }).toBe(1);
+      await expect(hostOf(page, id).locator(".xterm-screen canvas[data-e2e-first]"), id).toHaveCount(0);
+      await expect(hostOf(page, id).locator(".xterm-rows > div"), id).toHaveCount(0);
+    }
+    await sendToEach(page, channels, first, (id) => `after ${id}\r\n`);
+
+    // 往復をもう 1 回しても同じ(作り直しが 1 回きりでない)。
+    await emitEvent(page, "app-snapshot", withTileDisplay(projectsSnapshot(list), { page: 1 }));
+    await expect.poll(() => webglCount(page, "p10-t1")).toBe(1);
+    await expect.poll(canvasesInHidden).toEqual(Object.fromEntries(first.map((id) => [id, 0])));
+    await emitEvent(page, "app-snapshot", withTileDisplay(projectsSnapshot(list), { page: 0 }));
+    for (const id of first) await expect.poll(() => webglCount(page, id), { message: id }).toBe(1);
+    // 接続は作り直さない。
+    const connects = await readCallArgs(page, "connect_terminal");
+    for (const id of ids) expect(connects.filter((c) => c.terminalId === id), id).toHaveLength(1);
+  });
 });

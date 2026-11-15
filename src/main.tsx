@@ -45,20 +45,21 @@ export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartA
   const actions = createActions({ ipc, ui, app: store, tree, treeController, reportError: reporter.report });
   // 描画方式と全角幅の方式は起動時の指定で選ぶ(検証用。既定は DOM と unicode11。M4 で決めて外す。ADR-001)。
   // 指定を取ってからエンジンを作る。取れなければ既定で作り、報告する。WebGL を作れなかったときの報告も同じ口へ流す。
-  const { engine, verifyGrid } = await createWithLaunchOptions(ipc, reporter.report, (options) => ({
-    engine: new XtermEngine({
-      renderer: options.renderer,
-      unicode: options.unicode,
-      reportError: reporter.report,
-      // Rust から受け取った表(startApp の onShortcuts)。届くまでは uiStore の既定の表の見本。
-      getShortcuts: () => ui.getState().shortcuts,
-    }),
-    // 9 枚の検証画面(ARIN_VERIFY_GRID。M1 の検証用、M4 の T49 で外す)。
-    verifyGrid: options.verifyGrid,
-  }));
+  const engine = await createWithLaunchOptions(
+    ipc,
+    reporter.report,
+    (options) =>
+      new XtermEngine({
+        renderer: options.renderer,
+        unicode: options.unicode,
+        reportError: reporter.report,
+        // Rust から受け取った表(startApp の onShortcuts)。届くまでは uiStore の既定の表の見本。
+        getShortcuts: () => ui.getState().shortcuts,
+      }),
+  );
   const terminals = new TerminalManager(engine, ipc, { reportError: reporter.report });
   // 写しの状態(終わったシェルには入力と寸法を送らない)、消えたターミナルの破棄、表示中と隠すものを伝える。
-  syncTerminals(store, terminals, { verifyGrid });
+  syncTerminals(store, terminals);
   // ⌘C・⌘X・⌘V(メニューの「編集」から来る copy・cut・paste のイベント)を、フォーカス位置で振り分ける
   // (ツリーにフォーカスがあればツリーの操作、名前の入力中は入力欄、それ以外はターミナル)。
   installClipboardRouting(
@@ -92,7 +93,7 @@ export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartA
       flushSync(() => {
         createRoot(container).render(
           <StrictMode>
-            <AppShell store={store} ui={ui} tree={tree} actions={actions} terminals={terminals} verifyGrid={verifyGrid} />
+            <AppShell store={store} ui={ui} tree={tree} actions={actions} terminals={terminals} />
           </StrictMode>,
         );
       });

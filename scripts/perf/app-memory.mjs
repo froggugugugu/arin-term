@@ -49,14 +49,14 @@ import {
   childPids,
   describeDir,
   isAlive,
+  numberedProjectId,
+  projectsStateFixture,
   readBundleExecutable,
 } from "../smoke.mjs";
 
 export const TEMP_PREFIX = "arin-perf-app-";
 /** 計測のときのプロジェクトの数(各 1 タブ。NFR-001 の条件)。 */
 export const PERF_PROJECT_COUNT = 5;
-/** プロジェクトに割り当てる色(crates/arin-core/src/project/color.rs のパレットの先頭から)。 */
-const PERF_COLORS = ["red", "orange", "yellow", "green", "teal", "blue", "purple", "pink"];
 const WEBKIT_RE = /\/(com\.apple\.WebKit\.[A-Za-z]+)$/;
 /** 9 枚の計測のプロジェクトの数(NFR-009。各 1 タブ)。 */
 export const TILE_PROJECT_COUNT = 9;
@@ -90,27 +90,16 @@ async function exists(p) {
   }
 }
 
-/** 計測用のプロジェクトの ID(UUID v4 の形。n は 1 から)。 */
-export function perfProjectId(n) {
-  return `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-}
+/** 計測用のプロジェクトの ID(UUID v4 の形。n は 1 から)。スモークの --tiles と同じ(scripts/smoke.mjs)。 */
+export const perfProjectId = numberedProjectId;
 
 /**
  * 計測用の state.json の中身。projectDirs の順にプロジェクトにし(bookmark は null、各 1 タブはアプリが開く)、先頭を選択中にする。
- * displayMode を渡すと ui.displayMode に書く(T46c。"tiles" でタイル表示で開く)。
+ * displayMode を渡すと ui.displayMode に書く(T46c。"tiles" でタイル表示で開く)。形はスモークの --tiles と共有する
+ * (scripts/smoke.mjs の projectsStateFixture)。
  */
-export function perfStateFixture(projectDirs, { displayMode = null } = {}) {
-  if (projectDirs.length === 0) throw new Error("プロジェクトのフォルダが 1 つも無い");
-  const projects = projectDirs.map((dir, i) => ({
-    id: perfProjectId(i + 1),
-    bookmark: null,
-    lastKnownPath: dir,
-    customName: null,
-    colorId: PERF_COLORS[i % PERF_COLORS.length],
-  }));
-  const ui = { selectedProjectId: projects[0].id, ...(displayMode === null ? {} : { displayMode }) };
-  const state = { schemaVersion: 1, projects, ui };
-  return `${JSON.stringify(state, null, 2)}\n`;
+export function perfStateFixture(projectDirs, options = {}) {
+  return projectsStateFixture(projectDirs, options);
 }
 
 /**

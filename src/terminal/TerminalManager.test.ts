@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { createIpc } from "../ipc/client";
 import type { ConnectOutcome } from "../ipc/generated/ConnectOutcome";
 import { INPUT_QUEUE_LIMIT } from "../logic/serialSender";
-import { type GridView, SHOW_ALL, showOnly, visibilityChanges } from "../logic/verifyGrid";
 import { createFakeIpc, type FakeHandlers } from "../test/fakeIpc";
 import { createFakeTerminalEngine } from "../test/fakeTerminalEngine";
 import { TerminalManager, type TerminalSlot } from "./TerminalManager";
@@ -893,7 +892,7 @@ describe("TerminalManager(コピー・ペーストの振り分け。FR-043、設
   });
 });
 
-describe("TerminalManager(9 枚の検証画面。T22、設計書 §2.2「非表示のインスタンス」)", () => {
+describe("TerminalManager(タイル 9 枚の表示と隠す。T22 → M4、設計書 §2.2「非表示のインスタンス」)", () => {
   const IDS = Array.from({ length: 9 }, (_, i) => `terminal-${i + 1}`);
 
   /** 9 枚を置き場所に入れて接続し、ID ごとのサーフェスとチャネルを返す。 */
@@ -915,10 +914,11 @@ describe("TerminalManager(9 枚の検証画面。T22、設計書 §2.2「非表�
       return channel;
     };
     const argsOf = (command: string) => ctx.fake.calls.filter((c) => c.command === command).map((c) => c.args);
-    const applyView = (from: GridView, to: GridView) => {
-      for (const change of visibilityChanges(IDS, from, to)) ctx.manager.setVisible(change.id, change.visible);
-    };
-    return { ...ctx, surfaceOf, channelOf, argsOf, applyView };
+    /** 1 枚だけを見せて残りを隠す(拡大中・タブ表示と同じ。present に渡す)。 */
+    const showOnly = (id: string) => ctx.manager.present([id], IDS.filter((other) => other !== id));
+    /** 9 枚とも見せる(タイル表示の 1 ページ)。 */
+    const showAll = () => ctx.manager.present(IDS, []);
+    return { ...ctx, surfaceOf, channelOf, argsOf, showOnly, showAll };
   }
 
   it("9 枚をそれぞれの寸法で 1 回ずつ接続する", async () => {
@@ -930,9 +930,9 @@ describe("TerminalManager(9 枚の検証画面。T22、設計書 §2.2「非表�
   });
 
   it("1 枚だけ表示では残りの 8 枚に setVisible(false) が届き、隠した 8 枚も取り込みを続けて処理済みの量を返す", async () => {
-    const { surfaceOf, channelOf, argsOf, applyView, fake } = await setupGrid();
+    const { surfaceOf, channelOf, argsOf, showOnly, fake } = await setupGrid();
 
-    applyView(SHOW_ALL, showOnly(IDS, "terminal-1"));
+    showOnly("terminal-1");
     for (const id of IDS) channelOf(id).send(new TextEncoder().encode(`out-${id}\r\n`).buffer);
     await flush();
 
@@ -951,9 +951,8 @@ describe("TerminalManager(9 枚の検証画面。T22、設計書 §2.2「非表�
   });
 
   it("隠している間に表示中の 1 枚の寸法が変わっても、隠した 8 枚の寸法は送らず、表示に戻したときに自分の置き場所に合わせ直す", async () => {
-    const { surfaceOf, argsOf, applyView, manager } = await setupGrid();
-    const single = showOnly(IDS, "terminal-1");
-    applyView(SHOW_ALL, single);
+    const { surfaceOf, argsOf, showOnly, showAll, manager } = await setupGrid();
+    showOnly("terminal-1");
 
     // ウィンドウの大きさを変えた: 表示中の 1 枚は合わせ直す。隠した 8 枚は置き場所の大きさが 0 なので決め直さない。
     surfaceOf("terminal-1").fitTo = { rows: 60, cols: 200 };
@@ -962,10 +961,10 @@ describe("TerminalManager(9 枚の検証画面。T22、設計書 §2.2「非表�
     await flush();
     expect(argsOf("resize_terminal")).toEqual([{ terminalId: "terminal-1", rows: 60, cols: 200 }]);
 
-    // 9 枚表示に戻す: 8 枚はそれぞれのマスの大きさに合わせ直す(変わったものだけ寸法を送る)。
+    // 9 枚とも見せる: 8 枚はそれぞれのタイルの大きさに合わせ直す(変わったものだけ寸法を送る)。
     for (const id of IDS.slice(1)) surfaceOf(id).fitTo = { rows: 20, cols: 66 };
-    surfaceOf("terminal-9").fitTo = surfaceOf("terminal-9").size(); // 大きさが変わらなかったマス
-    applyView(single, SHOW_ALL);
+    surfaceOf("terminal-9").fitTo = surfaceOf("terminal-9").size(); // 大きさが変わらなかったタイル
+    showAll();
     await flush();
 
     const resized = argsOf("resize_terminal") as { terminalId: string; rows: number; cols: number }[];
@@ -975,12 +974,12 @@ describe("TerminalManager(9 枚の検証画面。T22、設計書 §2.2「非表�
   });
 
   it("フォーカスを指定のサーフェスへ移す。隠しているもの・持っていない ID では何もしない", async () => {
-    const { surfaceOf, applyView, manager, engine } = await setupGrid();
+    const { surfaceOf, showOnly, manager, engine } = await setupGrid();
 
     manager.focus("terminal-4");
     expect(surfaceOf("terminal-4").hasFocus()).toBe(true);
 
-    applyView(SHOW_ALL, showOnly(IDS, "terminal-1"));
+    showOnly("terminal-1");
     manager.focus("terminal-6");
     expect(surfaceOf("terminal-6").hasFocus()).toBe(false);
 

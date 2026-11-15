@@ -5,8 +5,7 @@
 // 1. 全ターミナルの状態(終わったシェルへ入力と寸法を送らないため)
 // 2. 写しにあるターミナルの一覧(無くなったもの=タブを閉じた・シェルが終わってタブが閉じたものを破棄するため)
 // 3. 見えるターミナルの並び(タブ表示と拡大中は 0〜1 枚、タイル表示は表示中のページのタイル)と、
-//    隠して出力の取り込みだけを続けるもの(FR-042・FR-052、NFR-009。selectors.ts の presentation。
-//    検証画面では伝えない。9 枚の表示は検証画面が決める)
+//    隠して出力の取り込みだけを続けるもの(FR-042・FR-052、NFR-009。selectors.ts の presentation)
 
 import type { TerminalId } from "../ipc/generated/TerminalId";
 import type { TerminalStatus } from "../ipc/generated/TerminalStatus";
@@ -21,18 +20,12 @@ export interface TerminalSyncTarget {
   present(shown: readonly TerminalId[], background: readonly TerminalId[]): void;
 }
 
-export interface TerminalSyncOptions {
-  /** 9 枚の検証画面(ARIN_VERIFY_GRID。M4 の T49 で外す)。true なら表示中と隠すものを伝えない。 */
-  readonly verifyGrid: boolean;
-}
-
 /** 写しをターミナルの管理へ伝え続ける。外す関数を返す。写しがまだ無ければ届くまで何もしない。 */
-export function syncTerminals(store: AppStore, target: TerminalSyncTarget, { verifyGrid }: TerminalSyncOptions): () => void {
+export function syncTerminals(store: AppStore, target: TerminalSyncTarget): () => void {
   const forward = (snapshot: AppSnapshot | null) => {
     if (snapshot === null) return;
     for (const terminal of snapshot.terminals) target.setStatus(terminal.id, terminal.status);
     target.retain(snapshot.terminals.map((t) => t.id));
-    if (verifyGrid) return;
     const { shown, background } = presentation(snapshot);
     target.present(shown, background);
   };

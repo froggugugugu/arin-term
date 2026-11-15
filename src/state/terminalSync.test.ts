@@ -52,7 +52,7 @@ describe("syncTerminals(写しをターミナルの管理へ伝える)", () => {
     store.getState().replaceSnapshot(twoProjects("A"));
     const { seen, target } = recorder();
 
-    const stop = syncTerminals(store, target, { verifyGrid: false });
+    const stop = syncTerminals(store, target);
     store.getState().replaceSnapshot(twoProjects("B"));
     store.getState().reportStartupError("写しは変わらない");
     stop();
@@ -73,7 +73,7 @@ describe("syncTerminals(写しをターミナルの管理へ伝える)", () => {
   it("写しから消えたターミナル(タブを閉じた)は残すものに入らない", () => {
     const store = createAppStore();
     const { seen, target } = recorder();
-    syncTerminals(store, target, { verifyGrid: false });
+    syncTerminals(store, target);
 
     store.getState().replaceSnapshot(
       sampleSnapshot({
@@ -96,16 +96,6 @@ describe("syncTerminals(写しをターミナルの管理へ伝える)", () => {
     expect(seen).toEqual(["retain ", "present [] []"]);
   });
 
-  it("検証画面では表示中と隠すものを伝えない(9 枚とも検証画面が表示を決める)", () => {
-    const store = createAppStore();
-    const { seen, target } = recorder();
-    syncTerminals(store, target, { verifyGrid: true });
-
-    store.getState().replaceSnapshot(sampleSnapshot({ terminals: [sampleTerminal("terminal-1", running)] }));
-
-    expect(seen).toEqual(["status terminal-1 running", "retain terminal-1"]);
-  });
-
   it("タイル表示では表示中のページのタイルを並びで伝え、ページが替わると新しいページの並びを伝える", () => {
     const store = createAppStore();
     const { seen, target } = recorder();
@@ -124,7 +114,7 @@ describe("syncTerminals(写しをターミナルの管理へ伝える)", () => {
         },
       };
     };
-    syncTerminals(store, target, { verifyGrid: false });
+    syncTerminals(store, target);
 
     store.getState().replaceSnapshot(tiles(0, ["a1"]));
     store.getState().replaceSnapshot(tiles(1, ["b1"]));
@@ -136,7 +126,7 @@ describe("syncTerminals(写しをターミナルの管理へ伝える)", () => {
     const store = createAppStore();
     const { seen, target } = recorder();
     const base = twoProjects("A");
-    syncTerminals(store, target, { verifyGrid: false });
+    syncTerminals(store, target);
 
     store.getState().replaceSnapshot({
       ...base,
@@ -149,7 +139,7 @@ describe("syncTerminals(写しをターミナルの管理へ伝える)", () => {
   it("写しがまだ無ければ何も伝えない", () => {
     const { seen, target } = recorder();
 
-    syncTerminals(createAppStore(), target, { verifyGrid: false });
+    syncTerminals(createAppStore(), target);
 
     expect(seen).toEqual([]);
   });

@@ -17,14 +17,15 @@ describe("src/ipc の包み", () => {
     expect(result).toBe(snapshot);
   });
 
-  it("起動時の指定の取得は get_launch_options を引数なしで呼び、届いた指定を返す", async () => {
+  it("起動時の指定の取得は get_launch_options を引数なしで呼び、描画方式と全角幅の方式だけを返す", async () => {
+    // Rust はまだ 9 枚の検証画面の項目(verifyGrid)を返す(T49d で外す)。画面は検証画面を撤去したので読まない(T49c)。
     const fake = createFakeIpc({ get_launch_options: () => ({ renderer: "webgl", unicode: "graphemes", verifyGrid: true }) });
     const ipc = createIpc(fake.transport);
 
     const result = await ipc.getLaunchOptions();
 
     expect(fake.calls).toEqual([{ command: "get_launch_options", args: undefined }]);
-    expect(result).toEqual({ renderer: "webgl", unicode: "graphemes", verifyGrid: true });
+    expect(result).toEqual({ renderer: "webgl", unicode: "graphemes" });
   });
 
   it("ショートカットの表の取得は_get_shortcuts_を引数なしで呼び_届いた表をそのまま返す", async () => {
