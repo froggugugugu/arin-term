@@ -20,6 +20,7 @@ use crate::patrol::PatrolThread;
 use crate::persistence::Persistence;
 use crate::projects::Projects;
 use crate::sessions::SessionRegistry;
+use crate::settings_watch::SettingsWatch;
 use crate::tree_watch::TreeWatch;
 
 /// アプリのイベントループのイベントを受ける(`run` に渡す)。
@@ -29,7 +30,7 @@ use crate::tree_watch::TreeWatch;
 ///   フォルダを調べるのに待つことがあるので、メインスレッドの外で行う
 /// - ウィンドウの閉じるボタンは終了の要求として扱う。終わってよいと決まっていなければ、動作中のターミナルがあるときだけ
 ///   閉じるのを止めて確認を求める(FR-063)。無ければそのまま閉じて終わる
-/// - 終了するときは、ツリーの監視と、ルートの見回りのスレッドを止め、状態を書き終えてから、全ターミナルのシェルを終わらせる(PTY を残さない)
+/// - 終了するときは、設定ファイルの監視と、ツリーの監視と、ルートの見回りのスレッドを止め、状態を書き終えてから、全ターミナルのシェルを終わらせる(PTY を残さない)
 pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
     match event {
         RunEvent::WindowEvent {
@@ -52,6 +53,10 @@ pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
             tauri::async_runtime::spawn_blocking(move || on_paths_dropped(&app, paths));
         }
         RunEvent::Exit => {
+            // 設定ファイルの監視のスレッドを止め、監視を捨てる(FSEvents のスレッドを残さない。T65c)。
+            if let Some(watch) = app.try_state::<SettingsWatch>() {
+                watch.stop();
+            }
             // ツリーの監視の張り替えのスレッドを止め、監視を捨てる(FSEvents のスレッドを残さない。T42b)。
             if let Some(watch) = app.try_state::<TreeWatch>() {
                 watch.stop();

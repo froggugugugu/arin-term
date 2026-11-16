@@ -5,7 +5,8 @@
 //! ここは型をつなぐだけにする(`settings` と `shortcuts` は互いの型を知らない。変換はここ)。
 //!
 //! - 起動時は、メニューを作る前に [`AppSettings::load`] で読む(`lib.rs`)。読んだ表を `menu::Shortcuts` に入れる
-//! - 動作中の読み直し(T65c)は [`AppSettings::reload`]。ファイル全体の問題(構文エラー・読めない)のときは
+//! - 動作中の読み直し(T65c。`settings_watch.rs`)は [`AppSettings::reload_if_changed`](表か知らせが変わったときだけ
+//!   結果を返す)。中身は [`AppSettings::reload`] と同じ。ファイル全体の問題(構文エラー・読めない)のときは
 //!   `SettingsStore` が直前の内容を保つので、表も直前のままになる(起動時の「直前」は既定)
 //! - 知らせは、ファイル全体の問題と行の問題をまとめて 1 行([`Resolved::notice`]。`get_settings_notice` が返す)。
 //!   状態ファイルの知らせ(写しの `notice`)とは別に持つ(前提 (g))
@@ -126,12 +127,23 @@ impl AppSettings {
     /// イベント(`settings-changed`)・標準エラーへの書き出しは呼ぶ側が行う。
     pub fn reload(&self) -> Resolved {
         let load = load_settings_file(&self.file);
-        self.apply(load)
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        Self::apply(&mut state, load)
+    }
+
+    /// 読み直して当て、表が `current` と違うか知らせが直前と違うときだけ結果を返す(T65c。保存を検知したとき)。
+    /// 同じなら `None`(内容と知らせは読み直したものになるが、見た目は変わらない)。直前の知らせとの比べと
+    /// 当てるのは 1 つのロックの中で行う。
+    pub fn reload_if_changed(&self, current: &ShortcutTable) -> Option<Resolved> {
+        let load = load_settings_file(&self.file);
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let before = state.notice.clone();
+        let resolved = Self::apply(&mut state, load);
+        (resolved.table != *current || resolved.notice != before).then_some(resolved)
     }
 
     /// 読んだ結果を当てる。
-    fn apply(&self, load: SettingsLoad) -> Resolved {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+    fn apply(state: &mut State, load: SettingsLoad) -> Resolved {
         state.store.apply(load);
         let resolved = resolve(&state.store, &ShortcutTable::default_table());
         state.notice.clone_from(&resolved.notice);

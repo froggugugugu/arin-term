@@ -136,3 +136,9 @@ harness = false
 [[test]]
 name = "app_settings"
 harness = false
+
+# 設定ファイルの保存の検知と即時の反映(T65c。ADR-012 の 5)。監視は偽物(実物の FSEvents は一時フォルダで 1 件)で、
+# 読み直しの手順(表の差し替え・メニューの作り直し・settings-changed)は模擬のアプリで確かめる。理由は app_builder と同じ。
+[[test]]
+name = "settings_watch"
+harness = false

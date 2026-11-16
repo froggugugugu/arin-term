@@ -6,7 +6,7 @@
 //! ツリーの操作(`tree.rs`)とファイル操作(`fileops.rs`。切り取りの状態をアプリに 1 つ持つ)と、選択中のプロジェクトのツリーの監視の張り替え(`tree_watch.rs`。写しを送るたびに張り替えを頼む)を登録し、
 //! デスクトップとパスの操作(`commands/desktop.rs`。Finder で表示・開く・パスのコピー・ターミナルへの挿入)を登録し、
 //! 設定ファイルを読んで(`settings.rs`)ショートカットの表(`menu::Shortcuts`。メニューバーと `get_shortcuts` が同じものを見る)と
-//! 設定の知らせ(`settings::AppSettings`)を登録し、
+//! 設定の知らせ(`settings::AppSettings`)を登録し、状態フォルダの監視(`settings_watch.rs`。`settings.toml` の保存で読み直す)を起動し、
 //! コマンドとメニューバー(`menu.rs`。項目が選ばれたときも `menu.rs`)と終了の確認の状態(`lifecycle.rs`)を登録して
 //! tauri.conf.json のウィンドウを 1 枚出す。Finder からのドロップは `lifecycle.rs` が受ける。
 
@@ -22,6 +22,7 @@ pub mod persistence;
 pub mod projects;
 pub mod sessions;
 pub mod settings;
+pub mod settings_watch;
 pub mod tree;
 pub mod tree_watch;
 pub mod verify_log;
@@ -55,6 +56,7 @@ use crate::persistence::{Persistence, PersistencePorts, load_startup};
 use crate::projects::{FolderPicker, NativeFolderPicker, ProjectPorts, Projects};
 use crate::sessions::{SessionConfig, SessionRegistry, ShellDefaults, ShellProbe};
 use crate::settings::AppSettings;
+use crate::settings_watch::SettingsWatch;
 use crate::tree::Tree;
 use crate::tree_watch::{TreeChangeSink, TreeWatch};
 
@@ -195,7 +197,7 @@ pub fn builder_with_tree_ports<R: Runtime>(
 
 /// `builder_with_tree_ports` に加えて、Finder で表示・既定のアプリで開くのポートも差し替えて組み立てる(テスト用。
 /// 自動テストで Finder を開いたりアプリを起動したりしないため)。本物は `MacDesktop`。
-/// パスのコピーは `project_ports` の文字列のペーストボードに書く。
+/// パスのコピーは `project_ports` の文字列のペーストボードに書く。設定ファイルの監視は本物(`FsEventsWatcher`)。
 pub fn builder_with_desktop<R: Runtime>(
     launch: LaunchConfig,
     pty: Arc<dyn PtyPort>,
@@ -205,6 +207,31 @@ pub fn builder_with_desktop<R: Runtime>(
     tree_ports: TreePorts,
     desktop: Arc<dyn DesktopPort>,
 ) -> Builder<R> {
+    builder_with_settings_watcher(
+        launch,
+        pty,
+        probe,
+        ports,
+        project_ports,
+        tree_ports,
+        desktop,
+        Arc::new(FsEventsWatcher::new()),
+    )
+}
+
+/// `builder_with_desktop` に加えて、設定ファイルの監視(状態フォルダに張る)のポートも差し替えて組み立てる(テスト用。T65c)。
+/// 本物は `FsEventsWatcher`。ツリーの監視(`tree_ports.watcher`)とは別に渡す(張った場所の記録が混ざらないように)。
+#[allow(clippy::too_many_arguments)] // 差し替えの口を 1 つずつ足してきた組み立ての末端(ほかの `builder_with_*` が呼ぶ)。
+pub fn builder_with_settings_watcher<R: Runtime>(
+    launch: LaunchConfig,
+    pty: Arc<dyn PtyPort>,
+    probe: ShellProbe,
+    ports: PersistencePorts,
+    project_ports: ProjectPorts,
+    tree_ports: TreePorts,
+    desktop: Arc<dyn DesktopPort>,
+    settings_watcher: Arc<dyn WatcherPort>,
+) -> Builder<R> {
     let TreePorts {
         fs,
         watcher,
@@ -213,6 +240,7 @@ pub fn builder_with_desktop<R: Runtime>(
     let ready = ReadyNotice::new(launch.ready_marker().map(ToOwned::to_owned));
     let first_output = FirstOutputNotice::new(launch.terminal_marker().map(ToOwned::to_owned));
     let terminal = launch.terminal().clone();
+    let state_dir = launch.paths().state_dir().to_path_buf();
     // 設定ファイル(状態フォルダの `settings.toml`。差し替えたら差し替え先だけ)を、メニューを作る前に読む(T65b)。
     // 読むだけで、書き換え・退避はしない。問題は標準エラーに 1 つ 1 行(`[arin:settings]`)。
     let (settings, resolved) = AppSettings::load(launch.paths());
@@ -315,6 +343,25 @@ pub fn builder_with_desktop<R: Runtime>(
                 PATROL_INTERVAL,
             )?;
             app.manage(patrol);
+            // 設定ファイルの保存の検知(T65c)。状態フォルダに張り、`settings.toml` が保存されたら読み直して
+            // 表・メニュー・画面に反映する。張れなくても起動は続ける(標準エラーに `[arin:settings]` で 1 行)。
+            let reloader = app.handle().clone();
+            match SettingsWatch::spawn(
+                state_dir,
+                settings_watcher,
+                Arc::new(move || {
+                    settings_watch::reload_and_publish(&reloader);
+                }),
+            ) {
+                Ok(watch) => {
+                    app.manage(watch);
+                }
+                Err(e) => eprintln!(
+                    "{} 設定ファイルの監視のスレッドを起動できないため、保存しても読み直さない({:?})",
+                    settings::DIAGNOSTIC_PREFIX,
+                    e.kind()
+                ),
+            }
             app.manage(sessions);
             app.manage(persistence);
             Ok(())
