@@ -1527,7 +1527,7 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 31.5d(逐次。T64c・T65a 完了後。`src-tauri/src/lib.rs` と `menu.rs` を触る)
 
-- [ ] T65b — 起動時に読んでメニューと `get_shortcuts` に反映し、知らせる(変更ファイル: src-tauri/src/settings.rs, src-tauri/src/menu.rs, src-tauri/src/lib.rs, src-tauri/src/events.rs, src-tauri/src/commands/app.rs, src-tauri/src/commands/mod.rs, src-tauri/Cargo.toml, src-tauri/tests/app_settings.rs, src-tauri/tests/app_menu.rs | 依存: T64a, T64b, T64c, T65a)
+- [x] T65b — 起動時に読んでメニューと `get_shortcuts` に反映し、知らせる(変更ファイル: src-tauri/src/settings.rs, src-tauri/src/menu.rs, src-tauri/src/lib.rs, src-tauri/src/events.rs, src-tauri/src/commands/app.rs, src-tauri/src/commands/mod.rs, src-tauri/Cargo.toml, src-tauri/tests/app_settings.rs, src-tauri/tests/app_menu.rs | 依存: T64a, T64b, T64c, T65a)
   - 対応: 【要件の追加】、AC-K01・K02・K03・K04・K05・K09・K10 の Rust 側、ADR-012 の 3・5(差し替えの口)、前提 (f)(g)
   - 置くもの: `settings.rs`(`FsSettingsFile` で読み → `SettingsStore` → `[shortcuts]` の行を `ShortcutOverride` に直して `apply_overrides` → 表と知らせ。知らせはファイル全体の問題と行の問題をまとめて 1 行。標準エラーには `[arin:settings]` で問題ごとに 1 行)。起動時はメニューを作る前に読む(`lib.rs`。`.manage(Shortcuts::default())` を読んだ表に替える)。`Shortcuts` は表を差し替えられる形にする(`RwLock` など。`table()` は写しを返す)。`menu::rebuild(app)`(`build_with_table` で作り直して `set_menu`。メインスレッドで作る。T65c・T65d が使う)。コマンド `get_settings_notice`(1 行か null)、イベント名 `settings-changed`(中身なし。`events.rs`)
   - 安全: 設定ファイルは読むだけ。知らせと標準エラーに中身・絶対パスを出さない。状態ファイルの退避の仕組み(`persistence.rs`)に設定ファイルを渡さない
