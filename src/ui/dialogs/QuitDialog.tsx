@@ -17,8 +17,8 @@ function runningLabel(terminal: RunningTerminal): string {
 }
 
 /**
- * 終了の確認(FR-063)。動作中のターミナルがあって Rust が終了を止めたとき(quit-requested)に開く。
- * 動作中のターミナルを並べ、「終了」で終了を確定し、「取り消し」(Esc)なら何もしない。
+ * 終了の確認(FR-063)。動作中のターミナルか未保存のエディタ(M4.8。AC-E07)があって Rust が終了を止めたとき
+ * (quit-requested)に開く。動作中のターミナルと未保存の文書(「プロジェクト名: 相対パス」)を並べ、「終了」で終了を確定し、「取り消し」(Esc)なら何もしない。
  * 要求が続けて届いても確認は 1 つ(uiStore が一覧を置き換える)。検証画面でも出す。
  */
 export function QuitDialog({ ui, actions }: QuitDialogProps) {
@@ -35,12 +35,26 @@ export function QuitDialog({ ui, actions }: QuitDialogProps) {
       onConfirm={() => void actions.confirmQuit()}
       onCancel={() => actions.cancelQuit()}
     >
-      <p>動作中のターミナルがあります。終了すると、次のターミナルも終了します。</p>
-      <ul className="confirm-dialog__list">
-        {confirmation.running.map((terminal) => (
-          <li key={terminal.terminalId}>{runningLabel(terminal)}</li>
-        ))}
-      </ul>
+      {confirmation.running.length > 0 && (
+        <>
+          <p>動作中のターミナルがあります。終了すると、次のターミナルも終了します。</p>
+          <ul className="confirm-dialog__list">
+            {confirmation.running.map((terminal) => (
+              <li key={terminal.terminalId}>{runningLabel(terminal)}</li>
+            ))}
+          </ul>
+        </>
+      )}
+      {confirmation.unsaved.length > 0 && (
+        <>
+          <p>保存していない文書があります。終了すると、次の文書の変更は失われます。</p>
+          <ul className="confirm-dialog__list" data-testid="quit-unsaved-list">
+            {confirmation.unsaved.map((editor) => (
+              <li key={editor.editorId}>{`${editor.projectName}: ${editor.path}`}</li>
+            ))}
+          </ul>
+        </>
+      )}
     </ConfirmDialog>
   );
 }

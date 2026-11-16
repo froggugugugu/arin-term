@@ -25,6 +25,7 @@ import type { TreeClipboardAction, TreeClipboardTarget } from "../terminals/clip
 export type TreeMenuActions = Pick<
   Actions,
   | "openEntry"
+  | "openEntryExternally"
   | "expandDir"
   | "revealEntry"
   | "insertEntryPath"
@@ -64,7 +65,8 @@ export function treeCommandScope(project: ProjectCard, target: TreeMenuTarget): 
 
 /**
  * 選ばれた項目の操作を呼ぶ。どの操作も失敗しない(actions が報告する)。
- * - 開く: ファイルは既定のアプリで開き、フォルダは開く(画面が開閉する。ルートは常に開いているので何もしない)
+ * - 開く: ファイルは actions.openEntry(`.md`・`.markdown` はエディタ、ほかは既定のアプリ。M4.8)、フォルダは開く
+ *   (画面が開閉する。ルートは常に開いているので何もしない)。「既定のアプリで開く」は拡張子によらず既定のアプリ
  * - 名称変更・新規ファイル・新規フォルダ: インライン編集を始める(確定は入力欄が actions.commitInlineEdit を呼ぶ)
  */
 export function runTreeMenuCommand(
@@ -79,6 +81,8 @@ export function runTreeMenuCommand(
       if (scope.target.kind === "folder") actions.expandDir(command.path);
       else if (scope.target.kind === "file") return actions.openEntry(projectId, command.path);
       return Promise.resolve();
+    case "open-external":
+      return actions.openEntryExternally(projectId, command.path);
     case "reveal":
       return actions.revealEntry(projectId, command.path);
     case "insert-path":

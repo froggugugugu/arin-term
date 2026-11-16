@@ -283,6 +283,25 @@ describe("startApp(画面側の起動の手順)", () => {
     expect(result).toEqual({ ok: false, error: "ツリーの変更を購読できなかった: not allowed" });
     expect(fake.calls).toEqual([]);
   });
+
+  it("エディタを閉じる確認の要求を準備完了の通知より先に購読して受け手に渡す", async () => {
+    let listenersAtReady = -1;
+    let fakeRef: ReturnType<typeof setup>["fake"] | undefined;
+    const ctx = setup({
+      notify_app_ready: () => {
+        listenersAtReady = fakeRef?.listenerCount("editor-close-requested") ?? 0;
+        return null;
+      },
+    });
+    fakeRef = ctx.fake;
+    const seen: string[] = [];
+
+    await ctx.run({ onEditorCloseRequested: (request) => seen.push(request.editorId) });
+    ctx.fake.emit("editor-close-requested", { editorId: "editor-1" });
+
+    expect(listenersAtReady).toBe(1);
+    expect(seen).toEqual(["editor-1"]);
+  });
 });
 
 describe("startApp(設定の表と知らせへの追従。T65e)", () => {

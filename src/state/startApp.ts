@@ -16,6 +16,7 @@
 // 購読の失敗も起動の失敗にしない(起動時の表のまま動く)。
 
 import type { ArinIpc } from "../ipc/client";
+import type { EditorCloseRequest } from "../ipc/generated/EditorCloseRequest";
 import type { MenuCommand } from "../ipc/generated/MenuCommand";
 import type { QuitRequest } from "../ipc/generated/QuitRequest";
 import type { ShortcutTable } from "../ipc/generated/ShortcutTable";
@@ -45,6 +46,8 @@ export interface StartAppDeps {
     onQuitRequested?: (request: QuitRequest) => void;
     /** ツリーの外からの変更(FR-014)。main.tsx が TreeController.handleTreeChange へつなぐ。 */
     onTreeChanged?: (change: TreeChange) => void;
+    /** ⌘W で表示中のエディタが未保存だった(M4.8)。main.tsx がエディタの閉じる確認を開く。 */
+    onEditorCloseRequested?: (request: EditorCloseRequest) => void;
   };
   /** Rust から受け取ったショートカットの表の受け手(main.tsx が uiStore.setShortcuts へつなぐ)。渡さなければ取得しない。 */
   onShortcuts?: (table: ShortcutTable) => void;
@@ -83,7 +86,7 @@ export async function startApp({
     mount();
     return fail("状態の更新を購読できなかった", cause);
   }
-  const { onMenuCommand, onQuitRequested, onTreeChanged } = events;
+  const { onMenuCommand, onQuitRequested, onTreeChanged, onEditorCloseRequested } = events;
   try {
     if (onMenuCommand !== undefined) await ipc.onMenuCommand(onMenuCommand);
   } catch (cause) {
@@ -101,6 +104,12 @@ export async function startApp({
   } catch (cause) {
     mount();
     return fail("ツリーの変更を購読できなかった", cause);
+  }
+  try {
+    if (onEditorCloseRequested !== undefined) await ipc.onEditorCloseRequested(onEditorCloseRequested);
+  } catch (cause) {
+    mount();
+    return fail("エディタを閉じる確認の要求を購読できなかった", cause);
   }
 
   // 取得は描画と並行して始める。失敗は下の await で受けるので、未処理の失敗にはならない。

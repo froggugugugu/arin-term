@@ -170,14 +170,15 @@ async function expectKeysShown(page: Page, expected: ExpectedKeys): Promise<void
 /**
  * ツリーにフォーカスして、古いキー(oldKey)では新規ファイルの入力が開かず、新しいキー(newKey)で開くことを確かめる。
  * 古いキーの処理が済んだことは、続けて押した ⌘O(開く。替えていない)が届いたことで見る。入力は Escape で閉じる。
+ * README.md は Markdown なので、⌘O は M4.8 から open_document(エディタ)で届く(ADR-015 の 4)。
  */
 async function expectNewFileKey(page: Page, oldKey: string, newKey: string): Promise<void> {
-  const opened = (await readCallArgs(page, "open_entry")).length;
+  const opened = (await readCallArgs(page, "open_document")).length;
   await row(page, "README.md").click();
   await expect(fileTree(page)).toBeFocused();
   await page.keyboard.press(oldKey);
   await page.keyboard.press("Meta+O");
-  await expect.poll(async () => (await readCallArgs(page, "open_entry")).length).toBe(opened + 1);
+  await expect.poll(async () => (await readCallArgs(page, "open_document")).length).toBe(opened + 1);
   await expect(nameInput(page)).toHaveCount(0);
 
   await page.keyboard.press(newKey);

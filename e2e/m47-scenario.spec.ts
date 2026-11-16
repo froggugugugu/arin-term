@@ -93,7 +93,8 @@ test.describe("設定画面の透過(AC-G01・AC-G05)", () => {
     await openSettings(page);
 
     const groups = dialog(page).getByRole("heading", { level: 3 });
-    await expect(groups).toHaveText(["文字の大きさ", "透過", "ショートカット"]);
+    // M4.8 でエディタの組(Vim のキー操作)が透過の下に入った(ADR-015 の 6)
+    await expect(groups).toHaveText(["文字の大きさ", "透過", "エディタ", "ショートカット"]);
     await expect(row(page, "window")).toContainText("ウィンドウ");
     await expect(row(page, "terminal")).toContainText("ターミナルの背景");
     await expect(stepper(page, "window")).toHaveText("45%");

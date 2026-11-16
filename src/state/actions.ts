@@ -32,6 +32,7 @@ import type { RelPath } from "../ipc/generated/RelPath";
 import type { TerminalId } from "../ipc/generated/TerminalId";
 import type { TranslucencyTarget } from "../ipc/generated/TranslucencyTarget";
 import { describeError } from "../logic/describeError";
+import { isMarkdownPath } from "../logic/editor/documentPath";
 import { nameOf, parentPath } from "../logic/tree/treePath";
 import type { AppStore } from "./appStore";
 import { selectionWithin, type TreeController, type TreeStore } from "./treeStore";
@@ -87,6 +88,11 @@ export interface ActionsDeps {
   treeController: TreeController;
   /** 失敗の報告先(ErrorReporter.report)。 */
   reportError: (message: string) => void;
+  /**
+   * エディタで開く(M4.8。./editorController.ts)。渡せば `.md`・`.markdown` の「開く」をここへ回す。
+   * 渡さなければ(エディタを使わないテスト)今までどおり既定のアプリで開く。
+   */
+  editor?: { openDocument(projectId: ProjectId, path: RelPath): Promise<void> };
 }
 
 /** 画面の操作。どの Promise も失敗しない(失敗は報告済み)。 */
@@ -200,8 +206,13 @@ export interface Actions {
   cancelConflict(): void;
   /** Finder で表示(FR-018)。 */
   revealEntry(projectId: ProjectId, path: RelPath): Promise<void>;
-  /** 既定のアプリで開く(FR-018。ファイルだけ)。 */
+  /**
+   * 開く(FR-018。ファイルだけ。ダブルクリック・⌘O・メニューの「開く」)。`.md`・`.markdown` はエディタのタブで開き
+   * (M4.8。ADR-015 の 4)、ほかは既定のアプリで開く。
+   */
   openEntry(projectId: ProjectId, path: RelPath): Promise<void>;
+  /** 既定のアプリで開く(拡張子によらない。`.md` の右クリックの「既定のアプリで開く」。M4.8)。 */
+  openEntryExternally(projectId: ProjectId, path: RelPath): Promise<void>;
   /** パスをコピー(FR-015。Rust がクリップボードに書く)。 */
   copyEntryPath(projectId: ProjectId, path: RelPath, kind: PathKind): Promise<void>;
   /** パスをターミナル terminalId に挿入する(FR-016・FR-024。Enter は送らない)。 */
@@ -232,7 +243,7 @@ export function notFoundMessage(path: RelPath): string {
 /** 親のフォルダ(ルートの親はルートとして扱う)。 */
 const parentOf = (path: RelPath): RelPath => parentPath(path) ?? "";
 
-export function createActions({ ipc, ui, app, tree, treeController, reportError }: ActionsDeps): Actions {
+export function createActions({ ipc, ui, app, tree, treeController, reportError, editor }: ActionsDeps): Actions {
   /** そのプロジェクトのツリーが表示中か(替えたあとに届いた応答で、確認や知らせを開かないため。T47e)。 */
   const isShown = (projectId: ProjectId) => tree.getState().activeProjectId === projectId;
   /** 送ったタイルへのフォーカスの求めと、送ったときの写し(focusTile が同じ求めを続けて送らないため)。 */
@@ -250,7 +261,9 @@ export function createActions({ ipc, ui, app, tree, treeController, reportError 
   const remove = (id: ProjectId, confirmed: boolean) =>
     run("プロジェクトを一覧から削除できなかった", async () => {
       const outcome = await ipc.removeProject(id, confirmed);
-      if (outcome.kind === "needsConfirmation") ui.getState().openRemoveConfirmation(id, outcome.running);
+      if (outcome.kind === "needsConfirmation") {
+        ui.getState().openRemoveConfirmation(id, outcome.running, outcome.unsaved);
+      }
     });
 
   /**
@@ -460,6 +473,10 @@ export function createActions({ ipc, ui, app, tree, treeController, reportError 
     revealEntry: (projectId, path) =>
       runSimple("Finder で表示できなかった", projectId, path, [], () => ipc.revealEntry(projectId, path)),
     openEntry: (projectId, path) =>
+      editor !== undefined && isMarkdownPath(path)
+        ? editor.openDocument(projectId, path)
+        : runSimple("開けなかった", projectId, path, [], () => ipc.openEntry(projectId, path)),
+    openEntryExternally: (projectId, path) =>
       runSimple("開けなかった", projectId, path, [], () => ipc.openEntry(projectId, path)),
     copyEntryPath: (projectId, path, kind) =>
       runSimple("パスをコピーできなかった", projectId, path, [], () => ipc.copyEntryPath(projectId, path, kind)),

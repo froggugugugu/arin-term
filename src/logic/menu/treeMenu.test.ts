@@ -236,3 +236,24 @@ describe("treeShortcutCommand(ショートカットのコマンドの id をメ�
     });
   });
 });
+
+describe("Markdown のファイルのメニュー(M4.8。ADR-015 の 4、AC-E01)", () => {
+  it("md_の右クリックに既定のアプリで開くがある", () => {
+    for (const path of ["docs/a.md", "README.Markdown"]) {
+      const menu = buildTreeMenu({ kind: "file", path }, context());
+      expect(labels(menu).slice(0, 3)).toEqual(["開く", "既定のアプリで開く", "Finder で表示"]);
+      const external = byLabel(menu, "既定のアプリで開く");
+      expect(external.command).toEqual({ type: "open-external", path });
+      // キーは無い(表に行を足さない)
+      expect(external.shortcutId).toBeNull();
+      expect(external.shortcut).toBeNull();
+      expect(external.enabled).toBe(true);
+    }
+  });
+
+  it("ほかの拡張子_フォルダ_ルート_余白には既定のアプリで開くが無い", () => {
+    for (const target of [file, folder, root, blank, { kind: "folder", path: "a.md" } as const]) {
+      expect(labels(buildTreeMenu(target, context()))).not.toContain("既定のアプリで開く");
+    }
+  });
+});

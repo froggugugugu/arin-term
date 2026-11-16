@@ -166,6 +166,8 @@ test.describe("開閉とキーボード(AC-F01・AC-F12)", () => {
       interfaceStepper(page),
       page.getByRole("spinbutton", { name: "ウィンドウの透過" }),
       page.getByRole("spinbutton", { name: "ターミナルの背景の透過" }),
+      // M4.8 で Vim のキー操作の切替が透過の下に入った(ADR-015 の 6)
+      dialog(page).getByRole("switch", { name: "Vim のキー操作" }),
       openFileButton(page),
       resetButton(page),
       doneButton(page),
@@ -431,6 +433,9 @@ test.describe("見た目(AC-F13)", () => {
       await expect(downButton(page, "interface")).toBeDisabled();
       await page.screenshot({ path: shotPath(`edges-${colorScheme}`) });
 
+      // M4.8 でエディタの組が増え、画面の文字が 18 のときは高さ 600 では縦に送る(シートは overflow-y: auto)。
+      // はみ出さないことは、既定のウィンドウより低い 720 の高さで確かめる(ADR-015 の 6)
+      await page.setViewportSize({ width: 960, height: 720 });
       await emitEvent(page, "app-snapshot", withFontSizes(base, { terminal: 9, interface: 18 }));
       await expect(interfaceStepper(page)).toHaveAttribute("aria-valuenow", "18");
       await expect(upButton(page, "interface")).toBeDisabled();

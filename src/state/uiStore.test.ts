@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { RunningTerminal } from "../ipc/generated/RunningTerminal";
 import { DEFAULT_SHORTCUT_TABLE } from "../logic/keys/defaultShortcuts";
-import { createUiStore } from "./uiStore";
+import { createUiStore, editorViewMode } from "./uiStore";
 
 const running = (terminalId: string, label = "ターミナル 1"): RunningTerminal => ({
   terminalId,
@@ -24,7 +24,7 @@ describe("uiStore(表示だけの状態)", () => {
     const ui = createUiStore();
 
     ui.getState().openQuitConfirmation([running("t1")]);
-    expect(ui.getState().quitConfirmation).toEqual({ running: [running("t1")] });
+    expect(ui.getState().quitConfirmation).toEqual({ running: [running("t1")], unsaved: [] });
 
     ui.getState().closeQuitConfirmation();
     expect(ui.getState().quitConfirmation).toBeNull();
@@ -38,7 +38,7 @@ describe("uiStore(表示だけの状態)", () => {
     ui.getState().openQuitConfirmation([running("t1")]);
     ui.getState().openQuitConfirmation([running("t1"), running("t2", "ターミナル 2")]);
 
-    expect(ui.getState().quitConfirmation).toEqual({ running: [running("t1"), running("t2", "ターミナル 2")] });
+    expect(ui.getState().quitConfirmation).toEqual({ running: [running("t1"), running("t2", "ターミナル 2")], unsaved: [] });
     ui.getState().closeQuitConfirmation();
     expect(ui.getState().quitConfirmation).toBeNull();
     expect(seen).toHaveLength(3);
@@ -48,10 +48,10 @@ describe("uiStore(表示だけの状態)", () => {
     const ui = createUiStore();
 
     ui.getState().openRemoveConfirmation("p1", [running("t1")]);
-    expect(ui.getState().removeConfirmation).toEqual({ projectId: "p1", running: [running("t1")] });
+    expect(ui.getState().removeConfirmation).toEqual({ projectId: "p1", running: [running("t1")], unsaved: [] });
 
     ui.getState().openRemoveConfirmation("p2", []);
-    expect(ui.getState().removeConfirmation).toEqual({ projectId: "p2", running: [] });
+    expect(ui.getState().removeConfirmation).toEqual({ projectId: "p2", running: [], unsaved: [] });
 
     ui.getState().closeRemoveConfirmation();
     expect(ui.getState().removeConfirmation).toBeNull();
@@ -306,5 +306,99 @@ describe("uiStore(ツリーの表示だけの状態。M3)", () => {
       expect(ui.getState().settingsOpen).toBe(true);
       expect(ui.getState().quitConfirmation).not.toBeNull();
     });
+  });
+});
+
+describe("uiStore(エディタ。M4.8。ADR-015 の 4・5・8)", () => {
+  const unsaved = { editorId: "editor-1", projectName: "app", path: "docs/a.md" };
+
+  it("終了と削除の確認に未保存のエディタの一覧を載せる", () => {
+    const ui = createUiStore();
+
+    ui.getState().openQuitConfirmation([], [unsaved]);
+    ui.getState().openRemoveConfirmation("p1", [running("t1")], [unsaved]);
+
+    expect(ui.getState().quitConfirmation).toEqual({ running: [], unsaved: [unsaved] });
+    expect(ui.getState().removeConfirmation).toEqual({ projectId: "p1", running: [running("t1")], unsaved: [unsaved] });
+  });
+
+  it("表示の切替はタブごとに持ち_既定は並べて", () => {
+    const ui = createUiStore();
+
+    expect(editorViewMode(ui.getState(), "editor-1")).toBe("split");
+    ui.getState().setEditorView("editor-1", "preview");
+    ui.getState().setEditorView("editor-2", "edit");
+
+    expect(editorViewMode(ui.getState(), "editor-1")).toBe("preview");
+    expect(editorViewMode(ui.getState(), "editor-2")).toBe("edit");
+    expect(editorViewMode(ui.getState(), "editor-3")).toBe("split");
+  });
+
+  it("帯は出し直すと置き換わり_null_で消える", () => {
+    const ui = createUiStore();
+
+    ui.getState().setEditorBanner("editor-1", { kind: "changed" });
+    ui.getState().setEditorBanner("editor-1", { kind: "failed", message: "保存できませんでした" });
+    expect(ui.getState().editorBanners.get("editor-1")).toEqual({ kind: "failed", message: "保存できませんでした" });
+
+    const before = ui.getState();
+    ui.getState().setEditorBanner("editor-2", null);
+    // 無いものを消しても状態は変わらない(描き直さない)
+    expect(ui.getState()).toBe(before);
+    ui.getState().setEditorBanner("editor-1", null);
+    expect(ui.getState().editorBanners.has("editor-1")).toBe(false);
+  });
+
+  it("閉じる確認と保存の衝突は開閉でき_開いているあいだは設定画面を開かない", () => {
+    const ui = createUiStore();
+
+    ui.getState().openUnsavedClose("editor-1");
+    expect(ui.getState().unsavedClose).toEqual({ editorId: "editor-1" });
+    ui.getState().openSettings();
+    expect(ui.getState().settingsOpen).toBe(false);
+    ui.getState().closeUnsavedClose();
+
+    ui.getState().openSaveConflict({ editorId: "editor-1", kind: "missing" });
+    expect(ui.getState().saveConflict).toEqual({ editorId: "editor-1", kind: "missing" });
+    ui.getState().openSettings();
+    expect(ui.getState().settingsOpen).toBe(false);
+    ui.getState().closeSaveConflict();
+    expect(ui.getState().saveConflict).toBeNull();
+  });
+
+  it("フォーカスの求めは同じ_id_で受け取ると消え_ほかの_id_では消えない", () => {
+    const ui = createUiStore();
+
+    ui.getState().requestEditorFocus("editor-1");
+    ui.getState().consumeEditorFocus("editor-2");
+    expect(ui.getState().pendingEditorFocus).toBe("editor-1");
+    ui.getState().consumeEditorFocus("editor-1");
+    expect(ui.getState().pendingEditorFocus).toBeNull();
+  });
+
+  it("写しから消えたエディタの切替_帯_プレビュー_確認_フォーカスの求めを片付ける", () => {
+    const ui = createUiStore();
+    ui.getState().setEditorView("editor-1", "edit");
+    ui.getState().setEditorView("editor-2", "edit");
+    ui.getState().setEditorBanner("editor-1", { kind: "missing" });
+    ui.getState().setEditorPreview("editor-1", []);
+    ui.getState().openUnsavedClose("editor-1");
+    ui.getState().openSaveConflict({ editorId: "editor-1", kind: "changed" });
+    ui.getState().requestEditorFocus("editor-1");
+
+    ui.getState().retainEditors(new Set(["editor-2"]));
+
+    const s = ui.getState();
+    expect([...s.editorViews.keys()]).toEqual(["editor-2"]);
+    expect(s.editorBanners.size).toBe(0);
+    expect(s.editorPreviews.size).toBe(0);
+    expect(s.unsavedClose).toBeNull();
+    expect(s.saveConflict).toBeNull();
+    expect(s.pendingEditorFocus).toBeNull();
+
+    // 何も消えなければ状態は変わらない
+    const before = ui.getState();
+    ui.getState().retainEditors(new Set(["editor-2"]));
+    expect(ui.getState()).toBe(before);
   });
 });

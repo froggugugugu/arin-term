@@ -3,9 +3,12 @@
 
 import type { AppSnapshot } from "../ipc/generated/AppSnapshot";
 import type { DisplayMode } from "../ipc/generated/DisplayMode";
+import type { EditorId } from "../ipc/generated/EditorId";
+import type { EditorTabSnapshot } from "../ipc/generated/EditorTabSnapshot";
 import type { ProjectCardSnapshot } from "../ipc/generated/ProjectCardSnapshot";
 import type { ProjectColor } from "../ipc/generated/ProjectColor";
 import type { ProjectId } from "../ipc/generated/ProjectId";
+import type { RelPath } from "../ipc/generated/RelPath";
 import type { TerminalId } from "../ipc/generated/TerminalId";
 import type { TerminalStatus } from "../ipc/generated/TerminalStatus";
 import type { TerminalTabSnapshot } from "../ipc/generated/TerminalTabSnapshot";
@@ -37,9 +40,33 @@ export function shownTerminal(snapshot: AppSnapshot | null): TerminalTabSnapshot
   return snapshot.terminals.find((t) => t.id === activeId) ?? null;
 }
 
+/** プロジェクトのエディタのタブ(開いた順。M4.8)。写しのエディタの一覧に無い ID は飛ばす。 */
+export function projectEditorTabs(snapshot: AppSnapshot | null, projectId: ProjectId): EditorTabSnapshot[] {
+  const project = snapshot?.projects.find((p) => p.id === projectId);
+  if (snapshot === null || project === undefined) return [];
+  const byId = new Map(snapshot.editors.map((e) => [e.id, e]));
+  return project.editorIds.flatMap((id) => byId.get(id) ?? []);
+}
+
+/**
+ * いま出しているエディタ(M4.8。ADR-015 の 3。Rust の `Workspace::shown_editor` と同じ規則)。タブ表示で、選択中の
+ * プロジェクトの表示中のエディタがあるときだけ。タイル表示ではエディタを出さないので null。
+ */
+export function shownEditor(snapshot: AppSnapshot | null): EditorTabSnapshot | null {
+  if (snapshot === null || snapshot.display.mode !== "tabs") return null;
+  const id = selectedProject(snapshot)?.shownEditorId ?? null;
+  if (id === null) return null;
+  return snapshot.editors.find((e) => e.id === id) ?? null;
+}
+
+/** プロジェクトの開いている文書の親フォルダ(ルート基準。ルートは空の文字列)。外での変更を確かめる対象を選ぶのに使う。 */
+export function editorParentDirs(snapshot: AppSnapshot | null, projectId: ProjectId): Map<EditorId, RelPath> {
+  return new Map(projectEditorTabs(snapshot, projectId).map((e) => [e.id, parentPath(e.path) ?? ""]));
+}
+
 /**
  * 画面に見えるターミナルの並び(0〜9 枚。NFR-009、ADR-011。Rust の `Workspace::visible_terminals` と同じ規則)。
- * - タブ表示: 選択中のプロジェクトの表示中のタブ(0〜1 枚)
+ * - タブ表示: 選択中のプロジェクトの表示中のタブ(0〜1 枚)。エディタを出しているときは 0 枚(M4.8)
  * - タイル表示: 写しの `display.tileIds`(表示中のページのタイル。並びの順。グリッドとページは Rust が計算したもの)
  * - 拡大中: フォーカス中の 1 枚(`display.focusedTerminalId`)
  * 写しのターミナルの一覧に無い ID は入れない。写しが無ければ空。
@@ -48,6 +75,7 @@ export function visibleTerminalIds(snapshot: AppSnapshot | null): TerminalId[] {
   if (snapshot === null) return [];
   const { display } = snapshot;
   if (display.mode === "tabs") {
+    if (shownEditor(snapshot) !== null) return [];
     const shown = shownTerminal(snapshot);
     return shown === null ? [] : [shown.id];
   }

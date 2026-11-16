@@ -3,14 +3,20 @@ import { type KeyboardEvent, useEffect, useRef } from "react";
 import { ariaKeyShortcuts, type ShortcutTable, shortcutLabel } from "../../logic/keys/shortcutTable";
 import { moveMenuFocus } from "../../logic/menu/menuNavigation";
 import { projectColorStyle } from "../design/palette";
-import type { ProjectColor, TerminalTab, TerminalTabId } from "../snapshotTypes";
-import { CloseIcon, PlusIcon } from "../tree/icons";
+import type { EditorTab, EditorTabId, ProjectColor, TerminalTab, TerminalTabId } from "../snapshotTypes";
+import { CloseIcon, FileIcon, PlusIcon } from "../tree/icons";
 
 interface TabBarProps {
   /** 選択中のプロジェクトのタブ(タブの順)。 */
   tabs: readonly TerminalTab[];
-  /** 表示中のタブ。0 枚なら null。 */
+  /** 表示中のタブ。0 枚なら null。エディタを出しているとき(shownEditorId)はターミナルのタブは選ばれていない。 */
   activeId: TerminalTabId | null;
+  /** 選択中のプロジェクトのエディタのタブ(開いた順。M4.8)。ターミナルのタブの後ろに並べる。 */
+  editorTabs?: readonly EditorTab[];
+  /** 出しているエディタ。無ければ null。 */
+  shownEditorId?: EditorTabId | null;
+  onSelectEditor?: (id: EditorTabId) => void;
+  onCloseEditor?: (id: EditorTabId) => void;
   /** プロジェクトの表示名(ツールチップの「プロジェクト名: タブ名」)。 */
   projectName: string;
   /** プロジェクト色(タブの着色。FR-060)。 */
@@ -32,6 +38,12 @@ interface TabBarProps {
 export function tabDomId(idBase: string, terminalId: TerminalTabId): string {
   return `${idBase}-tab-${encodeURIComponent(terminalId)}`;
 }
+
+const TERMINAL_PREFIX = "terminal:";
+const EDITOR_PREFIX = "editor:";
+/** タブの並びの中の目印(ターミナルとエディタの ID が重なっても区別する)。 */
+const terminalKey = (id: TerminalTabId) => `${TERMINAL_PREFIX}${id}`;
+const editorKey = (id: EditorTabId) => `${EDITOR_PREFIX}${id}`;
 
 /** 左右の矢印・Home・End をメニューの移動のキーに読み替える(タブは横に並ぶ)。 */
 const MOVE_KEYS: Readonly<Record<string, string>> = {
@@ -55,10 +67,17 @@ const MOVE_KEYS: Readonly<Record<string, string>> = {
  * - タブが多いときはタブの列だけが横にスクロールし、「+」は常に見える。表示中のタブが変わると、見える位置までスクロールする
  * - 「+」のツールチップ(「新規ターミナル(⌘T)」)と読み上げのキー(aria-keyshortcuts)、閉じるボタンのツールチップのキーは
  *   表の terminal.new-tab・terminal.close-tab から引く(設定で替えると追従する。読めなければキーを出さない)
+ * - エディタのタブ(M4.8。ADR-015 の 3・8)はターミナルのタブの後ろに開いた順で並ぶ。プロジェクト色の丸の代わりに文書の印を出し、
+ *   未保存なら閉じるボタンの位置に「●」(マウスを載せると ×。macOS と同じ)。読み上げはタブの名前に「未保存」を足す。
+ *   キーボードの移動・Delete はターミナルのタブと 1 つの並びとして扱う
  */
 export function TabBar({
   tabs,
   activeId,
+  editorTabs = [],
+  shownEditorId = null,
+  onSelectEditor,
+  onCloseEditor,
   projectName,
   color,
   idBase,
@@ -72,17 +91,34 @@ export function TabBar({
   const newKey = shortcutLabel(shortcuts, "terminal.new-tab");
   const newAriaKey = ariaKeyShortcuts(shortcuts, "terminal.new-tab");
   const closeKey = shortcutLabel(shortcuts, "terminal.close-tab");
-  const tabRefs = useRef(new Map<TerminalTabId, HTMLButtonElement>());
+  const tabRefs = useRef(new Map<string, HTMLButtonElement>());
+  // 表示中のタブ: エディタを出していればそのエディタ、無ければ表示中のターミナル。
+  const selectedKey =
+    shownEditorId !== null && editorTabs.some((t) => t.id === shownEditorId)
+      ? editorKey(shownEditorId)
+      : activeId === null
+        ? null
+        : terminalKey(activeId);
+  const keys = [...tabs.map((t) => terminalKey(t.id)), ...editorTabs.map((t) => editorKey(t.id))];
   // Tab で止まるタブ: 表示中のタブ。表示中が並びに無ければ最初のタブ。
-  const focusableId = tabs.some((t) => t.id === activeId) ? activeId : (tabs[0]?.id ?? null);
+  const focusableKey = selectedKey !== null && keys.includes(selectedKey) ? selectedKey : (keys[0] ?? null);
 
   useEffect(() => {
-    if (activeId === null) return;
-    tabRefs.current.get(activeId)?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [activeId]);
+    if (selectedKey === null) return;
+    tabRefs.current.get(selectedKey)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [selectedKey]);
+
+  const closeByKey = (key: string) => {
+    if (key.startsWith(EDITOR_PREFIX)) onCloseEditor?.(key.slice(EDITOR_PREFIX.length));
+    else onClose(key.slice(TERMINAL_PREFIX.length));
+  };
+  const refOf = (key: string) => (el: HTMLButtonElement | null) => {
+    if (el === null) tabRefs.current.delete(key);
+    else tabRefs.current.set(key, el);
+  };
 
   const onListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const ids = tabs.map((t) => t.id);
+    const ids = keys;
     const current = ids.findIndex((id) => tabRefs.current.get(id) === document.activeElement);
     if (current < 0) return;
     if (event.key === "Delete" || event.key === "Backspace") {
@@ -93,7 +129,7 @@ export function TabBar({
       // 表示中のタブを閉じたときは、TerminalArea が次に表示するターミナルへ移し直す。
       const neighbor = ids[current + 1] ?? ids[current - 1];
       if (neighbor !== undefined) tabRefs.current.get(neighbor)?.focus();
-      onClose(id);
+      closeByKey(id);
       return;
     }
     const moveKey = MOVE_KEYS[event.key];
@@ -115,7 +151,8 @@ export function TabBar({
         onKeyDown={onListKeyDown}
       >
         {tabs.map((terminal) => {
-          const selected = terminal.id === activeId;
+          const key = terminalKey(terminal.id);
+          const selected = key === selectedKey;
           return (
             <div
               key={terminal.id}
@@ -125,10 +162,7 @@ export function TabBar({
               data-testid="tab-item"
             >
               <button
-                ref={(el) => {
-                  if (el === null) tabRefs.current.delete(terminal.id);
-                  else tabRefs.current.set(terminal.id, el);
-                }}
+                ref={refOf(key)}
                 type="button"
                 role="tab"
                 id={tabDomId(idBase, terminal.id)}
@@ -136,7 +170,7 @@ export function TabBar({
                 aria-selected={selected}
                 aria-controls={selected ? panelId : undefined}
                 aria-keyshortcuts="Delete"
-                tabIndex={terminal.id === focusableId ? 0 : -1}
+                tabIndex={key === focusableKey ? 0 : -1}
                 title={`${projectName}: ${terminal.label}`}
                 onClick={() => {
                   if (!selected) onSelect(terminal.id);
@@ -153,6 +187,51 @@ export function TabBar({
                 tabIndex={-1}
                 onClick={() => onClose(terminal.id)}
               >
+                <CloseIcon />
+              </button>
+            </div>
+          );
+        })}
+        {editorTabs.map((editor) => {
+          const key = editorKey(editor.id);
+          const selected = key === selectedKey;
+          const classes = ["tab-bar__item", "tab-bar__item--editor"];
+          if (selected) classes.push("tab-bar__item--selected");
+          if (editor.dirty) classes.push("tab-bar__item--dirty");
+          return (
+            <div key={key} role="presentation" className={classes.join(" ")} data-testid="editor-tab-item">
+              <button
+                ref={refOf(key)}
+                type="button"
+                role="tab"
+                id={tabDomId(idBase, editor.id)}
+                className="tab-bar__tab"
+                aria-selected={selected}
+                aria-controls={selected ? panelId : undefined}
+                aria-keyshortcuts="Delete"
+                aria-label={editor.dirty ? `${editor.label}(未保存)` : editor.label}
+                tabIndex={key === focusableKey ? 0 : -1}
+                title={`${projectName}: ${editor.path}`}
+                onClick={() => {
+                  if (!selected) onSelectEditor?.(editor.id);
+                }}
+              >
+                <FileIcon className="tab-bar__doc" />
+                <span className="tab-bar__label">{editor.label}</span>
+              </button>
+              <button
+                type="button"
+                className="tab-bar__close"
+                aria-label={`「${editor.label}」を閉じる`}
+                title={closeKey === null ? "タブを閉じる" : `タブを閉じる(${closeKey})`}
+                tabIndex={-1}
+                onClick={() => onCloseEditor?.(editor.id)}
+              >
+                {editor.dirty && (
+                  <span className="tab-bar__dirty" aria-hidden="true" data-testid="editor-tab-dirty">
+                    ●
+                  </span>
+                )}
                 <CloseIcon />
               </button>
             </div>

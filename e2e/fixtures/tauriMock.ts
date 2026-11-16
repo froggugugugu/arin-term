@@ -37,6 +37,7 @@ import type { AppSnapshot } from "../../src/ipc/generated/AppSnapshot";
 import type { DirEntry } from "../../src/ipc/generated/DirEntry";
 import type { DirListing } from "../../src/ipc/generated/DirListing";
 import type { DisplayMode } from "../../src/ipc/generated/DisplayMode";
+import type { EditorTabSnapshot } from "../../src/ipc/generated/EditorTabSnapshot";
 import type { EntryKind } from "../../src/ipc/generated/EntryKind";
 import type { ProjectCardSnapshot } from "../../src/ipc/generated/ProjectCardSnapshot";
 import type { ProjectColor } from "../../src/ipc/generated/ProjectColor";
@@ -354,6 +355,40 @@ export function withSteppedTranslucency(
   return withTranslucency(snapshot, { [target]: value });
 }
 
+/** テスト用のエディタのタブ 1 枚(M4.8)。表示名はパスのファイル名、未保存なし、書ける。 */
+export function sampleEditorTab(
+  id: string,
+  projectId: string,
+  path: string,
+  overrides: Partial<EditorTabSnapshot> = {},
+): EditorTabSnapshot {
+  return { id, projectId, path, label: path.slice(path.lastIndexOf("/") + 1), dirty: false, readOnly: null, ...overrides };
+}
+
+/**
+ * エディタのタブを載せた写しを返す(M4.8。Rust の open_document・select_editor・close_editor・set_document_dirty の
+ * あとに届く写しの形)。projectId のエディタを tabs に置き換え、shownEditorId を表示中にする。表示中にするときは
+ * Rust と同じくそのプロジェクトを選び、タブ表示に替える(ADR-015 の 3。【要確認】1 の A)。渡した写しは書き換えない。
+ */
+export function withEditors(
+  snapshot: AppSnapshot,
+  projectId: string,
+  tabs: readonly EditorTabSnapshot[],
+  shownEditorId: string | null = tabs.at(-1)?.id ?? null,
+): AppSnapshot {
+  const others = snapshot.editors.filter((e) => e.projectId !== projectId);
+  const shown = shownEditorId !== null;
+  return {
+    ...snapshot,
+    selectedProjectId: shown ? projectId : snapshot.selectedProjectId,
+    projects: snapshot.projects.map((p) =>
+      p.id === projectId ? { ...p, editorIds: tabs.map((t) => t.id), shownEditorId } : p,
+    ),
+    editors: [...others, ...tabs],
+    display: shown ? { ...snapshot.display, mode: "tabs", maximized: false } : snapshot.display,
+  };
+}
+
 /** 終了・削除の確認に載せる動作中のターミナル 1 枚(quit-requested のイベントの中身などに使う。T34d)。 */
 export function sampleRunningTerminal(
   projectId: string,
@@ -420,6 +455,14 @@ const DEFAULT_REPLIES: TauriMockConfig = {
   open_entry: { ok: { kind: "done", select: null } },
   copy_entry_path: { ok: { kind: "done", select: null } },
   insert_entry_path: { ok: { kind: "done", select: null } },
+  // エディタ(M4.8)。偽の Rust 側は写しを送り返さないので、開いたあとはテストが withEditor で作った写しを流す
+  open_document: { ok: { kind: "not-found" } },
+  save_document: { ok: { kind: "saved" } },
+  check_document: { ok: { kind: "unchanged" } },
+  set_document_dirty: { ok: null },
+  select_editor: { ok: null },
+  close_editor: { ok: { kind: "closed" } },
+  set_editor_vim: { ok: null },
 };
 
 /** 画面のページの中で、偽の Rust 側が記録を置く場所(テストの側からだけ読む)。 */

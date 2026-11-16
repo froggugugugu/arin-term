@@ -679,3 +679,53 @@ describe("toBytes", () => {
     expect(toBytes(null)).toBeNull();
   });
 });
+
+describe("エディタのコマンドとイベント(M4.8。ADR-015 の 4)", () => {
+  it("開く_保存_確かめる_閉じるはエディタの_id_と相対パスだけを渡し_応答をそのまま返す", async () => {
+    const fake = createFakeIpc({
+      open_document: () => ({ kind: "opened", editorId: "editor-1", text: "# a", lineEnding: "lf", readOnly: null }),
+      save_document: () => ({ kind: "changed-outside" }),
+      check_document: () => ({ kind: "changed", text: null, lineEnding: "lf" }),
+      close_editor: () => ({ kind: "needs-confirmation" }),
+    });
+    const ipc = createIpc(fake.transport);
+
+    expect(await ipc.openDocument("p1", "docs/a.md")).toEqual({
+      kind: "opened",
+      editorId: "editor-1",
+      text: "# a",
+      lineEnding: "lf",
+      readOnly: null,
+    });
+    expect(await ipc.saveDocument("editor-1", "# b", false)).toEqual({ kind: "changed-outside" });
+    expect(await ipc.checkDocument("editor-1", true)).toEqual({ kind: "changed", text: null, lineEnding: "lf" });
+    expect(await ipc.closeEditor("editor-1", false)).toEqual({ kind: "needs-confirmation" });
+    await ipc.setDocumentDirty("editor-1", true);
+    await ipc.selectEditor("editor-1");
+    await ipc.setEditorVim(true);
+
+    expect(fake.calls).toEqual([
+      { command: "open_document", args: { projectId: "p1", path: "docs/a.md" } },
+      { command: "save_document", args: { editorId: "editor-1", text: "# b", overwriteChanged: false } },
+      { command: "check_document", args: { editorId: "editor-1", withText: true } },
+      { command: "close_editor", args: { editorId: "editor-1", discard: false } },
+      { command: "set_document_dirty", args: { editorId: "editor-1", dirty: true } },
+      { command: "select_editor", args: { editorId: "editor-1" } },
+      { command: "set_editor_vim", args: { enabled: true } },
+    ]);
+  });
+
+  it("閉じる確認の要求_editor_close_requested_を購読し_届いた中身を渡し_やめる関数で外れる", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+    const received: string[] = [];
+
+    const unlisten = await ipc.onEditorCloseRequested((request) => received.push(request.editorId));
+    fake.emit("editor-close-requested", { editorId: "editor-2" });
+    unlisten();
+    fake.emit("editor-close-requested", { editorId: "editor-3" });
+
+    expect(received).toEqual(["editor-2"]);
+    expect(fake.listenerCount("editor-close-requested")).toBe(0);
+  });
+});

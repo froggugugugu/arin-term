@@ -314,7 +314,7 @@ describe("actions(プロジェクトの削除の確認。FR-003)", () => {
     });
 
     await actions.removeProject("p1");
-    expect(ui.getState().removeConfirmation).toEqual({ projectId: "p1", running: [running] });
+    expect(ui.getState().removeConfirmation).toEqual({ projectId: "p1", running: [running], unsaved: [] });
 
     await actions.confirmRemoveProject();
 
@@ -347,7 +347,7 @@ describe("actions(プロジェクトの削除の確認。FR-003)", () => {
 
     await actions.confirmRemoveProject();
 
-    expect(ui.getState().removeConfirmation).toEqual({ projectId: "p1", running: [other] });
+    expect(ui.getState().removeConfirmation).toEqual({ projectId: "p1", running: [other], unsaved: [] });
   });
 
   it("削除の失敗は報告し、確認は閉じたまま", async () => {
@@ -831,5 +831,48 @@ describe("actions(切り替えたあとに届いた前のプロジェクトの�
     await pending;
 
     expect(t.ui.getState().treeConflict?.request).toEqual({ op: "paste", projectId: "p1", destDir: "src" });
+  });
+});
+
+describe("actions(エディタで開く。M4.8。ADR-015 の 4、AC-E01)", () => {
+  function setupWithEditor() {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+    const ui = createUiStore();
+    const app = createAppStore();
+    const tree = createTreeStore();
+    const errors: string[] = [];
+    const reportError = (m: string) => errors.push(m);
+    const treeController = createTreeController({ ipc, tree, app, ui, reportError });
+    const opened: [string, string][] = [];
+    const editor = {
+      openDocument: async (projectId: string, path: string) => void opened.push([projectId, path]),
+    };
+    const actions = createActions({ ipc, ui, app, tree, treeController, reportError, editor });
+    return { fake, actions, opened, errors };
+  }
+
+  it("md_の開くはエディタで_ts_は既定のアプリ", async () => {
+    const { fake, actions, opened, errors } = setupWithEditor();
+
+    await actions.openEntry("p1", "docs/a.md");
+    await actions.openEntry("p1", "README.MARKDOWN");
+    await actions.openEntry("p1", "src/a.ts");
+
+    expect(opened).toEqual([
+      ["p1", "docs/a.md"],
+      ["p1", "README.MARKDOWN"],
+    ]);
+    expect(fake.calls).toEqual([{ command: "open_entry", args: { projectId: "p1", path: "src/a.ts" } }]);
+    expect(errors).toEqual([]);
+  });
+
+  it("既定のアプリで開くは_md_でも_open_entry_を呼ぶ", async () => {
+    const { fake, actions, opened } = setupWithEditor();
+
+    await actions.openEntryExternally("p1", "docs/a.md");
+
+    expect(opened).toEqual([]);
+    expect(fake.calls).toEqual([{ command: "open_entry", args: { projectId: "p1", path: "docs/a.md" } }]);
   });
 });

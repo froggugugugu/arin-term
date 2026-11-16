@@ -129,7 +129,8 @@ test.describe("設定の表への追従(AC-K02・AC-K07)", () => {
     // 古いキー(⌘N)では開かない。続けて押した ⌘O(開く)が届いた時点で、⌘N の処理は済んでいる
     await page.keyboard.press("Meta+N");
     await page.keyboard.press("Meta+O");
-    await expect.poll(async () => (await readCallArgs(page, "open_entry")).length).toBe(1);
+    // README.md は Markdown なので、⌘O は M4.8 から open_document(エディタ)で届く(ADR-015 の 4)
+    await expect.poll(async () => (await readCallArgs(page, "open_document")).length).toBe(1);
     await expect(nameInput(page)).toHaveCount(0);
 
     // 新しいキーで開く

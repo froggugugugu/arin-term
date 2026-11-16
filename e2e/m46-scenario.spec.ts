@@ -211,7 +211,8 @@ test.describe("M4.6 のシナリオ(文字の大きさの設定)", () => {
     await treeRow(page, "README.md").click();
     await expect(page.getByTestId("file-tree")).toBeFocused();
     await page.keyboard.press("Meta+O");
-    await expect.poll(async () => (await readCallArgs(page, "open_entry")).length).toBe(1);
+    // README.md は Markdown なので、⌘O は M4.8 から open_document(エディタ)で届く(ADR-015 の 4)
+    await expect.poll(async () => (await readCallArgs(page, "open_document")).length).toBe(1);
     await newTabButton(page).click();
     await expect.poll(() => callCount(page, "new_terminal")).toBe(1);
     await projectCard(page, "ribbitlog").click();

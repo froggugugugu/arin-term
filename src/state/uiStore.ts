@@ -9,15 +9,21 @@
 // 移動の確認(moveConfirmation)、ツリーの知らせ(treeNotice)、ドラッグ中(treeDragging)、ショートカットの表(shortcuts)。
 // M4.5(T65e): 設定の知らせ(settingsNotice)。表と同じく、起動時と settings-changed が届いたときに startApp が置き換える。
 // M4.6(T70a): 設定画面の開閉(settingsOpen)。⌘, とメニューの「設定…」(menu-command の "open-settings")で開く。
+// M4.8(T83a。ADR-015 の 4・5・8): エディタのタブごとの表示の切替(editorViews)・帯(editorBanners)・プレビューの木
+// (editorPreviews)、閉じる確認(unsavedClose)、保存の衝突の確認(saveConflict)、開いたあとのフォーカスの求め
+// (pendingEditorFocus)。写しから消えたエディタのものは retainEditors で片付ける(editorSync.ts が呼ぶ)。
 // メニュー・インライン編集・確認・ドラッグが開いている間は、ツリーの更新を保留する(FR-037。treeStore.ts がここを購読して
 // UpdateGate の理由をそろえる。部品は保留を自分で立てない)。
 
 import { createStore, type StoreApi } from "zustand/vanilla";
 
+import type { MdBlock } from "../editor/markdownTypes";
+import type { EditorId } from "../ipc/generated/EditorId";
 import type { NewEntryKind } from "../ipc/generated/NewEntryKind";
 import type { ProjectId } from "../ipc/generated/ProjectId";
 import type { RelPath } from "../ipc/generated/RelPath";
 import type { RunningTerminal } from "../ipc/generated/RunningTerminal";
+import type { UnsavedEditor } from "../ipc/generated/UnsavedEditor";
 import { DEFAULT_SHORTCUT_TABLE } from "../logic/keys/defaultShortcuts";
 import type { ShortcutTable } from "../logic/keys/shortcutTable";
 import type { TreeMenuTarget } from "../logic/menu/treeMenu";
@@ -26,6 +32,8 @@ import type { TreeMenuTarget } from "../logic/menu/treeMenu";
 export interface QuitConfirmation {
   /** 動作中のターミナル(プロジェクトの並び順・タブの順)。 */
   readonly running: readonly RunningTerminal[];
+  /** 未保存のエディタ(プロジェクトの並び順・開いた順。M4.8)。 */
+  readonly unsaved: readonly UnsavedEditor[];
 }
 
 /** プロジェクトの削除の確認(FR-003)。remove_project が needsConfirmation を返したときに開く。 */
@@ -33,6 +41,39 @@ export interface RemoveConfirmation {
   readonly projectId: ProjectId;
   /** そのプロジェクトの動作中のターミナル(タブの順)。 */
   readonly running: readonly RunningTerminal[];
+  /** そのプロジェクトの未保存のエディタ(開いた順。M4.8)。 */
+  readonly unsaved: readonly UnsavedEditor[];
+}
+
+/** エディタのタブの表示(ADR-015 の 8。「編集」「並べて」「プレビュー」)。 */
+export type EditorViewMode = "edit" | "split" | "preview";
+
+/** 表示の切替の既定(並べて)。 */
+export const DEFAULT_EDITOR_VIEW: EditorViewMode = "split";
+
+/**
+ * エディタの上の帯(ADR-015 の 5)。
+ * - `changed`: 未保存の変更があるあいだにほかのアプリで変わった(読み直していない)
+ * - `missing`: ファイルが見つからない
+ * - `failed`: 保存できなかった(読み取り専用・大きすぎる・Rust の文言)
+ */
+export type EditorBanner =
+  | { readonly kind: "changed" }
+  | { readonly kind: "missing" }
+  | { readonly kind: "failed"; readonly message: string };
+
+/** 未保存のタブを閉じる確認(AC-E07。「保存」「保存しない」「キャンセル」)。 */
+export interface UnsavedClose {
+  readonly editorId: EditorId;
+}
+
+/**
+ * 保存の衝突の確認(AC-E05)。`changed` は外で変わっていた(「上書き保存」「読み直す」「キャンセル」)、
+ * `missing` はファイルが無くなっていた(「作る」「キャンセル」)。
+ */
+export interface SaveConflict {
+  readonly editorId: EditorId;
+  readonly kind: "changed" | "missing";
 }
 
 /** カードの右クリックのメニュー(項目は src/logic/menu/cardMenu.ts が決める)。位置は画面の CSS ピクセル。 */
@@ -109,11 +150,15 @@ export interface UiState {
    * 終了の確認を開く。開いていれば 1 つのまま、動作中の一覧を新しいものに置き換える
    * (⌘Q を続けて押したなどで同じ要求が複数回届いても、確認は 1 つ)。
    */
-  openQuitConfirmation: (running: readonly RunningTerminal[]) => void;
+  openQuitConfirmation: (running: readonly RunningTerminal[], unsaved?: readonly UnsavedEditor[]) => void;
   /** 終了の確認を閉じる。 */
   closeQuitConfirmation: () => void;
   /** 削除の確認を開く。開いていれば置き換える。 */
-  openRemoveConfirmation: (projectId: ProjectId, running: readonly RunningTerminal[]) => void;
+  openRemoveConfirmation: (
+    projectId: ProjectId,
+    running: readonly RunningTerminal[],
+    unsaved?: readonly UnsavedEditor[],
+  ) => void;
   /** 削除の確認を閉じる。 */
   closeRemoveConfirmation: () => void;
   /** カードのメニューを開く。開いていれば置き換える。 */
@@ -200,6 +245,45 @@ export interface UiState {
    * 部品が外れても状態は残り、更新の保留が解けない・別のプロジェクトに確認が出る、を防ぐ。
    */
   resetTreeUi: (projectId: ProjectId | null) => void;
+
+  // ── エディタ(M4.8) ──
+  /** タブごとの表示の切替(保存しない)。無いタブは既定(editorViewMode で引く)。 */
+  readonly editorViews: ReadonlyMap<EditorId, EditorViewMode>;
+  setEditorView: (id: EditorId, mode: EditorViewMode) => void;
+  /** タブごとの帯。 */
+  readonly editorBanners: ReadonlyMap<EditorId, EditorBanner>;
+  /** 帯を出す・置き換える。null で消す(無ければ何もしない)。 */
+  setEditorBanner: (id: EditorId, banner: EditorBanner | null) => void;
+  /** タブごとのいちばん新しいプレビューの木(EditorManager の onPreview から)。 */
+  readonly editorPreviews: ReadonlyMap<EditorId, readonly MdBlock[]>;
+  setEditorPreview: (id: EditorId, blocks: readonly MdBlock[]) => void;
+  /** 開いたエディタへフォーカスを移す求め(ツリーから開いたとき)。置き場所が受け取ったら消す。 */
+  readonly pendingEditorFocus: EditorId | null;
+  requestEditorFocus: (id: EditorId) => void;
+  /** 求めが id のものなら消す。 */
+  consumeEditorFocus: (id: EditorId) => void;
+  /** 開いている閉じる確認。無ければ null。 */
+  readonly unsavedClose: UnsavedClose | null;
+  /** 閉じる確認を開く。開いていれば置き換える。 */
+  openUnsavedClose: (id: EditorId) => void;
+  closeUnsavedClose: () => void;
+  /** 開いている保存の衝突の確認。無ければ null。 */
+  readonly saveConflict: SaveConflict | null;
+  openSaveConflict: (conflict: SaveConflict) => void;
+  closeSaveConflict: () => void;
+  /** ids に無いエディタの切替・帯・プレビュー・確認・フォーカスの求めを片付ける(タブを閉じた)。 */
+  retainEditors: (ids: ReadonlySet<EditorId>) => void;
+}
+
+/** そのタブの表示の切替(持っていなければ既定の「並べて」)。 */
+export function editorViewMode(state: Pick<UiState, "editorViews">, id: EditorId): EditorViewMode {
+  return state.editorViews.get(id) ?? DEFAULT_EDITOR_VIEW;
+}
+
+/** id を除いた写し(無ければ元のまま)。 */
+function without<V>(map: ReadonlyMap<EditorId, V>, keep: ReadonlySet<EditorId>): ReadonlyMap<EditorId, V> {
+  if ([...map.keys()].every((id) => keep.has(id))) return map;
+  return new Map([...map].filter(([id]) => keep.has(id)));
 }
 
 export type UiStore = StoreApi<UiState>;
@@ -210,9 +294,10 @@ export function createUiStore(): UiStore {
     quitConfirmation: null,
     removeConfirmation: null,
     cardMenu: null,
-    openQuitConfirmation: (running) => set({ quitConfirmation: { running } }),
+    openQuitConfirmation: (running, unsaved = []) => set({ quitConfirmation: { running, unsaved } }),
     closeQuitConfirmation: () => set({ quitConfirmation: null }),
-    openRemoveConfirmation: (projectId, running) => set({ removeConfirmation: { projectId, running } }),
+    openRemoveConfirmation: (projectId, running, unsaved = []) =>
+      set({ removeConfirmation: { projectId, running, unsaved } }),
     closeRemoveConfirmation: () => set({ removeConfirmation: null }),
     openCardMenu: (projectId, { x, y }) => set({ cardMenu: { projectId, x, y } }),
     closeCardMenu: () => set({ cardMenu: null }),
@@ -254,7 +339,9 @@ export function createUiStore(): UiStore {
           s.quitConfirmation !== null ||
           s.removeConfirmation !== null ||
           s.treeConflict !== null ||
-          s.moveConfirmation !== null;
+          s.moveConfirmation !== null ||
+          s.unsavedClose !== null ||
+          s.saveConflict !== null;
         if (s.settingsOpen || blocked) return s;
         return { settingsOpen: true, cardMenu: null, treeMenu: null };
       }),
@@ -270,6 +357,45 @@ export function createUiStore(): UiStore {
         if (other(s.treeNotice?.projectId ?? undefined)) patch.treeNotice = null;
         if (s.treeDragging) patch.treeDragging = false;
         if (s.treeFocused) patch.treeFocused = false;
+        return Object.keys(patch).length === 0 ? s : patch;
+      }),
+    editorViews: new Map(),
+    setEditorView: (id, mode) =>
+      set((s) => (s.editorViews.get(id) === mode ? s : { editorViews: new Map(s.editorViews).set(id, mode) })),
+    editorBanners: new Map(),
+    setEditorBanner: (id, banner) =>
+      set((s) => {
+        if (banner === null) {
+          if (!s.editorBanners.has(id)) return s;
+          const next = new Map(s.editorBanners);
+          next.delete(id);
+          return { editorBanners: next };
+        }
+        return { editorBanners: new Map(s.editorBanners).set(id, banner) };
+      }),
+    editorPreviews: new Map(),
+    setEditorPreview: (id, blocks) => set((s) => ({ editorPreviews: new Map(s.editorPreviews).set(id, blocks) })),
+    pendingEditorFocus: null,
+    requestEditorFocus: (id) => set({ pendingEditorFocus: id }),
+    consumeEditorFocus: (id) => set((s) => (s.pendingEditorFocus === id ? { pendingEditorFocus: null } : s)),
+    unsavedClose: null,
+    openUnsavedClose: (id) => set({ unsavedClose: { editorId: id } }),
+    closeUnsavedClose: () => set((s) => (s.unsavedClose === null ? s : { unsavedClose: null })),
+    saveConflict: null,
+    openSaveConflict: (conflict) => set({ saveConflict: conflict }),
+    closeSaveConflict: () => set((s) => (s.saveConflict === null ? s : { saveConflict: null })),
+    retainEditors: (ids) =>
+      set((s) => {
+        const patch: { -readonly [K in keyof UiState]?: UiState[K] } = {};
+        const views = without(s.editorViews, ids);
+        if (views !== s.editorViews) patch.editorViews = views;
+        const banners = without(s.editorBanners, ids);
+        if (banners !== s.editorBanners) patch.editorBanners = banners;
+        const previews = without(s.editorPreviews, ids);
+        if (previews !== s.editorPreviews) patch.editorPreviews = previews;
+        if (s.unsavedClose !== null && !ids.has(s.unsavedClose.editorId)) patch.unsavedClose = null;
+        if (s.saveConflict !== null && !ids.has(s.saveConflict.editorId)) patch.saveConflict = null;
+        if (s.pendingEditorFocus !== null && !ids.has(s.pendingEditorFocus)) patch.pendingEditorFocus = null;
         return Object.keys(patch).length === 0 ? s : patch;
       }),
   }));

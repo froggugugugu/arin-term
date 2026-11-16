@@ -10,7 +10,9 @@ import { APP_NAME } from "../../logic/index";
 import { shortcutLabel } from "../../logic/keys/shortcutTable";
 import { DEFAULT_PANE_SIZES } from "../../logic/panes/paneLayout";
 import type { Actions } from "../../state/actions";
+import type { EditorManager } from "../../editor/EditorManager";
 import type { AppStore } from "../../state/appStore";
+import type { EditorController } from "../../state/editorController";
 import { selectedProject } from "../../state/selectors";
 import type { TreeStore } from "../../state/treeStore";
 import type { UiStore } from "../../state/uiStore";
@@ -19,6 +21,8 @@ import { applyInterfaceMetrics, InterfaceMetricsContext } from "../design/applyI
 import { applyTranslucency } from "../design/applyTranslucency";
 import { QuitDialog } from "../dialogs/QuitDialog";
 import { RemoveProjectDialog } from "../dialogs/RemoveProjectDialog";
+import { SaveConflictDialog } from "../dialogs/SaveConflictDialog";
+import { UnsavedCloseDialog } from "../dialogs/UnsavedCloseDialog";
 import { ProjectCardList } from "../projects/ProjectCardList";
 import { SettingsDialog } from "../settings/SettingsDialog";
 import { TerminalArea } from "../terminals/TerminalArea";
@@ -38,6 +42,10 @@ interface AppShellProps {
   /** 画面の操作(コマンドの包み)。 */
   actions: Actions;
   terminals: TerminalManager;
+  /** エディタの操作(M4.8。タブ・保存・確認・Vim)。 */
+  editor: EditorController;
+  /** エディタの部品(置き場所への付け外しとフォーカス)。 */
+  editors: EditorManager;
 }
 
 /**
@@ -51,8 +59,9 @@ interface AppShellProps {
  * (TerminalArea)。見えないターミナルは TerminalManager が隠したまま取り込みを続ける。
  * 画面の文字の大きさ(写しの fontSizes.interface。M4.6)は、:root の変数に当て、ツリーの行の高さは文脈で配る(ADR-013 の 4)。
  * 透過(写しの translucency。M4.7)は、ウィンドウとターミナルの地の不透明度の変数を :root に当てる(ADR-014 の 2)。
+ * エディタ(M4.8)の閉じる確認と保存の衝突の確認もここに置く。
  */
-export function AppShell({ store, ui, tree, actions, terminals }: AppShellProps) {
+export function AppShell({ store, ui, tree, actions, terminals, editor, editors }: AppShellProps) {
   const snapshot = useStore(store, (s) => s.snapshot);
   const startupError = useStore(store, (s) => s.startupError);
   const panes = usePaneSizes(snapshot?.layout ?? DEFAULT_PANE_SIZES, actions);
@@ -115,10 +124,21 @@ export function AppShell({ store, ui, tree, actions, terminals }: AppShellProps)
               panes={panes}
               cards={<ProjectCardList store={store} ui={ui} actions={actions} />}
               tree={<TreePane project={selectedProject(snapshot)} tree={tree} ui={ui} actions={actions} />}
-              terminal={<TerminalArea store={store} ui={ui} actions={actions} terminals={terminals} />}
+              terminal={
+                <TerminalArea
+                  store={store}
+                  ui={ui}
+                  actions={actions}
+                  terminals={terminals}
+                  editor={editor}
+                  editors={editors}
+                />
+              }
             />
             <RemoveProjectDialog store={store} ui={ui} actions={actions} />
-            <SettingsDialog store={store} ui={ui} actions={actions} />
+            <SettingsDialog store={store} ui={ui} actions={actions} editor={editor} />
+            <UnsavedCloseDialog store={store} ui={ui} editor={editor} />
+            <SaveConflictDialog store={store} ui={ui} editor={editor} />
           </>
         )}
         <QuitDialog ui={ui} actions={actions} />

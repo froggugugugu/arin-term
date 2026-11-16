@@ -170,6 +170,14 @@ export function createFakeIpc(handlers: Partial<FakeHandlers> = {}): FakeIpc {
     open_entry: () => ({ kind: "done", select: null }),
     copy_entry_path: () => ({ kind: "done", select: null }),
     insert_entry_path: () => ({ kind: "done", select: null }),
+    // エディタ(M4.8)。開くは「見つからない」、保存は「保存できた」、確かめるは「変わっていない」、閉じるは「閉じた」
+    open_document: () => ({ kind: "not-found" }),
+    save_document: () => ({ kind: "saved" }),
+    check_document: () => ({ kind: "unchanged" }),
+    set_document_dirty: () => null,
+    select_editor: () => null,
+    close_editor: () => ({ kind: "closed" }),
+    set_editor_vim: () => null,
     ...handlers,
   };
   const calls: RecordedCall[] = [];

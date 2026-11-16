@@ -3,14 +3,24 @@ import "./TerminalArea.css";
 import { type ReactNode, useEffect, useId, useRef } from "react";
 import { useStore } from "zustand";
 
+import type { EditorManager } from "../../editor/EditorManager";
 import { shortcutLabel } from "../../logic/keys/shortcutTable";
 import type { Actions } from "../../state/actions";
 import type { AppStore } from "../../state/appStore";
-import { projectTabs, selectedProject, shownTerminal, tileView } from "../../state/selectors";
+import type { EditorController } from "../../state/editorController";
+import {
+  projectEditorTabs,
+  projectTabs,
+  selectedProject,
+  shownEditor,
+  shownTerminal,
+  tileView,
+} from "../../state/selectors";
 import { describeTerminalStatus } from "../../state/terminalStatus";
 import type { UiStore } from "../../state/uiStore";
 import type { TerminalId } from "../../terminal/engine";
 import type { TerminalManager } from "../../terminal/TerminalManager";
+import { EditorPanel } from "../editor/EditorPanel";
 import { TabBar, tabDomId } from "./TabBar";
 import { TerminalHost } from "./TerminalHost";
 import { MaximizedTile, TileGrid } from "./TileGrid";
@@ -30,6 +40,10 @@ interface TerminalAreaProps {
     | "toggleTileMaximize"
   >;
   terminals: TerminalManager;
+  /** エディタの操作(M4.8。タブの選択・閉じる・保存・表示の切替)。 */
+  editor: Pick<EditorController, "selectEditor" | "requestClose" | "save" | "setView">;
+  /** エディタの部品(置き場所への付け外しとフォーカス)。 */
+  editors: EditorManager;
 }
 
 /**
@@ -46,8 +60,10 @@ interface TerminalAreaProps {
  *   ページ送り、表示モードの切替、拡大と復帰)。ただし、利用者がほかの場所で操作している最中は奪わない(mayTakeInputFocus)
  * - タブ 0 枚(C-21)は「ターミナルがありません」と「新規ターミナル(⌘T)」。見つからないプロジェクトでは新しいタブを開けない
  * - プロジェクトが 0 件・選択が無い(一覧に無い)ときは、案内だけを出す(フォルダの追加は左ペインのボタン)
+ * - エディタ(M4.8。ADR-015 の 3・8): タブ表示でそのプロジェクトの表示中のエディタがあれば、ターミナルの代わりに
+ *   EditorPanel を出す(ターミナルは隠したまま取り込みを続ける)。入力のフォーカスの宛先もそのエディタになる
  */
-export function TerminalArea({ store, ui, actions, terminals }: TerminalAreaProps) {
+export function TerminalArea({ store, ui, actions, terminals, editor, editors }: TerminalAreaProps) {
   const snapshot = useStore(store, (s) => s.snapshot);
   const view = useStore(store, (s) => tileView(s.snapshot));
   // タブバーと空の案内のキーの表示(設定で替わると追従する)。
@@ -55,14 +71,15 @@ export function TerminalArea({ store, ui, actions, terminals }: TerminalAreaProp
   const idBase = useId();
   const panelId = `${idBase}-panel`;
   const project = selectedProject(snapshot);
-  const terminal = shownTerminal(snapshot);
+  const shownDocument = shownEditor(snapshot);
+  const terminal = shownDocument === null ? shownTerminal(snapshot) : null;
   const shownId = terminal?.id ?? null;
   // 入力のフォーカスの宛先(inputFocusTarget)。
   const focusTarget = inputFocusTarget(snapshot);
   // 宛先が同じでも、表示モードの切替と拡大・復帰では置き場所が作り直され、前の置き場所の入力欄のフォーカスが外れるので移し直す。
   const focusKey = `${view.mode}|${view.maximized}|${focusTarget ?? ""}`;
   /** 前回フォーカスを移そうとしたときの目印と宛先。 */
-  const previousFocus = useRef<{ key: string; target: TerminalId | null } | null>(null);
+  const previousFocus = useRef<{ key: string; target: FocusTarget | null } | null>(null);
   const newTerminalButton = useRef<HTMLButtonElement>(null);
 
   // 宛先が変わったら、置き場所への要素の移し替え(子の TerminalHost の effect)が済んだあと、次の描画のフレームで
@@ -82,10 +99,11 @@ export function TerminalArea({ store, ui, actions, terminals }: TerminalAreaProp
       if (hasOpenOverlay()) return;
       if (inputFocusTarget(store.getState().snapshot) !== focusTarget) return;
       if (focusTarget === null) newTerminalButton.current?.focus();
+      else if (focusTarget.startsWith(EDITOR_TARGET)) editors.focus(focusTarget.slice(EDITOR_TARGET.length));
       else terminals.focus(focusTarget);
     });
     return () => cancelAnimationFrame(frame);
-  }, [store, terminals, focusTarget, focusKey]);
+  }, [store, terminals, editors, focusTarget, focusKey]);
 
   if (view.mode === "tiles" && view.maximized) {
     const item = view.focusedTile;
@@ -131,6 +149,7 @@ export function TerminalArea({ store, ui, actions, terminals }: TerminalAreaProp
   }
 
   const tabs = projectTabs(snapshot, project.id);
+  const editorTabs = projectEditorTabs(snapshot, project.id);
   const status = terminal === null ? null : describeTerminalStatus(terminal.status);
   const canAdd = !project.missing;
   const newTabKey = shortcutLabel(shortcuts, "terminal.new-tab");
@@ -149,8 +168,23 @@ export function TerminalArea({ store, ui, actions, terminals }: TerminalAreaProp
         onSelect={(id) => void actions.selectTerminal(id)}
         onClose={(id) => void actions.closeTerminal(id)}
         onNew={() => void actions.newTerminal()}
+        editorTabs={editorTabs}
+        shownEditorId={shownDocument?.id ?? null}
+        onSelectEditor={(id) => void editor.selectEditor(id)}
+        onCloseEditor={(id) => void editor.requestClose(id)}
       />
-      {terminal === null ? (
+      {shownDocument !== null ? (
+        <EditorPanel
+          key={shownDocument.id}
+          tab={shownDocument}
+          fontSize={snapshot?.fontSizes.terminal.value ?? 15}
+          ui={ui}
+          editor={editor}
+          editors={editors}
+          panelId={panelId}
+          labelledBy={tabDomId(idBase, shownDocument.id)}
+        />
+      ) : terminal === null ? (
         <EmptyState title="ターミナルがありません">
           {canAdd ? (
             <button
@@ -202,13 +236,19 @@ function EmptyState({ title, children }: { title: string; children?: ReactNode }
   );
 }
 
+/** 入力のフォーカスの宛先。ターミナルの ID か、エディタなら頭に EDITOR_TARGET を付けた ID(M4.8)。 */
+type FocusTarget = TerminalId | `${typeof EDITOR_TARGET}${string}`;
+const EDITOR_TARGET = "editor:";
+
 /**
  * 入力のフォーカスの宛先。タイル表示(拡大中を含む)はフォーカス中のタイル(=選択中のプロジェクトの表示中のタブ。前提 (c))、
- * タブ表示は表示中のタブ。無ければ null。
+ * タブ表示は表示中のエディタ(M4.8)か表示中のタブ。無ければ null。
  */
-function inputFocusTarget(snapshot: ReturnType<AppStore["getState"]>["snapshot"]): TerminalId | null {
+function inputFocusTarget(snapshot: ReturnType<AppStore["getState"]>["snapshot"]): FocusTarget | null {
   const view = tileView(snapshot);
   if (view.mode === "tiles") return view.focusedTile?.id ?? null;
+  const document = shownEditor(snapshot);
+  if (document !== null) return `${EDITOR_TARGET}${document.id}`;
   return shownTerminal(snapshot)?.id ?? null;
 }
 

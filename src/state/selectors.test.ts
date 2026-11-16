@@ -7,10 +7,13 @@ import { applyDirListing, createTreeModel, selectPath, type TreeModel } from "..
 import {
   activeTreeModel,
   activeTreeRows,
+  editorParentDirs,
   presentation,
+  projectEditorTabs,
   projectTabs,
   selectedProject,
   selectedTreeTarget,
+  shownEditor,
   shownTerminal,
   tileView,
   treeMenuContext,
@@ -371,5 +374,55 @@ describe("ツリーの選択子(T43a)", () => {
       shortcuts: DEFAULT_SHORTCUT_TABLE,
     });
     expect(treeMenuContext(null, [])).toEqual({ hasTab: false, showHidden: false, shortcuts: [] });
+  });
+});
+
+describe("エディタのタブ(M4.8。ADR-015 の 3)", () => {
+  const editor = (id: string, projectId: string, path: string) => ({
+    id,
+    projectId,
+    path,
+    label: path.slice(path.lastIndexOf("/") + 1),
+    dirty: false,
+    readOnly: null,
+  });
+  const withEditor = sampleSnapshot({
+    ...snapshot,
+    projects: [
+      { ...project("A", ["a1", "a2"], "a2"), editorIds: ["e1", "e2"], shownEditorId: "e2" },
+      { ...project("B", ["b1"], "b1"), editorIds: ["e3"], shownEditorId: null },
+    ],
+    editors: [editor("e1", "A", "a.md"), editor("e2", "A", "docs/b.md"), editor("e3", "B", "c.md")],
+  });
+
+  it("プロジェクトのエディタのタブは開いた順で_写しに無い_id_は飛ばす", () => {
+    expect(projectEditorTabs(withEditor, "A").map((e) => e.id)).toEqual(["e1", "e2"]);
+    expect(projectEditorTabs({ ...withEditor, editors: [editor("e2", "A", "b.md")] }, "A").map((e) => e.id)).toEqual(["e2"]);
+    expect(projectEditorTabs(null, "A")).toEqual([]);
+  });
+
+  it("表示中のエディタはタブ表示の選択中のプロジェクトのものだけ", () => {
+    expect(shownEditor(withEditor)?.id).toBe("e2");
+    expect(shownEditor({ ...withEditor, selectedProjectId: "B" })).toBeNull();
+    expect(shownEditor({ ...withEditor, display: { ...withEditor.display, mode: "tiles" } })).toBeNull();
+    expect(shownEditor(null)).toBeNull();
+  });
+
+  it("タブ表示でエディタを出しているときターミナルは見えないものとして隠す", () => {
+    expect(visibleTerminalIds(withEditor)).toEqual([]);
+    expect(presentation(withEditor).background).toEqual(["a1", "a2", "b1"]);
+    // ターミナルのタブを選ぶと Rust が shownEditorId を null に戻し、今までどおり見える
+    const back = { ...withEditor, projects: withEditor.projects.map((p) => ({ ...p, shownEditorId: null })) };
+    expect(visibleTerminalIds(back)).toEqual(["a2"]);
+  });
+
+  it("開いている文書の親フォルダはプロジェクトの中だけ_ルートは空の文字列", () => {
+    expect(editorParentDirs(withEditor, "A")).toEqual(
+      new Map([
+        ["e1", ""],
+        ["e2", "docs"],
+      ]),
+    );
+    expect(editorParentDirs(withEditor, "C").size).toBe(0);
   });
 });

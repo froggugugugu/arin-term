@@ -37,3 +37,10 @@ describe("routeMenuCommand(メニューから届く操作の振り分け)", () =
     expect(routeMenuCommand("select-all", focus)).toBe("none");
   });
 });
+
+describe("エディタ(M4.8。ADR-015 の 6)", () => {
+  it("エディタにフォーカスがあるときすべてを選択はエディタへ", () => {
+    expect(routeMenuCommand("select-all", { kind: "editor" })).toBe("select-all-editor");
+    expect(routeMenuCommand("open-settings", { kind: "editor" })).toBe("open-settings");
+  });
+});

@@ -40,6 +40,7 @@ function fakeActions() {
       void calls.push([name, ...args]);
   const actions: TreeMenuActions = {
     openEntry: record("openEntry"),
+    openEntryExternally: record("openEntryExternally"),
     expandDir: (path) => void calls.push(["expandDir", path]),
     revealEntry: record("revealEntry"),
     insertEntryPath: record("insertEntryPath"),
@@ -78,6 +79,14 @@ describe("runTreeMenuCommand(ツリーのメニューで選ばれた項目を操
     expect(run({ kind: "file", path: "a.ts" }, { type: "open", path: "a.ts" }).calls).toEqual([["openEntry", "p1", "a.ts"]]);
     expect(run({ kind: "folder", path: "src" }, { type: "open", path: "src" }).calls).toEqual([["expandDir", "src"]]);
     expect(run({ kind: "root" }, { type: "open", path: "" }).calls).toEqual([]);
+  });
+
+  it("md_の開くはエディタの振り分けの_openEntry_へ_既定のアプリで開くは_openEntryExternally_へ", () => {
+    // .md をエディタで開くか既定のアプリで開くかは actions.openEntry が決める(M4.8)
+    expect(run({ kind: "file", path: "a.md" }, { type: "open", path: "a.md" }).calls).toEqual([["openEntry", "p1", "a.md"]]);
+    expect(run({ kind: "file", path: "a.md" }, { type: "open-external", path: "a.md" }).calls).toEqual([
+      ["openEntryExternally", "p1", "a.md"],
+    ]);
   });
 
   it("パスの操作はプロジェクトとパスを付けて呼び_挿入は表示中のタブへ", () => {

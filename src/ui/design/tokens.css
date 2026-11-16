@@ -188,6 +188,9 @@
   --md-heading-4: 1em;
   --md-heading-5: 0.92em;
   --md-heading-6: 0.85em;
+
+  /* エディタとプレビューの地(M4.8。ADR-015 の 8)。不透明。ライトは面の白、ダークは左ペインの見かけの地。 */
+  --color-editor-bg: var(--color-surface);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -242,6 +245,7 @@
     --color-segmented-bg: rgba(255, 255, 255, 0.07);
     --color-segmented-selected-bg: rgba(255, 255, 255, 0.2);
     --color-segmented-selected-fg: #f5f5f7;
+    --color-editor-bg: var(--color-pane);
   }
 }
 

@@ -3,20 +3,26 @@
 
 import type { AddProjectOutcome } from "./generated/AddProjectOutcome";
 import type { AppSnapshot } from "./generated/AppSnapshot";
+import type { CheckDocumentOutcome } from "./generated/CheckDocumentOutcome";
+import type { CloseEditorOutcome } from "./generated/CloseEditorOutcome";
 import type { ConflictResolution } from "./generated/ConflictResolution";
 import type { ConnectOutcome } from "./generated/ConnectOutcome";
 import type { DirListing } from "./generated/DirListing";
 import type { DisplayMode } from "./generated/DisplayMode";
+import type { EditorCloseRequest } from "./generated/EditorCloseRequest";
+import type { EditorId } from "./generated/EditorId";
 import type { FileOpOutcome } from "./generated/FileOpOutcome";
 import type { FontSizeTarget } from "./generated/FontSizeTarget";
 import type { MenuCommand } from "./generated/MenuCommand";
 import type { NewEntryKind } from "./generated/NewEntryKind";
+import type { OpenDocumentOutcome } from "./generated/OpenDocumentOutcome";
 import type { PathKind } from "./generated/PathKind";
 import type { ProjectColor } from "./generated/ProjectColor";
 import type { ProjectId } from "./generated/ProjectId";
 import type { QuitRequest } from "./generated/QuitRequest";
 import type { RelPath } from "./generated/RelPath";
 import type { RemoveProjectOutcome } from "./generated/RemoveProjectOutcome";
+import type { SaveDocumentOutcome } from "./generated/SaveDocumentOutcome";
 import type { ShortcutTable } from "./generated/ShortcutTable";
 import type { TerminalId } from "./generated/TerminalId";
 import type { TranslucencyTarget } from "./generated/TranslucencyTarget";
@@ -120,6 +126,16 @@ export interface CommandMap {
     args: { projectId: ProjectId; paths: RelPath[]; terminalId: TerminalId };
     result: FileOpOutcome;
   };
+  /*
+   * エディタ(M4.8。ADR-015 の 4)。引数はプロジェクトの ID・相対パス・エディタの ID だけ。絶対パスは送らず、届かない。
+   */
+  open_document: { args: { projectId: ProjectId; path: RelPath }; result: OpenDocumentOutcome };
+  save_document: { args: { editorId: EditorId; text: string; overwriteChanged: boolean }; result: SaveDocumentOutcome };
+  check_document: { args: { editorId: EditorId; withText: boolean }; result: CheckDocumentOutcome };
+  set_document_dirty: { args: { editorId: EditorId; dirty: boolean }; result: null };
+  select_editor: { args: { editorId: EditorId }; result: null };
+  close_editor: { args: { editorId: EditorId; discard: boolean }; result: CloseEditorOutcome };
+  set_editor_vim: { args: { enabled: boolean }; result: null };
 }
 
 export type CommandName = keyof CommandMap;
@@ -135,6 +151,8 @@ export interface EventMap {
   "tree-changed": TreeChange;
   /** 設定が変わった(T65c)。中身は無い。表が変わったとき・知らせだけが変わったときのどちらでも届く。 */
   "settings-changed": null;
+  /** ⌘W(メニュー)で表示中のエディタが未保存だった(M4.8。ADR-015 の 4)。Rust は閉じずにこれを送る。 */
+  "editor-close-requested": EditorCloseRequest;
 }
 
 export type EventName = keyof EventMap;
@@ -380,6 +398,29 @@ export interface ArinIpc {
    * M3 の宛先は、選択中のプロジェクトの表示中のタブ(パスをターミナルに挿入)か、ドロップ先のターミナル。
    */
   insertEntryPath(projectId: ProjectId, paths: RelPath[], terminalId: TerminalId): Promise<FileOpOutcome>;
+  /*
+   * エディタ(M4.8。ADR-015 の 4・5)。タブの並び・表示中・未保存の印は写しの editors とカードの editorIds・shownEditorId で届く。
+   * 文書の中身は写しに載せず、コマンドの応答で受け取る。
+   */
+  /** `.md`・`.markdown` を開いて表示する(タイル表示ならタブ表示に替わる)。開いていれば表示だけ(already-open)。 */
+  openDocument(projectId: ProjectId, path: RelPath): Promise<OpenDocumentOutcome>;
+  /**
+   * 保存する(本人の保存の操作のときだけ)。外で変わっていれば overwriteChanged が真のときだけ置き換え、無ければ
+   * overwriteChanged が真のときだけ同じ名前で作る。保存できたら Rust が未保存の印を消す。
+   */
+  saveDocument(editorId: EditorId, text: string, overwriteChanged: boolean): Promise<SaveDocumentOutcome>;
+  /** 外で変わったかを調べる。withText が真なら新しい本文を返し、Rust は版を持ち直す(未保存の印も消える)。 */
+  checkDocument(editorId: EditorId, withText: boolean): Promise<CheckDocumentOutcome>;
+  /** 未保存の有無を知らせる(変わり目だけ送る)。 */
+  setDocumentDirty(editorId: EditorId, dirty: boolean): Promise<void>;
+  /** そのエディタのタブを表示する。 */
+  selectEditor(editorId: EditorId): Promise<void>;
+  /** エディタのタブを閉じる。未保存で discard が偽なら閉じずに needs-confirmation。 */
+  closeEditor(editorId: EditorId, discard: boolean): Promise<CloseEditorOutcome>;
+  /** Vim のキー操作を切り替える(写しの editor.vim で届き、state.json の ui.editorVim に残る)。 */
+  setEditorVim(enabled: boolean): Promise<void>;
+  /** ⌘W で表示中のエディタが未保存だったと届くたびに listener を呼ぶ。購読が済んだら、やめる関数で解決する。 */
+  onEditorCloseRequested(listener: (request: EditorCloseRequest) => void): Promise<Unlisten>;
 }
 
 /**
@@ -498,5 +539,14 @@ export function createIpc(transport: IpcTransport): ArinIpc {
     copyEntryPath: (projectId, path, kind) => invoke("copy_entry_path", { projectId, path, kind }),
     insertEntryPath: (projectId, paths, terminalId) =>
       invoke("insert_entry_path", { projectId, paths, terminalId }),
+    openDocument: (projectId, path) => invoke("open_document", { projectId, path }),
+    saveDocument: (editorId, text, overwriteChanged) =>
+      invoke("save_document", { editorId, text, overwriteChanged }),
+    checkDocument: (editorId, withText) => invoke("check_document", { editorId, withText }),
+    setDocumentDirty: (editorId, dirty) => done(invoke("set_document_dirty", { editorId, dirty })),
+    selectEditor: (editorId) => done(invoke("select_editor", { editorId })),
+    closeEditor: (editorId, discard) => invoke("close_editor", { editorId, discard }),
+    setEditorVim: (enabled) => done(invoke("set_editor_vim", { enabled })),
+    onEditorCloseRequested: (listener) => transport.listen("editor-close-requested", listener),
   };
 }

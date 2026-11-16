@@ -6,6 +6,7 @@
 //
 // パスはルート基準の相対パス(区切りは `/`、空の文字列はルート)。src/logic は生成した型を import しないので、文字列で持つ。
 
+import { isMarkdownPath } from "../editor/documentPath";
 import { type ShortcutCommandId, type ShortcutTable, shortcutLabel } from "../keys/shortcutTable";
 
 /**
@@ -34,6 +35,8 @@ export interface TreeMenuContext {
 /** 選ばれたときの操作。`path`・`parent`・`destination` はルート基準の相対パス(空の文字列はルート)。 */
 export type TreeMenuCommand =
   | { readonly type: "open"; readonly path: string }
+  /** 既定のアプリで開く(M4.8。`.md`・`.markdown` は「開く」がエディタになるので、今までの開き方をここに残す)。 */
+  | { readonly type: "open-external"; readonly path: string }
   | { readonly type: "reveal"; readonly path: string }
   | { readonly type: "insert-path"; readonly path: string }
   | { readonly type: "copy-path"; readonly path: string; readonly style: "relative" | "absolute" }
@@ -88,6 +91,8 @@ export function creationParent(target: TreeMenuTarget): string {
  * - ファイル・フォルダ・ルート: 開く・Finder で表示 / パスをターミナルに挿入 / 相対パス・絶対パスをコピー /
  *   切り取り・コピー・ペースト / 名称変更…・ゴミ箱に入れる / 新規ファイル…・新規フォルダ…(PRD §6.4 の Must の項目と区切り)
  * - ルートでは名称変更・切り取り・ゴミ箱に入れるを無効にする(FR-035、AC-T23)
+ * - `.md`・`.markdown` のファイルは「開く」がエディタになるので、そのすぐ下に「既定のアプリで開く」(キーなし)を足す
+ *   (M4.8。ADR-015 の 4、AC-E01)
  * - 余白: 新規ファイル…・新規フォルダ… / ペースト / Finder で表示・ルートの絶対パスをコピー / 隠しファイルを表示・すべて折りたたむ
  */
 export function buildTreeMenu(target: TreeMenuTarget, context: TreeMenuContext): TreeMenuEntry[] {
@@ -127,8 +132,13 @@ export function buildTreeMenu(target: TreeMenuTarget, context: TreeMenuContext):
 
   const path = target.kind === "root" ? "" : target.path;
   const movable = target.kind !== "root";
+  const external =
+    target.kind === "file" && isMarkdownPath(path)
+      ? [item("既定のアプリで開く", { type: "open-external", path }, null)]
+      : [];
   return [
     item("開く", { type: "open", path }, "tree.open"),
+    ...external,
     item("Finder で表示", { type: "reveal", path }, "tree.reveal-in-finder"),
     SEPARATOR,
     item("パスをターミナルに挿入", { type: "insert-path", path }, "tree.insert-path", context.hasTab),

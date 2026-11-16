@@ -201,8 +201,10 @@ test.describe("コンテキストメニュー(FR-024、FR-035)", () => {
 
     await expect(menu(page)).toBeVisible();
     await expect(menu(page)).toHaveAttribute("role", "menu");
+    // README.md は Markdown なので「開く」がエディタになり、すぐ下に「既定のアプリで開く」が入る(M4.8。ADR-015 の 4)
     expect(await menuLabels(page)).toEqual([
       "開く",
+      "既定のアプリで開く",
       "Finder で表示",
       "パスをターミナルに挿入",
       "相対パスをコピー",
@@ -218,6 +220,7 @@ test.describe("コンテキストメニュー(FR-024、FR-035)", () => {
     // キーの表示はショートカットの表から(macOS の記号の順 ⌃⌥⇧⌘)。
     expect(await menuShortcuts(page)).toEqual({
       開く: "⌘O",
+      既定のアプリで開く: "",
       "Finder で表示": "⌥⌘R",
       パスをターミナルに挿入: "⌘↩",
       相対パスをコピー: "⌥⇧⌘C",

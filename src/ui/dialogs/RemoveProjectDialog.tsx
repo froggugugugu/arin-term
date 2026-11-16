@@ -12,14 +12,14 @@ interface RemoveProjectDialogProps {
 }
 
 /**
- * プロジェクトの削除の確認(FR-003)。削除のコマンドが「確認が要る」(動作中のターミナルがある)と返したときに開く。
- * 動作中のターミナルを並べ、「中止」なら何もしない、「削除」なら確認済みで削除する。
+ * プロジェクトの削除の確認(FR-003)。削除のコマンドが「確認が要る」(動作中のターミナルか未保存のエディタがある。
+ * M4.8。AC-E07)と返したときに開く。動作中のターミナルと未保存の文書(相対パス)を並べ、「中止」なら何もしない、「削除」なら確認済みで削除する。
  */
 export function RemoveProjectDialog({ store, ui, actions }: RemoveProjectDialogProps) {
   const confirmation = useStore(ui, (s) => s.removeConfirmation);
   const projects = useStore(store, (s) => s.snapshot?.projects ?? null);
   if (confirmation === null) return null;
-  const name = projects?.find((p) => p.id === confirmation.projectId)?.name ?? confirmation.running[0]?.projectName;
+  const name = projects?.find((p) => p.id === confirmation.projectId)?.name ?? confirmation.running[0]?.projectName ?? confirmation.unsaved[0]?.projectName;
 
   return (
     <ConfirmDialog
@@ -31,12 +31,26 @@ export function RemoveProjectDialog({ store, ui, actions }: RemoveProjectDialogP
       onConfirm={() => void actions.confirmRemoveProject()}
       onCancel={() => actions.cancelRemoveProject()}
     >
-      <p>動作中のターミナルがあります。削除すると、次のターミナルは終了します。</p>
-      <ul className="confirm-dialog__list">
-        {confirmation.running.map((terminal) => (
-          <li key={terminal.terminalId}>{terminal.label}</li>
-        ))}
-      </ul>
+      {confirmation.running.length > 0 && (
+        <>
+          <p>動作中のターミナルがあります。削除すると、次のターミナルは終了します。</p>
+          <ul className="confirm-dialog__list">
+            {confirmation.running.map((terminal) => (
+              <li key={terminal.terminalId}>{terminal.label}</li>
+            ))}
+          </ul>
+        </>
+      )}
+      {confirmation.unsaved.length > 0 && (
+        <>
+          <p>保存していない文書があります。削除すると、次の文書の変更は失われます。</p>
+          <ul className="confirm-dialog__list" data-testid="remove-unsaved-list">
+            {confirmation.unsaved.map((editor) => (
+              <li key={editor.editorId}>{editor.path}</li>
+            ))}
+          </ul>
+        </>
+      )}
       <p>フォルダとその中身は削除されません。</p>
     </ConfirmDialog>
   );

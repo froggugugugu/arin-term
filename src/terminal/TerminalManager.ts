@@ -407,6 +407,8 @@ export class TerminalManager {
         surface?.selectAll();
         return true;
       // 設定画面は main.tsx が uiStore で開く(ターミナルの操作ではない)。
+      // エディタの全選択は main.tsx が EditorManager へ回す(ここには "terminal" か "other" しか渡さないので届かない)。
+      case "select-all-editor":
       case "open-settings":
       case "none":
         return false;

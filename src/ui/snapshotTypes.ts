@@ -19,3 +19,11 @@ export type TerminalTab = Snapshot["terminals"][number];
 export type TerminalTabId = TerminalTab["id"];
 /** 動作中のターミナル(削除・終了の確認に出す)。 */
 export type RunningTerminal = QuitConfirmation["running"][number];
+/** エディタのタブ 1 枚(M4.8)。 */
+export type EditorTab = Snapshot["editors"][number];
+/** エディタの識別子。 */
+export type EditorTabId = EditorTab["id"];
+/** 読み取り専用で開いた理由。 */
+export type ReadOnlyReason = NonNullable<EditorTab["readOnly"]>;
+/** 未保存のエディタ(閉じる・終了・削除の確認に出す)。 */
+export type UnsavedEditor = QuitConfirmation["unsaved"][number];

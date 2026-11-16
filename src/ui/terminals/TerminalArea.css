@@ -78,6 +78,43 @@
   height: var(--project-dot-size-s);
 }
 
+/* エディタのタブの文書の印(プロジェクト色の丸の代わり。M4.8)。 */
+.tab-bar__doc {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  color: var(--color-tree-icon);
+}
+
+/* 未保存の「●」(閉じるボタンの位置。マウスを載せると × に替わる。macOS と同じ)。 */
+.tab-bar__dirty {
+  display: none;
+  font-size: 8px;
+  line-height: 1;
+}
+
+.tab-bar__item--dirty .tab-bar__close {
+  opacity: 0.7;
+}
+
+.tab-bar__item--dirty .tab-bar__dirty {
+  display: block;
+}
+
+.tab-bar__item--dirty .tab-bar__close svg {
+  display: none;
+}
+
+.tab-bar__item--dirty .tab-bar__close:hover .tab-bar__dirty,
+.tab-bar__item--dirty .tab-bar__close:focus-visible .tab-bar__dirty {
+  display: none;
+}
+
+.tab-bar__item--dirty .tab-bar__close:hover svg,
+.tab-bar__item--dirty .tab-bar__close:focus-visible svg {
+  display: block;
+}
+
 .tab-bar__item--selected .tab-bar__tab {
   font-weight: var(--font-weight-strong);
 }
