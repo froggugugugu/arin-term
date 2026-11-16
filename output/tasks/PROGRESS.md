@@ -16,7 +16,7 @@
 
 | 項目 | 内容 |
 | ---- | ---- |
-| 最終更新 | 2026-11-16(M4 は T50b の AI の分まで済み、残りは本人の確認。M4.5=ショートカットの設定は T63 が済み、本人の決定も出た。T64a〜T64c が済み(ブランチ `feat/m4.5-keybindings`。push していない)。T65a も済み(`toml 1.2.1` は公開から 2 週間未満だが、本人が 2026-11-16 に例外を認めた。ADR-012 の末尾)。T65b も済み(lint・test・app・smoke・smoke --tiles が終了コード 0)。次は T65c → T65e。T66b で docs に足すこと: `[arin:settings]`(`settings.rs` の `report`)、`src-tauri/tests/app_settings.rs`、コマンド `get_settings_notice`、イベント `settings-changed`、`Shortcuts` は `RwLock` で表の差し替えは `menu::rebuild`(メインスレッドで呼ぶ)。**再開の手順は §3 の 0 番**) |
+| 最終更新 | 2026-11-16(M4 は T50b の AI の分まで済み、残りは本人の確認。M4.5=ショートカットの設定は T63 が済み、本人の決定も出た。T64a〜T64c が済み(ブランチ `feat/m4.5-keybindings`。push していない)。T65a も済み(`toml 1.2.1` は公開から 2 週間未満だが、本人が 2026-11-16 に例外を認めた。ADR-012 の末尾)。T65b も済み(lint・test・app・smoke・smoke --tiles が終了コード 0)。T65c も済み。次は T65e → T65d。T65c から docs に足すこと: 設定の監視は `builder_with_settings_watcher` で差し替える、テストで設定ファイルを書き換えるときは一時ファイルに書いて改名する(その場で上書きすると空の中身を読んで 2 回送ることがある。製品でも起こりうるが次の知らせで直る)、`src-tauri/tests/settings_watch.rs`。T66b で docs に足すこと: `[arin:settings]`(`settings.rs` の `report`)、`src-tauri/tests/app_settings.rs`、コマンド `get_settings_notice`、イベント `settings-changed`、`Shortcuts` は `RwLock` で表の差し替えは `menu::rebuild`(メインスレッドで呼ぶ)。**再開の手順は §3 の 0 番**) |
 | ブランチ | `feat/m4-tiles`(`feat/m3-tree` から分岐。`feat/m3-tree` ← `feat/m2-projects` ← `feat/m1-terminal`。4 本とも 2026-11-16 に push 済み。pull request はまだ作っていない)。`feat/m0-skeleton` は push 済みで、pull request #1(main 向け)が開いている |
 | 最後のコミット | `git log --oneline -1` で確認する(本ファイルに書くと古くなるため) |
 | 起動コマンド | `npm run dev`(開発用)。`.app` は `npm run app` で `target/aarch64-apple-darwin/release/bundle/macos/Arin.app` にできる |

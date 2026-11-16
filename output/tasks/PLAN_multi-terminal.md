@@ -1537,7 +1537,7 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 31.5e(並行可能。T65b 完了後。Rust と画面で 1 件ずつ)
 
-- [ ] T65c — 保存の検知と即時の反映(【要確認】3 の B)(変更ファイル: src-tauri/src/settings_watch.rs, src-tauri/src/settings.rs, src-tauri/src/lib.rs, src-tauri/src/lifecycle.rs, src-tauri/Cargo.toml, src-tauri/tests/settings_watch.rs | 依存: T65b)
+- [x] T65c — 保存の検知と即時の反映(【要確認】3 の B)(変更ファイル: src-tauri/src/settings_watch.rs, src-tauri/src/settings.rs, src-tauri/src/lib.rs, src-tauri/src/lifecycle.rs, src-tauri/Cargo.toml, src-tauri/tests/settings_watch.rs | 依存: T65b)
   - 対応: AC-K05(動作中の構文エラー)・AC-K07、設計書 §1.3 #10、ADR-012 の 5
   - 置くもの: 専用のスレッド 1 本(`arin-settings-watch`)。`WatcherPort` で状態フォルダに張り(無ければ 0700 で作る。設定ファイルは作らない)、届いたパスの名前が `settings.toml` のときだけ読み直す(`state.json` などは捨てる)。結果の表と知らせが今と同じなら何もしない。違えば `Shortcuts` を差し替え、`menu::rebuild`、`settings-changed` を送る。構文エラーは直前の表のまま知らせだけ替える(`SettingsStore`)。終了のとき(`lifecycle.rs`)にスレッドを止めて待つ。`Workspace` のロックは取らない
   - 安全: 読むだけ。張れなかったときは落とさず、標準エラーに `[arin:settings]` で 1 行(パスを出さない)
