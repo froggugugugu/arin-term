@@ -1,4 +1,5 @@
-//! コマンドの ID と既定のキーと受け口の表(計画書 M3 の前提 (e)、T38d、【仮定】21。M4.5 の T64c で 23 行、M4.7 の ADR-014 の 4 で 32 行)。
+//! コマンドの ID と既定のキーと受け口の表(計画書 M3 の前提 (e)、T38d、【仮定】21。M4.5 の T64c で 23 行、M4.7 の ADR-014 の 4 で 32 行、
+//! M4.8 の ADR-015 の 6 で 33 行)。
 //!
 //! キーの文字列をコードのあちこちに直書きせず、この 1 つの表から引く。メニューバー(`src-tauri/src/menu.rs`。T42e)は
 //! 受け口が「メニューの項目」の行からアクセラレータを作り、画面(`src/logic/keys`。T41b)は表を受け取って振り分ける。
@@ -119,11 +120,14 @@ pub enum ShortcutCommandId {
     /// 表示: タイル表示で、表示中のページの 9 番目のタイルにフォーカスする(M4.7。ADR-014 の 4)。
     #[serde(rename = "view.focus-tile-9")]
     ViewFocusTile9,
+    /// エディタ: 保存(M4.8。ADR-015 の 6)。受け口は画面(エディタにフォーカスがあるときに画面が受ける)。メニューの項目は作らない。
+    #[serde(rename = "editor.save")]
+    EditorSave,
 }
 
 impl ShortcutCommandId {
     /// すべてのコマンドの ID(表の順)。
-    pub const ALL: [Self; 32] = [
+    pub const ALL: [Self; 33] = [
         Self::TerminalNewTab,
         Self::TerminalCloseTab,
         Self::TerminalPreviousTab,
@@ -156,6 +160,7 @@ impl ShortcutCommandId {
         Self::ViewFocusTile7,
         Self::ViewFocusTile8,
         Self::ViewFocusTile9,
+        Self::EditorSave,
     ];
 
     /// ID の文字列(JSON・メニューの項目の ID・設定ファイルで使う)。
@@ -194,6 +199,7 @@ impl ShortcutCommandId {
             Self::ViewFocusTile7 => "view.focus-tile-7",
             Self::ViewFocusTile8 => "view.focus-tile-8",
             Self::ViewFocusTile9 => "view.focus-tile-9",
+            Self::EditorSave => "editor.save",
         }
     }
 
@@ -235,7 +241,7 @@ pub enum ShortcutReceiver {
     MenuItem,
     /// 「編集」の標準の項目が受け、画面のコピー・切り取り・ペーストのイベントになる(フォーカスによらない)。
     EditItem,
-    /// ツリーにフォーカスがあるときに画面の keydown で受ける。
+    /// ツリー(M4.8 からはエディタも)にフォーカスがあるときに画面の keydown で受ける。
     Screen,
 }
 
@@ -315,7 +321,7 @@ pub struct ShortcutTable(Vec<ShortcutBinding>);
 impl ShortcutTable {
     /// 既定の表(PRD §6.4 と M2 のメニューのキー。受け口は【仮定】21。表示の 4 行は M4 の【仮定】9・ADR-011 の 6。
     /// 設定 ⌘, は M4.5 の ADR-012 の 6 で足し、M4.6 の ADR-013 の 6 で設定画面を開く意味に替えた。
-    /// タイルの番号キー ⌘1〜⌘9 は M4.7 の ADR-014 の 4)。
+    /// タイルの番号キー ⌘1〜⌘9 は M4.7 の ADR-014 の 4。エディタの保存 ⌘S は M4.8 の ADR-015 の 6)。
     ///
     /// # Panics
     ///
@@ -325,7 +331,7 @@ impl ShortcutTable {
         use ShortcutCommandId as C;
         use ShortcutReceiver::{EditItem, MenuItem, Screen};
 
-        let rows: [(C, &str, ShortcutReceiver); 32] = [
+        let rows: [(C, &str, ShortcutReceiver); 33] = [
             (C::TerminalNewTab, "Cmd+T", MenuItem),
             (C::TerminalCloseTab, "Cmd+W", MenuItem),
             (C::TerminalPreviousTab, "Cmd+Shift+[", MenuItem),
@@ -358,6 +364,7 @@ impl ShortcutTable {
             (C::ViewFocusTile7, "Cmd+7", MenuItem),
             (C::ViewFocusTile8, "Cmd+8", MenuItem),
             (C::ViewFocusTile9, "Cmd+9", MenuItem),
+            (C::EditorSave, "Cmd+S", Screen),
         ];
         let bindings = rows
             .into_iter()

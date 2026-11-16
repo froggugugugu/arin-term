@@ -7,7 +7,7 @@
 //
 // キーの文字列は Tauri(muda)のアクセラレータの書式(`Cmd+Shift+N`)。修飾キーの順は問わない。
 
-/** コマンドの ID。文字列は M2 の `menu.rs` の ID と、M3 で足すもの(計画 T38d)と、M4 の表示の操作(計画 T47a)と、M4.7 のタイルの番号キー(ADR-014 の 4)。 */
+/** コマンドの ID。文字列は M2 の `menu.rs` の ID と、M3 で足すもの(計画 T38d)と、M4 の表示の操作(計画 T47a)と、M4.7 のタイルの番号キー(ADR-014 の 4)と、M4.8 のエディタの保存(ADR-015 の 6)。 */
 export type ShortcutCommandId =
   | "terminal.new-tab"
   | "terminal.close-tab"
@@ -40,13 +40,14 @@ export type ShortcutCommandId =
   | "view.focus-tile-6"
   | "view.focus-tile-7"
   | "view.focus-tile-8"
-  | "view.focus-tile-9";
+  | "view.focus-tile-9"
+  | "editor.save";
 
 /**
  * キーの受け口(計画【仮定】21)。
  * - `menu-item`: メニューバーの項目のアクセラレータで OS が受ける
  * - `edit-item`: 「編集」の標準の項目が画面のコピー・切り取り・ペーストのイベントにする
- * - `screen`: ツリーにフォーカスがあるときに画面の keydown で受ける
+ * - `screen`: ツリー(M4.8 からはエディタも)にフォーカスがあるときに画面の keydown で受ける
  */
 export type ShortcutReceiver = "menu-item" | "edit-item" | "screen";
 

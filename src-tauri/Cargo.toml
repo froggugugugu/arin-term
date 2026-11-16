@@ -149,3 +149,10 @@ harness = false
 [[test]]
 name = "font_commands"
 harness = false
+
+# エディタのコマンド(開く・保存・外の変更の確認・閉じる・未保存の印・Vim)と ⌘W・前後のタブ・終了とプロジェクトを外すときの確認
+# (T81d・T81e。ADR-015 の 4・5・6)。プロジェクトのフォルダは canonicalize した一時フォルダに作り、文書は本物の読み書きで扱う。
+# PTY は偽物。理由は app_builder と同じ。
+[[test]]
+name = "editor_commands"
+harness = false

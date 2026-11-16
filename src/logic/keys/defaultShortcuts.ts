@@ -44,4 +44,5 @@ export const DEFAULT_SHORTCUT_TABLE: ShortcutTable = [
   { command: "view.focus-tile-7", accelerator: "Cmd+7", receiver: "menu-item" },
   { command: "view.focus-tile-8", accelerator: "Cmd+8", receiver: "menu-item" },
   { command: "view.focus-tile-9", accelerator: "Cmd+9", receiver: "menu-item" },
+  { command: "editor.save", accelerator: "Cmd+S", receiver: "screen" },
 ];

@@ -4,7 +4,8 @@
 //! `ui` の `selectedProjectId`・`sidebarWidth`・`sidebarCollapsed`・`cardAreaHeight`)と、M3 で足した
 //! `projects[].tree.showHidden`(計画書 T38e)、M4 で足した `ui.displayMode`(計画書 T46c)、M4.6 で足した
 //! `ui.terminalFontSize`・`ui.interfaceFontSize`(計画書 T68b、ADR-013 の 1)、M4.7 で足した
-//! `ui.windowTranslucency`・`ui.terminalTranslucency`(ADR-014 の 1)を読み書きする。
+//! `ui.windowTranslucency`・`ui.terminalTranslucency`(ADR-014 の 1)、M4.8 で足した `ui.editorVim`(ADR-015 の 6)を
+//! 読み書きする。
 //! `tree.expanded` は M6 まで読まず書かない。
 //! 入出力はしない。読んだバイト列(無ければ `None`)を受けて結果を返し、書く文字列を返すだけ。
 //!
@@ -16,6 +17,7 @@
 //!   範囲の外は端に留める(規則は `layout::font_sizes`)。既定のあいだはキーごとに書かない
 //! - `ui.windowTranslucency`・`ui.terminalTranslucency` も同じ扱い。数は近い 5 の倍数に丸めて端に留める
 //!   (規則は `layout::translucency`)。既定のあいだはキーごとに書かない
+//! - `ui.editorVim` は真のときだけ書く。無い・真偽値でないときは退避せずに偽
 //! - JSON として読めない・版が正しくない・新しすぎる・形が違うときは「退避する」を返す(決定 (d))。
 //!   退避の名前は [`broken_file_name`] が時計の値から作る(【仮定】3)
 //! - ブックマークは base64 の文字列のまま扱い、中身は解釈しない(【仮定】2)。null のものは作り直しの指示にする(【仮定】13)
@@ -57,6 +59,8 @@ pub struct PersistedLayout {
     pub font_sizes: FontSizes,
     /// ウィンドウとターミナルの背景の透過(`ui.windowTranslucency`・`ui.terminalTranslucency`)。無い・数でなければ既定。
     pub translucency: Translucency,
+    /// エディタの Vim のキー操作(`ui.editorVim`)。無い・真偽値でなければ偽。
+    pub editor_vim: bool,
 }
 
 /// `state.json` に保存する内容。表示値(見つからない・表示用のパス)を持たない。
@@ -174,6 +178,12 @@ struct UiSection {
         skip_serializing_if = "is_default_terminal_translucency"
     )]
     terminal_translucency: u8,
+    #[serde(
+        default,
+        deserialize_with = "lenient_bool",
+        skip_serializing_if = "is_false"
+    )]
+    editor_vim: bool,
 }
 
 impl Default for UiSection {
@@ -188,8 +198,24 @@ impl Default for UiSection {
             interface_font_size: default_interface_font_size(),
             window_translucency: default_window_translucency(),
             terminal_translucency: default_terminal_translucency(),
+            editor_vim: false,
         }
     }
+}
+
+/// 真偽値を読む。真偽値でない値(null を含む)は、状態ファイルを退避せずに偽にする(ADR-015 の 6)。
+fn lenient_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    Ok(value.as_bool().unwrap_or(false))
+}
+
+/// 偽(既定)なら書かない。
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde の `skip_serializing_if` は参照を渡す。
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// `ui.displayMode` を読む。知らない値・型の違う値(null を含む)は、状態ファイルを退避せずにタブ表示にする
@@ -316,6 +342,7 @@ pub fn encode(state: &PersistedState) -> Result<String, EncodeError> {
             interface_font_size: state.layout.font_sizes.interface,
             window_translucency: state.layout.translucency.window,
             terminal_translucency: state.layout.translucency.terminal,
+            editor_vim: state.layout.editor_vim,
         },
     };
     let mut text = serde_json::to_string_pretty(&file)
@@ -399,6 +426,7 @@ fn tidy(file: StateFile) -> LoadedState {
                     window: file.ui.window_translucency,
                     terminal: file.ui.terminal_translucency,
                 },
+                editor_vim: file.ui.editor_vim,
             },
         },
         rebuild_bookmarks,

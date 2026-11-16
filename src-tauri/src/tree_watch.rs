@@ -10,8 +10,9 @@
 //! - `Workspace` のロックは、いまの状態を読むあいだだけ取る(`SessionRegistry` の読み取り)。張る・捨てるのはロックの外
 //! - 受け口(監視のスレッドで呼ばれる)は、束をまとめて送るだけで戻る。ロックは取らない(規則は原子的な真偽値)
 //! - 届くパスは実パス(`/private/var/...`)なので、まとめに使うルートも張る前に実パスにそろえる(`FileSystemPort::real_dir`)
-//! - コピーの作業用フォルダ(`arin_platform::fs::STAGING_PREFIX`)の中と、その名前の出入りは知らせない
-//!   (知らせるとコピーのたびにツリーが 2 回読み直される)
+//! - 作業用の名前(コピーの作業用フォルダ `.arin-copy-`・文書の保存の一時ファイル `.arin-save-`。
+//!   `arin_core::tree::exclusion::is_work_name`)の中と、その名前の出入りは知らせない
+//!   (知らせるとコピー・保存のたびにツリーが余計に読み直される。ADR-015 の 5)
 //! - イベントの中身(`TreeChange`)はプロジェクトの ID と相対パスだけ。絶対パスを載せない(設計書 §12)
 //! - 張れなかったとき(フォルダが無いなど)は落とさず、標準エラーに `[arin:watch]` で 1 行出す。
 //!   同じ対象には張り直さない(対象が変わったら、たとえば見つからない → 見つかったときに張り直す)
@@ -30,8 +31,7 @@ use arin_core::ports::watch::{ActiveWatch, WatchBatch, WatcherPort};
 use arin_core::project::ProjectId;
 use arin_core::tree::TreeChange;
 use arin_core::tree::changes::{ChangeBatch, summarize_changes};
-use arin_core::tree::exclusion::ExclusionRule;
-use arin_platform::fs::STAGING_PREFIX;
+use arin_core::tree::exclusion::{ExclusionRule, is_work_name};
 
 use crate::sessions::SessionRegistry;
 
@@ -68,13 +68,13 @@ pub fn watch_target(sessions: &SessionRegistry) -> Option<WatchTarget> {
 }
 
 /// 監視の束を変わったフォルダにまとめる。`real_root` は監視が届けるパスと同じ形(実パス)のルート。
-/// コピーの作業用フォルダの中とその名前の出入りは先に捨てる。
+/// 作業用の名前(コピーの作業用フォルダ・保存の一時ファイル)の中とその名前の出入りは先に捨てる。
 #[must_use]
 pub fn summarize(real_root: &Path, batch: &WatchBatch, rule: &ExclusionRule) -> ChangeBatch {
     let paths = batch
         .paths
         .iter()
-        .filter(|path| !in_staging(real_root, path))
+        .filter(|path| !in_work_path(real_root, path))
         .cloned()
         .collect();
     let batch = WatchBatch {
@@ -84,14 +84,11 @@ pub fn summarize(real_root: &Path, batch: &WatchBatch, rule: &ExclusionRule) -> 
     summarize_changes(real_root, &batch, rule)
 }
 
-/// ルートの下で、どれかの要素がコピーの作業用フォルダの名前か。
-fn in_staging(real_root: &Path, path: &Path) -> bool {
+/// ルートの下で、どれかの要素が作業用の名前か。
+fn in_work_path(real_root: &Path, path: &Path) -> bool {
     path.strip_prefix(real_root).is_ok_and(|rest| {
-        rest.components().any(|c| {
-            c.as_os_str()
-                .to_str()
-                .is_some_and(|name| name.starts_with(STAGING_PREFIX))
-        })
+        rest.components()
+            .any(|c| c.as_os_str().to_str().is_some_and(is_work_name))
     })
 }
 

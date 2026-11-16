@@ -158,5 +158,10 @@
     "command": "view.focus-tile-9",
     "accelerator": "Cmd+9",
     "receiver": "menu-item"
+  },
+  {
+    "command": "editor.save",
+    "accelerator": "Cmd+S",
+    "receiver": "screen"
   }
 ]

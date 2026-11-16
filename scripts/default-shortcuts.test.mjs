@@ -25,7 +25,8 @@ describe("既定のショートカットの表", () => {
   it("生成した既定の表のキーはすべて画面で読める", async () => {
     const { parseAccelerator } = await import("../src/logic/keys/shortcutTable.ts");
     const generated = JSON.parse(fs.readFileSync(generatedPath, "utf8"));
-    assert.equal(generated.length, 32);
+    // M4.8 でエディタの保存(`editor.save`。ADR-015 の 6)を足して 33 行。
+    assert.equal(generated.length, 33);
     for (const binding of generated) {
       assert.notEqual(parseAccelerator(binding.accelerator), null, binding.command);
     }

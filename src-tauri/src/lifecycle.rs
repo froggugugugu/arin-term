@@ -4,7 +4,8 @@
 //! 終了の確認(FR-063)、アプリの終了時の後片付けを置く。
 //!
 //! 終了の流れ(計画書 T33e、設計書 §11): 終了の要求(メニューの「終了」⌘Q=`request_quit`、ウィンドウの閉じるボタン)の
-//! ときに動作中のターミナル(`SessionRegistry::running_terminals`)があれば、終了を止めて画面へ `quit-requested` を送る。
+//! ときに動作中のターミナル(`SessionRegistry::running_terminals`)か未保存のエディタ(`SessionRegistry::unsaved_editors`。
+//! ADR-015 の 4)があれば、終了を止めて画面へ `quit-requested` を送る。
 //! 画面が確認したら `confirm_quit` のコマンドで `quit_now` を呼ぶ。動作中が無ければ確認せずに `quit_now` と同じく終わる。
 //! 終わるときはウィンドウを閉じ(最後のウィンドウが無くなると Tauri がループを抜ける)、`RunEvent::Exit` で
 //! 見回りを止め → 状態を書き → 全セッションを終わらせる。
@@ -92,7 +93,7 @@ impl QuitGate {
     }
 }
 
-/// 終了の要求(メニューの「終了」⌘Q)。動作中のターミナルがあれば、終わらずに画面へ確認を求める(`quit-requested`)。
+/// 終了の要求(メニューの「終了」⌘Q)。動作中のターミナルか未保存のエディタがあれば、終わらずに画面へ確認を求める(`quit-requested`)。
 /// 無ければそのまま終わる(`quit_now`)。待たない(前面のプロセスは待たずに調べる)。
 pub fn request_quit<R: Runtime>(app: &AppHandle<R>) {
     if quit_or_ask(app) {
@@ -100,8 +101,9 @@ pub fn request_quit<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// 終わってよいかを決める。終わってよければ真(以後の閉じる要求も止めない)。動作中のターミナルがあれば、
-/// 画面へ `quit-requested`(動作中の一覧)を送って偽を返す(何も変えない。取り消しは画面が何も呼ばないこと)。
+/// 終わってよいかを決める。終わってよければ真(以後の閉じる要求も止めない)。動作中のターミナルか未保存のエディタ
+/// (ADR-015 の 4)があれば、画面へ `quit-requested`(動作中と未保存の一覧)を送って偽を返す(何も変えない。
+/// 取り消しは画面が何も呼ばないこと)。
 fn quit_or_ask<R: Runtime>(app: &AppHandle<R>) -> bool {
     let Some(gate) = app.try_state::<QuitGate>() else {
         return true;
@@ -109,24 +111,17 @@ fn quit_or_ask<R: Runtime>(app: &AppHandle<R>) -> bool {
     if gate.is_allowed() {
         return true;
     }
-    let running = app
+    let (running, unsaved) = app
         .try_state::<SessionRegistry>()
-        .map(|sessions| sessions.running_terminals())
+        .map(|sessions| (sessions.running_terminals(), sessions.unsaved_editors()))
         .unwrap_or_default();
-    if running.is_empty() {
+    if running.is_empty() && unsaved.is_empty() {
         gate.allow();
         return true;
     }
     // 画面が無いなどで送れなければ確認は出ない。そのときは閉じるボタン・⌘Q を押し直しても同じで、
-    // 終わらせるにはシェルを終えてから押す(動作中のプロセスを黙って終わらせない)。
-    // 未保存のエディタを確認に載せる・未保存だけでも確認するのは計画書 T81d(ADR-015 の 4)。
-    let _ = app.emit(
-        QUIT_REQUESTED_EVENT,
-        QuitRequest {
-            running,
-            unsaved: Vec::new(),
-        },
-    );
+    // 終わらせるにはシェルを終える・文書を保存するか閉じてから押す(動作中のプロセスと未保存の変更を黙って捨てない)。
+    let _ = app.emit(QUIT_REQUESTED_EVENT, QuitRequest { running, unsaved });
     false
 }
 

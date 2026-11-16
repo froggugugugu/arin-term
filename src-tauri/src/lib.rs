@@ -4,7 +4,8 @@
 //! 置き場所と起動の通知先を管理状態に登録し、起動時に状態ファイルを読んで(`persistence.rs`)`Workspace` と
 //! セッション管理と保存のスレッドとプロジェクトの操作(`projects.rs`)とルートへの追従の見回り(`patrol.rs`)を作って登録し、
 //! ツリーの操作(`tree.rs`)とファイル操作(`fileops.rs`。切り取りの状態をアプリに 1 つ持つ)と、選択中のプロジェクトのツリーの監視の張り替え(`tree_watch.rs`。写しを送るたびに張り替えを頼む)を登録し、
-//! デスクトップとパスの操作(`commands/desktop.rs`。Finder で表示・開く・パスのコピー・ターミナルへの挿入)を登録し、
+//! デスクトップとパスの操作(`commands/desktop.rs`。Finder で表示・開く・パスのコピー・ターミナルへの挿入)と
+//! Markdown の文書の操作(`commands/editor.rs`。開く・保存・外の変更の確認。ADR-015)を登録し、
 //! 設定ファイルを読んで(`settings.rs`)ショートカットの表(`menu::Shortcuts`。メニューバーと `get_shortcuts` が同じものを見る)と
 //! 設定の知らせ(`settings::AppSettings`)を登録し、状態フォルダの監視(`settings_watch.rs`。`settings.toml` の保存で読み直す)を起動し、
 //! コマンドとメニューバー(`menu.rs`。項目が選ばれたときも `menu.rs`)と終了の確認の状態(`lifecycle.rs`)を登録して
@@ -39,13 +40,14 @@ use arin_core::ports::watch::WatcherPort;
 use arin_core::tree::TreeChange;
 use arin_core::workspace::{AppSnapshot, Workspace};
 use arin_platform::desktop::{MacDesktop, MacFilePasteboard};
-use arin_platform::fs::LocalFileSystem;
+use arin_platform::fs::{LocalDocuments, LocalFileSystem};
 use arin_platform::pty::{FALLBACK_SHELL, NativePty, default_shell, system_locale};
 use arin_platform::watch::FsEventsWatcher;
 use tauri::{Builder, Emitter, Manager, Runtime};
 
 pub use crate::commands::app::SNAPSHOT_EVENT;
 use crate::commands::desktop::Desktop;
+use crate::commands::editor::Editors;
 use crate::events::TREE_CHANGED_EVENT;
 use crate::fileops::FileOps;
 use crate::launch::LaunchConfig;
@@ -329,6 +331,14 @@ pub fn builder_with_settings_watcher<R: Runtime>(
                 Arc::clone(&desktop),
                 Arc::clone(&project_ports.pasteboard),
             ));
+            // 文書の読み書きは本物(`LocalDocuments`)。テストは一時のプロジェクトのフォルダだけに触れる。
+            app.manage(Editors::new(
+                sessions.clone(),
+                Arc::clone(&fs),
+                Arc::new(LocalDocuments::with_leftover_report(
+                    commands::editor::report_save_leftover,
+                )),
+            ));
             let emitter = app.handle().clone();
             let emit: TreeChangeSink = Arc::new(move |change: TreeChange| {
                 // 画面が無いときは送れない。画面は表示したときに読み込むので捨ててよい。
@@ -414,6 +424,13 @@ pub fn builder_with_settings_watcher<R: Runtime>(
             commands::desktop::open_entry,
             commands::desktop::copy_entry_path,
             commands::desktop::insert_entry_path,
+            commands::editor::open_document,
+            commands::editor::save_document,
+            commands::editor::check_document,
+            commands::editor::set_document_dirty,
+            commands::editor::select_editor,
+            commands::editor::close_editor,
+            commands::editor::set_editor_vim,
         ])
 }
 

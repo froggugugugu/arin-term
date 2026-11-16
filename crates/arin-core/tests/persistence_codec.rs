@@ -65,6 +65,7 @@ fn sample_state() -> PersistedState {
             display_mode: DisplayMode::Tabs,
             font_sizes: FontSizes::default(),
             translucency: Translucency::default(),
+            editor_vim: false,
         },
     }
 }
@@ -243,6 +244,7 @@ fn 欠けたキーは既定値で補う() {
                 display_mode: DisplayMode::Tabs,
                 font_sizes: FontSizes::default(),
                 translucency: Translucency::default(),
+                editor_vim: false,
             },
         }
     );
@@ -381,6 +383,7 @@ fn tree_キーの無い状態ファイルも読める() {
                 display_mode: DisplayMode::Tabs,
                 font_sizes: FontSizes::default(),
                 translucency: Translucency::default(),
+                editor_vim: false,
             },
         }
     );
@@ -509,6 +512,7 @@ fn m3_state() -> PersistedState {
             display_mode: DisplayMode::Tabs,
             font_sizes: FontSizes::default(),
             translucency: Translucency::default(),
+            editor_vim: false,
         },
     }
 }
@@ -1066,4 +1070,57 @@ fn 退避の名前が既にあれば_2_を足す() {
         broken_file_name(1_794_735_000, ["state.json", "settings.toml"]),
         base
     );
+}
+
+// ---- エディタの Vim のキー操作(ADR-015 の 6、`ui.editorVim`。計画書 T81e、AC-E08) ----
+
+#[test]
+fn editor_vim_が無い版_1_をそのまま読む() {
+    let m3 = loaded(decode_str(M3_STATE_JSON));
+    assert_eq!(m3.state, m3_state());
+    assert!(!m3.state.layout.editor_vim);
+}
+
+#[test]
+fn 偽は書かない() {
+    let state = m3_state();
+    assert!(!state.layout.editor_vim);
+    let value: Value = serde_json::from_str(&encode(&state).expect("書ける")).unwrap();
+    assert!(value["ui"].get("editorVim").is_none(), "{value}");
+    let original: Value = serde_json::from_str(M3_STATE_JSON).unwrap();
+    assert_eq!(value, original);
+}
+
+#[test]
+fn 真を書いて読み戻せる() {
+    let mut state = m3_state();
+    state.layout.editor_vim = true;
+    let text = encode(&state).expect("書ける");
+    let value: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value["schemaVersion"], json!(1));
+    assert_eq!(value["ui"]["editorVim"], json!(true));
+    let back = loaded(decode_str(&text));
+    assert_eq!(back.state, state);
+    assert!(back.state.layout.editor_vim);
+}
+
+#[test]
+fn 真偽値でない値は退避せず偽() {
+    for bad in [
+        json!(null),
+        json!("true"),
+        json!(1),
+        json!(0),
+        json!([]),
+        json!({}),
+    ] {
+        let mut value: Value = serde_json::from_str(M3_STATE_JSON).unwrap();
+        value["ui"]["editorVim"] = bad.clone();
+        let outcome = loaded(decode_value(&value));
+        assert_eq!(outcome.state, m3_state(), "{bad}");
+        assert!(!outcome.state.layout.editor_vim, "{bad}");
+    }
+    let mut value: Value = serde_json::from_str(M3_STATE_JSON).unwrap();
+    value["ui"]["editorVim"] = json!(false);
+    assert!(!loaded(decode_value(&value)).state.layout.editor_vim);
 }

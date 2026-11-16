@@ -15,3 +15,8 @@ pub const TREE_CHANGED_EVENT: &str = "tree-changed";
 /// 設定ファイルの内容が変わったことを画面へ送るイベント(ADR-012 の 5、前提 (g)。計画書 T65b で名前を置き、T65c が送る)。
 /// 中身は無い。画面は受けたら `get_shortcuts` と `get_settings_notice` を呼び直す(T65e)。
 pub const SETTINGS_CHANGED_EVENT: &str = "settings-changed";
+
+/// ⌘W(メニュー)で表示中のエディタが未保存のとき、閉じずに画面へ確認を求めるイベント(ADR-015 の 4。計画書 T81d)。
+/// 中身は `arin_core::editor::EditorCloseRequest`(`{ editorId }`)。画面が「保存」「保存しない」「キャンセル」を聞き、
+/// 閉じるなら `close_editor` を呼ぶ。
+pub const EDITOR_CLOSE_REQUESTED_EVENT: &str = "editor-close-requested";

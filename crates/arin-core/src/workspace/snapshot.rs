@@ -73,7 +73,7 @@ pub struct EditorTabSnapshot {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct EditorSettingsSnapshot {
-    /// Vim のキー操作(`state.json` の `ui.editorVim`。保存値は計画書 T81e で持たせる。それまでは偽)。
+    /// Vim のキー操作(`state.json` の `ui.editorVim`。無ければ偽。切替は `set_editor_vim`)。
     pub vim: bool,
 }
 

@@ -49,6 +49,8 @@ pub struct Workspace {
     pub(super) font_sizes: FontSizes,
     /// ウィンドウとターミナルの背景の透過(`appearance.rs`。ADR-014 の 1)。
     pub(super) translucency: Translucency,
+    /// エディタの Vim のキー操作(`state.json` の `ui.editorVim`。ADR-015 の 6)。「既定に戻す」では変えない。
+    pub(super) editor_vim: bool,
     pub(super) notice: Option<String>,
 }
 
@@ -95,6 +97,7 @@ impl Workspace {
                 TranslucencyTarget::Terminal,
                 state.layout.translucency.terminal,
             );
+        ws.editor_vim = state.layout.editor_vim;
         ws.notice = notice;
 
         let ids: Vec<ProjectId> = ws
@@ -147,6 +150,7 @@ impl Workspace {
             display: DisplayState::default(),
             font_sizes: FontSizes::default(),
             translucency: Translucency::default(),
+            editor_vim: false,
             notice: None,
         }
     }
@@ -259,8 +263,18 @@ impl Workspace {
                 display_mode: self.display.mode,
                 font_sizes: self.font_sizes,
                 translucency: self.translucency,
+                editor_vim: self.editor_vim,
             },
         }
+    }
+
+    /// エディタの Vim のキー操作を切り替える(ADR-015 の 6、計画書 T81e)。変わったら `true`(このときだけ写しを送る。
+    /// 写しを送ると保存が予約され、真のときだけ `ui.editorVim` が書かれる)。見た目の「既定に戻す」(`reset_appearance`)は
+    /// これを変えない(見た目ではなく操作の選択なので)。
+    pub fn set_editor_vim(&mut self, enabled: bool) -> bool {
+        let changed = self.editor_vim != enabled;
+        self.editor_vim = enabled;
+        changed
     }
 
     /// 画面へ渡す状態の写し。
@@ -331,7 +345,9 @@ impl Workspace {
             font_sizes: self.font_sizes.into(),
             translucency: self.translucency.into(),
             editors,
-            editor: EditorSettingsSnapshot::default(),
+            editor: EditorSettingsSnapshot {
+                vim: self.editor_vim,
+            },
         }
     }
 

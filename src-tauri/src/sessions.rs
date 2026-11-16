@@ -34,9 +34,11 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError, TryLockE
 use std::thread;
 use std::time::{Duration, Instant};
 
+use arin_core::editor::{EditorError, EditorId, EditorTab, FileStamp, ReadOnlyReason};
 use arin_core::layout::font_sizes::FontSizeTarget;
 use arin_core::layout::tiles::DisplayMode;
 use arin_core::layout::translucency::TranslucencyTarget;
+use arin_core::paths::RelPath;
 use arin_core::persistence::codec::PersistedState;
 use arin_core::ports::{Foreground, PtyError, PtyPort, PtySession, SpawnedPty};
 use arin_core::project::{ProjectColor, ProjectError, ProjectId, RootReference};
@@ -46,8 +48,9 @@ use arin_core::terminal::{
     validate_size,
 };
 use arin_core::workspace::{
-    AddProjectOutcome, AppSnapshot, ConnectOutcome, ConnectPlan, ProjectRoot, RemoveOutcome,
-    RemoveProjectOutcome, RunningTerminal, Workspace, WorkspaceError,
+    ActiveTab, AddProjectOutcome, AppSnapshot, CloseEditorOutcome, ConnectOutcome, ConnectPlan,
+    ProjectRoot, RemoveOutcome, RemoveProjectOutcome, RunningTerminal, UnsavedEditor, Workspace,
+    WorkspaceError,
 };
 
 use crate::verify_log::{FlowRecorder, VerifyConfig, VerifyRecord};
@@ -124,6 +127,8 @@ pub enum SessionError {
     Terminal(TerminalError),
     /// タブを開けない(プロジェクトを選んでいない、ルートが見つからない)。
     Workspace(WorkspaceError),
+    /// その ID のエディタが無い(ADR-015 の 4)。
+    Editor(EditorError),
     /// アプリの終了の処理が始まっているので、シェルを起動しない。
     ShuttingDown,
     /// PTY の操作に失敗した。
@@ -137,6 +142,7 @@ impl fmt::Display for SessionError {
         match self {
             Self::Terminal(e) => e.fmt(f),
             Self::Workspace(e) => e.fmt(f),
+            Self::Editor(e) => e.fmt(f),
             Self::ShuttingDown => f.write_str("アプリを終了しているので、ターミナルを起動しない"),
             Self::Pty(e) => e.fmt(f),
             Self::Thread(e) => write!(f, "ターミナルのスレッドを起動できなかった: {e}"),
@@ -155,6 +161,12 @@ impl From<TerminalError> for SessionError {
 impl From<WorkspaceError> for SessionError {
     fn from(e: WorkspaceError) -> Self {
         Self::Workspace(e)
+    }
+}
+
+impl From<EditorError> for SessionError {
+    fn from(e: EditorError) -> Self {
+        Self::Editor(e)
     }
 }
 
@@ -873,6 +885,148 @@ impl SessionRegistry {
         Ok(changed)
     }
 
+    /// 選択中のプロジェクトでいま表示しているタブを閉じる(⌘W のメニュー。ADR-015 の 4)。
+    /// 表示中がエディタなら、未保存の変更が無ければ閉じ、あれば閉じずに `EditorNeedsConfirmation`
+    /// (呼び出し側が `editor-close-requested` を送る)。表示中がターミナルなら `close_terminal` と同じ。
+    /// タブが無ければ何もせず `None`。待つことは `close_terminal` と同じ(メインスレッドから呼ばない)。
+    pub fn close_active_tab(&self) -> Option<ClosedTab> {
+        let active = lock(&self.inner.workspace).active_tab()?;
+        match active {
+            ActiveTab::Terminal(id) => self
+                .close_terminal(&id)
+                .ok()
+                .map(|()| ClosedTab::Terminal(id)),
+            ActiveTab::Editor(id) => match self.close_editor(&id, false).ok()? {
+                CloseEditorOutcome::Closed => Some(ClosedTab::Editor(id)),
+                CloseEditorOutcome::NeedsConfirmation => {
+                    Some(ClosedTab::EditorNeedsConfirmation(id))
+                }
+            },
+        }
+    }
+
+    /// 選択中のプロジェクトの次のタブを表示し、表示したタブを返す(⌘⇧] のメニュー)。タブ表示ではターミナル → エディタの順で
+    /// 1 周し、タイル表示ではターミナルだけを回る(ADR-015 の 3)。タブが無ければ `None`。
+    pub fn select_next_tab(&self) -> Option<ActiveTab> {
+        let tab = lock(&self.inner.workspace).select_next_tab()?;
+        self.notify();
+        Some(tab)
+    }
+
+    /// 選択中のプロジェクトの前のタブを表示し、表示したタブを返す(⌘⇧[ のメニュー。`select_next_tab` の逆順)。
+    pub fn select_previous_tab(&self) -> Option<ActiveTab> {
+        let tab = lock(&self.inner.workspace).select_previous_tab()?;
+        self.notify();
+        Some(tab)
+    }
+
+    /// `project` の `path` をエディタで開いて表示する(ADR-015 の 3)。新しく作ったら `(ID, true)`、既に開いていれば
+    /// それを表示して `(ID, false)`。写しを送る。`stamp`・`read_only` は呼び出し側が読んだときのもの。
+    ///
+    /// # Errors
+    ///
+    /// プロジェクトが無い・ルートが見つからない・Markdown でないとき。何も変えない。
+    pub fn open_editor(
+        &self,
+        project: &ProjectId,
+        path: RelPath,
+        stamp: FileStamp,
+        read_only: Option<ReadOnlyReason>,
+    ) -> Result<(EditorId, bool), SessionError> {
+        let opened = lock(&self.inner.workspace).open_editor(project, path, stamp, read_only)?;
+        self.notify();
+        Ok(opened)
+    }
+
+    /// エディタのタブを表示する(タブバーのクリック)。写しを送る。
+    ///
+    /// # Errors
+    ///
+    /// その ID のエディタが無いとき。
+    pub fn select_editor(&self, id: &EditorId) -> Result<(), SessionError> {
+        lock(&self.inner.workspace).select_editor(id)?;
+        self.notify();
+        Ok(())
+    }
+
+    /// エディタを閉じる。未保存の変更があり `discard` が偽なら閉じずに `NeedsConfirmation`(写しは送らない)。
+    ///
+    /// # Errors
+    ///
+    /// その ID のエディタが無いとき。
+    pub fn close_editor(
+        &self,
+        id: &EditorId,
+        discard: bool,
+    ) -> Result<CloseEditorOutcome, SessionError> {
+        let outcome = lock(&self.inner.workspace).close_editor(id, discard)?;
+        if outcome == CloseEditorOutcome::Closed {
+            self.notify();
+        }
+        Ok(outcome)
+    }
+
+    /// 未保存の印を替える。変わったときだけ写しを送り `true` を返す。
+    ///
+    /// # Errors
+    ///
+    /// その ID のエディタが無いとき。
+    pub fn set_editor_dirty(&self, id: &EditorId, dirty: bool) -> Result<bool, SessionError> {
+        let changed = lock(&self.inner.workspace).set_editor_dirty(id, dirty)?;
+        if changed {
+            self.notify();
+        }
+        Ok(changed)
+    }
+
+    /// 保存した・読み直した: 版を持ち直し、未保存の印を消す。印が変わったときだけ写しを送る(版は写しに載らない)。
+    ///
+    /// # Errors
+    ///
+    /// その ID のエディタが無いとき(保存のあいだに閉じた)。
+    pub fn mark_editor_synced(&self, id: &EditorId, stamp: FileStamp) -> Result<(), SessionError> {
+        let changed = {
+            let mut ws = lock(&self.inner.workspace);
+            ws.set_editor_stamp(id, stamp)?;
+            ws.set_editor_dirty(id, false)?
+        };
+        if changed {
+            self.notify();
+        }
+        Ok(())
+    }
+
+    /// 版だけを持ち直す(`touch` だけで中身が同じだった)。写しは送らない。
+    ///
+    /// # Errors
+    ///
+    /// その ID のエディタが無いとき。
+    pub fn set_editor_stamp(&self, id: &EditorId, stamp: FileStamp) -> Result<(), SessionError> {
+        Ok(lock(&self.inner.workspace).set_editor_stamp(id, stamp)?)
+    }
+
+    /// その ID のエディタの写し(持ち主のプロジェクト・相対パス・読み取り専用・版)。無ければ `None`。
+    #[must_use]
+    pub fn editor(&self, id: &EditorId) -> Option<EditorTab> {
+        lock(&self.inner.workspace).editor(id).cloned()
+    }
+
+    /// 未保存のエディタ(終了の確認の材料。ADR-015 の 4)。
+    #[must_use]
+    pub fn unsaved_editors(&self) -> Vec<UnsavedEditor> {
+        lock(&self.inner.workspace).unsaved_editors()
+    }
+
+    /// エディタの Vim のキー操作を切り替える(ADR-015 の 6)。変わったときだけ写しを送り `true` を返す
+    /// (写しを送ると保存が予約され、真のときだけ `ui.editorVim` が書かれる)。
+    pub fn set_editor_vim(&self, enabled: bool) -> bool {
+        let changed = lock(&self.inner.workspace).set_editor_vim(enabled);
+        if changed {
+            self.notify();
+        }
+        changed
+    }
+
     /// Workspace から外したタブのセッションを一覧から外し、写しを送ってから終わらせる(待つのはロックの外)。
     fn end_sessions(&self, terminals: &[TerminalId]) {
         let detached: Vec<Arc<Session>> = terminals.iter().filter_map(|t| self.detach(t)).collect();
@@ -940,6 +1094,17 @@ impl SessionRegistry {
         let snapshot = self.snapshot();
         (self.inner.listener)(snapshot);
     }
+}
+
+/// ⌘W で閉じたもの(`SessionRegistry::close_active_tab`)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClosedTab {
+    /// ターミナルを閉じた。
+    Terminal(TerminalId),
+    /// エディタを閉じた(未保存の変更は無かった)。
+    Editor(EditorId),
+    /// エディタに未保存の変更があるので閉じていない(画面に確認を求める)。
+    EditorNeedsConfirmation(EditorId),
 }
 
 /// タイルへの操作で、閉じたタイル(ID が無い)を「何もしなかった」とみなす(M4 のレビューの S6)。

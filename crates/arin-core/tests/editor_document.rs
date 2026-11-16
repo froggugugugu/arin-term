@@ -327,3 +327,87 @@ fn エディタの_id_は文字列として_json_になる() {
     let back: EditorId = serde_json::from_value(json!("editor-3")).unwrap();
     assert_eq!(back.as_str(), "editor-3");
 }
+
+// ---- 文書のコマンドの応答の形(ADR-015 の 4、計画書 T81d) ----
+
+#[test]
+fn 文書のコマンドの応答の_json_の形() {
+    use arin_core::editor::{
+        CheckDocumentOutcome, DocumentNotAllowedReason, EditorCloseRequest, OpenDocumentOutcome,
+        SaveDocumentOutcome,
+    };
+
+    assert_eq!(
+        serde_json::to_value(OpenDocumentOutcome::Opened {
+            editor_id: EditorId::new("editor-1"),
+            text: "# a\n".to_owned(),
+            line_ending: LineEnding::Lf,
+            read_only: Some(ReadOnlyReason::HardLink),
+        })
+        .unwrap(),
+        json!({
+            "kind": "opened",
+            "editorId": "editor-1",
+            "text": "# a\n",
+            "lineEnding": "lf",
+            "readOnly": "hard-link"
+        })
+    );
+    assert_eq!(
+        serde_json::to_value(OpenDocumentOutcome::AlreadyOpen {
+            editor_id: EditorId::new("editor-2"),
+        })
+        .unwrap(),
+        json!({ "kind": "already-open", "editorId": "editor-2" })
+    );
+    assert_eq!(
+        serde_json::to_value(OpenDocumentOutcome::NotAllowed {
+            reason: DocumentNotAllowedReason::OutsideRoot,
+        })
+        .unwrap(),
+        json!({ "kind": "not-allowed", "reason": "outside-root" })
+    );
+    assert_eq!(
+        serde_json::to_value(OpenDocumentOutcome::NotFound).unwrap(),
+        json!({ "kind": "not-found" })
+    );
+    assert_eq!(
+        serde_json::to_value(SaveDocumentOutcome::ChangedOutside).unwrap(),
+        json!({ "kind": "changed-outside" })
+    );
+    assert_eq!(
+        serde_json::to_value(SaveDocumentOutcome::Failed {
+            message: "保存できませんでした".to_owned(),
+        })
+        .unwrap(),
+        json!({ "kind": "failed", "message": "保存できませんでした" })
+    );
+    assert_eq!(
+        serde_json::to_value(CheckDocumentOutcome::Changed {
+            text: None,
+            line_ending: LineEnding::Crlf,
+        })
+        .unwrap(),
+        json!({ "kind": "changed", "text": null, "lineEnding": "crlf" })
+    );
+    assert_eq!(
+        serde_json::to_value(CheckDocumentOutcome::Unchanged).unwrap(),
+        json!({ "kind": "unchanged" })
+    );
+    assert_eq!(
+        serde_json::to_value(EditorCloseRequest {
+            editor_id: EditorId::new("editor-3"),
+        })
+        .unwrap(),
+        json!({ "editorId": "editor-3" })
+    );
+    for (reason, text) in [
+        (DocumentNotAllowedReason::NotMarkdown, "not-markdown"),
+        (DocumentNotAllowedReason::Link, "link"),
+        (DocumentNotAllowedReason::Directory, "directory"),
+        (DocumentNotAllowedReason::TooLarge, "too-large"),
+        (DocumentNotAllowedReason::NotText, "not-text"),
+    ] {
+        assert_eq!(serde_json::to_value(reason).unwrap(), json!(text));
+    }
+}

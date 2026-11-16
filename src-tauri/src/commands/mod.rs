@@ -4,6 +4,7 @@
 
 pub mod app;
 pub mod desktop;
+pub mod editor;
 pub mod fileops;
 pub mod layout;
 pub mod project;

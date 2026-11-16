@@ -25,6 +25,7 @@
 
 use std::sync::{PoisonError, RwLock};
 
+use arin_core::editor::EditorCloseRequest;
 use arin_core::shortcuts::table::{ShortcutCommandId, ShortcutReceiver, ShortcutTable};
 use arin_core::workspace::MenuCommand;
 use tauri::menu::{
@@ -32,9 +33,9 @@ use tauri::menu::{
 };
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
-use crate::events::MENU_COMMAND_EVENT;
+use crate::events::{EDITOR_CLOSE_REQUESTED_EVENT, MENU_COMMAND_EVENT};
 use crate::lifecycle;
-use crate::sessions::SessionRegistry;
+use crate::sessions::{ClosedTab, SessionRegistry};
 use crate::settings;
 
 /// ショートカットの表(アプリの管理状態。`Builder::manage` で登録する)。
@@ -326,8 +327,11 @@ fn entry<R: Runtime>(
 /// メニューの項目が選ばれたとき(`Builder::on_menu_event` から。メインスレッドで呼ばれる)。
 /// 項目の ID は表のコマンドの ID(M2 から変えていない)。
 ///
-/// - 新規タブ・前後のタブ: `SessionRegistry` を呼ぶ。プロジェクトを選んでいない・見つからない・タブが 0 枚のときは何もしない
-/// - タブを閉じる: シェルを終わらせるのに待つことがあるので、待ってよいスレッドで閉じる。0 枚なら何もしない
+/// - 新規タブ・前後のタブ: `SessionRegistry` を呼ぶ。プロジェクトを選んでいない・見つからない・タブが 0 枚のときは何もしない。
+///   前後のタブはタブ表示ではターミナル → エディタの順で 1 周する(ADR-015 の 3)
+/// - タブを閉じる: いま表示しているタブ(エディタかターミナル)を閉じる。シェルを終わらせるのに待つことがあるので、待ってよい
+///   スレッドで閉じる。0 枚なら何もしない。表示中のエディタに未保存の変更があれば閉じずに画面へ `editor-close-requested`
+///   を送る(ADR-015 の 4)
 /// - すべてを選択: 画面へ `menu-command`(`"select-all"`)を送る
 /// - 表示の 4 項目: `SessionRegistry` の表示の口を呼ぶ(変わったときだけ写しが届く)。タブ表示でのページ送り・拡大、
 ///   端のページでのページ送りは何もしない。項目はいつも有効のまま並べる(M4 の【仮定】9)
@@ -359,7 +363,18 @@ pub fn on_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
         C::TerminalCloseTab => {
             if let Some(sessions) = app.try_state::<SessionRegistry>() {
                 let sessions = sessions.inner().clone();
-                tauri::async_runtime::spawn_blocking(move || sessions.close_active_terminal());
+                let app = app.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    if let Some(ClosedTab::EditorNeedsConfirmation(editor_id)) =
+                        sessions.close_active_tab()
+                    {
+                        // 画面がまだ無いときなどは送れない。送れなくても何も閉じていない(押し直せばよい)。
+                        let _ = app.emit(
+                            EDITOR_CLOSE_REQUESTED_EVENT,
+                            EditorCloseRequest { editor_id },
+                        );
+                    }
+                });
             }
         }
         C::TerminalNewTab | C::TerminalPreviousTab | C::TerminalNextTab => {
@@ -372,10 +387,10 @@ pub fn on_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
                     let _ = sessions.new_terminal();
                 }
                 C::TerminalPreviousTab => {
-                    let _ = sessions.select_previous_terminal();
+                    let _ = sessions.select_previous_tab();
                 }
                 _ => {
-                    let _ = sessions.select_next_terminal();
+                    let _ = sessions.select_next_tab();
                 }
             }
         }

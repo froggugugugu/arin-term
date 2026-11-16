@@ -561,3 +561,48 @@ fn 閉じる結果と未保存の項目の_json_の形() {
         json!({ "editorId": "editor-1", "projectName": "app", "path": "a.md" })
     );
 }
+
+// ---- Vim のキー操作(ADR-015 の 6、計画書 T81e、AC-E08) ----
+
+#[test]
+fn set_editor_vim_で写しと保存する内容が替わる() {
+    let mut ws = workspace_with(1, &[]);
+    assert!(!ws.snapshot().editor.vim);
+    assert!(!ws.persisted_state().layout.editor_vim);
+
+    assert!(ws.set_editor_vim(true), "偽 → 真は変わる");
+    assert!(ws.snapshot().editor.vim);
+    assert!(ws.persisted_state().layout.editor_vim);
+    assert!(!ws.set_editor_vim(true), "同じ値は変わらない");
+
+    assert!(ws.set_editor_vim(false));
+    assert!(!ws.snapshot().editor.vim);
+    assert!(!ws.persisted_state().layout.editor_vim);
+}
+
+#[test]
+fn 保存値の_vim_を起動時に持ち直す() {
+    let mut state = PersistedState::default();
+    state.layout.editor_vim = true;
+    let ws = Workspace::restore(
+        "1.2.3",
+        PathBuf::from(HOME),
+        [("HOME", HOME)],
+        Startup {
+            state,
+            ..Startup::default()
+        },
+    );
+    assert!(ws.snapshot().editor.vim);
+    assert!(ws.persisted_state().layout.editor_vim);
+}
+
+#[test]
+fn 既定に戻すで_vim_は変わらない() {
+    let mut ws = workspace_with(1, &[]);
+    ws.set_editor_vim(true);
+    ws.step_font_size(arin_core::layout::font_sizes::FontSizeTarget::Terminal, 2);
+    assert!(ws.reset_appearance());
+    assert!(ws.snapshot().editor.vim);
+    assert!(ws.persisted_state().layout.editor_vim);
+}

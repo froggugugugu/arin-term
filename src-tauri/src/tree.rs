@@ -7,9 +7,10 @@
 //!
 //! 一覧から隠すもの:
 //! - 除外の規則(`ExclusionRule`。隠しファイル表示が OFF のときの `.git`・`node_modules`・`.DS_Store`)
-//! - ファイルのコピーが一時的に作る作業用フォルダ(`arin_platform::fs::STAGING_PREFIX` で始まる名前)。
-//!   隠しファイル表示が OFF のとき出さない(作りかけを本人に操作させないため)。ON のときは、片付けられずに
-//!   残ったもの(標準エラーの `[arin:fileops]`)を本人が見つけて片付けられるよう出す
+//! - アプリが一時的に作る作業用の名前(コピーの作業用フォルダ `.arin-copy-`、文書の保存の一時ファイル `.arin-save-`。
+//!   `arin_core::tree::exclusion::WORK_NAME_PREFIXES`)。隠しファイル表示が OFF のとき出さない(作りかけを本人に
+//!   操作させないため)。ON のときは、片付けられずに残ったもの(標準エラーの `[arin:fileops]`・`[arin:editor]`)を
+//!   本人が見つけて片付けられるよう出す
 //!
 //! フォルダの読み込みは止まりうるので、メインスレッドから呼ばない(コマンドは待ってよいスレッドで呼ぶ)。
 
@@ -23,7 +24,6 @@ use arin_core::project::{ProjectError, ProjectId};
 use arin_core::tree::DirListing;
 use arin_core::tree::exclusion::ExclusionRule;
 use arin_core::tree::order::sort_entries;
-use arin_platform::fs::STAGING_PREFIX;
 
 use crate::sessions::SessionRegistry;
 
@@ -62,14 +62,10 @@ pub fn list_directory(
     Ok(DirListing::Listed { entries })
 }
 
-/// 一覧に出す項目だけを残す(除外の規則と、隠しファイル表示が OFF のときのコピーの作業用フォルダ)。順は変えない。
+/// 一覧に出す項目だけを残す(除外の規則と、隠しファイル表示が OFF のときの作業用の名前)。順は変えない。
 #[must_use]
 pub fn visible_entries(entries: Vec<DirEntry>, rule: ExclusionRule) -> Vec<DirEntry> {
-    let mut entries = rule.filter(entries);
-    if !rule.show_hidden() {
-        entries.retain(|entry| !entry.name.starts_with(STAGING_PREFIX));
-    }
-    entries
+    rule.filter_listing(entries)
 }
 
 /// ツリーの操作。Tauri の管理状態に登録する。

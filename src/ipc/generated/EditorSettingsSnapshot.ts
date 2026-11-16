@@ -5,6 +5,6 @@
  */
 export type EditorSettingsSnapshot = { 
 /**
- * Vim のキー操作(`state.json` の `ui.editorVim`。保存値は計画書 T81e で持たせる。それまでは偽)。
+ * Vim のキー操作(`state.json` の `ui.editorVim`。無ければ偽。切替は `set_editor_vim`)。
  */
 vim: boolean, };

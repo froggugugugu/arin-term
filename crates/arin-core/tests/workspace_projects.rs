@@ -246,6 +246,7 @@ fn ペインの寸法は保存値に規則を当て_無ければ初期値() {
         display_mode: DisplayMode::Tabs,
         font_sizes: FontSizes::default(),
         translucency: Translucency::default(),
+        editor_vim: false,
     };
     let ws = restore(Startup {
         state,
@@ -271,6 +272,7 @@ fn ペインの寸法は保存値に規則を当て_無ければ初期値() {
             display_mode: DisplayMode::Tabs,
             font_sizes: FontSizes::default(),
             translucency: Translucency::default(),
+            editor_vim: false,
         }
     );
 }
@@ -298,6 +300,7 @@ fn 退避の知らせは写しに載り_保存する内容には入らない() {
                 display_mode: DisplayMode::Tabs,
                 font_sizes: FontSizes::default(),
                 translucency: Translucency::default(),
+                editor_vim: false,
             },
         }
     );

@@ -568,6 +568,8 @@ fn メニューの項目のアクセラレータが表の既定のキーと同�
             ("view.focus-tile-7", Some("Cmd+7".to_owned())),
             ("view.focus-tile-8", Some("Cmd+8".to_owned())),
             ("view.focus-tile-9", Some("Cmd+9".to_owned())),
+            // M4.8 のエディタの保存(ADR-015 の 6)。受け口は画面なのでメニューに載せない(「ファイル」メニューを足さない)。
+            ("editor.save", None),
         ]
     );
     for binding in table.by_receiver(ShortcutReceiver::MenuItem) {

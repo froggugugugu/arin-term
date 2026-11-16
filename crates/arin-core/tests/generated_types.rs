@@ -16,6 +16,9 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use arin_core::editor::{
+    CheckDocumentOutcome, EditorCloseRequest, OpenDocumentOutcome, SaveDocumentOutcome,
+};
 use arin_core::fileops::{ConflictResolution, FileOpOutcome, NewEntryKind};
 use arin_core::layout::font_sizes::FontSizeTarget;
 use arin_core::layout::tiles::{DisplayMode, TileGrid};
@@ -68,6 +71,11 @@ fn collect_generated(cfg: &Config) -> BTreeMap<PathBuf, String> {
     // エディタのタブ(ADR-015 の 3・4、計画書 T81b)。写しの `editors`・`editor` は `AppSnapshot` から、
     // 未保存の一覧は `QuitRequest`・`RemoveProjectOutcome` からたどれる。閉じる応答はここから。
     collector.visit::<CloseEditorOutcome>();
+    // 文書のコマンドの応答と ⌘W の確認のイベント(ADR-015 の 4、計画書 T81d)。
+    collector.visit::<OpenDocumentOutcome>();
+    collector.visit::<SaveDocumentOutcome>();
+    collector.visit::<CheckDocumentOutcome>();
+    collector.visit::<EditorCloseRequest>();
     collector.files
 }
 
@@ -195,12 +203,21 @@ fn 既定のショートカットの表の_json_が最新である() {
         path.display()
     );
 
-    // 計画書 T64c: 表は 23 行(M4.7 の ADR-014 の 4 でタイルの番号キー 9 行を足して 32 行)で、`app.open-settings` = `Cmd+,`(受け口はメニューの項目)を持つ。
+    // 計画書 T64c: 表は 23 行(M4.7 の ADR-014 の 4 でタイルの番号キー 9 行を足して 32 行、M4.8 の ADR-015 の 6 で
+    // エディタの保存を足して 33 行)で、`app.open-settings` = `Cmd+,`(受け口はメニューの項目)を持つ。
     // M4.6(T68d。ADR-013 の 6)でこの行の意味を「設定…」(設定画面)に替えたが、行・キー・受け口は変えないので期待も同じ。
     // 書き出しと同じテストの中で読む(別のテストにすると、再生成のときに書き出しと並んで走り古い中身を読む)。
     let rows: serde_json::Value = serde_json::from_str(&actual).expect("JSON でない");
     let rows = rows.as_array().expect("配列でない");
-    assert_eq!(rows.len(), 32);
+    assert_eq!(rows.len(), 33);
+    assert!(
+        rows.contains(&serde_json::json!({
+            "command": "editor.save",
+            "accelerator": "Cmd+S",
+            "receiver": "screen"
+        })),
+        "エディタの保存の行が無い"
+    );
     assert!(
         rows.contains(&serde_json::json!({
             "command": "app.open-settings",
