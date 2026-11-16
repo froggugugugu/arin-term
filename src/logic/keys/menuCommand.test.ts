@@ -4,6 +4,19 @@ import type { ClipboardFocus } from "./clipboard";
 import { routeMenuCommand } from "./menuCommand";
 
 describe("routeMenuCommand(メニューから届く操作の振り分け)", () => {
+  it("すべてを選択の振り分けは変わらない", () => {
+    expect(routeMenuCommand("select-all", { kind: "terminal" })).toBe("select-all-terminal");
+    expect(routeMenuCommand("select-all", { kind: "tree" })).toBe("none");
+    expect(routeMenuCommand("select-all", { kind: "name-input" })).toBe("none");
+    expect(routeMenuCommand("select-all", { kind: "other" })).toBe("none");
+  });
+
+  it("設定を開くのメニューの操作は_フォーカス位置によらず設定画面を開く", () => {
+    for (const kind of ["terminal", "tree", "name-input", "other"] as const) {
+      expect(routeMenuCommand("open-settings", { kind })).toBe("open-settings");
+    }
+  });
+
   it("すべてを選択はターミナルにフォーカスがあればターミナルの全選択", () => {
     expect(routeMenuCommand("select-all", { kind: "terminal" })).toBe("select-all-terminal");
   });

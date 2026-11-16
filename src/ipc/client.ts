@@ -8,6 +8,7 @@ import type { ConnectOutcome } from "./generated/ConnectOutcome";
 import type { DirListing } from "./generated/DirListing";
 import type { DisplayMode } from "./generated/DisplayMode";
 import type { FileOpOutcome } from "./generated/FileOpOutcome";
+import type { FontSizeTarget } from "./generated/FontSizeTarget";
 import type { MenuCommand } from "./generated/MenuCommand";
 import type { NewEntryKind } from "./generated/NewEntryKind";
 import type { PathKind } from "./generated/PathKind";
@@ -62,6 +63,15 @@ export interface CommandMap {
   /** 右ペインの表示(T47b)。結果は写しの display で届く。状態が変わったときだけ写しが送られる。 */
   set_display_mode: { args: { mode: DisplayMode }; result: null };
   focus_terminal: { args: { terminalId: TerminalId }; result: null };
+  /**
+   * 文字の大きさ(M4.6。ADR-013 の 2)。delta だけ動かし、範囲の端で留める。変わったときだけ写しの fontSizes が届き、
+   * 保存が予約される(state.json の ui)。settings.toml には触れない。
+   */
+  step_font_size: { args: { target: FontSizeTarget; delta: number }; result: null };
+  /** 両方を既定に戻す。変わったときだけ写しが届く。 */
+  reset_font_sizes: { args: undefined; result: null };
+  /** 設定ファイルを開く(無いときだけ見本を作る。ADR-012 の 6)。パスは画面を通らない。 */
+  open_settings_file: { args: undefined; result: null };
   next_tile_page: { args: undefined; result: null };
   previous_tile_page: { args: undefined; result: null };
   /** terminalId を渡すと、そのタイルにフォーカスしてから拡大する(タイトルバーのダブルクリック)。閉じたタイルなら何もしない。 */
@@ -183,7 +193,8 @@ export interface ArinIpc {
   /** 画面で起きた失敗を Rust へ知らせる(Rust が標準エラーに 1 行で書く)。 */
   reportFrontendError(message: string): Promise<void>;
   /**
-   * メニューバーの項目から画面へ送られる操作(いまは「すべてを選択」だけ)を受けるたびに listener を呼ぶ。
+   * メニューバーの項目から画面へ送られる操作(「すべてを選択」と「設定…」。⌘, もメニューの項目として届く)を受けるたびに
+   * listener を呼ぶ。
    * タブの操作(⌘T・⌘W・⌘⇧[・⌘⇧])は Rust が行い、結果は写しで届く。購読が済んだら、やめる関数で解決する。
    */
   onMenuCommand(listener: (command: MenuCommand) => void): Promise<Unlisten>;
@@ -268,6 +279,15 @@ export interface ArinIpc {
    * 拡大する(1 回のコマンドで行うので、別のタイルを拡大しない)。渡さなければフォーカス中のタイル。
    */
   toggleTileMaximize(terminalId?: TerminalId): Promise<void>;
+  /*
+   * 文字の大きさ(M4.6。ADR-013 の 2)。結果は写しの fontSizes で届く(変わらない呼び出しでは届かない)。
+   */
+  /** target の文字の大きさを delta だけ動かす(範囲の端で留める)。 */
+  stepFontSize(target: FontSizeTarget, delta: number): Promise<void>;
+  /** ターミナルと画面の文字の大きさを既定に戻す。 */
+  resetFontSizes(): Promise<void>;
+  /** 設定ファイル(settings.toml)を既定のアプリで開く。無いときだけ見本を作る。 */
+  openSettingsFile(): Promise<void>;
   /**
    * フォルダの中身を問い合わせる(ツリーの展開)。path はルート基準の相対パスで、ルートは空の文字列。
    * Rust が除外(隠しファイル表示が OFF のとき)と並び順を当てて返す。プロジェクトやフォルダが見つからなければ notFound、
@@ -445,6 +465,9 @@ export function createIpc(transport: IpcTransport): ArinIpc {
     previousTilePage: () => done(invoke("previous_tile_page", undefined)),
     toggleTileMaximize: (terminalId) =>
       done(invoke("toggle_tile_maximize", terminalId === undefined ? undefined : { terminalId })),
+    stepFontSize: (target, delta) => done(invoke("step_font_size", { target, delta })),
+    resetFontSizes: () => done(invoke("reset_font_sizes", undefined)),
+    openSettingsFile: () => done(invoke("open_settings_file", undefined)),
     listDirectory: (projectId, path) => invoke("list_directory", { projectId, path }),
     setShowHidden: (projectId, showHidden) => done(invoke("set_show_hidden", { projectId, showHidden })),
     onTreeChanged: (listener) => transport.listen("tree-changed", listener),

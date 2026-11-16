@@ -68,10 +68,12 @@ export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartA
     ipc,
     store,
     events: {
-      // メニューの「すべてを選択」を、フォーカス位置で振り分ける(ターミナルなら xterm.js の全選択)。
-      // "open-settings"(「設定…」。ADR-013 の 6)は設定画面の配線(T70a)までは何もしない。
+      // メニューの操作を振り分ける。「設定…」(⌘, もメニューの項目として届く。ADR-013 の 6)は設定画面を開き
+      // (開いていれば 1 つのまま、ほかの確認が開いていれば開かない)、ターミナルには渡さない。
+      // 「すべてを選択」はフォーカス位置で振り分ける(ターミナルなら xterm.js の全選択)。
       onMenuCommand: (command) => {
-        if (command === "select-all") terminals.handleMenuCommand(command);
+        if (command === "open-settings") ui.getState().openSettings();
+        else terminals.handleMenuCommand(command);
       },
       // 動作中のターミナルがあって終了が止められたら、終了の確認を開く(ダイアログの部品は T34d)。
       onQuitRequested: (request) => ui.getState().openQuitConfirmation(request.running),

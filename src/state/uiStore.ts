@@ -8,6 +8,7 @@
 // ツリーの部品(T43b〜T43d)が読む M3 の状態: メニュー(treeMenu)、インライン編集(inlineEdit)、衝突の確認(treeConflict)、
 // 移動の確認(moveConfirmation)、ツリーの知らせ(treeNotice)、ドラッグ中(treeDragging)、ショートカットの表(shortcuts)。
 // M4.5(T65e): 設定の知らせ(settingsNotice)。表と同じく、起動時と settings-changed が届いたときに startApp が置き換える。
+// M4.6(T70a): 設定画面の開閉(settingsOpen)。⌘, とメニューの「設定…」(menu-command の "open-settings")で開く。
 // メニュー・インライン編集・確認・ドラッグが開いている間は、ツリーの更新を保留する(FR-037。treeStore.ts がここを購読して
 // UpdateGate の理由をそろえる。部品は保留を自分で立てない)。
 
@@ -183,6 +184,16 @@ export interface UiState {
   setSettingsNotice: (notice: string | null) => void;
   /** 設定の知らせを閉じる。 */
   dismissSettingsNotice: () => void;
+  /** 設定画面(M4.6。ADR-013 の 5)が開いているか。 */
+  readonly settingsOpen: boolean;
+  /**
+   * 設定画面を開く(⌘, とメニューの「設定…」)。開いていれば 1 つのまま(状態を変えない)。ほかの確認(終了・削除・衝突・
+   * 移動)が開いていれば開かない(モーダルを 2 枚重ねない)。開くときは右クリックのメニューを閉じる。
+   * 設定画面を開いているあいだに届いた終了の確認は止めずに上に重ねる(openQuitConfirmation は settingsOpen を見ない)。
+   */
+  openSettings: () => void;
+  /** 設定画面を閉じる。 */
+  closeSettings: () => void;
   /**
    * 表示中のツリーが替わった(別のプロジェクト、または無くなった)ときの片付け。projectId 以外のプロジェクトの
    * メニュー・インライン編集・衝突の確認・移動の確認・ツリーの知らせを閉じ、ドラッグ中とフォーカスの印を戻す(treeStore が呼ぶ)。
@@ -236,6 +247,18 @@ export function createUiStore(): UiStore {
     setSettingsNotice: (notice) =>
       set((s) => (s.settingsNotice === notice ? s : { settingsNotice: notice, settingsNoticeDismissed: false })),
     dismissSettingsNotice: () => set({ settingsNoticeDismissed: true }),
+    settingsOpen: false,
+    openSettings: () =>
+      set((s) => {
+        const blocked =
+          s.quitConfirmation !== null ||
+          s.removeConfirmation !== null ||
+          s.treeConflict !== null ||
+          s.moveConfirmation !== null;
+        if (s.settingsOpen || blocked) return s;
+        return { settingsOpen: true, cardMenu: null, treeMenu: null };
+      }),
+    closeSettings: () => set((s) => (s.settingsOpen ? { settingsOpen: false } : s)),
     resetTreeUi: (projectId) =>
       set((s) => {
         const other = (owner: ProjectId | undefined) => owner !== undefined && owner !== projectId;

@@ -242,4 +242,69 @@ describe("uiStore(ツリーの表示だけの状態。M3)", () => {
 
     expect(ui.getState()).toBe(before);
   });
+  describe("設定画面(M4.6。ADR-013 の 5)", () => {
+    it("作った直後は設定画面が閉じている", () => {
+      expect(createUiStore().getState().settingsOpen).toBe(false);
+    });
+
+    it("設定を開くのメニューの操作で設定画面が開く", () => {
+      const ui = createUiStore();
+
+      ui.getState().openSettings();
+      expect(ui.getState().settingsOpen).toBe(true);
+
+      ui.getState().closeSettings();
+      expect(ui.getState().settingsOpen).toBe(false);
+    });
+
+    it("開いているときにもう一度届いても_1_つのまま", () => {
+      const ui = createUiStore();
+      const seen: boolean[] = [];
+      ui.subscribe((s) => seen.push(s.settingsOpen));
+
+      ui.getState().openSettings();
+      ui.getState().openSettings();
+
+      expect(ui.getState().settingsOpen).toBe(true);
+      // 2 回目は状態を変えない(部品が開き直さない)
+      expect(seen).toEqual([true]);
+    });
+
+    it("ほかの確認ダイアログが開いていれば開かない", () => {
+      const opens: Array<(ui: ReturnType<typeof createUiStore>) => void> = [
+        (ui) => ui.getState().openQuitConfirmation([running("t1")]),
+        (ui) => ui.getState().openRemoveConfirmation("p1", [running("t1")]),
+        (ui) => ui.getState().openTreeConflict({ request: { op: "paste", projectId: "p1", destDir: "" }, name: "a", total: 1 }),
+        (ui) => ui.getState().openMoveConfirmation({ projectId: "p1", source: "a", destDir: "b" }),
+      ];
+      for (const open of opens) {
+        const ui = createUiStore();
+        open(ui);
+
+        ui.getState().openSettings();
+
+        expect(ui.getState().settingsOpen).toBe(false);
+      }
+    });
+
+    it("開くと右クリックのメニューを閉じる", () => {
+      const ui = createUiStore();
+      ui.getState().openCardMenu("p1", { x: 1, y: 2 });
+      ui.getState().openTreeMenu("p1", { kind: "blank" }, { x: 1, y: 2 });
+
+      ui.getState().openSettings();
+
+      expect([ui.getState().settingsOpen, ui.getState().cardMenu, ui.getState().treeMenu]).toEqual([true, null, null]);
+    });
+
+    it("設定画面を開いているあいだに終了の確認が届いたら上に重ねて開く", () => {
+      const ui = createUiStore();
+      ui.getState().openSettings();
+
+      ui.getState().openQuitConfirmation([running("t1")]);
+
+      expect(ui.getState().settingsOpen).toBe(true);
+      expect(ui.getState().quitConfirmation).not.toBeNull();
+    });
+  });
 });

@@ -158,6 +158,32 @@ describe("src/ipc の包み", () => {
     expect(fake.calls).toEqual([]);
   });
 
+  it("文字の大きさの刻みは_step_font_size_に対象と差分で届き_既定に戻すと設定ファイルを開くは引数なし", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+
+    await ipc.stepFontSize("interface", -1);
+    await ipc.resetFontSizes();
+    await ipc.openSettingsFile();
+
+    expect(fake.calls).toEqual([
+      { command: "step_font_size", args: { target: "interface", delta: -1 } },
+      { command: "reset_font_sizes", args: undefined },
+      { command: "open_settings_file", args: undefined },
+    ]);
+  });
+
+  it("設定を開くのメニューの操作(open-settings)も menu-command で届く", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+    const seen: string[] = [];
+
+    await ipc.onMenuCommand((command) => seen.push(command));
+    fake.emit("menu-command", "open-settings");
+
+    expect(seen).toEqual(["open-settings"]);
+  });
+
   it("確認して終了は confirm_quit を引数なしで呼ぶ", async () => {
     const fake = createFakeIpc();
     const ipc = createIpc(fake.transport);

@@ -277,6 +277,24 @@ export function withTileDisplay(snapshot: AppSnapshot, options: TileDisplayOptio
   };
 }
 
+/**
+ * 文字の大きさを替えた写しを返す(T70a。Rust の step_font_size・reset_font_sizes のあとに届く写しの形)。
+ * 範囲と既定は写しのまま(Rust の規則で端に留めるのはテストの側の役目)。渡した写しは書き換えない。
+ */
+export function withFontSizes(
+  snapshot: AppSnapshot,
+  sizes: { terminal?: number; interface?: number },
+): AppSnapshot {
+  const { terminal, interface: ui } = snapshot.fontSizes;
+  return {
+    ...snapshot,
+    fontSizes: {
+      terminal: { ...terminal, value: sizes.terminal ?? terminal.value },
+      interface: { ...ui, value: sizes.interface ?? ui.value },
+    },
+  };
+}
+
 /** 終了・削除の確認に載せる動作中のターミナル 1 枚(quit-requested のイベントの中身などに使う。T34d)。 */
 export function sampleRunningTerminal(
   projectId: string,
@@ -323,6 +341,10 @@ const DEFAULT_REPLIES: TauriMockConfig = {
   next_tile_page: { ok: null },
   previous_tile_page: { ok: null },
   toggle_tile_maximize: { ok: null },
+  // 文字の大きさ(T70a)。偽の Rust 側は写しを送り返さないので、テストが withFontSizes で作った写しを流す
+  step_font_size: { ok: null },
+  reset_font_sizes: { ok: null },
+  open_settings_file: { ok: null },
   list_directory: { ok: { kind: "listed", entries: [] } },
   set_show_hidden: { ok: null },
   create_entry: { ok: { kind: "done", select: null } },

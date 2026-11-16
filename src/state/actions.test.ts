@@ -29,6 +29,66 @@ function setup(handlers: Partial<FakeHandlers> = {}, fs: Map<string, DirListing>
 
 const running: RunningTerminal = { terminalId: "t1", projectId: "p1", projectName: "app", label: "ターミナル 1" };
 
+describe("actions(文字の大きさと設定ファイル。M4.6)", () => {
+  it("刻むと_step_font_size_を差分で呼ぶ", async () => {
+    const { fake, errors, actions } = setup();
+
+    await actions.stepFontSize("terminal", 1);
+    await actions.stepFontSize("interface", -1);
+    await actions.stepFontSize("terminal", 1);
+
+    // 今の値を足した数ではなく差分を送る(写しが届く前に続けて押しても押した回数どおりに動く。ADR-013 の 2)
+    expect(fake.calls).toEqual([
+      { command: "step_font_size", args: { target: "terminal", delta: 1 } },
+      { command: "step_font_size", args: { target: "interface", delta: -1 } },
+      { command: "step_font_size", args: { target: "terminal", delta: 1 } },
+    ]);
+    expect(errors).toEqual([]);
+  });
+
+  it("既定に戻すで_reset_font_sizes_を呼ぶ", async () => {
+    const { fake, errors, actions } = setup();
+
+    await actions.resetFontSizes();
+
+    expect(fake.calls).toEqual([{ command: "reset_font_sizes", args: undefined }]);
+    expect(errors).toEqual([]);
+  });
+
+  it("設定ファイルを開くで_open_settings_file_を呼ぶ", async () => {
+    const { fake, errors, actions } = setup();
+
+    await actions.openSettingsFile();
+
+    expect(fake.calls).toEqual([{ command: "open_settings_file", args: undefined }]);
+    expect(errors).toEqual([]);
+  });
+
+  it("文字の大きさと設定ファイルのコマンドの失敗は報告し_Promise_は失敗しない", async () => {
+    const { errors, actions } = setup({
+      step_font_size: () => {
+        throw "壊れた";
+      },
+      reset_font_sizes: () => {
+        throw "壊れた";
+      },
+      open_settings_file: () => {
+        throw "開けない";
+      },
+    });
+
+    await expect(actions.stepFontSize("terminal", 1)).resolves.toBeUndefined();
+    await expect(actions.resetFontSizes()).resolves.toBeUndefined();
+    await expect(actions.openSettingsFile()).resolves.toBeUndefined();
+
+    expect(errors).toEqual([
+      "文字の大きさを変えられなかった: 壊れた",
+      "文字の大きさを既定に戻せなかった: 壊れた",
+      "設定ファイルを開けなかった: 開けない",
+    ]);
+  });
+});
+
 describe("actions(コマンドの包み)", () => {
   it("actions_は正しいコマンドを呼ぶ", async () => {
     const { fake, errors, actions } = setup();

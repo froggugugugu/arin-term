@@ -21,6 +21,7 @@ import type { AppSnapshot } from "../ipc/generated/AppSnapshot";
 import type { ConflictResolution } from "../ipc/generated/ConflictResolution";
 import type { DisplayMode } from "../ipc/generated/DisplayMode";
 import type { FileOpOutcome } from "../ipc/generated/FileOpOutcome";
+import type { FontSizeTarget } from "../ipc/generated/FontSizeTarget";
 import type { InvalidNameReason } from "../ipc/generated/InvalidNameReason";
 import type { NewEntryKind } from "../ipc/generated/NewEntryKind";
 import type { NotAllowedReason } from "../ipc/generated/NotAllowedReason";
@@ -54,6 +55,9 @@ export type ActionsBackend = Pick<
   | "nextTilePage"
   | "previousTilePage"
   | "toggleTileMaximize"
+  | "stepFontSize"
+  | "resetFontSizes"
+  | "openSettingsFile"
   | "confirmQuit"
   | "setShowHidden"
   | "createEntry"
@@ -134,6 +138,14 @@ export interface Actions {
    * してから拡大する)。元に戻すボタン・メニューは渡さない(フォーカス中のタイル)。
    */
   toggleTileMaximize(terminalId?: TerminalId): Promise<void>;
+
+  // ── 設定画面(M4.6。ADR-013 の 2・5)。結果は写しの fontSizes で届く。開閉は uiStore ──
+  /** 文字の大きさを delta だけ動かす(ステッパー。今の値を足した数ではなく差分を送る)。 */
+  stepFontSize(target: FontSizeTarget, delta: number): Promise<void>;
+  /** ターミナルと画面の文字の大きさを既定に戻す(確認を挟まない)。 */
+  resetFontSizes(): Promise<void>;
+  /** 設定ファイルを開く(設定画面のボタン。メニューの項目は Rust が直接開く)。 */
+  openSettingsFile(): Promise<void>;
 
   // ── ツリー(M3)。開閉・選択は表示中のプロジェクトのツリーに効く ──
   /** フォルダを開く(未読込なら中身を求める。FR-013)。 */
@@ -375,6 +387,10 @@ export function createActions({ ipc, ui, app, tree, treeController, reportError 
     previousTilePage: () => run("前のページに戻せなかった", () => ipc.previousTilePage()),
     toggleTileMaximize: (terminalId) =>
       run("タイルを拡大・元に戻せなかった", () => ipc.toggleTileMaximize(terminalId)),
+
+    stepFontSize: (target, delta) => run("文字の大きさを変えられなかった", () => ipc.stepFontSize(target, delta)),
+    resetFontSizes: () => run("文字の大きさを既定に戻せなかった", () => ipc.resetFontSizes()),
+    openSettingsFile: () => run("設定ファイルを開けなかった", () => ipc.openSettingsFile()),
 
     expandDir: (path) => treeController.expand(path),
     collapseDir: (path) => treeController.collapse(path),

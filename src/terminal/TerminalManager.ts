@@ -406,6 +406,8 @@ export class TerminalManager {
       case "select-all-terminal":
         surface?.selectAll();
         return true;
+      // 設定画面は main.tsx が uiStore で開く(ターミナルの操作ではない)。
+      case "open-settings":
       case "none":
         return false;
     }
