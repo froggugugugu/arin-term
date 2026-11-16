@@ -1,6 +1,6 @@
 # アーキテクチャ
 
-レイヤー定義と依存方向の全体は `output/design/ARCH_multi-terminal.md` §3、最終形のディレクトリは §4、テスト方針は §10 と ADR-006。ここには M4.5 時点で実在するものだけを書く。
+レイヤー定義と依存方向の全体は `output/design/ARCH_multi-terminal.md` §3、最終形のディレクトリは §4、テスト方針は §10 と ADR-006。ここには M4.6 時点で実在するものだけを書く。
 
 ## エントリーポイント
 
@@ -11,8 +11,8 @@
 
 ```
 crates/arin-core/      # Core: 型・規則。入出力なし
-│                      #   paths/(相対パス・表示と挿入の文字列)、tree/(除外・変更の集約)、fileops/(名前・範囲・操作)、shortcuts/、project/(ID・色・パス・ProjectStore)、layout/(PaneSizes・tiles=グリッドとページ)、persistence/(state.json の codec・保存の予定)、settings/(settings.toml を読んだ結果の型・SettingsStore)、
-│                      #   workspace/(Workspace・写し・イベントの中身・display=表示モードとページと拡大)、terminal/(起動の仕様・状態・流量制御・OSC 走査・attention=アテンションの走査器)、
+│                      #   paths/(相対パス・表示と挿入の文字列)、tree/(除外・変更の集約)、fileops/(名前・範囲・操作)、shortcuts/、project/(ID・色・パス・ProjectStore)、layout/(PaneSizes・tiles=グリッドとページ・font_sizes=文字の大きさの範囲と既定と刻み)、persistence/(state.json の codec・保存の予定)、settings/(settings.toml を読んだ結果の型・SettingsStore)、
+│                      #   workspace/(Workspace・写し・イベントの中身・display=表示モードとページと拡大・font_sizes=文字の大きさの口)、terminal/(起動の仕様・状態・流量制御・OSC 走査・attention=アテンションの走査器)、
 │                      #   ports/(PtyPort・状態ファイル・設定ファイル・ルート・乱数と時計・ペーストボード・fs・watch・desktop)
 crates/arin-platform/  # Platform: OS への入出力(storage/ = ready_marker・state_file・settings_file(TOML の解析)、pty/、bookmark/、fs/(fd 相対のファイル操作・ゴミ箱)、watch/(F_GETPATH・fsevents)、
 │                      #   system/(乱数・時計)、desktop/(ペーストボード・file_pasteboard・フォルダ選択のダイアログ・workspace(Finder・既定のアプリ)))
@@ -32,8 +32,9 @@ src/
 ├── ui/dialogs/        # 確認ダイアログ(削除・終了・ConfirmDialog・ConflictDialog・MoveConfirmDialog)
 ├── ui/menu/           # 右クリックのメニュー(ContextMenu)
 ├── ui/tree/           # TreeHeader・FileTreeView・TreeRow・InlineNameInput・TreeDragGhost・icons
-├── ui/design/         # tokens.css、palette.ts(プロジェクト色の値)
-├── logic/             # 純粋ロジック(DOM・他の src/* に依存しない。別 tsconfig。keys/ = キーとメニュー・クリップボードの振り分けとショートカットの表、menu/(treeMenu を含む)、panes/、tree/ = ツリーのモデル・仮想スクロール、dnd/ = ドラッグ)
+├── ui/design/         # tokens.css、palette.ts(プロジェクト色の値)、applyInterfaceMetrics(画面の文字の大きさを :root に当てる・InterfaceMetricsContext)
+├── ui/settings/       # 設定画面(SettingsDialog・FontSizeStepper)
+├── logic/             # 純粋ロジック(DOM・他の src/* に依存しない。別 tsconfig。keys/ = キーとメニュー・クリップボードの振り分けとショートカットの表、menu/(treeMenu を含む)、panes/、tree/ = ツリーのモデル・仮想スクロール、dnd/ = ドラッグ、appearance/ = 画面の文字の大きさから追従させるトークンの値)
 └── test/              # テスト補助(fakeIpc)
 e2e/                   # Playwright(fixtures/tauriMock.ts)
 scripts/               # 境界検査・カバレッジ・スモーク・perf/(fixtures/ は違反の見本)
@@ -64,11 +65,12 @@ PTY → 読み取りスレッド(未処理の量が上限を超えたら読ま�
 | 性能の計測 | `crates/arin-platform/tests/perf_pty.rs`、`src-tauri/tests/perf_sessions.rs`、`crates/arin-platform/tests/perf_tree.rs`(すべて `#[ignore]`)、`scripts/perf/` | `npm run perf` |
 | ツリーとファイル操作の結合 | `crates/arin-core/tests/`(rel_path・tree_rules・fileops_name・fileops_scope・fileops_service・shortcuts・path_format・shell_escape)、`crates/arin-platform/tests/`(fs・fs_race・watch・desktop・shell_roundtrip、trash は `#[ignore]`)、`src-tauri/tests/`(tree_commands・tree_watch・fileops_commands・desktop_commands・app_menu) | cargo test |
 | 設定ファイル(M4.5) | `crates/arin-core/tests/`(settings_load・shortcut_overrides・app_paths)、`crates/arin-platform/tests/settings_file.rs`、`src-tauri/tests/`(app_settings・settings_watch。偽の監視と偽の `DesktopPort`) | cargo test |
+| 文字の大きさ(M4.6) | `crates/arin-core/tests/`(font_sizes・workspace_font_sizes)、`src-tauri/tests/font_commands.rs` | cargo test |
 | 型の生成物の一致 | `crates/arin-core/tests/generated_types.rs` | cargo test |
 | スクリプト | `scripts/*.test.mjs`(default-shortcuts は見本の表と生成物の一致) | node --test |
-| 画面 E2E | `e2e/*.spec.ts`(app-shell、terminal、projects、tabs、m2-scenario、tree、tree-ops、tree-dnd、m3-scenario、tiles、m4-scenario、settings、m45-scenario) | playwright(WebKit) |
+| 画面 E2E | `e2e/*.spec.ts`(app-shell、terminal、projects、tabs、m2-scenario、tree、tree-ops、tree-dnd、m3-scenario、tiles、m4-scenario、settings、m45-scenario、font-settings、m46-scenario) | playwright(WebKit) |
 | 画面側の性能の計測 | `e2e/perf-tiles.spec.ts`(`npm run e2e` には入らない。`ARIN_PERF_E2E=1` のときだけ) | `npm run perf` |
-| 実アプリのスモーク | `scripts/smoke.mjs`(`--tiles` で 9 プロジェクトのタイル表示、`--settings` で設定ファイルを置いて起動) | `npm run smoke` |
+| 実アプリのスモーク | `scripts/smoke.mjs`(`--tiles` で 9 プロジェクトのタイル表示、`--settings` で設定ファイルを置いて起動、`--fonts` で文字の大きさを入れた `state.json` で 1 回起動) | `npm run smoke` |
 
 ## ドキュメント責務
 

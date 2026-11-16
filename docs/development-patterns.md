@@ -33,6 +33,8 @@
 - `AppSnapshot` は画面で書き換えず、届いたもので丸ごと置き換える
 - ショートカットのキーは表(`arin-core/shortcuts`、`src/logic/keys/shortcutTable.ts`)から引き、部品やメニューにキーの文字列を直書きしない。見本の表 `defaultShortcuts.ts` は生成物と同じ中身であることを `scripts/default-shortcuts.test.mjs` が確かめる。コマンドの ID の一覧は生成物 `src/ipc/generated/defaultShortcuts.json` を正とし、文書に写さない
 - ショートカットの表は `menu::Shortcuts`(`RwLock`。`table()` は写しを返す)が 1 つだけ持ち、メニューと `get_shortcuts` が見る。差し替えたら `menu::rebuild`(`build_with_table` で作り直して `set_menu`)を**メインスレッドで**呼ぶ(ほかのスレッドからは `run_on_main_thread`)。項目ごとの `set_accelerator` は使わない
+- 画面の文字と行の高さのトークンは `src/logic/appearance/interfaceMetrics.ts` が正本で、`src/ui/design/applyInterfaceMetrics.ts` が `:root` に当てる(M4.6。ADR-013 の 4)。ツリーの行の高さは CSS から読まず `InterfaceMetricsContext` から受け取る。追従させるトークンを足すときは `INTERFACE_TOKEN_DEFAULTS` と `tokens.css` の両方に書く(既定の値の一致はテストが確かめる)
+- ⌘,(`app.open-settings`)は画面に `menu-command` の `open-settings` を送って設定画面を開く。「設定ファイルを開く…」は表の外のメニューの項目(`menu::OPEN_SETTINGS_FILE_ID`。キーなし)で、表の行は 23 のまま
 - 設定の知らせは写しの `notice` と別に持つ(Rust は `AppSettings`、画面は `uiStore` の `settingsNotice`)。中身は設定ファイルの問題と「設定ファイルを開く…」の結果(開けなかった・見本を作れなかった)の 2 つを 1 行にまとめたもの。開く結果の知らせは、次に開けたときと、読み直しで表か設定ファイルの問題の知らせが変わったときに消える。画面で閉じても、違う文の知らせが届けば出し直す
 
 ## 3. 型の生成
@@ -63,6 +65,9 @@
 - ファイル操作のテストは一時フォルダを `canonicalize` した実パスで使う(macOS の一時領域は `/var` → `/private/var` のリンクを含む)
 - E2E でスクロールや描き直しの直後の状態を測るときは、落ち着いた状態を `expect.poll` で待つ
 - E2E で設定の変更を流すときは、`setMockReply` で `get_shortcuts`・`get_settings_notice` の応答を替えてから `emitEvent(page, "settings-changed", null)` を流す(`e2e/settings.spec.ts`)。`e2e/app-shell.spec.ts` は起動時の呼び出しの並びを完全一致で見るので、起動時の呼び出しを足したら合わせる
+- `TerminalManager` のテストでは `scheduleFrame` に手で流す偽物を渡す(文字の大きさの変更は 1 フレームにまとめて当てる)
+- `src/logic` のテストで `node:fs` を使うときは型の無い動的 import で読み込む(`interfaceMetrics.test.ts`)
+- E2E で文字の大きさを流すときは `tauriMock.ts` の `withFontSizes` で作った写しを流す(偽の Rust 側は写しを送り返さない)。`@tauri-apps/api` の `invoke` は空の引数を `{}` で送るので、引数なしのコマンドの記録は `{}` になる
 - スモークは「設定ファイルを開く…」を選ばない(本物の既定のアプリや Finder が開く)。テストは偽の `DesktopPort` を使う
 
 ## 6. 過去の問題事例
@@ -89,4 +94,8 @@
 | メニューのキーを `MenuItem::set_accelerator` で替えられない | 読めない文字列は黙って `None` になり、muda の macOS の実装は `None` でキーを消さない(Tauri 2.12.5・muda 0.20.0。ADR-012 の 5) | 表を差し替えたら `menu::rebuild` でメニューを丸ごと作り直す |
 | 引用符の無い点つきの ID(`terminal.new-tab = …`)が 1 つの ID にならない | TOML では入れ子の表(`terminal` の下の `new-tab`)になる | `[shortcuts]` の下の入れ子の表は 1 段だけ `.` でつないで読む(`parse_settings_toml`)。見本は引用符で囲む形だけを示す(ADR-012 の 2) |
 | シンボリックリンクの `settings.toml` の先を保存しても反映されない | 監視は状態フォルダに張るので、リンクの先の変更は届かない | 保存のあとにリンク自体を触る(`touch`)か再起動する(見本にも書いた。ADR-012 の 1・5) |
+| ターミナルの文字の大きさを変えても行・桁が変わらない | 文字の大きさだけを変えても置き場所の大きさは変わらず、`ResizeObserver` が鳴らない。`display: none` の中では xterm.js が文字の寸法を 0 で測りうる | 表示中は当ててから明示して寸法を合わせ直す。隠しているものは覚えておき、表示に戻すときに当てる(`XtermEngine.ts`・`TerminalManager.ts`) |
+| 文字の大きさのトークンを `calc()` にするとツリーの行の高さが読めない | CSS の変数の `getPropertyValue` は計算前の文字列を返す | 行の高さは CSS から読まず `interfaceMetrics` の値を文脈で受け取る |
+| 設定画面でボタンをマウスで押したあとフォーカスが行き場を失う | WebKit はボタンをマウスで押してもボタンにフォーカスせず、`<dialog>` 自身に置く | `<dialog>` 自身にあるときも行き場が無いとみなして「完了」へ移す(`SettingsDialog.tsx`) |
+| 設定画面を開いたまま ⌘W でタブが閉じうる | ⌘W はメニューの項目のキーで、確認なしでタブを閉じる | 設定画面の keydown で取り消して設定画面だけを閉じる。実機でメニューのキーより先に効くかは未確認 |
 | 既定のショートカットが JIS 配列で打てない(⇧⌘\ など) | US 配列の記号のキーは JIS で別の位置・別の組み合わせになる | JIS 配列で打てない記号のキーを既定にしない(M4 は ⇧⌘G に替えた) |

@@ -3,7 +3,7 @@
 ## スキーマ配置
 
 - Rust の型が正本(`crates/arin-core/src/`)。画面とやり取りする型は ts-rs で `src/ipc/generated/` に生成し、コミットする
-- 永続化するのは `state.json`(版 1。読み書きは `crates/arin-core/src/persistence/codec.rs`、ファイルの入出力は `arin-platform/src/storage/state_file.rs`、保存のスレッドは `src-tauri/src/persistence.rs`)。設定ファイル `settings.toml` は人だけが書き、アプリは読むだけ(M4.5 は `[shortcuts]` だけ。下)
+- 永続化するのは `state.json`(版 1。読み書きは `crates/arin-core/src/persistence/codec.rs`、ファイルの入出力は `arin-platform/src/storage/state_file.rs`、保存のスレッドは `src-tauri/src/persistence.rs`)。設定ファイル `settings.toml` は人だけが書き、アプリは読むだけ(M4.5 は `[shortcuts]` だけ。下)。文字の大きさ(M4.6。ADR-013)は設定画面で変え、`state.json` に置く
 
 ## スキーマ詳細
 
@@ -25,6 +25,7 @@
 | `ui.sidebarWidth` / `ui.cardAreaHeight` | 数値(CSS ピクセル) | 無ければ書かない |
 | `ui.sidebarCollapsed` | 真偽 | |
 | `ui.displayMode` | `"tiles"` | タイル表示のときだけ書く。無い・知らない値・型が違うときは退避せずタブ表示(版は 1 のまま) |
+| `ui.terminalFontSize` / `ui.interfaceFontSize` | 整数(CSS ピクセル) | ターミナルの文字(既定 15、9〜28)と画面の文字の基準値(既定 13、11〜18)。既定のあいだはキーごとに書かない。無い・数でないときは既定、整数でない数は四捨五入、範囲の外は端に留める。どれも退避しない(版は 1 のまま。規則は `layout/font_sizes.rs`) |
 
 「見つからない」と表示用のパスは保存しない。
 
@@ -38,6 +39,7 @@
 ```
 
 - 読む節は `[shortcuts]` だけ。ほかの節は黙って無視する(M6 の T56 が足す)
+- 文字の大きさは設定画面で変え、設定ファイルには項目が無い(見本の先頭にその旨の 1 行)。「設定ファイルを開く…」はアプリ名のメニューのキーの無い項目と設定画面のボタン(コマンド `open_settings_file`)の 2 か所
 - 行は `"コマンドの ID" = "キーの文字列"`。ID の一覧と既定のキーは生成物 `src/ipc/generated/defaultShortcuts.json` が正(大文字・小文字を区別する)。キーの書式は `KeyChord::parse`(正規の書式でなくてよい)。書かなかった行は既定、行を消せば既定に戻る。割り当てを外す書き方は無い(`""` は読めないキー)
 - 引用符の無い点つきの ID(`terminal.new-tab = …`)と `[shortcuts.terminal]` の下の行は、入れ子の表を 1 段だけ `.` でつないで同じ ID として読む。2 段以上の入れ子は「文字列でない」
 - 行の問題はその行だけ既定に戻し、残りは使う: 文字列でない・読めないキー・予約のキー(`reserved.rs`)・メニューの項目の行で `Cmd` を含まない・画面の行で `Cmd` を含まず修飾キーの無い `Enter`・`Space`・`Backspace`・`Delete` でもない・重なり(関わる設定の行をすべて戻すのを無くなるまで繰り返す)・同じコマンドを 2 度(引用符の有無だけ違う 2 行)。知らない ID と `edit.cut`・`edit.copy`・`edit.paste`(変えられない)は無視する。どれも知らせる。受け口は変えられない
@@ -59,6 +61,7 @@ Rust から画面へ渡す状態の写し。画面は届いたもので丸ごと
 | `layout` | `PaneSizes` | 保存値(`sidebarWidth`・`sidebarCollapsed`・`cardAreaHeight`)。表示値への調整は画面 |
 | `notice` | 文字列 / `null` | 状態ファイルを退避したときの 1 行の知らせ |
 | `display` | `DisplaySnapshot` | 右ペインの表示の状態(下)。グリッドとページは Rust が計算し、画面は映すだけ |
+| `fontSizes` | `FontSizesSnapshot` | `terminal`・`interface` のそれぞれに `value`・`min`・`max`・`defaultValue`(M4.6。画面に範囲と既定の数を写さない) |
 
 - `ProjectCardSnapshot`: `id`、`name`(表示名)、`color`、`displayPath`(ホームの中は `~` で始める)、`missing`、`showHidden`、`terminalIds`(タブの順)、`activeTerminalId`(0 枚なら `null`)
 - `TerminalTabSnapshot`: `id`、`projectId`(いまは必ず値がある。型は `null` を取りうるまま)、`label`(「ターミナル N」)、`status`、`attention`(フォーカス中でないあいだに BEL・OSC 9・OSC 777 があった。フォーカス中になると消える。保存しない)
@@ -69,17 +72,18 @@ Rust から画面へ渡す状態の写し。画面は届いたもので丸ごと
 
 正本は `src-tauri/src/lib.rs` の `generate_handler!`、画面側の型は `src/ipc/client.ts` の `CommandMap`・`EventMap`。
 
-- アプリ: `get_app_snapshot`、`notify_app_ready`、`report_frontend_error`、`confirm_quit`
+- アプリ: `get_app_snapshot`、`notify_app_ready`、`report_frontend_error`、`confirm_quit`、`open_settings_file`(引数なし。無いときだけ見本を作って既定のアプリで開く。メニューの「設定ファイルを開く…」と同じ処理)
 - ターミナル: `connect_terminal`(応答 `ConnectOutcome` の `sizeApplied`)、`write_terminal`、`write_terminal_bytes`、`ack_terminal_output`、`resize_terminal`、`new_terminal`(選択中のプロジェクトに足し、ID を返す)、`close_terminal`、`select_terminal`
 - プロジェクト: `add_project_by_dialog`(応答 `added` / `alreadyRegistered` / `cancelled`。パスは画面を経由しない)、`select_project`、`remove_project`(`confirmed` が偽で動作中があれば `needsConfirmation` と動作中の一覧、ほかは `removed`)、`relink_project`(真偽)、`set_project_color`、`copy_project_path`(Rust がペーストボードに書く)
 - ペイン: `set_pane_sizes`、`set_sidebar_collapsed`
 - 表示(M4): `set_display_mode`、`focus_terminal`(閉じたタイルの ID なら何もしない)、`next_tile_page`・`previous_tile_page`(タブ表示・拡大中・端のページでは何もしない)、`toggle_tile_maximize`(`terminalId` は任意。渡せばそのタイルにフォーカスしてから拡大、無ければフォーカス中のタイル。タブ表示では何もしない)
+- 文字の大きさ(M4.6): `step_font_size`(`target` は `terminal`/`interface`、`delta` だけ動かす。端で留め、変わったときだけ写しを送る)、`reset_font_sizes`(両方を既定に)
 - ツリー: `list_directory`(応答 `DirListing`)、`set_show_hidden`
 - ファイル操作(応答 `FileOpOutcome`): `create_entry`、`rename_entry`、`move_entry`、`copy_entry`、`trash_entry`、`copy_entries`、`cut_entries`、`paste_entries`
 - デスクトップ: `reveal_entry`、`open_entry`(ふつうのファイルだけ。実行の権限があるもの・`UNOPENABLE_EXTENSIONS` の拡張子は開かない。`src-tauri/src/commands/desktop.rs`)、`copy_entry_path`、`insert_entry_path`(ターミナルへ書く文字列は Rust の `insertion_text` が作る)
 - ショートカット: `get_shortcuts`(応答 `ShortcutTable`。設定ファイルの値を当てた表)、`get_settings_notice`(設定の知らせの 1 行か `null`。写しの `notice` とは別)
 - 引数のパスはプロジェクトの ID と `RelPath`(ルートからの相対パス)。絶対パスは画面に渡さない
-- イベント: `app-snapshot`(状態が変わるたびに `AppSnapshot` 全体)、`tree-changed`(`TreeChange { projectId, dirs, fullReload }`)、`menu-command`(`MenuCommand`。いまは `"select-all"` だけ)、`quit-requested`(`QuitRequest`。動作中のターミナルの一覧。画面が確認したら `confirm_quit`)、`settings-changed`(中身なし。設定の表か知らせが変わった。画面は `get_shortcuts` と `get_settings_notice` を呼び直す)。出力はイベントではなくチャネルで生のバイト列を送る
+- イベント: `app-snapshot`(状態が変わるたびに `AppSnapshot` 全体)、`tree-changed`(`TreeChange { projectId, dirs, fullReload }`)、`menu-command`(`MenuCommand`。`"select-all"` と `"open-settings"`(「設定…」。画面が設定画面を開く))、`quit-requested`(`QuitRequest`。動作中のターミナルの一覧。画面が確認したら `confirm_quit`)、`settings-changed`(中身なし。設定の表か知らせが変わった。画面は `get_shortcuts` と `get_settings_notice` を呼び直す)。出力はイベントではなくチャネルで生のバイト列を送る
 - Finder からのドロップはコマンドではなく `src-tauri/src/lifecycle.rs` が受ける
 
 ### AppPaths(`crates/arin-core/src/paths/app_paths.rs`)

@@ -117,7 +117,7 @@ npm run app            # .app バンドルを生成（tauri build。署名なし
 npm run app:debug      # デバッグ版の .app（検証用の記録 [arin:verify] が出る）
 npm run dev            # 開発用に起動（tauri dev。人間が体感確認するとき）
 npm run e2e            # Playwright（ブラウザ方式。出力先 testreport/e2e/）
-npm run smoke          # 実アプリの起動スモーク（-- --tiles で 9 プロジェクトのタイル表示。-- --settings で、設定ファイルを置いた一時の状態フォルダで 1 回起動し、設定の診断の行と、設定ファイルが変わっていないことを確かめる。-- --env=NAME=VALUE、-- --app=<パス> を付けられる）
+npm run smoke          # 実アプリの起動スモーク（-- --tiles で 9 プロジェクトのタイル表示。-- --settings で、設定ファイルを置いた一時の状態フォルダで 1 回起動し、設定の診断の行と、設定ファイルが変わっていないことを確かめる。-- --fonts で、文字の大きさを入れた state.json で 1 回起動する。-- --env=NAME=VALUE、-- --app=<パス> を付けられる）
 npm run perf           # 性能の計測（出力先 testreport/perf/。合否にしない。-- --tree-files=<数> でツリーの見本の数）
 # npm run dist:mac     # 署名・公証。人間のみ実行（秘密情報を扱うため AI は実行しない）
 ```

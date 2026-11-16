@@ -3,7 +3,7 @@
 ## 概要
 
 macOS 向けのライト・マルチターミナル「Arin」(Tauri 2、arm64、最低 OS 15.0)。M0(骨格)と M1(ターミナル 1 枚。ログインシェル・PTY・xterm.js・コピー/ペースト)の実装が済み、M1 は本人が Go と判定した(`output/design/ADR_001_terminal-engine.md`)。
-M2(プロジェクトの登録・カード一覧・タブ・ペインの分割・`state.json` の保存・ルートへの追従・終了の確認)、M3(ファイルツリー・ファイル操作・ドラッグ・ショートカット)、M4(タイル表示・ページ送り・拡大・アテンションの印)の実装が済み、M2〜M4 は本人の完了確認待ち。M4.5(ショートカットの設定)の実装が済み、本人の完了確認待ち(ADR-012)。描画は DOM、全角幅は `unicode11` に固定(ADR-001)。設定ファイル `settings.toml` は M4.5 で `[shortcuts]` だけ読む(ほかの設定は未実装)。設計は `output/design/ARCH_multi-terminal.md`、進捗は `output/tasks/PROGRESS.md`。
+M2(プロジェクトの登録・カード一覧・タブ・ペインの分割・`state.json` の保存・ルートへの追従・終了の確認)、M3(ファイルツリー・ファイル操作・ドラッグ・ショートカット)、M4(タイル表示・ページ送り・拡大・アテンションの印)の実装が済み、M2〜M4 は本人の完了確認待ち。M4.5(ショートカットの設定)の実装が済み、本人の完了確認待ち(ADR-012)。M4.6(文字の大きさの設定画面。値は `state.json`)の実装が済み、本人の完了確認待ち(ADR-013)。描画は DOM、全角幅は `unicode11` に固定(ADR-001)。設定ファイル `settings.toml` は M4.5 で `[shortcuts]` だけ読む(ほかの設定は未実装)。設計は `output/design/ARCH_multi-terminal.md`、進捗は `output/tasks/PROGRESS.md`。
 
 ## コマンド
 
@@ -23,6 +23,7 @@ npm run app:debug      # デバッグ版の .app(target/aarch64-apple-darwin/deb
 npm run smoke          # .app を一時の状態フォルダで起動し準備完了とターミナルの出力を確認、続けて壊れた state.json で起動(先に npm run app)
                        #   -- --tiles で 9 プロジェクトのタイル表示で 1 回だけ起動し、シェルが 9 個揃うまで確認
                        #   -- --settings で、設定ファイルを置いた一時の状態フォルダで 1 回起動し、設定の診断の行と、設定ファイルが変わっていないことを確かめる
+                       #   -- --fonts で、文字の大きさを入れた state.json で 1 回起動する
                        #   -- --env=NAME=VALUE(繰り返し可)でアプリに環境変数を足す、-- --app=<パス> で .app を指定
 npm run perf           # 性能の計測(記録だけで失敗しない。結果は testreport/perf/。先に npm run app)
                        #   -- --tree-files=<数> でツリーの見本のファイル数(既定 100000、100 以上)
@@ -55,7 +56,7 @@ npm run perf           # 性能の計測(記録だけで失敗しない。結果
 | ------ | ---- |
 | `appStore`(`src/state/appStore.ts`) | Rust から届いた `AppSnapshot` を丸ごと置き換えて持つ。起動失敗の原因も持つ |
 | `treeStore`(`src/state/treeStore.ts`) | ファイルツリーの一覧・開閉・選択(`tree-changed` で読み直す) |
-| `uiStore`(`src/state/uiStore.ts`) | 表示だけの状態(終了の確認・削除の確認・カードとツリーのメニュー・名前の入力・衝突の確認・ショートカットの表・設定の知らせ・閉じた知らせ)。Rust には送らない |
+| `uiStore`(`src/state/uiStore.ts`) | 表示だけの状態(終了の確認・削除の確認・カードとツリーのメニュー・名前の入力・衝突の確認・ショートカットの表・設定の知らせ・設定画面の開閉・閉じた知らせ)。Rust には送らない |
 
 ## 制約事項
 
