@@ -4,6 +4,7 @@
 
 use std::path::PathBuf;
 
+use arin_core::layout::font_sizes::{FontSizeTarget, FontSizes};
 use arin_core::layout::tiles::DisplayMode;
 use arin_core::persistence::codec::{
     EncodeError, LoadOutcome, LoadedState, PersistedLayout, PersistedState, QuarantineReason,
@@ -61,6 +62,7 @@ fn sample_state() -> PersistedState {
             sidebar_collapsed: true,
             card_area_height: Some(240.0),
             display_mode: DisplayMode::Tabs,
+            font_sizes: FontSizes::default(),
         },
     }
 }
@@ -237,6 +239,7 @@ fn 欠けたキーは既定値で補う() {
                 sidebar_collapsed: false,
                 card_area_height: None,
                 display_mode: DisplayMode::Tabs,
+                font_sizes: FontSizes::default(),
             },
         }
     );
@@ -373,6 +376,7 @@ fn tree_キーの無い状態ファイルも読める() {
                 sidebar_collapsed: false,
                 card_area_height: Some(220.0),
                 display_mode: DisplayMode::Tabs,
+                font_sizes: FontSizes::default(),
             },
         }
     );
@@ -499,6 +503,7 @@ fn m3_state() -> PersistedState {
             sidebar_collapsed: true,
             card_area_height: Some(180.0),
             display_mode: DisplayMode::Tabs,
+            font_sizes: FontSizes::default(),
         },
     }
 }
@@ -591,6 +596,155 @@ fn タイル表示のときは_display_mode_に_tiles_を書く() {
             "displayMode": "tiles",
         })
     );
+}
+
+// ---- 文字の大きさ(計画書 T68b、ADR-013 の 1、`ui.terminalFontSize`・`ui.interfaceFontSize`) ----
+
+#[test]
+fn 文字の大きさが無い版_1_の_state_json_をそのまま読む() {
+    // M3 までの `state.json`(M4.5 も同じ形)を退避せずに読め、文字の大きさは既定。ほかの内容はそのまま
+    let m3 = loaded(decode_str(M3_STATE_JSON));
+    assert_eq!(m3.state, m3_state());
+    assert_eq!(m3.state.layout.font_sizes, FontSizes::default());
+
+    let m2 = loaded(decode_str(M2_STATE_JSON));
+    assert_eq!(m2.state.layout.font_sizes, FontSizes::default());
+
+    let bare = loaded(decode_value(&json!({ "schemaVersion": 1 })));
+    assert_eq!(bare.state.layout.font_sizes, FontSizes::default());
+}
+
+#[test]
+fn 既定の大きさは書かない() {
+    // 触っていない人の `state.json` は M4.5 までと同じ形のまま(`ui.displayMode` と同じ)
+    let outcome = loaded(decode_str(M3_STATE_JSON));
+    let rewritten: Value = serde_json::from_str(&encode(&outcome.state).expect("書ける")).unwrap();
+    let original: Value = serde_json::from_str(M3_STATE_JSON).unwrap();
+    assert_eq!(rewritten, original);
+    assert!(
+        rewritten["ui"].get("terminalFontSize").is_none(),
+        "{rewritten}"
+    );
+    assert!(
+        rewritten["ui"].get("interfaceFontSize").is_none(),
+        "{rewritten}"
+    );
+
+    // 【仮定】既定かどうかはキーごとに見る(画面だけを変えたら画面のキーだけを書く)
+    let mut state = m3_state();
+    state.layout.font_sizes = FontSizes::default().stepped(FontSizeTarget::Interface, 2);
+    let value: Value = serde_json::from_str(&encode(&state).expect("書ける")).unwrap();
+    assert!(value["ui"].get("terminalFontSize").is_none(), "{value}");
+    assert_eq!(value["ui"]["interfaceFontSize"], json!(15));
+}
+
+#[test]
+fn 変えた大きさを書いて読み戻せる() {
+    let mut state = m3_state();
+    state.layout.font_sizes = FontSizes::default()
+        .stepped(FontSizeTarget::Terminal, 5)
+        .stepped(FontSizeTarget::Interface, -2);
+
+    let text = encode(&state).expect("書ける");
+    let value: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        value["ui"],
+        json!({
+            "selectedProjectId": ID_A,
+            "sidebarWidth": 300.0,
+            "sidebarCollapsed": true,
+            "cardAreaHeight": 180.0,
+            "terminalFontSize": 20,
+            "interfaceFontSize": 11,
+        })
+    );
+
+    let back = loaded(decode_str(&text));
+    assert_eq!(back.state, state);
+    assert_eq!(
+        back.state.layout.font_sizes,
+        FontSizes {
+            terminal: 20,
+            interface: 11,
+        }
+    );
+}
+
+#[test]
+fn 数でない文字の大きさは退避せず既定() {
+    let not_numbers = [
+        json!(null),
+        json!("16"),
+        json!(""),
+        json!(true),
+        json!([]),
+        json!([16]),
+        json!({}),
+        json!({ "value": 16 }),
+    ];
+    for bad in not_numbers {
+        let mut value: Value = serde_json::from_str(M3_STATE_JSON).unwrap();
+        value["ui"]["terminalFontSize"] = bad.clone();
+        value["ui"]["interfaceFontSize"] = bad.clone();
+
+        // 退避せずに読め、文字の大きさだけが既定になる。プロジェクト一覧・選択・ペインの寸法は保つ
+        let outcome = loaded(decode_value(&value));
+        assert_eq!(outcome.state, m3_state(), "{bad}");
+    }
+
+    // 片方だけ壊れていても、もう片方は読む
+    let mut value: Value = serde_json::from_str(M3_STATE_JSON).unwrap();
+    value["ui"]["terminalFontSize"] = json!("大きい");
+    value["ui"]["interfaceFontSize"] = json!(16);
+    let outcome = loaded(decode_value(&value));
+    assert_eq!(
+        outcome.state.layout.font_sizes,
+        FontSizes {
+            terminal: 15,
+            interface: 16,
+        }
+    );
+}
+
+#[test]
+fn 範囲の外の文字の大きさは端に留める() {
+    // (ターミナル, 画面, 読んだ結果)。整数でない数は四捨五入してから留める
+    let cases = [
+        (json!(4), json!(30), (9, 18)),
+        (json!(100), json!(-1), (28, 11)),
+        (json!(1e300), json!(0), (28, 11)),
+        (json!(16.5), json!(12.4), (17, 12)),
+    ];
+    for (terminal, interface, (want_terminal, want_interface)) in cases {
+        let mut value: Value = serde_json::from_str(M3_STATE_JSON).unwrap();
+        value["ui"]["terminalFontSize"] = terminal.clone();
+        value["ui"]["interfaceFontSize"] = interface.clone();
+
+        let outcome = loaded(decode_value(&value));
+
+        assert_eq!(
+            outcome.state.layout.font_sizes,
+            FontSizes {
+                terminal: want_terminal,
+                interface: want_interface,
+            },
+            "{terminal} / {interface}"
+        );
+        // ほかの内容は保つ(退避しない)
+        assert_eq!(outcome.state.projects, m3_state().projects);
+    }
+}
+
+#[test]
+fn 文字の大きさを足しても_schema_version_は_1() {
+    assert_eq!(STATE_SCHEMA_VERSION, 1);
+    let mut state = sample_state();
+    state.layout.font_sizes = FontSizes::default().stepped(FontSizeTarget::Terminal, 1);
+
+    let value: Value = serde_json::from_str(&encode(&state).expect("書ける")).unwrap();
+
+    assert_eq!(value["schemaVersion"], json!(1));
+    assert_eq!(value["ui"]["terminalFontSize"], json!(16));
 }
 
 // ---- 無い・退避 ----

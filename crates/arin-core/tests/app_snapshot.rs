@@ -5,11 +5,12 @@
 
 use std::path::PathBuf;
 
+use arin_core::layout::font_sizes::{FontSizeTarget, FontSizes};
 use arin_core::layout::tiles::DisplayMode;
 use arin_core::persistence::codec::PersistedState;
 use arin_core::project::{Project, ProjectColor, ProjectId, RootReference};
 use arin_core::workspace::{
-    AppSnapshot, RootResolution, SNAPSHOT_SCHEMA_VERSION, Startup, Workspace,
+    AppSnapshot, FontSizesSnapshot, RootResolution, SNAPSHOT_SCHEMA_VERSION, Startup, Workspace,
 };
 use serde_json::json;
 
@@ -98,7 +99,34 @@ fn 写しの_json_の形() {
                 "focusedTerminalId": "terminal-1",
                 "attentionPages": [],
             },
+            "fontSizes": {
+                "terminal": { "value": 15, "min": 9, "max": 28, "defaultValue": 15 },
+                "interface": { "value": 13, "min": 11, "max": 18, "defaultValue": 13 },
+            },
         })
+    );
+}
+
+#[test]
+fn 写しに値と範囲と既定が載る() {
+    // 計画書 T68a、ADR-013 の 2。範囲と既定を写しに載せ、画面に規則の数を写さない
+    let sizes = FontSizes::default()
+        .stepped(FontSizeTarget::Terminal, 3)
+        .stepped(FontSizeTarget::Interface, -1);
+
+    let snapshot = FontSizesSnapshot::from(sizes);
+
+    assert_eq!(
+        serde_json::to_value(snapshot).unwrap(),
+        json!({
+            "terminal": { "value": 18, "min": 9, "max": 28, "defaultValue": 15 },
+            "interface": { "value": 12, "min": 11, "max": 18, "defaultValue": 13 },
+        })
+    );
+    // 文字の大きさの無い状態から復元した `Workspace` は既定の大きさを載せる
+    assert_eq!(
+        sample().snapshot().font_sizes,
+        FontSizesSnapshot::from(FontSizes::default())
     );
 }
 

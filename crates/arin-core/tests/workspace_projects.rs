@@ -4,6 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
+use arin_core::layout::font_sizes::FontSizes;
 use arin_core::layout::panes::PaneSizes;
 use arin_core::layout::tiles::DisplayMode;
 use arin_core::persistence::codec::{self, PersistedLayout, PersistedState};
@@ -242,6 +243,7 @@ fn ペインの寸法は保存値に規則を当て_無ければ初期値() {
         sidebar_collapsed: true,
         card_area_height: None,
         display_mode: DisplayMode::Tabs,
+        font_sizes: FontSizes::default(),
     };
     let ws = restore(Startup {
         state,
@@ -265,6 +267,7 @@ fn ペインの寸法は保存値に規則を当て_無ければ初期値() {
             sidebar_collapsed: true,
             card_area_height: Some(200.0),
             display_mode: DisplayMode::Tabs,
+            font_sizes: FontSizes::default(),
         }
     );
 }
@@ -290,6 +293,7 @@ fn 退避の知らせは写しに載り_保存する内容には入らない() {
                 sidebar_collapsed: false,
                 card_area_height: Some(200.0),
                 display_mode: DisplayMode::Tabs,
+                font_sizes: FontSizes::default(),
             },
         }
     );

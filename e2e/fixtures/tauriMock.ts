@@ -86,6 +86,11 @@ export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapsho
       focusedTerminalId: null,
       attentionPages: [],
     },
+    // 文字の大きさの既定(Rust の `FontSizes::default()` と範囲。ADR-013 の 1)
+    fontSizes: {
+      terminal: { value: 15, min: 9, max: 28, defaultValue: 15 },
+      interface: { value: 13, min: 11, max: 18, defaultValue: 13 },
+    },
     ...overrides,
   };
 }

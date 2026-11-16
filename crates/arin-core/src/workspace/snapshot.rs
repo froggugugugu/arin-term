@@ -9,6 +9,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::layout::font_sizes::{FontSizeTarget, FontSizes};
 use crate::layout::panes::PaneSizes;
 use crate::layout::tiles::{DisplayMode, TileGrid};
 use crate::project::{ProjectColor, ProjectId};
@@ -37,6 +38,52 @@ pub struct AppSnapshot {
     pub notice: Option<String>,
     /// 右ペインの表示の状態(表示モード・ページ・拡大。計画書 T46b、ADR-011)。
     pub display: DisplaySnapshot,
+    /// ターミナルと画面の文字の大きさ(値・範囲・既定。計画書 T68a、ADR-013 の 2)。
+    pub font_sizes: FontSizesSnapshot,
+}
+
+/// 写しに載せる文字の大きさ(ADR-013 の 2)。範囲と既定も載せ、画面に規則の数を写さない。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct FontSizesSnapshot {
+    /// ターミナルの文字の大きさ。
+    pub terminal: FontSizeSnapshot,
+    /// 画面の文字の大きさの基準値。
+    pub interface: FontSizeSnapshot,
+}
+
+/// 写しに載せる 1 つの文字の大きさ(CSS ピクセルの整数)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct FontSizeSnapshot {
+    /// いまの値。
+    pub value: u16,
+    /// 範囲の最小(この値のとき画面は小さくするボタンを無効にする)。
+    pub min: u16,
+    /// 範囲の最大(この値のとき画面は大きくするボタンを無効にする)。
+    pub max: u16,
+    /// 既定の値。
+    pub default_value: u16,
+}
+
+impl FontSizeSnapshot {
+    fn of(sizes: FontSizes, target: FontSizeTarget) -> Self {
+        Self {
+            value: sizes.get(target),
+            min: target.min(),
+            max: target.max(),
+            default_value: target.default_value(),
+        }
+    }
+}
+
+impl From<FontSizes> for FontSizesSnapshot {
+    fn from(sizes: FontSizes) -> Self {
+        Self {
+            terminal: FontSizeSnapshot::of(sizes, FontSizeTarget::Terminal),
+            interface: FontSizeSnapshot::of(sizes, FontSizeTarget::Interface),
+        }
+    }
 }
 
 /// 写しに載せる右ペインの表示の状態(FR-048・FR-051〜054、ADR-011 の 1)。

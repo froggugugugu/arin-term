@@ -17,14 +17,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use arin_core::fileops::{ConflictResolution, FileOpOutcome, NewEntryKind};
+use arin_core::layout::font_sizes::FontSizeTarget;
 use arin_core::layout::tiles::{DisplayMode, TileGrid};
 use arin_core::paths::{PathKind, RelPath};
 use arin_core::project::ProjectColor;
 use arin_core::shortcuts::table::ShortcutTable;
 use arin_core::tree::{DirListing, TreeChange};
 use arin_core::workspace::{
-    AddProjectOutcome, AppSnapshot, ConnectOutcome, DisplaySnapshot, MenuCommand, QuitRequest,
-    RemoveProjectOutcome,
+    AddProjectOutcome, AppSnapshot, ConnectOutcome, DisplaySnapshot, FontSizesSnapshot,
+    MenuCommand, QuitRequest, RemoveProjectOutcome,
 };
 use ts_rs::{Config, TS, TypeVisitor};
 
@@ -57,6 +58,9 @@ fn collect_generated(cfg: &Config) -> BTreeMap<PathBuf, String> {
     collector.visit::<TileGrid>();
     // 写しの表示の状態(計画書 T46b。`AppSnapshot` からもたどれる)。
     collector.visit::<DisplaySnapshot>();
+    // 文字の大きさの対象(コマンドの引数)と写し(計画書 T68a。写しは `AppSnapshot` からもたどれる)。
+    collector.visit::<FontSizeTarget>();
+    collector.visit::<FontSizesSnapshot>();
     collector.files
 }
 

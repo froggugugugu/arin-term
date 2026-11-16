@@ -2,7 +2,8 @@
 //!
 //! 設計書 §6.2 のスキーマのうち M2 で使う分(`projects[]` の `id`・`bookmark`・`lastKnownPath`・`customName`・`colorId`、
 //! `ui` の `selectedProjectId`・`sidebarWidth`・`sidebarCollapsed`・`cardAreaHeight`)と、M3 で足した
-//! `projects[].tree.showHidden`(計画書 T38e)、M4 で足した `ui.displayMode`(計画書 T46c)を読み書きする。
+//! `projects[].tree.showHidden`(計画書 T38e)、M4 で足した `ui.displayMode`(計画書 T46c)、M4.6 で足した
+//! `ui.terminalFontSize`・`ui.interfaceFontSize`(計画書 T68b、ADR-013 の 1)を読み書きする。
 //! `tree.expanded` は M6 まで読まず書かない。
 //! 入出力はしない。読んだバイト列(無ければ `None`)を受けて結果を返し、書く文字列を返すだけ。
 //!
@@ -10,6 +11,8 @@
 //! - `tree` の形が違うときは、退避せずにそのプロジェクトのツリーの設定だけを既定値にする(計画書 T38e の【仮定】)
 //! - `ui.displayMode` が無い・知らない値・型が違うときは、退避せずにタブ表示にする(計画書 M4 の【仮定】16)。
 //!   タブ表示(既定)のあいだは書かない(M3 までの `state.json` と同じ形のまま。ページと拡大中は保存しない)
+//! - `ui.terminalFontSize`・`ui.interfaceFontSize` が無い・数でないときは退避せずに既定、整数でない数は四捨五入、
+//!   範囲の外は端に留める(規則は `layout::font_sizes`)。既定のあいだはキーごとに書かない
 //! - JSON として読めない・版が正しくない・新しすぎる・形が違うときは「退避する」を返す(決定 (d))。
 //!   退避の名前は [`broken_file_name`] が時計の値から作る(【仮定】3)
 //! - ブックマークは base64 の文字列のまま扱い、中身は解釈しない(【仮定】2)。null のものは作り直しの指示にする(【仮定】13)
@@ -21,6 +24,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+use crate::layout::font_sizes::{FontSizeTarget, FontSizes};
 use crate::layout::tiles::DisplayMode;
 use crate::project::{Project, ProjectId};
 
@@ -33,7 +37,8 @@ pub const STATE_SCHEMA_VERSION: u32 = 1;
 /// 1 日の秒数。
 const SECONDS_PER_DAY: u64 = 86_400;
 
-/// 保存する左ペインの寸法(CSS ピクセル)と右ペインの表示モード。読んだ値をそのまま持つ。
+/// 保存する左ペインの寸法(CSS ピクセル)と右ペインの表示モードと文字の大きさ。
+/// ペインの寸法は読んだ値をそのまま持ち、文字の大きさは読むときに規則を当てたものを持つ。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PersistedLayout {
     /// 左ペインの幅(`ui.sidebarWidth`)。無い・null なら `None`。
@@ -44,6 +49,8 @@ pub struct PersistedLayout {
     pub card_area_height: Option<f64>,
     /// 右ペインの表示モード(`ui.displayMode`)。無い・知らない値ならタブ表示。
     pub display_mode: DisplayMode,
+    /// ターミナルと画面の文字の大きさ(`ui.terminalFontSize`・`ui.interfaceFontSize`)。無い・数でなければ既定。
+    pub font_sizes: FontSizes,
 }
 
 /// `state.json` に保存する内容。表示値(見つからない・表示用のパス)を持たない。
@@ -120,7 +127,7 @@ struct StateFile {
 }
 
 /// `state.json` の `ui`。
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UiSection {
     #[serde(default)]
@@ -137,6 +144,32 @@ struct UiSection {
         skip_serializing_if = "is_tabs"
     )]
     display_mode: DisplayMode,
+    #[serde(
+        default = "default_terminal_font_size",
+        deserialize_with = "lenient_terminal_font_size",
+        skip_serializing_if = "is_default_terminal_font_size"
+    )]
+    terminal_font_size: u16,
+    #[serde(
+        default = "default_interface_font_size",
+        deserialize_with = "lenient_interface_font_size",
+        skip_serializing_if = "is_default_interface_font_size"
+    )]
+    interface_font_size: u16,
+}
+
+impl Default for UiSection {
+    fn default() -> Self {
+        Self {
+            selected_project_id: None,
+            sidebar_width: None,
+            sidebar_collapsed: false,
+            card_area_height: None,
+            display_mode: DisplayMode::default(),
+            terminal_font_size: default_terminal_font_size(),
+            interface_font_size: default_interface_font_size(),
+        }
+    }
 }
 
 /// `ui.displayMode` を読む。知らない値・型の違う値(null を含む)は、状態ファイルを退避せずにタブ表示にする
@@ -152,6 +185,45 @@ where
 /// タブ表示(既定)なら書かない(serde の `skip_serializing_if` は参照を渡す)。
 fn is_tabs(mode: &DisplayMode) -> bool {
     *mode == DisplayMode::Tabs
+}
+
+/// `ui.terminalFontSize` が無いときの値。
+fn default_terminal_font_size() -> u16 {
+    FontSizeTarget::Terminal.default_value()
+}
+
+/// `ui.interfaceFontSize` が無いときの値。
+fn default_interface_font_size() -> u16 {
+    FontSizeTarget::Interface.default_value()
+}
+
+/// `ui.terminalFontSize` を読む。数でない値は状態ファイルを退避せずに既定にし、範囲の外は端に留める
+/// (1 つの値のためにプロジェクトの一覧を退避しない。ADR-013 の 1)。
+fn lenient_terminal_font_size<'de, D>(deserializer: D) -> Result<u16, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    Ok(FontSizeTarget::Terminal.from_persisted(Some(&value)))
+}
+
+/// `ui.interfaceFontSize` を読む(`lenient_terminal_font_size` と同じ扱い)。
+fn lenient_interface_font_size<'de, D>(deserializer: D) -> Result<u16, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    Ok(FontSizeTarget::Interface.from_persisted(Some(&value)))
+}
+
+/// 既定のターミナルの文字の大きさなら書かない。
+fn is_default_terminal_font_size(size: &u16) -> bool {
+    *size == FontSizeTarget::Terminal.default_value()
+}
+
+/// 既定の画面の文字の大きさなら書かない。
+fn is_default_interface_font_size(size: &u16) -> bool {
+    *size == FontSizeTarget::Interface.default_value()
 }
 
 /// 状態ファイルを読む。`contents` は読んだバイト列、ファイルが無ければ `None`。
@@ -181,6 +253,8 @@ pub fn encode(state: &PersistedState) -> Result<String, EncodeError> {
             sidebar_collapsed: state.layout.sidebar_collapsed,
             card_area_height: state.layout.card_area_height,
             display_mode: state.layout.display_mode,
+            terminal_font_size: state.layout.font_sizes.terminal,
+            interface_font_size: state.layout.font_sizes.interface,
         },
     };
     let mut text = serde_json::to_string_pretty(&file)
@@ -256,6 +330,10 @@ fn tidy(file: StateFile) -> LoadedState {
                 sidebar_collapsed: file.ui.sidebar_collapsed,
                 card_area_height: file.ui.card_area_height,
                 display_mode: file.ui.display_mode,
+                font_sizes: FontSizes {
+                    terminal: file.ui.terminal_font_size,
+                    interface: file.ui.interface_font_size,
+                },
             },
         },
         rebuild_bookmarks,
