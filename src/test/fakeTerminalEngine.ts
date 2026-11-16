@@ -35,6 +35,12 @@ export interface FakeSurface extends TerminalSurface {
   readonly resized: TerminalSize[];
   /** selectAll が呼ばれた回数。 */
   selectAllCount: number;
+  /** createSurface に渡された初めの文字の大きさ(渡されなければ undefined)。 */
+  readonly createdFontSize: number | undefined;
+  /** いま当てている文字の大きさ(既定は xterm.js と同じ 15)。 */
+  fontSize: number;
+  /** setFontSize に渡された順の値。 */
+  readonly fontSizeCalls: number[];
 }
 
 export interface FakeTerminalEngine extends TerminalEngine {
@@ -49,12 +55,14 @@ export function createFakeTerminalEngine(): FakeTerminalEngine {
   const engine: FakeTerminalEngine = {
     created,
     failDisposeOnNext: false,
-    createSurface(id) {
+    createSurface(id, options = {}) {
       const failDispose = engine.failDisposeOnNext;
       engine.failDisposeOnNext = false;
       const inputListeners: ((data: string) => void)[] = [];
       const resizeListeners: ((cols: number, rows: number) => void)[] = [];
       const binaryListeners: ((data: string) => void)[] = [];
+      /** 隠しているあいだに覚えた文字の大きさ(XtermSurface と同じく、表示に戻すときに当てる)。 */
+      let pendingFontSize: number | null = null;
       const surface: FakeSurface = {
         id,
         // node の環境には DOM が無い。テストでは要素の中身を見ないので、目印のオブジェクトで代える。
@@ -71,6 +79,18 @@ export function createFakeTerminalEngine(): FakeTerminalEngine {
         visibleCalls: [],
         resized: [],
         selectAllCount: 0,
+        createdFontSize: options.fontSize,
+        fontSize: options.fontSize ?? 15,
+        fontSizeCalls: [],
+        setFontSize(px) {
+          surface.fontSizeCalls.push(px);
+          if (!surface.visible) {
+            pendingFontSize = px;
+            return;
+          }
+          surface.fontSize = px;
+          surface.fit();
+        },
         write(data) {
           // 隠している間も取り込む(xterm.js と同じ)。
           surface.written.push(data);
@@ -111,6 +131,11 @@ export function createFakeTerminalEngine(): FakeTerminalEngine {
         setVisible(visible) {
           surface.visibleCalls.push(visible);
           surface.visible = visible;
+          if (visible && pendingFontSize !== null) {
+            surface.fontSize = pendingFontSize;
+            pendingFontSize = null;
+            surface.fit();
+          }
         },
         getSelection() {
           return surface.selection;

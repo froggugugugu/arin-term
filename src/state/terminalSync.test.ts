@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import { createIpc } from "../ipc/client";
+import type { AppSnapshot } from "../ipc/generated/AppSnapshot";
 import type { TerminalStatus } from "../ipc/generated/TerminalStatus";
-import { sampleSnapshot, sampleTerminal } from "../test/fakeIpc";
+import { TerminalManager } from "../terminal/TerminalManager";
+import { createFakeIpc, sampleSnapshot, sampleTerminal } from "../test/fakeIpc";
+import { createFakeTerminalEngine } from "../test/fakeTerminalEngine";
 import { createAppStore } from "./appStore";
 import { syncTerminals, type TerminalSyncTarget } from "./terminalSync";
 
@@ -12,6 +16,7 @@ function recorder() {
     setStatus: (id, status) => seen.push(`status ${id} ${status.kind}`),
     retain: (ids) => seen.push(`retain ${[...ids].join(",")}`),
     present: (shown, background) => seen.push(`present [${shown.join(",")}] [${background.join(",")}]`),
+    setFontSize: (px) => seen.push(`font ${px}`),
   };
   return { seen, target };
 }
@@ -59,6 +64,7 @@ describe("syncTerminals(写しをターミナルの管理へ伝える)", () => {
     store.getState().replaceSnapshot(twoProjects("A"));
 
     expect(seen).toEqual([
+      "font 15",
       "status a1 running",
       "status b1 running",
       "retain a1,b1",
@@ -93,7 +99,7 @@ describe("syncTerminals(写しをターミナルの管理へ伝える)", () => {
       }),
     );
 
-    expect(seen).toEqual(["retain ", "present [] []"]);
+    expect(seen).toEqual(["font 15", "retain ", "present [] []"]);
   });
 
   it("タイル表示では表示中のページのタイルを並びで伝え、ページが替わると新しいページの並びを伝える", () => {
@@ -143,4 +149,55 @@ describe("syncTerminals(写しをターミナルの管理へ伝える)", () => {
 
     expect(seen).toEqual([]);
   });
+
+  it("写しのターミナルの文字の大きさを_present_より前に伝える", () => {
+    const store = createAppStore();
+    const { seen, target } = recorder();
+    syncTerminals(store, target);
+
+    store.getState().replaceSnapshot(withTerminalFontSize(twoProjects("A"), 20));
+
+    expect(seen[0]).toBe("font 20");
+    expect(seen.indexOf("font 20")).toBeLessThan(seen.findIndex((line) => line.startsWith("present")));
+  });
+
+  it("写しの大きさが同じなら何もしない", () => {
+    const store = createAppStore();
+    const { seen, target } = recorder();
+    syncTerminals(store, target);
+
+    store.getState().replaceSnapshot(withTerminalFontSize(twoProjects("A"), 20));
+    store.getState().replaceSnapshot(withTerminalFontSize(twoProjects("B"), 20));
+    // 画面の大きさだけが変わった写し: ターミナルには伝えない。
+    const base = withTerminalFontSize(twoProjects("B"), 20);
+    store.getState().replaceSnapshot({
+      ...base,
+      fontSizes: { ...base.fontSizes, interface: { ...base.fontSizes.interface, value: 16 } },
+    });
+    store.getState().replaceSnapshot(withTerminalFontSize(twoProjects("B"), 21));
+
+    expect(seen.filter((line) => line.startsWith("font"))).toEqual(["font 20", "font 21"]);
+  });
+
+  it("隠したまま作るサーフェスも写しの大きさで作る", () => {
+    const store = createAppStore();
+    const engine = createFakeTerminalEngine();
+    const manager = new TerminalManager(engine, createIpc(createFakeIpc().transport), { reportError: () => {} });
+    syncTerminals(store, manager);
+
+    // プロジェクト A を表示中。B のターミナル b1 は写しが届いた時点で隠したまま作る。
+    store.getState().replaceSnapshot(withTerminalFontSize(twoProjects("A"), 20));
+
+    const b1 = engine.created.find((s) => s.id === "b1");
+    expect(b1?.visible).toBe(false);
+    expect(b1?.createdFontSize).toBe(20);
+  });
 });
+
+/** 写しのターミナルの文字の大きさを替える。 */
+function withTerminalFontSize(snapshot: AppSnapshot, value: number): AppSnapshot {
+  return {
+    ...snapshot,
+    fontSizes: { ...snapshot.fontSizes, terminal: { ...snapshot.fontSizes.terminal, value } },
+  };
+}

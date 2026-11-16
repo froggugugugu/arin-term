@@ -16,11 +16,15 @@
 //   状態は exited を経ずに消えることがある)。present で見えるターミナルの並び(タブ表示は 1 枚、タイル表示は
 //   表示中のページのタイル。M4 の T47d)と、隠して取り込みだけ続けるターミナルを伝える(FR-042・FR-052、NFR-009)。
 //   隠したまま作ったサーフェスは、最後に表示していたターミナルの寸法で接続する(設計書 §2.2、M4 の【仮定】17)
+// - 文字の大きさ(M4.6。ADR-013 の 3): setFontSize で全サーフェスへ当てる。続けて変わったら 1 フレームにまとめ、
+//   最後の値だけを当てる。表示中は当ててから寸法を合わせ直し(行・桁が変われば寸法を送る)、隠しているものは
+//   表示に戻すときに当てる(サーフェスの仕事)。新しく作るサーフェスは求められた大きさで作る。接続は切らない
 //
 // エンジンと通信は外から受け取る。本物は src/terminal/xterm/ と src/ipc/tauri.ts、
 // テストでは src/test/fakeTerminalEngine.ts と src/test/fakeIpc.ts を渡す。
 
 import type { ArinIpc, OutputSubscription } from "../ipc/client";
+import { createCoalescer, type Coalescer, type Schedule } from "../logic/coalesce";
 import { describeError } from "../logic/describeError";
 import { type ClipboardFocus, type ClipboardKind, routeClipboard } from "../logic/keys/clipboard";
 import { type MenuCommand, routeMenuCommand } from "../logic/keys/menuCommand";
@@ -52,7 +56,22 @@ export interface TerminalSlot {
 export interface TerminalManagerOptions {
   /** 接続・入出力の失敗の報告先。既定は console.error。 */
   reportError?: (message: string) => void;
+  /**
+   * 次のフレームに 1 回だけ実行する予約(文字の大きさの変更をまとめる)。取り消す関数を返す。
+   * 既定は requestAnimationFrame(無い環境では setTimeout)。テストでは手で流す偽物を渡す。
+   */
+  scheduleFrame?: Schedule;
 }
+
+/** 既定のフレームの予約。 */
+const defaultScheduleFrame: Schedule = (run) => {
+  if (typeof globalThis.requestAnimationFrame === "function") {
+    const handle = globalThis.requestAnimationFrame(() => run());
+    return () => globalThis.cancelAnimationFrame(handle);
+  }
+  const handle = setTimeout(run, 16);
+  return () => clearTimeout(handle);
+};
 
 type ConnectionState = "idle" | "connecting" | "connected";
 
@@ -100,11 +119,17 @@ export class TerminalManager {
   #shown = new Set<TerminalId>();
   /** 最後に表示していたターミナルの寸法。隠したまま作るサーフェスをこの寸法で始める。 */
   #lastShownSize: TerminalSize | null = null;
+  /** 全サーフェスに当てた文字の大きさ。まだ一度も指定が無ければ null(エンジンの既定)。 */
+  #appliedFontSize: number | null = null;
+  /** 求められた文字の大きさ(次のフレームで当てる)。新しく作るサーフェスはこの大きさで作る。 */
+  #requestedFontSize: number | null = null;
+  readonly #fontSizeFrame: Coalescer;
 
   constructor(engine: TerminalEngine, backend: TerminalBackend, options: TerminalManagerOptions = {}) {
     this.#engine = engine;
     this.#backend = backend;
     this.#reportError = options.reportError ?? ((message) => console.error(message));
+    this.#fontSizeFrame = createCoalescer(() => this.#applyFontSize(), options.scheduleFrame ?? defaultScheduleFrame);
   }
 
   /** 持っているサーフェスの数。 */
@@ -226,6 +251,29 @@ export class TerminalManager {
       if (this.#shown.has(id) || entry === undefined || entry.autoConnected) continue;
       entry.autoConnected = true;
       void this.connect(id);
+    }
+  }
+
+  /**
+   * 全ターミナルの文字の大きさ(CSS ピクセル)を変える(写しの更新ごとに src/state/terminalSync.ts が呼ぶ)。
+   * 次のフレームでまとめて当てる(続けて呼ばれたら最後の値だけ)。今と同じ大きさなら何もしない。
+   * 表示中のものは寸法を合わせ直し、行・桁が変われば寸法を送る。最後に表示していた寸法も新しい大きさのものに替える。
+   */
+  setFontSize(px: number): void {
+    if (px === (this.#requestedFontSize ?? this.#appliedFontSize)) return;
+    this.#requestedFontSize = px;
+    this.#fontSizeFrame.request();
+  }
+
+  #applyFontSize(): void {
+    const px = this.#requestedFontSize;
+    this.#requestedFontSize = null;
+    if (px === null || px === this.#appliedFontSize) return;
+    this.#appliedFontSize = px;
+    for (const entry of this.#entries.values()) {
+      if (entry.disposed) continue;
+      entry.surface.setFontSize(px);
+      this.#noteShownSize(entry);
     }
   }
 
@@ -392,7 +440,8 @@ export class TerminalManager {
   #entry(id: TerminalId, init: { visible: boolean } = { visible: true }): Entry {
     const existing = this.#entries.get(id);
     if (existing) return existing;
-    const surface = this.#engine.createSurface(id);
+    const fontSize = this.#requestedFontSize ?? this.#appliedFontSize;
+    const surface = this.#engine.createSurface(id, fontSize === null ? {} : { fontSize });
     if (!init.visible) surface.setVisible(false);
     const report = this.#reportError;
     const entry: Entry = {

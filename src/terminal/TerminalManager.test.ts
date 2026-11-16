@@ -1531,3 +1531,146 @@ describe("TerminalManager(バイト列にできない出力。M1 の見送り、
     ]);
   });
 });
+
+describe("TerminalManager(文字の大きさ。M4.6 の T69a、ADR-013 の 3)", () => {
+  /** 次のフレームの予約を手で流す偽物を渡して組み立てる。 */
+  function setupWithFrames() {
+    const frames: (() => void)[] = [];
+    const engine = createFakeTerminalEngine();
+    const fake = createFakeIpc();
+    const errors: string[] = [];
+    const manager = new TerminalManager(engine, createIpc(fake.transport), {
+      reportError: (message) => errors.push(message),
+      scheduleFrame: (run) => {
+        frames.push(run);
+        return () => {
+          const index = frames.indexOf(run);
+          if (index >= 0) frames.splice(index, 1);
+        };
+      },
+    });
+    /** 予約されたフレームを流す。 */
+    const runFrames = () => {
+      for (const run of frames.splice(0)) run();
+    };
+    return { engine, fake, errors, manager, frames, runFrames };
+  }
+
+  it("大きさを変えると表示中のサーフェスに当てて寸法を合わせ直す", async () => {
+    const ctx = setupWithFrames();
+    ctx.manager.attach("t1", fakeSlot().slot);
+    await flush();
+    const surface = fakeSurface(ctx.engine, "t1");
+    const fitsBefore = surface.fitCount;
+
+    ctx.manager.setFontSize(20);
+    expect(surface.fontSizeCalls).toEqual([]);
+    ctx.runFrames();
+
+    expect(surface.fontSizeCalls).toEqual([20]);
+    expect(surface.fontSize).toBe(20);
+    expect(surface.fitCount).toBeGreaterThan(fitsBefore);
+  });
+
+  it("隠しているサーフェスは表示に戻すときに当てる", async () => {
+    const ctx = setupWithFrames();
+    ctx.manager.present(["a"], ["b"]);
+    ctx.manager.attach("a", fakeSlot().slot);
+    await flush();
+    const hidden = fakeSurface(ctx.engine, "b");
+
+    ctx.manager.setFontSize(20);
+    ctx.runFrames();
+
+    // 隠しているあいだは覚えるだけ(display: none の中では文字の寸法を測れない)。
+    expect(hidden.fontSizeCalls).toEqual([20]);
+    expect(hidden.fontSize).toBe(15);
+    const fitsBefore = hidden.fitCount;
+
+    ctx.manager.present(["b"], ["a"]);
+
+    expect(hidden.fontSize).toBe(20);
+    expect(hidden.fitCount).toBeGreaterThan(fitsBefore);
+  });
+
+  it("新しく作るサーフェスは今の大きさで作る", () => {
+    const ctx = setupWithFrames();
+    ctx.manager.getOrCreate("before");
+
+    ctx.manager.setFontSize(22);
+    // フレームを待たずに作るものも、求められた大きさで作る(作ってから変えると寸法の計算をやり直すため)。
+    ctx.manager.getOrCreate("pending");
+    ctx.runFrames();
+    ctx.manager.getOrCreate("after");
+
+    expect(fakeSurface(ctx.engine, "before").createdFontSize).toBeUndefined();
+    expect(fakeSurface(ctx.engine, "pending").createdFontSize).toBe(22);
+    expect(fakeSurface(ctx.engine, "after").createdFontSize).toBe(22);
+    expect(fakeSurface(ctx.engine, "after").fontSizeCalls).toEqual([]);
+  });
+
+  it("寸法が変われば_resize_terminal_を送り接続は保つ", async () => {
+    const ctx = setupWithFrames();
+    ctx.manager.attach("t1", fakeSlot().slot);
+    await flush();
+    const surface = fakeSurface(ctx.engine, "t1");
+
+    // 文字を小さくすると、同じ置き場所に入る行・桁が増える。
+    surface.fitTo = { rows: 30, cols: 100 };
+    ctx.manager.setFontSize(12);
+    ctx.runFrames();
+    await flush();
+
+    expect(ctx.fake.calls.filter((c) => c.command === "resize_terminal").map((c) => c.args)).toEqual([
+      { terminalId: "t1", rows: 30, cols: 100 },
+    ]);
+    expect(commands(ctx.fake).filter((c) => c === "connect_terminal")).toHaveLength(1);
+    expect(ctx.fake.channels[0]?.closed).toBe(false);
+    expect(surface.disposeCount).toBe(0);
+    expect(ctx.engine.created).toHaveLength(1);
+    expect(ctx.errors).toEqual([]);
+  });
+
+  it("続けて変えると最後の値だけを_1_回当てる", async () => {
+    const ctx = setupWithFrames();
+    ctx.manager.attach("a", fakeSlot().slot);
+    ctx.manager.attach("b", fakeSlot().slot);
+    await flush();
+
+    ctx.manager.setFontSize(16);
+    ctx.manager.setFontSize(17);
+    ctx.manager.setFontSize(18);
+    expect(ctx.frames).toHaveLength(1);
+    ctx.runFrames();
+
+    expect(fakeSurface(ctx.engine, "a").fontSizeCalls).toEqual([18]);
+    expect(fakeSurface(ctx.engine, "b").fontSizeCalls).toEqual([18]);
+  });
+
+  it("今と同じ大きさなら当てず、予約もしない", async () => {
+    const ctx = setupWithFrames();
+    ctx.manager.attach("t1", fakeSlot().slot);
+    await flush();
+    ctx.manager.setFontSize(20);
+    ctx.runFrames();
+    const surface = fakeSurface(ctx.engine, "t1");
+    const fitsBefore = surface.fitCount;
+
+    ctx.manager.setFontSize(20);
+
+    expect(ctx.frames).toHaveLength(0);
+    expect(surface.fontSizeCalls).toEqual([20]);
+    expect(surface.fitCount).toBe(fitsBefore);
+  });
+
+  it("フレームを渡さなければ既定の予約で当てる", async () => {
+    const { engine, manager } = setup();
+    manager.attach("t1", fakeSlot().slot);
+    await flush();
+
+    manager.setFontSize(19);
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    expect(fakeSurface(engine, "t1").fontSize).toBe(19);
+  });
+});

@@ -46,6 +46,14 @@ export interface TerminalSurface {
    * 隠している間も write は取り込みを続け、取り込みが済んだバイト数で解決する。同じ値で呼んでも何もしない。
    */
   setVisible(visible: boolean): void;
+  /**
+   * 文字の大きさ(CSS ピクセル)を変える(M4.6。ADR-013 の 3)。
+   * 表示中なら当ててから寸法を合わせ直す(置き場所の大きさは変わらないので ResizeObserver は鳴らない)。
+   * 隠しているときは覚えるだけにして、表示に戻すとき(setVisible(true))に当ててから寸法を合わせ直す
+   * (隠した要素の中では文字の寸法を測れない)。行・桁が変われば onResize の受け取り手に届く。
+   * 今と同じ値・破棄の後は何もしない。
+   */
+  setFontSize(px: number): void;
   /** いまの行・桁数。 */
   size(): TerminalSize;
   /** 選択している文字列。選択が無ければ空文字列。 */
@@ -65,7 +73,13 @@ export interface TerminalSurface {
   dispose(): void;
 }
 
+/** サーフェスを作るときの指定。 */
+export interface SurfaceOptions {
+  /** 初めの文字の大きさ(CSS ピクセル)。無ければエンジンの既定。作ってから変えると最初の寸法の計算をやり直すため、作るときに渡す。 */
+  readonly fontSize?: number;
+}
+
 /** サーフェスを作るもの。差し替えの単位(PRD §7 C4)。 */
 export interface TerminalEngine {
-  createSurface(id: TerminalId): TerminalSurface;
+  createSurface(id: TerminalId, options?: SurfaceOptions): TerminalSurface;
 }

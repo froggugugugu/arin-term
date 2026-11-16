@@ -12,7 +12,7 @@ import { Terminal } from "@xterm/xterm";
 import { DEFAULT_SHORTCUT_TABLE } from "../../logic/keys/defaultShortcuts";
 import { terminalKeyOwner } from "../../logic/keys/keyOwner";
 import type { ShortcutTable } from "../../logic/keys/shortcutTable";
-import type { TerminalEngine, TerminalSize, TerminalSurface } from "../engine";
+import type { SurfaceOptions, TerminalEngine, TerminalId, TerminalSize, TerminalSurface } from "../engine";
 
 /** スクロールバックの行数(FR-043、PRD C-09 で確定)。 */
 export const SCROLLBACK_LINES = 10_000;
@@ -32,8 +32,8 @@ export class XtermEngine implements TerminalEngine {
     this.#getShortcuts = options.getShortcuts ?? (() => DEFAULT_SHORTCUT_TABLE);
   }
 
-  createSurface(): TerminalSurface {
-    return new XtermSurface(this.#getShortcuts);
+  createSurface(_id: TerminalId, options: SurfaceOptions = {}): TerminalSurface {
+    return new XtermSurface(this.#getShortcuts, options);
   }
 }
 
@@ -45,8 +45,10 @@ class XtermSurface implements TerminalSurface {
   readonly #pending = new Set<(bytes: number) => void>();
   #visible = true;
   #disposed = false;
+  /** 隠しているあいだに求められた文字の大きさ。表示に戻すときに当てる(ADR-013 の 3)。 */
+  #pendingFontSize: number | null = null;
 
-  constructor(getShortcuts: () => ShortcutTable) {
+  constructor(getShortcuts: () => ShortcutTable, options: SurfaceOptions) {
     // xterm.js の要素を入れる箱。UI はこの箱を置き場所に入れるだけ(ADR-003)。
     // 寸法合わせは箱の大きさを見るので、置き場所いっぱいに広げる。
     this.element = document.createElement("div");
@@ -60,6 +62,8 @@ class XtermSurface implements TerminalSurface {
       // TUI がマウスを取っているあいだも、Option を押しながらのドラッグで文字を選択できるようにする
       // (macOS では既定だと選択を強制する手段が無く、コピーができない)。
       macOptionClickForcesSelection: true,
+      // 指定が無ければ xterm.js の既定(15。ADR-013 の 1 の既定と同じ)のまま。
+      ...(options.fontSize === undefined ? {} : { fontSize: options.fontSize }),
     });
     this.#terminal.loadAddon(this.#fitAddon);
     this.#terminal.loadAddon(new Unicode11Addon());
@@ -109,11 +113,32 @@ class XtermSurface implements TerminalSurface {
     this.#fitAddon.fit();
   }
 
+  setFontSize(px: number): void {
+    if (this.#disposed) return;
+    if (!this.#visible) {
+      // display: none の中では xterm.js が文字の寸法を 0 で測りうるので、表示に戻すまで当てない。
+      this.#pendingFontSize = px;
+      return;
+    }
+    this.#pendingFontSize = null;
+    this.#applyFontSize(px);
+  }
+
+  /** 文字の大きさを当て、置き場所に合わせて行・桁を決め直す(行・桁が変われば onResize が流れる)。 */
+  #applyFontSize(px: number): void {
+    if (this.#terminal.options.fontSize === px) return;
+    this.#terminal.options.fontSize = px;
+    this.fit();
+  }
+
   setVisible(visible: boolean): void {
     if (this.#disposed || this.#visible === visible) return;
     this.#visible = visible;
     if (visible) {
       this.element.style.display = "";
+      const pending = this.#pendingFontSize;
+      this.#pendingFontSize = null;
+      if (pending !== null) this.#applyFontSize(pending);
       this.fit();
     } else {
       // 要素を隠すと、xterm.js は画面に出ていないことを IntersectionObserver で知り、描画を止める

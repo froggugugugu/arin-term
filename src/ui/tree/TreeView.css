@@ -175,7 +175,7 @@
   min-width: 6em;
   max-width: 100%;
   box-sizing: border-box;
-  height: 18px;
+  height: var(--tree-input-height);
   margin: 0 0 0 -3px;
   padding: 0 3px;
   border: 0;
@@ -185,7 +185,7 @@
   caret-color: var(--color-focus);
   font: inherit;
   font-size: var(--font-size-l);
-  line-height: 18px;
+  line-height: var(--tree-input-height);
   outline: none;
   box-shadow:
     0 0 0 1px var(--color-focus),

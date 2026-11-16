@@ -6,6 +6,7 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
 import type { AppSnapshot } from "../src/ipc/generated/AppSnapshot";
+import { interfaceMetrics } from "../src/logic/appearance/interfaceMetrics";
 import type { EntryKind } from "../src/ipc/generated/EntryKind";
 import {
   emitEvent,
@@ -425,6 +426,166 @@ test.describe("仮想スクロール(NFR-005、ADR-007 の (c))", () => {
       });
     await expect.poll(gaps).toEqual([22]);
   });
+});
+
+test.describe("画面の文字の大きさとツリー(M4.6 の T69b、ADR-013 の 4、AC-F05)", () => {
+  /** 画面の大きさ(写しの fontSizes.interface.value)を替えた写し。 */
+  const withInterfaceSize = (value: number): AppSnapshot => {
+    const base = projectsSnapshot([APP]);
+    return { ...base, fontSizes: { ...base.fontSizes, interface: { ...base.fontSizes.interface, value } } };
+  };
+
+  /** 10,000 件のフォルダ big を開いた状態にする。 */
+  async function openBig(page: Page): Promise<void> {
+    await open(page, projectsSnapshot([APP]), appListings({ [listingKey(APP.id, "big")]: listed(manyFiles(10_000)) }));
+    await setMockListing(page, listingKey(APP.id, ""), listed([["big", "directory"]]));
+    await emitEvent(page, "tree-changed", { projectId: APP.id, dirs: [""], fullReload: false });
+    await row(page, "big").dblclick();
+    await expect(row(page, "big/file-000001.txt")).toBeVisible();
+  }
+
+  /** 描かれている行の上端どうしの間隔(落ち着くまで待って使う)。 */
+  const gaps = (page: Page) =>
+    rows(page).evaluateAll((elements) => {
+      const tops = elements.map((el) => el.getBoundingClientRect().top);
+      return [...new Set(tops.slice(1).map((t, i) => Math.round(t - (tops[i] ?? 0))))];
+    });
+
+  test("画面の大きさを変えた写しでツリーの行の高さと仮想スクロールがそろう", async ({ page }) => {
+    const errors = collectPageErrors(page);
+    await openBig(page);
+    const iconSize = () =>
+      row(page, "big/file-000001.txt")
+        .locator(".tree-icon")
+        .evaluate((el) => [el.getBoundingClientRect().width, el.getBoundingClientRect().height]);
+    const iconBefore = await iconSize();
+
+    for (const size of [18, 11, 13]) {
+      const height = interfaceMetrics(size).treeRowHeight;
+      await emitEvent(page, "app-snapshot", withInterfaceSize(size));
+
+      // CSS の変数・行の見た目の高さ・スクロールの高さ(窓の計算)が、同じ関数の値でそろう。
+      await expect
+        .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--tree-row-height")))
+        .toBe(`${height}px`);
+      await expect.poll(() => scroller(page).evaluate((el) => el.scrollHeight)).toBe(10_001 * height);
+      await expect
+        .poll(() => row(page, "big/file-000001.txt").evaluate((el) => el.getBoundingClientRect().height))
+        .toBe(height);
+      await expect.poll(() => gaps(page)).toEqual([height]);
+      expect(
+        await row(page, "big/file-000001.txt").evaluate((el) => getComputedStyle(el).fontSize),
+        `${size}`,
+      ).toBe(`${interfaceMetrics(size).tokens["--font-size-l"]}px`);
+      // アイコンは追従させない(【要確認】5 の推奨)。
+      expect(await iconSize(), `${size}`).toEqual(iconBefore);
+
+      // 5,000 行目を上端にすると、その行がスクロールの領域の上端に来る(行の高さの計算が見た目と同じ)。
+      await scroller(page).evaluate((el, top) => {
+        el.scrollTop = top;
+      }, 5_000 * height);
+      await expect(row(page, "big/file-005000.txt")).toBeVisible();
+      const top = await scroller(page).evaluate((el) => el.getBoundingClientRect().top);
+      await expect
+        .poll(async () => Math.round(((await row(page, "big/file-005000.txt").boundingBox())?.y ?? -1) - top))
+        .toBe(0);
+      await expect.poll(() => gaps(page)).toEqual([height]);
+      await scroller(page).evaluate((el) => {
+        el.scrollTop = 0;
+      });
+      await expect(row(page, "big/file-000001.txt")).toBeVisible();
+    }
+    expect(errors).toEqual([]);
+  });
+
+  test("画面の大きさを変えても選択中の行が見える位置に来る", async ({ page }) => {
+    await openBig(page);
+    // 見える範囲のいちばん下の行を選ぶ(大きくすると、行が伸びて見える範囲の外へ押し出される位置)。
+    const lastVisible = await scroller(page).evaluate((el) => {
+      const bottom = el.getBoundingClientRect().bottom;
+      const inside = [...el.querySelectorAll('[data-testid="tree-row"]')].filter(
+        (r) => r.getBoundingClientRect().bottom <= bottom,
+      );
+      return inside.at(-1)?.getAttribute("data-path") ?? "";
+    });
+    expect(lastVisible).toMatch(/^big\/file-/);
+    await row(page, lastVisible).click();
+    await expect(row(page, lastVisible)).toHaveAttribute("aria-selected", "true");
+
+    const shownInside = () =>
+      page.evaluate((path) => {
+        const scrollerElement = document.querySelector('[data-testid="tree-scroller"]');
+        const rowElement = document.querySelector(`[data-testid="tree-row"][data-path="${path}"]`);
+        if (scrollerElement === null || rowElement === null) return false;
+        const outer = scrollerElement.getBoundingClientRect();
+        const inner = rowElement.getBoundingClientRect();
+        return inner.top >= outer.top - 0.5 && inner.bottom <= outer.bottom + 0.5;
+      }, lastVisible);
+
+    for (const size of [18, 11, 16]) {
+      await emitEvent(page, "app-snapshot", withInterfaceSize(size));
+      await expect
+        .poll(() => row(page, lastVisible).evaluate((el) => el.getBoundingClientRect().height))
+        .toBe(interfaceMetrics(size).treeRowHeight);
+      await expect.poll(shownInside, `${size}`).toBe(true);
+      await expect(row(page, lastVisible)).toHaveAttribute("aria-selected", "true");
+    }
+  });
+});
+
+test.describe("画面の文字の大きさの画像(M4.6 の T69b。人が目で確かめる)", () => {
+  /** 画像の置き場所(testreport/ は .gitignore 済み)。 */
+  const shotPath = (name: string) => {
+    const configFile = test.info().config.configFile;
+    if (configFile === undefined) throw new Error("Playwright の設定ファイルの場所が分からない");
+    return `${configFile.slice(0, configFile.lastIndexOf("/"))}/testreport/e2e/font-sizes/${name}.png`;
+  };
+  const shots = [
+    [11, "light"],
+    [13, "light"],
+    [18, "light"],
+    [11, "dark"],
+    [18, "dark"],
+  ] as const;
+
+  for (const [size, colorScheme] of shots) {
+    test(`画面の大きさ_${size}_の画像を撮る_${colorScheme}`, async ({ page }) => {
+      const errors = collectPageErrors(page);
+      await page.emulateMedia({ colorScheme });
+      const base = projectsSnapshot([{ ...APP, tabs: ["ターミナル 1", "npm run dev", "claude"] }, LOG, GONE]);
+      const snapshot: AppSnapshot = {
+        ...base,
+        fontSizes: { ...base.fontSizes, interface: { ...base.fontSizes.interface, value: size } },
+      };
+      await open(page, snapshot);
+      await toggle(page, "src").click();
+      await toggle(page, "src/lib").click();
+      await expect(row(page, "src/lib/util.ts")).toBeVisible();
+      await row(page, "src/main.ts").click();
+      await expect(row(page, "src/main.ts")).toHaveAttribute("aria-selected", "true");
+      await expect
+        .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--font-size-l")))
+        .toBe(`${size}px`);
+      await page.screenshot({ path: shotPath(`interface-${size}-${colorScheme}`), animations: "disabled" });
+
+      // 名前の入力欄(--tree-input-height)も行の中に収まるか見る。
+      await fileTree(page).focus();
+      await page.keyboard.press("Enter");
+      const input = page.locator("[data-tree-name-input]");
+      await expect(input).toBeVisible();
+      const [rowBox, inputBox] = await Promise.all([row(page, "src/main.ts").boundingBox(), input.boundingBox()]);
+      expect(inputBox?.height).toBe(interfaceMetrics(size).tokens["--tree-input-height"]);
+      if (rowBox === null || inputBox === null) throw new Error("行か入力欄の位置が取れない");
+      // 入力欄は行の高さの中に収まり、上下の余りの差は 1px まで(中央にそろう)。
+      const above = inputBox.y - rowBox.y;
+      const below = rowBox.y + rowBox.height - (inputBox.y + inputBox.height);
+      expect(above).toBeGreaterThanOrEqual(0);
+      expect(below).toBeGreaterThanOrEqual(0);
+      expect(Math.abs(above - below)).toBeLessThanOrEqual(1);
+      await page.screenshot({ path: shotPath(`interface-${size}-${colorScheme}-rename`), animations: "disabled" });
+      expect(errors).toEqual([]);
+    });
+  }
 });
 
 test.describe("プロジェクトの切替と見つからない(FR-002・FR-007)", () => {

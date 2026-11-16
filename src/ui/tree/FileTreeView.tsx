@@ -8,6 +8,7 @@ import {
   type MouseEvent,
   type ReactNode,
   useCallback,
+  useContext,
   useEffect,
   useId,
   useLayoutEffect,
@@ -34,6 +35,7 @@ import {
   type TreeMenuActions,
   treeMenuContextOf,
 } from "../menu/runTreeMenuCommand";
+import { InterfaceMetricsContext } from "../design/applyInterfaceMetrics";
 import type { ProjectCard } from "../snapshotTypes";
 import { requestTerminalFocus } from "./dropZones";
 import { FileIcon, FolderIcon } from "./icons";
@@ -54,8 +56,6 @@ interface FileTreeViewProps {
 
 /** 見える範囲の上下に余分に描く行の数。 */
 const OVERSCAN = 6;
-/** 行の高さを CSS から読めなかったときの値(tokens.css の --tree-row-height と同じ。【仮定】5)。 */
-const FALLBACK_ROW_HEIGHT = 22;
 
 const NO_ROWS: readonly TreeRowValue[] = [];
 
@@ -63,12 +63,6 @@ const NO_ROWS: readonly TreeRowValue[] = [];
 interface Viewport {
   readonly scrollTop: number;
   readonly height: number;
-}
-
-/** 要素の CSS の --tree-row-height(px)。読めなければ既定の値。 */
-function readRowHeight(element: HTMLElement): number {
-  const value = Number.parseFloat(getComputedStyle(element).getPropertyValue("--tree-row-height"));
-  return Number.isFinite(value) && value > 0 ? value : FALLBACK_ROW_HEIGHT;
 }
 
 /** 新規作成の入力欄を差し込む位置(行の並びの番号)と深さ。作る先のフォルダの最初の子の位置(VSCode と同じ)。 */
@@ -125,6 +119,8 @@ function menuLabel(target: TreeMenuTarget, projectName: string): string {
  * ルートの行(ヘッダ)と、T41a の窓(computeRowWindow)で決めた見える行だけを描く。上下は余白で埋め、
  * スクロールの高さは全部の行ぶんにする。スクロールで窓が変わらないあいだは描き直さない。
  *
+ * - 行の高さは画面の文字の大きさから決まる値を文脈(InterfaceMetricsContext)で受け取る。CSS の --tree-row-height と
+ *   同じ関数の同じ値なので、窓の計算と見た目がずれない。変わったら窓を計算し直し、選択中の行が見えるようにする(M4.6)
  * - WAI-ARIA の tree。フォーカスはツリーの要素 1 つが持ち(Tab で入れる)、選んだ行を aria-activedescendant で指す
  *   (矢印キーでの移動は M3 では入れない。計画【仮定】6)
  * - フォーカスの出入りを uiStore.setTreeFocused で伝える(キーとコピー・ペーストの振り分けが使う)。名前の入力欄に
@@ -180,7 +176,7 @@ export function FileTreeView({ project, tree, ui, actions }: FileTreeViewProps) 
 
   const treeRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
-  const [rowHeight, setRowHeight] = useState(FALLBACK_ROW_HEIGHT);
+  const rowHeight = useContext(InterfaceMetricsContext).treeRowHeight;
   const [viewport, setViewport] = useState<Viewport>({ scrollTop: 0, height: 0 });
 
   // 新規作成の入力欄を差し込む位置。並びの番号は、これより後ろの行で 1 つずれる。
@@ -214,7 +210,6 @@ export function FileTreeView({ project, tree, ui, actions }: FileTreeViewProps) 
   useLayoutEffect(() => {
     const element = scrollerRef.current;
     if (element === null) return;
-    setRowHeight(readRowHeight(element));
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);

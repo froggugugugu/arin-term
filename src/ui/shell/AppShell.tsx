@@ -1,9 +1,10 @@
 import "../design/tokens.css";
 import "./AppShell.css";
 
-import type { ReactNode } from "react";
+import { type ReactNode, useInsertionEffect, useMemo } from "react";
 import { useStore } from "zustand";
 
+import { INTERFACE_BASE_SIZE, interfaceMetrics } from "../../logic/appearance/interfaceMetrics";
 import { APP_NAME } from "../../logic/index";
 import { shortcutLabel } from "../../logic/keys/shortcutTable";
 import { DEFAULT_PANE_SIZES } from "../../logic/panes/paneLayout";
@@ -13,6 +14,7 @@ import { selectedProject } from "../../state/selectors";
 import type { TreeStore } from "../../state/treeStore";
 import type { UiStore } from "../../state/uiStore";
 import type { TerminalManager } from "../../terminal/TerminalManager";
+import { applyInterfaceMetrics, InterfaceMetricsContext } from "../design/applyInterfaceMetrics";
 import { QuitDialog } from "../dialogs/QuitDialog";
 import { RemoveProjectDialog } from "../dialogs/RemoveProjectDialog";
 import { ProjectCardList } from "../projects/ProjectCardList";
@@ -43,65 +45,73 @@ interface AppShellProps {
  * 上部の帯の右側(アプリ名の左)に、タブ表示とタイル表示を切り替える区分けのボタンを置く(FR-048。計画【仮定】11)。
  * 右ペインは表示モードに従い、タブ表示ならタブバーと表示中のターミナル 1 枚、タイル表示なら表示中のページのタイルを描く
  * (TerminalArea)。見えないターミナルは TerminalManager が隠したまま取り込みを続ける。
+ * 画面の文字の大きさ(写しの fontSizes.interface。M4.6)は、:root の変数に当て、ツリーの行の高さは文脈で配る(ADR-013 の 4)。
  */
 export function AppShell({ store, ui, tree, actions, terminals }: AppShellProps) {
   const snapshot = useStore(store, (s) => s.snapshot);
   const startupError = useStore(store, (s) => s.startupError);
   const panes = usePaneSizes(snapshot?.layout ?? DEFAULT_PANE_SIZES, actions);
   const collapsed = panes.sizes.sidebarCollapsed;
+  const interfaceSize = snapshot?.fontSizes.interface.value ?? INTERFACE_BASE_SIZE;
+  const metrics = useMemo(() => interfaceMetrics(interfaceSize), [interfaceSize]);
+  // 変数は、子の部品が寸法を測る(レイアウトの副作用)より前に当てる。挿入の副作用は子のレイアウトの副作用より先に走る
+  // (ツリーは選択中の行を見せるとき、新しい行の高さで縮んだ・伸びた見える範囲を測る)。
+  useInsertionEffect(() => applyInterfaceMetrics(document.documentElement, metrics), [metrics]);
 
   return (
-    <main data-testid="app-shell" className="app-shell">
-      <header className="app-shell__header">
-        {snapshot !== null && (
-          <button
-            type="button"
-            className="icon-button app-shell__sidebar-toggle"
-            aria-controls="pane-sidebar"
-            aria-expanded={!collapsed}
-            aria-label={collapsed ? "左ペインを表示" : "左ペインを隠す"}
-            title={collapsed ? "左ペインを表示" : "左ペインを隠す"}
-            onClick={() => panes.setCollapsed(!collapsed)}
-          >
-            <SidebarIcon />
-          </button>
-        )}
-        {startupError !== null && (
-          <p role="alert" className="app-shell__error" data-testid="startup-error">
-            {startupError}
-          </p>
-        )}
-        {snapshot !== null && (
-          <DisplayModeSwitch
-            mode={snapshot.display.mode}
-            ui={ui}
-            onChange={(mode) => void actions.setDisplayMode(mode)}
-          />
-        )}
-        <div className="app-shell__meta">
-          <h1 className="app-shell__name">{APP_NAME}</h1>
+    <InterfaceMetricsContext value={metrics}>
+      <main data-testid="app-shell" className="app-shell">
+        <header className="app-shell__header">
           {snapshot !== null && (
-            <p className="app-shell__version" data-testid="app-version">
-              {snapshot.appVersion}
+            <button
+              type="button"
+              className="icon-button app-shell__sidebar-toggle"
+              aria-controls="pane-sidebar"
+              aria-expanded={!collapsed}
+              aria-label={collapsed ? "左ペインを表示" : "左ペインを隠す"}
+              title={collapsed ? "左ペインを表示" : "左ペインを隠す"}
+              onClick={() => panes.setCollapsed(!collapsed)}
+            >
+              <SidebarIcon />
+            </button>
+          )}
+          {startupError !== null && (
+            <p role="alert" className="app-shell__error" data-testid="startup-error">
+              {startupError}
             </p>
           )}
-        </div>
-      </header>
-      {snapshot !== null && (
-        <>
-          <NoticeBar notice={snapshot.notice} ui={ui} />
-          <SettingsNoticeBar ui={ui} />
-          <PaneSplit
-            panes={panes}
-            cards={<ProjectCardList store={store} ui={ui} actions={actions} />}
-            tree={<TreePane project={selectedProject(snapshot)} tree={tree} ui={ui} actions={actions} />}
-            terminal={<TerminalArea store={store} ui={ui} actions={actions} terminals={terminals} />}
-          />
-          <RemoveProjectDialog store={store} ui={ui} actions={actions} />
-        </>
-      )}
-      <QuitDialog ui={ui} actions={actions} />
-    </main>
+          {snapshot !== null && (
+            <DisplayModeSwitch
+              mode={snapshot.display.mode}
+              ui={ui}
+              onChange={(mode) => void actions.setDisplayMode(mode)}
+            />
+          )}
+          <div className="app-shell__meta">
+            <h1 className="app-shell__name">{APP_NAME}</h1>
+            {snapshot !== null && (
+              <p className="app-shell__version" data-testid="app-version">
+                {snapshot.appVersion}
+              </p>
+            )}
+          </div>
+        </header>
+        {snapshot !== null && (
+          <>
+            <NoticeBar notice={snapshot.notice} ui={ui} />
+            <SettingsNoticeBar ui={ui} />
+            <PaneSplit
+              panes={panes}
+              cards={<ProjectCardList store={store} ui={ui} actions={actions} />}
+              tree={<TreePane project={selectedProject(snapshot)} tree={tree} ui={ui} actions={actions} />}
+              terminal={<TerminalArea store={store} ui={ui} actions={actions} terminals={terminals} />}
+            />
+            <RemoveProjectDialog store={store} ui={ui} actions={actions} />
+          </>
+        )}
+        <QuitDialog ui={ui} actions={actions} />
+      </main>
+    </InterfaceMetricsContext>
   );
 }
 

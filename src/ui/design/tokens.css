@@ -110,6 +110,9 @@
   --radius-s: 4px;
   --radius-m: 6px;
   --radius-menu: 7px;
+  /* 画面の文字の大きさ(M4.6)で追従させるのは、文字の 4 つと、文字を入れる行の高さ(--*-height のうち
+     src/logic/appearance/interfaceMetrics.ts に挙げたもの)だけ。ここの値は基準値 13 のときの値で、
+     写しが届いたら src/ui/design/applyInterfaceMetrics.ts が :root に上書きする。 */
   --font-size-s: 11px;
   --font-size-m: 12px;
   --font-size-l: 13px;
@@ -141,10 +144,12 @@
   /* 押しボタンの高さ(macOS の標準の大きさ)。 */
   --button-height: 22px;
 
-  /* ツリー(ADR-007 の (c)、計画【仮定】5)。行の高さは仮想スクロールの窓の計算にも使う(FileTreeView が読む)。 */
+  /* ツリー(ADR-007 の (c)、計画【仮定】5)。行の高さは仮想スクロールの窓の計算にも使う(FileTreeView は同じ値を
+     src/logic/appearance/interfaceMetrics.ts から受け取る)。名前の入力欄の高さは行の中に収める。 */
   --tree-row-height: 22px;
   --tree-indent: 16px;
   --tree-toolbar-height: 26px;
+  --tree-input-height: 18px;
 
   /* コンテキストメニュー(行の高さは macOS のメニューと同じ 22px)。 */
   --menu-padding: 5px;
