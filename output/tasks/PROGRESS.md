@@ -16,7 +16,7 @@
 
 | 項目 | 内容 |
 | ---- | ---- |
-| 最終更新 | 2026-11-16(M4 は T50b の AI の分まで済み、残りは本人の確認。M4.5=ショートカットの設定は T63 が済み、本人の決定も出た。T64a〜T64c が済み(ブランチ `feat/m4.5-keybindings`。push していない)。**T65a は本人の判断待ち**(`toml 1.2.1` は依存の木にあるが公開が 2026-11-06 で 2 週間未満。例外として今使うか、2026-11-20 以降に着手するか)。**再開の手順は §3 の 0 番**) |
+| 最終更新 | 2026-11-16(M4 は T50b の AI の分まで済み、残りは本人の確認。M4.5=ショートカットの設定は T63 が済み、本人の決定も出た。T64a〜T64c が済み(ブランチ `feat/m4.5-keybindings`。push していない)。T65a も済み(`toml 1.2.1` は公開から 2 週間未満だが、本人が 2026-11-16 に例外を認めた。ADR-012 の末尾)。次は T65b。**再開の手順は §3 の 0 番**) |
 | ブランチ | `feat/m4-tiles`(`feat/m3-tree` から分岐。`feat/m3-tree` ← `feat/m2-projects` ← `feat/m1-terminal`。4 本とも 2026-11-16 に push 済み。pull request はまだ作っていない)。`feat/m0-skeleton` は push 済みで、pull request #1(main 向け)が開いている |
 | 最後のコミット | `git log --oneline -1` で確認する(本ファイルに書くと古くなるため) |
 | 起動コマンド | `npm run dev`(開発用)。`.app` は `npm run app` で `target/aarch64-apple-darwin/release/bundle/macos/Arin.app` にできる |

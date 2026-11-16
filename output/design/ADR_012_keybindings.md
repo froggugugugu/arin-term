@@ -206,3 +206,25 @@ B の中身(T65c):
 | 描画方式(ADR-001。M4 の T50b) | DOM のまま。WebGL と検証用の起動時の指定・画面の表示を外す |
 
 PRD への反映(FR の追加と AC-K01〜K10)は、M4.5 の完了確認(T66c)で本人が判断する。
+
+## T65a の着手時の確認(2026-11-16)
+
+ADR-012 の 4 に従い、TOML のクレートを確かめた。
+
+| 項目 | 結果 |
+| ---- | ---- |
+| 版 | `toml 1.2.1+spec-1.1.0`(ワークスペースの依存に `=1.2.1` で固定。使うのは `arin-platform/src/storage/` だけ) |
+| macOS の依存の木 | 入っている。`cargo tree -i 'toml@1.2.1+spec-1.1.0' --target aarch64-apple-darwin -e normal` で `tauri-utils 2.10.2` の普通の依存(`tauri`・`tauri-runtime`・`tauri-runtime-wry` の下)。ビルド時の依存としても `tauri-build` → `cargo_toml 1.0.1` の下にある |
+| 公開日 | 2026-11-06(crates.io。取り下げなし)。公開から 2 週間未満 |
+| ライセンス | MIT OR Apache-2.0(rust-version 1.85) |
+| 機能 | `default-features = false, features = ["std", "parse"]`。`tauri-utils` が有効にしている既定の機能(`std`・`serde`・`parse`・`display`)の内側。`serde` は使わず `toml::de::DeTable::parse` で解析する |
+| `Cargo.lock` の差分 | `arin-platform` の依存の並びに `"toml 1.2.1+spec-1.1.0"` の 1 行が増えただけ。新しいクレートは 0、版の変わったクレートも 0(`cargo update` は走らせていない。`notify-types` 2.1.0 などの固定はそのまま) |
+
+**公開から 2 週間未満の決まり(ADR-003)の例外を、本人が 2026-11-16 に認めた。** 理由: この版は `tauri-utils` 経由ですでに依存の木に入っていて、いまのアプリにも組み込まれているため、直接の依存に足しても新しいコードが増えない。
+
+実装で決めたこと(【仮定】):
+
+- 表はキーの名前の順で持たれる(`preserve_order` は有効でない)ので、「書いた順」はキーの位置で並べ直す
+- 構文エラーにクレートの位置が無いときは 1 行 1 列にする
+- 見本を書く途中で失敗しても作りかけのファイルを消さない(削除の口を作らない。次からは「もうある」として扱う)
+- 読むときは `O_NONBLOCK` で開く(名前付きパイプで止まらないため。ふつうのファイルには影響しない)
