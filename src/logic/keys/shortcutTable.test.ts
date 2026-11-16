@@ -161,9 +161,9 @@ describe("表の引き方", () => {
       { command: "view.next-page", accelerator: "Cmd+Alt+ArrowRight", receiver: "menu-item" },
       { command: "view.toggle-maximize", accelerator: "Cmd+Shift+Enter", receiver: "menu-item" },
     ]);
-    // 表の最後の 13 行は表示の 4 行とタイルの番号キーの 9 行(Rust の表と同じ順。ADR-014 の 4)
-    expect(DEFAULT_SHORTCUT_TABLE.slice(-13, -9)).toEqual(view);
-    expect(DEFAULT_SHORTCUT_TABLE.slice(-9).map((binding) => binding.command)).toEqual(
+    // 表の最後の 1 行の前の 13 行は表示の 4 行とタイルの番号キーの 9 行(Rust の表と同じ順。ADR-014 の 4。最後は ADR-015 の editor.save)
+    expect(DEFAULT_SHORTCUT_TABLE.slice(-14, -10)).toEqual(view);
+    expect(DEFAULT_SHORTCUT_TABLE.slice(-10, -1).map((binding) => binding.command)).toEqual(
       Array.from({ length: 9 }, (_, i) => `view.focus-tile-${i + 1}`),
     );
     // ツールチップに出すキーの表示(T47f が表から引く)
@@ -180,11 +180,11 @@ describe("表の引き方", () => {
     ).toBe(true);
   });
 
-  it("既定の表に_32_行がある", () => {
-    // M4.7 でタイルの番号キー 9 行を足した(ADR-014 の 4)
-    expect(DEFAULT_SHORTCUT_TABLE).toHaveLength(32);
+  it("既定の表に_33_行がある", () => {
+    // M4.7 でタイルの番号キー 9 行(ADR-014 の 4)、M4.8 で保存の 1 行(ADR-015 の 6)を足した
+    expect(DEFAULT_SHORTCUT_TABLE).toHaveLength(33);
     // コマンドの id は 1 行に 1 つ
-    expect(new Set(DEFAULT_SHORTCUT_TABLE.map((binding) => binding.command)).size).toBe(32);
+    expect(new Set(DEFAULT_SHORTCUT_TABLE.map((binding) => binding.command)).size).toBe(33);
     // 設定は設定ファイルを開く(⌘,。計画 T64c)。表の順では終了のすぐ後ろ
     const index = DEFAULT_SHORTCUT_TABLE.findIndex((binding) => binding.command === "app.open-settings");
     expect(DEFAULT_SHORTCUT_TABLE[index]).toEqual({

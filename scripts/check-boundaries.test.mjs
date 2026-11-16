@@ -16,6 +16,8 @@ import {
   checkNoHtmlInjection,
   checkNoHttpClientCrates,
   checkNoNetworkApi,
+  checkCodeMirrorImports,
+  checkCodeMirrorNoIpc,
   checkTauriApiImports,
   checkUiImports,
   checkXtermImports,
@@ -37,8 +39,8 @@ describe("違反の無い見本", () => {
     assert.deepEqual(violations.map(formatViolation), []);
   });
 
-  it("11 項目すべてを走らせる", () => {
-    assert.equal(CHECKS.length, 11);
+  it("13 項目すべてを走らせる", () => {
+    assert.equal(CHECKS.length, 13);
   });
 
   it("CLI として実行すると終了コード 0 を返す", () => {
@@ -108,6 +110,47 @@ describe("3. @xterm/* の隔離", () => {
 
   it("src/terminal/xterm からの import とコメント中の import は通す", () => {
     assert.deepEqual(checkXtermImports(fixture("clean")), []);
+  });
+});
+
+describe("3b. CodeMirror と lezer の隔離(ADR-015 の 1)", () => {
+  it("src_ui_から_codemirror_を_import_すると違反", () => {
+    const violations = checkCodeMirrorImports(fixture("codemirror-outside"));
+    assert.ok(places(violations).includes("src/ui/editor/Panel.tsx:2"));
+    assert.ok(places(violations).includes("src/ui/editor/Panel.tsx:3"));
+  });
+
+  it("lezer_と_replit_も同じ", () => {
+    const violations = checkCodeMirrorImports(fixture("codemirror-outside"));
+    assert.deepEqual(places(violations), [
+      "src/editor/EditorManager.ts:2",
+      "src/editor/EditorManager.ts:4",
+      "src/logic/editor/rules.ts:2",
+      "src/ui/editor/Panel.tsx:2",
+      "src/ui/editor/Panel.tsx:3",
+    ]);
+    assert.match(violations.find((v) => v.file === "src/logic/editor/rules.ts").snippet, /@lezer\/markdown/);
+    assert.match(violations.find((v) => v.file === "src/editor/EditorManager.ts" && v.line === 2).snippet, /@replit/);
+  });
+
+  it("src_editor_codemirror_の中は違反でない", () => {
+    assert.deepEqual(checkCodeMirrorImports(fixture("clean")), []);
+  });
+
+  it("src_ui_から_src_editor_codemirror_を_import_すると違反", () => {
+    const violations = checkUiImports(fixture("codemirror-outside"));
+    assert.deepEqual(places(violations), ["src/ui/editor/Panel.tsx:5"]);
+    assert.match(violations[0].message, /src\/editor\/codemirror/);
+  });
+
+  it("src_editor_codemirror_から_src_ipc_を_import_すると違反", () => {
+    const violations = checkCodeMirrorNoIpc(fixture("codemirror-imports-ipc"));
+    assert.deepEqual(places(violations), ["src/editor/codemirror/CodeMirrorEngine.ts:3"]);
+  });
+
+  it("抽象(src/editor)への import は違反でない", () => {
+    assert.deepEqual(checkCodeMirrorNoIpc(fixture("clean")), []);
+    assert.deepEqual(checkUiImports(fixture("clean")), []);
   });
 });
 

@@ -265,7 +265,7 @@ test.describe("削除の確認(FR-003)", () => {
     { terminalId: "p-app-t2", projectId: APP.id, projectName: "app", label: "ターミナル 2" },
   ];
   const needsConfirmation: Partial<TauriMockConfig> = {
-    remove_project: { ok: { kind: "needsConfirmation", running } },
+    remove_project: { ok: { kind: "needsConfirmation", running, unsaved: [] } },
   };
 
   async function openRemoveDialog(page: Page) {

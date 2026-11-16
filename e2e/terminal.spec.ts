@@ -339,6 +339,8 @@ function twoProjects(selected: "A" | "B", terminalsOfB: string[] = ["t-b"]): App
     showHidden: false,
     terminalIds,
     activeTerminalId: terminalIds[0] ?? null,
+    editorIds: [],
+    shownEditorId: null,
   });
   return sampleSnapshot({
     projects: [project("A", ["t-a"]), project("B", terminalsOfB)],

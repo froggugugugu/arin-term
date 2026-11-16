@@ -48,6 +48,8 @@ function snapshotOf(
       showHidden: false,
       terminalIds: p.tabs.map((t) => t.id),
       activeTerminalId: p.active === undefined ? (p.tabs[0]?.id ?? null) : p.active,
+      editorIds: [],
+      shownEditorId: null,
     })),
     selectedProjectId: selected,
     terminals: projects.flatMap((p) =>
@@ -212,7 +214,7 @@ test.describe("M2 のシナリオ(PRD §8 UI)", () => {
 
     // --- 一覧から削除: 動作中があるので確認が出る → 中止 ---
     const runningB = [sampleRunningTerminal(B.id, B.name, "b-1", "ターミナル 1")];
-    await setMockReply(page, "remove_project", { ok: { kind: "needsConfirmation", running: runningB } });
+    await setMockReply(page, "remove_project", { ok: { kind: "needsConfirmation", running: runningB, unsaved: [] } });
     await card(page, "bravo").click({ button: "right" });
     await page.getByRole("menu", { name: "bravo" }).getByRole("menuitem", { name: "一覧から削除" }).click();
     const removeDialog = page.getByRole("alertdialog", { name: "「bravo」を一覧から削除しますか?" });
@@ -248,7 +250,7 @@ test.describe("M2 のシナリオ(PRD §8 UI)", () => {
 
     // --- 終了の確認: 取り消し → 何も呼ばれない ---
     const runningA = [sampleRunningTerminal(A.id, A.name, "a-3", "ターミナル 1")];
-    await emitEvent(page, "quit-requested", { running: runningA });
+    await emitEvent(page, "quit-requested", { running: runningA, unsaved: [] });
     const quitDialog = page.getByRole("alertdialog", { name: "Arin を終了しますか?" });
     await expect(quitDialog).toBeVisible();
     await expect(quitDialog.getByRole("listitem")).toHaveText(["alpha: ターミナル 1"]);
@@ -259,7 +261,7 @@ test.describe("M2 のシナリオ(PRD §8 UI)", () => {
     expect(await readCallArgs(page, "confirm_quit")).toEqual([]);
 
     // --- 終了の確認: 終了 → confirm_quit ---
-    await emitEvent(page, "quit-requested", { running: runningA });
+    await emitEvent(page, "quit-requested", { running: runningA, unsaved: [] });
     await expect(quitDialog).toBeVisible();
     await quitDialog.getByRole("button", { name: "終了" }).click();
     await expect.poll(() => readCallArgs(page, "confirm_quit")).toHaveLength(1);

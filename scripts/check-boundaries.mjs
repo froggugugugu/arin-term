@@ -693,6 +693,26 @@ export function checkXtermImports(root) {
   );
 }
 
+/**
+ * CodeMirror の部品のパッケージか(ADR-015 の 1)。`codemirror`・`@codemirror/*`・`@lezer/*`・`@replit/*`。
+ * `@replit/*` は Vim の部品(`@replit/codemirror-vim`)のためにまとめて塞ぐ。
+ */
+const isCodeMirrorPackage = (name) =>
+  name === "codemirror" ||
+  name.startsWith("codemirror/") ||
+  name.startsWith("@codemirror/") ||
+  name.startsWith("@lezer/") ||
+  name.startsWith("@replit/");
+
+/** 3b. CodeMirror の部品を import してよいのは src/editor/codemirror だけ(ADR-015 の 1)。 */
+export function checkCodeMirrorImports(root) {
+  return checkImports(root, "codemirror-import", (rel, spec, target) =>
+    target.package && isCodeMirrorPackage(target.package) && !isUnder(rel, "src/editor/codemirror")
+      ? `${spec} を import してよいのは src/editor/codemirror/ だけ`
+      : null,
+  );
+}
+
 /** 4. `@tauri-apps/*`(`@tauri-apps/api` とそのサブパス、プラグイン)を import してよいのは src/ipc だけ。 */
 export function checkTauriApiImports(root) {
   return checkImports(root, "tauri-api-import", (rel, spec, target) =>
@@ -702,11 +722,11 @@ export function checkTauriApiImports(root) {
   );
 }
 
-/** 5. src/ui が src/ipc と src/terminal/xterm を直接 import しないこと。 */
+/** 5. src/ui が src/ipc・src/terminal/xterm・src/editor/codemirror を直接 import しないこと。 */
 export function checkUiImports(root) {
   return checkImports(root, "ui-import", (rel, spec, target) => {
     if (!isUnder(rel, "src/ui") || !target.path) return null;
-    for (const dir of ["src/ipc", "src/terminal/xterm"]) {
+    for (const dir of ["src/ipc", "src/terminal/xterm", "src/editor/codemirror"]) {
       if (isUnder(target.path, dir)) return `src/ui から ${dir}/ を直接 import している(${spec})`;
     }
     return null;
@@ -971,6 +991,15 @@ export function checkCspScriptStyle(root) {
   return violations;
 }
 
+/** 6b. src/editor/codemirror が src/ipc を import しないこと(ADR-015 の 1)。 */
+export function checkCodeMirrorNoIpc(root) {
+  return checkImports(root, "codemirror-ipc", (rel, spec, target) =>
+    isUnder(rel, "src/editor/codemirror") && target.path && isUnder(target.path, "src/ipc")
+      ? `src/editor/codemirror から src/ipc/ を import している(${spec})`
+      : null,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // まとめて実行
 // ---------------------------------------------------------------------------
@@ -980,9 +1009,19 @@ export const CHECKS = [
   { id: "core-deps", title: "arin-core の依存が許可リストだけ", run: checkCoreDependencies },
   { id: "core-io", title: "arin-core に std::fs・std::process・std::net が無い", run: checkCoreNoIo },
   { id: "xterm-import", title: "@xterm/* は src/terminal/xterm だけ", run: checkXtermImports },
+  {
+    id: "codemirror-import",
+    title: "codemirror・@codemirror/*・@lezer/*・@replit/* は src/editor/codemirror だけ",
+    run: checkCodeMirrorImports,
+  },
   { id: "tauri-api-import", title: "@tauri-apps/api は src/ipc だけ", run: checkTauriApiImports },
-  { id: "ui-import", title: "src/ui が src/ipc と src/terminal/xterm を import しない", run: checkUiImports },
+  {
+    id: "ui-import",
+    title: "src/ui が src/ipc・src/terminal/xterm・src/editor/codemirror を import しない",
+    run: checkUiImports,
+  },
   { id: "xterm-ipc", title: "src/terminal/xterm が src/ipc を import しない", run: checkXtermNoIpc },
+  { id: "codemirror-ipc", title: "src/editor/codemirror が src/ipc を import しない", run: checkCodeMirrorNoIpc },
   { id: "http-client-crate", title: "HTTP クライアントのクレートが無い", run: checkNoHttpClientCrates },
   { id: "network-api", title: "画面のソースに通信の API が無い", run: checkNoNetworkApi },
   { id: "html-injection", title: "画面のソースに HTML の差し込みが無い", run: checkNoHtmlInjection },

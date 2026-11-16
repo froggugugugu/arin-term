@@ -310,7 +310,7 @@ describe("actions(プロジェクトの削除の確認。FR-003)", () => {
 
   it("動作中があれば確認を開き、確認すると確認済みで呼び直して閉じる", async () => {
     const { fake, ui, actions } = setup({
-      remove_project: ({ confirmed }) => (confirmed ? { kind: "removed" } : { kind: "needsConfirmation", running: [running] }),
+      remove_project: ({ confirmed }) => (confirmed ? { kind: "removed" } : { kind: "needsConfirmation", running: [running], unsaved: [] }),
     });
 
     await actions.removeProject("p1");
@@ -327,7 +327,7 @@ describe("actions(プロジェクトの削除の確認。FR-003)", () => {
 
   it("中止すると確認を閉じ、削除のコマンドを呼ばない", async () => {
     const { fake, ui, actions } = setup({
-      remove_project: () => ({ kind: "needsConfirmation", running: [running] }),
+      remove_project: () => ({ kind: "needsConfirmation", running: [running], unsaved: [] }),
     });
     await actions.removeProject("p1");
 
@@ -341,7 +341,7 @@ describe("actions(プロジェクトの削除の確認。FR-003)", () => {
   it("確認済みで呼んでもまだ確認を求められたら、最新の一覧で確認を開き直す", async () => {
     const other: RunningTerminal = { ...running, terminalId: "t2", label: "ターミナル 2" };
     const { ui, actions } = setup({
-      remove_project: ({ confirmed }) => ({ kind: "needsConfirmation", running: confirmed ? [other] : [running] }),
+      remove_project: ({ confirmed }) => ({ kind: "needsConfirmation", running: confirmed ? [other] : [running], unsaved: [] }),
     });
     await actions.removeProject("p1");
 
@@ -427,6 +427,8 @@ async function treeSetup(handlers: Partial<FakeHandlers> = {}) {
           showHidden: false,
           terminalIds: [],
           activeTerminalId: null,
+          editorIds: [],
+          shownEditorId: null,
         },
       ],
       selectedProjectId: "p1",
@@ -749,6 +751,8 @@ describe("actions(切り替えたあとに届いた前のプロジェクトの�
     showHidden: false,
     terminalIds: [],
     activeTerminalId: null,
+    editorIds: [],
+    shownEditorId: null,
   });
   const select = (t: ReturnType<typeof setup>, selectedProjectId: string) =>
     t.app.getState().replaceSnapshot(sampleSnapshot({ projects: [card("p1"), card("p2")], selectedProjectId }));

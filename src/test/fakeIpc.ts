@@ -89,6 +89,9 @@ export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapsho
       window: { value: 45, min: 0, max: 100, defaultValue: 45, step: 5 },
       terminal: { value: 20, min: 0, max: 80, defaultValue: 20, step: 5 },
     },
+    // エディタのタブは 0 枚、Vim は既定の偽(ADR-015 の 3・6)
+    editors: [],
+    editor: { vim: false },
     ...overrides,
   };
 }

@@ -166,6 +166,7 @@ describe("startApp(画面側の起動の手順)", () => {
     ctx.fake.emit("menu-command", "select-all");
     ctx.fake.emit("quit-requested", {
       running: [{ terminalId: "t1", projectId: null, projectName: null, label: "ターミナル 1" }],
+      unsaved: [],
     });
 
     expect(listenersAtReady).toBe(2);

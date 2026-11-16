@@ -1,0 +1,149 @@
+/*
+ * Markdown のプレビュー(M4.8。ADR-015 の 2・7・8)。文字の組みで見せる: 行の高さ 1.6、段落の間は余白、表は横線だけ。
+ * 色は既存のトークンだけ(グラデーション・影・大きな角丸を使わない)。本文の大きさは外側の style(ターミナルの文字の大きさ)で、
+ * 寸法はすべてそれに対する比(tokens.css の --md-*)。地は置き場所(T83b)が決める。
+ */
+.md-preview {
+  box-sizing: border-box;
+  color: var(--color-fg);
+  font-family: var(--font-family);
+  line-height: var(--md-line-height);
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: auto;
+}
+
+.md-preview > :first-child {
+  margin-top: 0;
+}
+
+.md-preview :is(p, ul, ol, blockquote, pre, table, hr, h1, h2, h3, h4, h5, h6) {
+  margin: 0 0 var(--md-block-gap);
+}
+
+.md-preview :is(h1, h2, h3, h4, h5, h6) {
+  margin-top: var(--md-heading-gap);
+  font-weight: var(--font-weight-strong);
+  line-height: var(--md-heading-line-height);
+}
+
+.md-preview h1 {
+  font-size: var(--md-heading-1);
+}
+.md-preview h2 {
+  font-size: var(--md-heading-2);
+}
+.md-preview h3 {
+  font-size: var(--md-heading-3);
+}
+.md-preview h4 {
+  font-size: var(--md-heading-4);
+}
+.md-preview h5 {
+  font-size: var(--md-heading-5);
+}
+.md-preview h6 {
+  font-size: var(--md-heading-6);
+  color: var(--color-muted);
+}
+
+.md-preview :is(ul, ol) {
+  padding-left: var(--md-indent);
+}
+
+/* 項目の中の段落は詰める(リストの行を段落の余白で広げない) */
+.md-preview li > p {
+  margin: 0;
+}
+.md-preview li > :is(ul, ol) {
+  margin-bottom: 0;
+}
+
+.md-preview .md-task {
+  list-style: none;
+}
+
+.md-preview .md-task-mark {
+  margin-left: calc(var(--md-indent) * -1);
+  display: inline-block;
+  width: var(--md-indent);
+  color: var(--color-muted);
+}
+
+.md-preview .md-task > p:first-of-type {
+  display: inline;
+}
+
+.md-preview blockquote {
+  padding-left: var(--md-block-gap);
+  border-left: var(--md-quote-rule) solid var(--color-separator);
+  color: var(--color-muted);
+}
+
+.md-preview hr {
+  height: 0;
+  border: 0;
+  border-top: 1px solid var(--color-separator);
+}
+
+.md-preview :is(.md-code, .md-raw, .md-truncated, .md-inline-code) {
+  font-family: var(--font-family-mono);
+  font-size: var(--md-code-size);
+}
+
+.md-preview :is(pre.md-code, pre.md-raw, pre.md-truncated) {
+  padding: var(--md-code-block-padding);
+  overflow-x: auto;
+  border-radius: var(--radius-s);
+  background: var(--color-selection-inactive);
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.md-preview .md-inline-code {
+  padding: var(--md-code-padding);
+  border-radius: var(--radius-s);
+  background: var(--color-selection-inactive);
+}
+
+/* 生の HTML と打ち切った中身は淡い等幅の文字(書かれたまま) */
+.md-preview :is(.md-raw, .md-truncated) {
+  color: var(--color-muted);
+}
+.md-preview :is(pre.md-raw, pre.md-truncated) {
+  background: transparent;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* リンクは開かない。下線だけ付ける(押せる色・指の形にしない) */
+.md-preview .md-link {
+  text-decoration: underline;
+  text-decoration-color: var(--color-muted);
+  text-underline-offset: 0.15em;
+}
+
+.md-preview .md-image {
+  color: var(--color-muted);
+}
+
+/* 表は横線だけ */
+.md-preview .md-table {
+  border-collapse: collapse;
+}
+.md-preview .md-table :is(th, td) {
+  padding: var(--md-cell-padding);
+  border-bottom: 1px solid var(--color-separator);
+  text-align: left;
+  vertical-align: top;
+}
+.md-preview .md-table th {
+  font-weight: var(--font-weight-strong);
+}
+.md-preview .md-table .md-align-center {
+  text-align: center;
+}
+.md-preview .md-table .md-align-right {
+  text-align: right;
+}

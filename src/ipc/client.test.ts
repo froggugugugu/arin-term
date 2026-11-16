@@ -28,12 +28,13 @@ describe("src/ipc の包み", () => {
     expect(result).toEqual(table);
   });
 
-  it("偽の通信の_get_shortcuts_の既定の応答は既定の表_32_行", async () => {
+  it("偽の通信の_get_shortcuts_の既定の応答は既定の表_33_行", async () => {
     const ipc = createIpc(createFakeIpc().transport);
 
     const result = await ipc.getShortcuts();
 
-    expect(result).toHaveLength(32);
+    // M4.8 で editor.save を足した(ADR-015 の 6)
+    expect(result).toHaveLength(33);
     expect(result[0]).toEqual({ command: "terminal.new-tab", accelerator: "Cmd+T", receiver: "menu-item" });
     expect(result.find((b) => b.command === "edit.cut")).toEqual({
       command: "edit.cut",
@@ -134,9 +135,9 @@ describe("src/ipc の包み", () => {
     ];
 
     const unlisten = await ipc.onQuitRequested((request) => seen.push(request.running));
-    fake.emit("quit-requested", { running });
+    fake.emit("quit-requested", { running, unsaved: [] });
     unlisten();
-    fake.emit("quit-requested", { running: [] });
+    fake.emit("quit-requested", { running: [], unsaved: [] });
 
     expect(seen).toEqual([running]);
     expect(fake.listenerCount("quit-requested")).toBe(0);
@@ -458,11 +459,11 @@ describe("プロジェクトの操作(T33c)", () => {
     const running = [{ terminalId: "terminal-1", projectId: PROJECT, projectName: "app", label: "ターミナル 1" }];
     const fake = createFakeIpc({
       remove_project: ({ confirmed }) =>
-        confirmed ? { kind: "removed" } : { kind: "needsConfirmation", running },
+        confirmed ? { kind: "removed" } : { kind: "needsConfirmation", running, unsaved: [] },
     });
     const ipc = createIpc(fake.transport);
 
-    await expect(ipc.removeProject(PROJECT, false)).resolves.toEqual({ kind: "needsConfirmation", running });
+    await expect(ipc.removeProject(PROJECT, false)).resolves.toEqual({ kind: "needsConfirmation", running, unsaved: [] });
     await expect(ipc.removeProject(PROJECT, true)).resolves.toEqual({ kind: "removed" });
 
     expect(fake.calls).toEqual([

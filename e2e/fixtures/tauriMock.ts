@@ -96,6 +96,9 @@ export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapsho
       window: { value: 45, min: 0, max: 100, defaultValue: 45, step: 5 },
       terminal: { value: 20, min: 0, max: 80, defaultValue: 20, step: 5 },
     },
+    // エディタのタブは 0 枚、Vim は既定の偽(ADR-015 の 3・6)
+    editors: [],
+    editor: { vim: false },
     ...overrides,
   };
 }
@@ -128,6 +131,8 @@ export function projectSnapshot(terminals: readonly TerminalTabSnapshot[], overr
         showHidden: false,
         terminalIds: terminals.map((t) => t.id),
         activeTerminalId: terminals[0]?.id ?? null,
+        editorIds: [],
+        shownEditorId: null,
       },
     ],
     selectedProjectId: SAMPLE_PROJECT_ID,
@@ -166,6 +171,8 @@ export function projectsSnapshot(projects: readonly SampleProject[], overrides: 
       showHidden: false,
       terminalIds: ids,
       activeTerminalId: ids[0] ?? null,
+      editorIds: [],
+      shownEditorId: null,
     });
     tabs.forEach((label, index) => {
       terminals.push({

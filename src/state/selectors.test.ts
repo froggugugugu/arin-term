@@ -27,6 +27,8 @@ const project = (id: string, terminalIds: string[], activeTerminalId: string | n
   showHidden: false,
   terminalIds,
   activeTerminalId,
+  editorIds: [],
+  shownEditorId: null,
 });
 
 const running = { kind: "running" } as const;

@@ -34,7 +34,7 @@ const otherRows = DEFAULT_SHORTCUT_TABLE.filter((binding) => binding.receiver !=
 
 describe("routeShortcutKey(画面の keydown をフォーカス位置でコマンドの id にする)", () => {
   it("ツリーにフォーカスがあると表のキーをコマンドの_id_にする", () => {
-    // 見本の表で受け口が画面の行は 9 つ(PRD §6.4 の Must のうち、編集の項目で受ける ⌘C・⌘X・⌘V を除いたもの)
+    // 見本の表で受け口が画面の行は 10 個(PRD §6.4 の Must のうち、編集の項目で受ける ⌘C・⌘X・⌘V を除いた 9 つと、エディタの保存)
     expect(screenRows.map((binding) => binding.command)).toEqual([
       "tree.open",
       "tree.reveal-in-finder",
@@ -45,6 +45,8 @@ describe("routeShortcutKey(画面の keydown をフォーカス位置でコマ�
       "tree.trash",
       "tree.new-file",
       "tree.new-folder",
+      // M4.8 の保存(ADR-015 の 6)。ツリーの上では treeShortcutCommand が受けず、何もしない
+      "editor.save",
     ]);
     for (const binding of screenRows) {
       expect(routeShortcutKey(DEFAULT_SHORTCUT_TABLE, chordOf(binding.accelerator), "tree")).toBe(

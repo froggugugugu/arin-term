@@ -26,6 +26,8 @@ function project(overrides: Partial<ProjectCard> = {}): ProjectCard {
     showHidden: false,
     terminalIds: ["t1"],
     activeTerminalId: "t1",
+    editorIds: [],
+    shownEditorId: null,
     ...overrides,
   };
 }

@@ -333,7 +333,7 @@ test.describe("終了の確認(FR-063)", () => {
   test("終了の確認の要求で動作中の一覧が出て_終了で確定のコマンド", async ({ page }) => {
     await open(page, projectsSnapshot([APP, LOG]));
 
-    await emitEvent(page, "quit-requested", { running });
+    await emitEvent(page, "quit-requested", { running, unsaved: [] });
 
     const dialog = page.getByRole("alertdialog", { name: "Arin を終了しますか?" });
     await expect(dialog).toBeVisible();
@@ -351,11 +351,11 @@ test.describe("終了の確認(FR-063)", () => {
     await open(page, projectsSnapshot([APP, LOG]));
     const dialog = page.getByRole("alertdialog");
 
-    await emitEvent(page, "quit-requested", { running });
+    await emitEvent(page, "quit-requested", { running, unsaved: [] });
     await dialog.getByRole("button", { name: "取り消し" }).click();
     await expect(dialog).toHaveCount(0);
 
-    await emitEvent(page, "quit-requested", { running });
+    await emitEvent(page, "quit-requested", { running, unsaved: [] });
     await expect(dialog).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
@@ -366,8 +366,8 @@ test.describe("終了の確認(FR-063)", () => {
   test("同じ要求が_2_回届いてもダイアログは_1_つで一覧は新しいもの", async ({ page }) => {
     await open(page, projectsSnapshot([APP, LOG]));
 
-    await emitEvent(page, "quit-requested", { running });
-    await emitEvent(page, "quit-requested", { running: running.slice(1) });
+    await emitEvent(page, "quit-requested", { running, unsaved: [] });
+    await emitEvent(page, "quit-requested", { running: running.slice(1), unsaved: [] });
 
     await expect(page.getByRole("alertdialog")).toHaveCount(1);
     await expect(page.getByRole("alertdialog").getByRole("listitem")).toHaveText(["ribbitlog: ターミナル 1"]);
@@ -375,7 +375,7 @@ test.describe("終了の確認(FR-063)", () => {
 
   test("キーボードだけで確定できる", async ({ page }) => {
     await open(page, projectsSnapshot([APP]));
-    await emitEvent(page, "quit-requested", { running: running.slice(0, 1) });
+    await emitEvent(page, "quit-requested", { running: running.slice(0, 1), unsaved: [] });
     const dialog = page.getByRole("alertdialog");
     await expect(dialog.getByRole("button", { name: "取り消し" })).toBeFocused();
 

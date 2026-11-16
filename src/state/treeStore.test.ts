@@ -23,6 +23,8 @@ function project(id: string, overrides: Partial<ProjectCardSnapshot> = {}): Proj
     showHidden: false,
     terminalIds: [],
     activeTerminalId: null,
+    editorIds: [],
+    shownEditorId: null,
     ...overrides,
   };
 }
