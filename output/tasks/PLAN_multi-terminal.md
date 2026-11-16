@@ -1693,28 +1693,28 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 31.6b(逐次。Rust。T67 完了後)
 
-- [ ] T68a — 文字の大きさの規則と写しの型(変更ファイル: crates/arin-core/src/layout/font_sizes.rs, crates/arin-core/src/layout/mod.rs, crates/arin-core/src/workspace/snapshot.rs, crates/arin-core/src/workspace/state.rs, crates/arin-core/tests/font_sizes.rs, crates/arin-core/tests/app_snapshot.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/test/fakeIpc.ts, src/state/actions.test.ts, src/state/selectors.test.ts, e2e/fixtures/tauriMock.ts | 依存: T67)
+- [x] T68a — 文字の大きさの規則と写しの型(変更ファイル: crates/arin-core/src/layout/font_sizes.rs, crates/arin-core/src/layout/mod.rs, crates/arin-core/src/workspace/snapshot.rs, crates/arin-core/src/workspace/state.rs, crates/arin-core/tests/font_sizes.rs, crates/arin-core/tests/app_snapshot.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/test/fakeIpc.ts, src/state/actions.test.ts, src/state/selectors.test.ts, e2e/fixtures/tauriMock.ts | 依存: T67)
   - 対応: ADR-013 の 1・2、AC-F06・F08・F09 の規則の部分
   - 置くもの: `FontSizes { terminal, interface }`(既定 15・13)、`FontSizeTarget`(`terminal`/`interface`)、範囲と既定の定数、`stepped(target, delta)`(端で留める)、`reset()`、`from_persisted(raw)`(JSON の値 → 既定・四捨五入・端に留める)。写しの `FontSizesSnapshot`(それぞれ `value`・`min`・`max`・`defaultValue`)を `AppSnapshot.fontSizes` に足す(版は 1 のまま)。`Workspace::snapshot` は当面 `FontSizes::default()` を載せる(T68b で持たせる)。生成物を作り直し、画面の写しの見本 4 か所に既定の `fontSizes` を足す
   - 安全: 入出力なし
   - 並行: 不可(生成物)
   - 先に書くテスト: `既定はターミナル_15_画面_13`、`刻みは範囲の端で留まる`(表で)、`既定に戻すと両方が既定`、`保存値が無い_null_数でないときは既定`、`整数でない数は四捨五入する`、`範囲の外は端に留める`、`写しに値と範囲と既定が載る`、`写しの_json_の形`(生成物が最新)
   - 検証: `cargo test -p arin-core --test font_sizes --test app_snapshot --test generated_types && npx tsc -b`
-- [ ] T68b — 保存と `Workspace` の口(変更ファイル: crates/arin-core/src/persistence/codec.rs, crates/arin-core/src/workspace/state.rs, crates/arin-core/src/workspace/font_sizes.rs, crates/arin-core/src/workspace/mod.rs, crates/arin-core/tests/persistence_codec.rs, crates/arin-core/tests/workspace_font_sizes.rs, crates/arin-core/tests/workspace_projects.rs | 依存: T68a)
+- [x] T68b — 保存と `Workspace` の口(変更ファイル: crates/arin-core/src/persistence/codec.rs, crates/arin-core/src/workspace/state.rs, crates/arin-core/src/workspace/font_sizes.rs, crates/arin-core/src/workspace/mod.rs, crates/arin-core/tests/persistence_codec.rs, crates/arin-core/tests/workspace_font_sizes.rs, crates/arin-core/tests/workspace_projects.rs | 依存: T68a)
   - 対応: AC-F06・F07・F08
   - 置くもの: `PersistedLayout.font_sizes`。`UiSection` に `terminalFontSize`・`interfaceFontSize`(読みは `lenient_display_mode` と同じく退避しない形、既定なら書かない)。`Workspace` が `FontSizes` を持ち、`restore` で読み、`persisted_state`・`snapshot` に出す。`step_font_size(target, delta) -> bool`・`reset_font_sizes() -> bool`(変わったときだけ真)
   - 安全: 1 つの値のために `state.json` を退避しない
   - 並行: 不可(T68a に続く)
   - 先に書くテスト: `文字の大きさが無い版_1_の_state_json_をそのまま読む`、`既定の大きさは書かない`、`変えた大きさを書いて読み戻せる`、`数でない文字の大きさは退避せず既定`、`範囲の外の文字の大きさは端に留める`、`文字の大きさを足しても_schema_version_は_1`、`刻むと写しの値が変わり真を返す`、`端で刻んでも変わらず偽を返す`、`既定に戻すと両方が既定になり既定のときは偽`
   - 検証: `cargo test -p arin-core --test persistence_codec --test workspace_font_sizes --test workspace_projects`
-- [ ] T68c — コマンドと保存の結合(変更ファイル: src-tauri/src/sessions.rs, src-tauri/src/commands/layout.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/font_commands.rs, src-tauri/tests/app_persistence.rs | 依存: T68b)
+- [x] T68c — コマンドと保存の結合(変更ファイル: src-tauri/src/sessions.rs, src-tauri/src/commands/layout.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/font_commands.rs, src-tauri/tests/app_persistence.rs | 依存: T68b)
   - 対応: AC-F02(Rust 側)・F06・F07・F08、ADR-013 の 2・7
   - 置くもの: `SessionRegistry::step_font_size`・`reset_font_sizes`(変わったら `notify`)。コマンド `step_font_size(target, delta)`・`reset_font_sizes()`(`commands/layout.rs`。`generate_handler!` に足す)。`[[test]]`(`harness = false`)
   - 安全: 一時の状態フォルダだけ
   - 並行: 不可(`lib.rs`)
   - 先に書くテスト(模擬ランタイム): `刻むと写しが届き保存される`、`続けて_3_回刻むと_3_上がる`、`端では写しを送らない`、`既定に戻すと両方が既定の写しが届く`、`保存した大きさで起動し直すと写しに出る`、`文字の大きさを変えてもシェルは続く`(セッションの状態が `running` のまま)
   - 検証: `cargo test -p arin --test font_commands --test app_persistence`
-- [ ] T68d — ⌘, の付け替えとメニュー(【要確認】2 の A)(変更ファイル: crates/arin-core/src/workspace/events.rs, crates/arin-core/src/shortcuts/table.rs, crates/arin-core/src/shortcuts/sample.rs, crates/arin-core/tests/shortcuts.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/MenuCommand.ts, src-tauri/src/menu.rs, src-tauri/src/settings.rs, src-tauri/src/commands/app.rs, src-tauri/src/lib.rs, src-tauri/tests/app_menu.rs, src-tauri/tests/app_settings.rs | 依存: T68c, T66d)
+- [x] T68d — ⌘, の付け替えとメニュー(【要確認】2 の A)(変更ファイル: crates/arin-core/src/workspace/events.rs, crates/arin-core/src/shortcuts/table.rs, crates/arin-core/src/shortcuts/sample.rs, crates/arin-core/tests/shortcuts.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/MenuCommand.ts, src-tauri/src/menu.rs, src-tauri/src/settings.rs, src-tauri/src/commands/app.rs, src-tauri/src/lib.rs, src-tauri/tests/app_menu.rs, src-tauri/tests/app_settings.rs | 依存: T68c, T66d)
   - 対応: AC-F01・F10・F11(Rust 側)、ADR-013 の 6
   - 置くもの: `MenuCommand::OpenSettings`(`"open-settings"`)。`menu::label(AppOpenSettings)` を「設定…」に、`on_menu_event` は `menu-command` を送る。表の外の項目「設定ファイルを開く…」(定数 `OPEN_SETTINGS_FILE_ID = "app.open-settings-file"`、キーなし。「設定…」の下)で `settings::open_from_menu` を呼ぶ(名前は `open_settings_file` に替えてよい)。コマンド `open_settings_file`(引数なし)。見本の先頭に「文字の大きさはアプリの「設定…」(⌘,)で変えます」の 1 行。表は 23 行のまま(`table.rs` は説明の文だけ)
   - 安全: 設定ファイルは無いときだけ見本を作る(ADR-012 の 6 のまま)
