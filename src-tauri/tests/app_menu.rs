@@ -506,8 +506,9 @@ fn 受け口がメニューの項目のものだけがメニューに載る() {
 fn メニューと_get_shortcuts_は管理状態の同じ表を見る() {
     let state_dir = support::TempDir::new("menu-shortcuts-state");
     let app = build_app(support::launch_in(&state_dir, false));
+    // 設定ファイルの無い状態フォルダなので既定の表(設定を当てた表は app_settings.rs。T65b)。
     let shortcuts = app.state::<Shortcuts>();
-    assert_eq!(shortcuts.table(), &ShortcutTable::default_table());
+    assert_eq!(shortcuts.table(), ShortcutTable::default_table());
 }
 
 /// プロジェクトを 1 件持つ状態ファイルを置いた一時フォルダ(状態フォルダとプロジェクトのフォルダ)。

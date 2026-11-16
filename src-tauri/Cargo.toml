@@ -130,3 +130,9 @@ harness = false
 [[test]]
 name = "display_commands"
 harness = false
+
+# 起動時の設定ファイル(settings.toml)の読み込みと、メニュー・get_shortcuts・知らせへの反映(T65b。ADR-012 の 3・5)。
+# 状態フォルダは一時フォルダに差し替え、本物の設定ファイルを読まない。理由は app_builder と同じ。
+[[test]]
+name = "app_settings"
+harness = false

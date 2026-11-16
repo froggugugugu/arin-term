@@ -5,7 +5,8 @@
 //! セッション管理と保存のスレッドとプロジェクトの操作(`projects.rs`)とルートへの追従の見回り(`patrol.rs`)を作って登録し、
 //! ツリーの操作(`tree.rs`)とファイル操作(`fileops.rs`。切り取りの状態をアプリに 1 つ持つ)と、選択中のプロジェクトのツリーの監視の張り替え(`tree_watch.rs`。写しを送るたびに張り替えを頼む)を登録し、
 //! デスクトップとパスの操作(`commands/desktop.rs`。Finder で表示・開く・パスのコピー・ターミナルへの挿入)を登録し、
-//! ショートカットの表(`menu::Shortcuts`。メニューバーと `get_shortcuts` が同じものを見る)を登録し、
+//! 設定ファイルを読んで(`settings.rs`)ショートカットの表(`menu::Shortcuts`。メニューバーと `get_shortcuts` が同じものを見る)と
+//! 設定の知らせ(`settings::AppSettings`)を登録し、
 //! コマンドとメニューバー(`menu.rs`。項目が選ばれたときも `menu.rs`)と終了の確認の状態(`lifecycle.rs`)を登録して
 //! tauri.conf.json のウィンドウを 1 枚出す。Finder からのドロップは `lifecycle.rs` が受ける。
 
@@ -20,6 +21,7 @@ pub mod patrol;
 pub mod persistence;
 pub mod projects;
 pub mod sessions;
+pub mod settings;
 pub mod tree;
 pub mod tree_watch;
 pub mod verify_log;
@@ -52,6 +54,7 @@ use crate::patrol::{PATROL_INTERVAL, PatrolThread, RootPatrol};
 use crate::persistence::{Persistence, PersistencePorts, load_startup};
 use crate::projects::{FolderPicker, NativeFolderPicker, ProjectPorts, Projects};
 use crate::sessions::{SessionConfig, SessionRegistry, ShellDefaults, ShellProbe};
+use crate::settings::AppSettings;
 use crate::tree::Tree;
 use crate::tree_watch::{TreeChangeSink, TreeWatch};
 
@@ -210,14 +213,20 @@ pub fn builder_with_desktop<R: Runtime>(
     let ready = ReadyNotice::new(launch.ready_marker().map(ToOwned::to_owned));
     let first_output = FirstOutputNotice::new(launch.terminal_marker().map(ToOwned::to_owned));
     let terminal = launch.terminal().clone();
+    // 設定ファイル(状態フォルダの `settings.toml`。差し替えたら差し替え先だけ)を、メニューを作る前に読む(T65b)。
+    // 読むだけで、書き換え・退避はしない。問題は標準エラーに 1 つ 1 行(`[arin:settings]`)。
+    let (settings, resolved) = AppSettings::load(launch.paths());
+    settings::report(&resolved);
     Builder::<R>::new()
         .manage(launch.paths().clone())
         .manage(ready)
         .manage(first_output)
         .manage(QuitGate::default())
         // ショートカットの表(T42e)。メニュー(`menu::build`)と `get_shortcuts` がこれを見る。
-        // M4.5 では、ここで設定ファイルの値とまとめた表を渡す。
-        .manage(Shortcuts::default())
+        // 設定ファイルの値を当てた表(T65b)。動作中の差し替えは `Shortcuts::replace` と `menu::rebuild`(T65c)。
+        .manage(Shortcuts::new(resolved.table))
+        // 設定の知らせ(`get_settings_notice`)と、読み直し(T65c)のための直前の内容。
+        .manage(settings)
         .menu(menu::build)
         .on_menu_event(|app, event| menu::on_menu_event(app, event.id().as_ref()))
         .setup(move |app| {
@@ -313,6 +322,7 @@ pub fn builder_with_desktop<R: Runtime>(
         .invoke_handler(tauri::generate_handler![
             commands::app::get_app_snapshot,
             commands::app::get_shortcuts,
+            commands::app::get_settings_notice,
             commands::app::notify_app_ready,
             commands::app::report_frontend_error,
             commands::app::confirm_quit,

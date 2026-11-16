@@ -10,6 +10,7 @@ use crate::diagnostics::frontend_error_line;
 use crate::lifecycle::{self, ReadyNotice};
 use crate::menu::Shortcuts;
 use crate::sessions::SessionRegistry;
+use crate::settings::AppSettings;
 
 /// 状態の写しが変わったときに送るイベントの名前。中身は `AppSnapshot`(設計書 §5.2)。
 pub const SNAPSHOT_EVENT: &str = "app-snapshot";
@@ -22,10 +23,20 @@ pub fn get_app_snapshot(sessions: State<'_, SessionRegistry>) -> AppSnapshot {
 
 /// ショートカットの表を返す(T42e)。画面は起動時に 1 回だけ呼び、キーの振り分けとメニューのキーの表示に使う(T43a)。
 ///
-/// メニューバー(`menu.rs`)と同じ管理状態の表(`Shortcuts`)を返す。M4.5 では設定ファイルの値とまとめた表になる。
+/// メニューバー(`menu.rs`)と同じ管理状態の表(`Shortcuts`)を返す。設定ファイルの値を当てた表(T65b)。
+/// 設定が変わったら `settings-changed` が届くので、画面は呼び直す(T65c・T65e)。
 #[tauri::command]
 pub fn get_shortcuts(shortcuts: State<'_, Shortcuts>) -> ShortcutTable {
-    shortcuts.table().clone()
+    shortcuts.table()
+}
+
+/// 設定ファイルの知らせの 1 行を返す(問題が無ければ null。T65b、前提 (g))。
+///
+/// ファイル全体の問題(構文エラーの行と列・読めない理由)と、ショートカットの行の問題(コマンドの ID・キー・理由)を
+/// まとめた 1 行。状態ファイルの知らせ(写しの `notice`)とは別。設定の行の全文と絶対パスは含まない(AC-K09)。
+#[tauri::command]
+pub fn get_settings_notice(settings: State<'_, AppSettings>) -> Option<String> {
+    settings.notice()
 }
 
 /// 画面の準備ができたことを受け取る。

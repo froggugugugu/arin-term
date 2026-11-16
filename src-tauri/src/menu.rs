@@ -2,7 +2,8 @@
 //!
 //! 項目の ID とキーはショートカットの表(`arin_core::shortcuts`。T38d)から作り、ここには文言と並びだけを書く
 //! (M4.5 で設定ファイルからキーを変えるため)。表はアプリの管理状態の [`Shortcuts`] が 1 つだけ持ち、メニューを作るときと
-//! 画面へ渡すとき(`get_shortcuts`)の両方がそれを見る。
+//! 画面へ渡すとき(`get_shortcuts`)の両方がそれを見る。起動時の表は設定ファイルの値を当てたもの(`settings.rs`。T65b)で、
+//! 表を差し替えたら [`rebuild`] でメニューを丸ごと作り直す(ADR-012 の 5)。
 //!
 //! - 受け口が「メニューの項目」の行: 自前の項目にし、表のキーをアクセラレータにする(WKWebView より先に OS が受けるため。決定 (b))。
 //!   項目が選ばれたら `on_menu_event` が、タブの操作と表示の操作は画面を経由せず `SessionRegistry` を呼び(変わった状態は写しで画面に届く)、
@@ -18,6 +19,8 @@
 //! (`RunEvent::ExitRequested`)を経由せずにアプリを終わらせ(Tauri 2.12.5 / tao 0.37.2 は
 //! `applicationShouldTerminate:` を持たない)、後者は xterm.js ではなく文書全体を選ぶ。
 
+use std::sync::{PoisonError, RwLock};
+
 use arin_core::shortcuts::table::{ShortcutCommandId, ShortcutReceiver, ShortcutTable};
 use arin_core::workspace::MenuCommand;
 use tauri::menu::{
@@ -32,23 +35,39 @@ use crate::sessions::SessionRegistry;
 /// ショートカットの表(アプリの管理状態。`Builder::manage` で登録する)。
 ///
 /// メニューの組み立て(`build`)と画面へ渡すコマンド(`get_shortcuts`)はこれだけを見る。
-/// いまは既定の表を持つ。M4.5(T63〜T66)では、設定ファイルの値とまとめた表で [`Shortcuts::new`] を呼ぶ(`lib.rs` の 1 か所)。
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// 起動時は設定ファイルの値を当てた表で [`Shortcuts::new`] を呼ぶ(`lib.rs` の 1 か所。T65b)。
+/// 動作中に設定が変わったら [`Shortcuts::replace`] で差し替え、[`rebuild`] でメニューを作り直す(T65c)。
+#[derive(Debug)]
 pub struct Shortcuts {
-    table: ShortcutTable,
+    table: RwLock<ShortcutTable>,
 }
 
 impl Shortcuts {
     /// 表を持たせる。
     #[must_use]
     pub const fn new(table: ShortcutTable) -> Self {
-        Self { table }
+        Self {
+            table: RwLock::new(table),
+        }
     }
 
-    /// 持っている表。
+    /// 持っている表の写し(差し替えと並んで読んでも、読んだ時点の表 1 つが丸ごと返る)。
     #[must_use]
-    pub const fn table(&self) -> &ShortcutTable {
-        &self.table
+    pub fn table(&self) -> ShortcutTable {
+        self.table
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// 表を差し替える。前と違えば `true`(同じなら何もしない)。メニューは作り直さない([`rebuild`] を呼ぶ)。
+    pub fn replace(&self, table: ShortcutTable) -> bool {
+        let mut current = self.table.write().unwrap_or_else(PoisonError::into_inner);
+        if *current == table {
+            return false;
+        }
+        *current = table;
+        true
     }
 }
 
@@ -125,7 +144,28 @@ pub fn accelerator(table: &ShortcutTable, command: ShortcutCommandId) -> Option<
 ///
 /// [`Shortcuts`] を管理状態に登録していないとき(`lib.rs` の組み立てが必ず登録する)。
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
-    build_with_table(app, app.state::<Shortcuts>().table())
+    build_with_table(app, &app.state::<Shortcuts>().table())
+}
+
+/// 管理状態の [`Shortcuts`] の表でメニューバーを作り直し、アプリのメニューを丸ごと差し替える(ADR-012 の 5、前提 (f))。
+///
+/// 項目ごとの `set_accelerator` は使わない(読めない文字列を黙って捨て、macOS では `None` でキーを消さない)。
+/// 項目の ID は表のコマンドの ID のままなので、`on_menu_event` は変わらない。
+///
+/// **メインスレッドで呼ぶ**(macOS ではメニューの部品をメインスレッドでしか作れない)。別のスレッド
+/// (設定ファイルの監視など)からは `AppHandle::run_on_main_thread` で包んで呼ぶ。
+///
+/// # Errors
+///
+/// メニューの部品を作れなかった・差し替えられなかったとき。そのときは前のメニューのまま。
+///
+/// # Panics
+///
+/// [`Shortcuts`] を管理状態に登録していないとき(`lib.rs` の組み立てが必ず登録する)。
+pub fn rebuild<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+    let menu = build(app)?;
+    app.set_menu(menu)?;
+    Ok(())
 }
 
 /// 表を渡してメニューバーを組み立てる。
