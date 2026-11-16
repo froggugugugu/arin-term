@@ -1724,7 +1724,7 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 31.6c(画面への反映。T68a 完了後。T68b〜T68d と並べられるが同じ時に走らせない)
 
-- [ ] T69a — ターミナルへの反映(変更ファイル: src/terminal/engine.ts, src/terminal/xterm/XtermEngine.ts, src/terminal/TerminalManager.ts, src/terminal/TerminalManager.test.ts, src/test/fakeTerminalEngine.ts, src/state/terminalSync.ts, src/state/terminalSync.test.ts | 依存: T68a)
+- [x] T69a — ターミナルへの反映(変更ファイル: src/terminal/engine.ts, src/terminal/xterm/XtermEngine.ts, src/terminal/TerminalManager.ts, src/terminal/TerminalManager.test.ts, src/test/fakeTerminalEngine.ts, src/state/terminalSync.ts, src/state/terminalSync.test.ts | 依存: T68a)
   - 対応: AC-F02・F03・F09、ADR-013 の 3
   - 置くもの: `TerminalSurface.setFontSize(px)`、`createSurface(id, { fontSize })`。`XtermSurface` は表示中なら `options.fontSize` を替えて `fit`、隠していれば覚えて `setVisible(true)` で当ててから `fit`。`TerminalManager.setFontSize(px)`(全サーフェスへ。1 フレームにまとめ最後の値だけ。`#lastShownSize` を更新)。`terminalSync` が写しの `fontSizes.terminal.value` の変化で呼ぶ(`present` より前)
   - 安全: 接続を切らない・作り直さない
@@ -1732,7 +1732,7 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
   - 先に書くテスト(Vitest): `大きさを変えると表示中のサーフェスに当てて寸法を合わせ直す`、`隠しているサーフェスは表示に戻すときに当てる`、`新しく作るサーフェスは今の大きさで作る`、`寸法が変われば_resize_terminal_を送り接続は保つ`、`続けて変えると最後の値だけを_1_回当てる`、`写しの大きさが同じなら何もしない`、`隠したまま作るサーフェスも写しの大きさで作る`(`terminalSync`)
   - 検証: `npx vitest run src/terminal src/state/terminalSync.test.ts`
   - 着手時に確かめる: xterm.js 6.0.0 で `display: none` のまま `fontSize` を替えると文字の寸法が 0 で測られるか(ADR-013 の 3 の【仮定】)。T70b の E2E で「隠していたタブを表示すると、初めから新しい大きさだったものと同じ行・桁」を WebKit で確かめる
-- [ ] T69b — 画面の CSS の基準値化とツリー(【要確認】5)(変更ファイル: src/logic/appearance/interfaceMetrics.ts, src/logic/appearance/interfaceMetrics.test.ts, src/ui/design/applyInterfaceMetrics.ts, src/ui/design/tokens.css, src/ui/tree/TreeView.css, src/ui/tree/FileTreeView.tsx, src/ui/shell/AppShell.tsx | 依存: T68a)
+- [x] T69b — 画面の CSS の基準値化とツリー(【要確認】5)(変更ファイル: src/logic/appearance/interfaceMetrics.ts, src/logic/appearance/interfaceMetrics.test.ts, src/ui/design/applyInterfaceMetrics.ts, src/ui/design/tokens.css, src/ui/tree/TreeView.css, src/ui/tree/FileTreeView.tsx, src/ui/shell/AppShell.tsx | 依存: T68a)
   - 対応: AC-F04・F05・F09、ADR-013 の 4
   - 置くもの: `interfaceMetrics(size)`(追従の 14 トークンを整数の px で。`round(既定 × size / 13)`)。`applyInterfaceMetrics(root, metrics)`(`style.setProperty`)。`tokens.css` に `--tree-input-height: 18px`、`TreeView.css` の 18px 2 か所を置き換え。`FileTreeView` は行の高さを props か写しから受け取り、変わったら窓を計算し直す(`readRowHeight` と `FALLBACK_ROW_HEIGHT` は外すか既定の値に使う)。`AppShell` が写しの `fontSizes.interface.value` で当てる
   - 安全: HTML の差し込みを使わない(CSSOM の `setProperty` だけ)
