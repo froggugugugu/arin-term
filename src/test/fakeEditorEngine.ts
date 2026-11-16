@@ -8,7 +8,7 @@ export interface FakeEditorSurface extends EditorSurface {
   readonly id: EditorId;
   /** createSurface に渡された指定。 */
   readonly options: EditorSurfaceOptions;
-  /** いまの文書。 */
+  /** いまの文書(改行は文書の改行の 1 種類に揃えてある)。 */
   current: string;
   lineEnding: LineEnding;
   /** 取り消しの履歴(編集の前の文書の積み重ね)。setText で空になる。 */
@@ -41,6 +41,10 @@ export interface FakeEditorEngine extends EditorEngine {
   readonly parsed: string[];
 }
 
+/** CodeMirror の部品と同じく、読み込んだ文書の改行(`\r\n`・`\r`・`\n`)を文書の改行の 1 種類に揃える。 */
+const unifyLineEndings = (text: string, lineEnding: LineEnding): string =>
+  text.replace(/\r\n|\r|\n/g, lineEnding === "crlf" ? "\r\n" : "\n");
+
 /** 偽の解析の結果(文書を 1 つの段落にするだけ)。 */
 export const fakeBlocks = (text: string): MdBlock[] => [{ kind: "paragraph", children: [{ kind: "text", text }] }];
 
@@ -61,7 +65,7 @@ export function createFakeEditorEngine(): FakeEditorEngine {
         id,
         options,
         element: { fakeEditorId: id } as unknown as HTMLElement,
-        current: options.text,
+        current: unifyLineEndings(options.text, options.lineEnding),
         lineEnding: options.lineEnding,
         history: [],
         slot: null,
@@ -91,7 +95,7 @@ export function createFakeEditorEngine(): FakeEditorEngine {
           surface.detachCount++;
         },
         setText(text, lineEnding) {
-          surface.current = text;
+          surface.current = unifyLineEndings(text, lineEnding);
           surface.lineEnding = lineEnding;
           surface.history.length = 0;
           surface.setTextCalls.push({ text, lineEnding });

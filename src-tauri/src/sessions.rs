@@ -979,24 +979,7 @@ impl SessionRegistry {
         Ok(changed)
     }
 
-    /// 保存した・読み直した: 版を持ち直し、未保存の印を消す。印が変わったときだけ写しを送る(版は写しに載らない)。
-    ///
-    /// # Errors
-    ///
-    /// その ID のエディタが無いとき(保存のあいだに閉じた)。
-    pub fn mark_editor_synced(&self, id: &EditorId, stamp: FileStamp) -> Result<(), SessionError> {
-        let changed = {
-            let mut ws = lock(&self.inner.workspace);
-            ws.set_editor_stamp(id, stamp)?;
-            ws.set_editor_dirty(id, false)?
-        };
-        if changed {
-            self.notify();
-        }
-        Ok(())
-    }
-
-    /// 版だけを持ち直す(`touch` だけで中身が同じだった)。写しは送らない。
+    /// 版を持ち直す(保存した・画面が読み直した本文を当てた)。未保存の印は替えない。写しは送らない(版は写しに載らない)。
     ///
     /// # Errors
     ///

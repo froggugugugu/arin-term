@@ -245,6 +245,19 @@ describe("parseMarkdown(lezer の構文木を自前の木にする。ADR-015 の
     expect(JSON.stringify(emphasis)).toContain('"truncated"');
   });
 
+  it("画像の入れ子も段数で打ち切る(代わりの文字の中の画像を際限なくたどらない)", () => {
+    const nested = (n: number) => `${"![".repeat(n)}x${"](u)".repeat(n)}`;
+    expect(parseMarkdown(nested(3))).toEqual([para({ kind: "image", alt: "x" })]);
+
+    const [deep] = parseMarkdown(nested(MD_MAX_DEPTH + 8));
+    if (deep?.kind !== "paragraph") throw new Error("段落でない");
+    const [image] = deep.children;
+    if (image?.kind !== "image") throw new Error("画像でない");
+    // 打ち切った先は書かれた文字のまま代わりの文字に残る
+    expect(image.alt).toContain("![x](u)");
+    expect(parseMarkdown(nested(3000))).toHaveLength(1);
+  });
+
   it("リンクの参照の定義は出さない", () => {
     expect(parseMarkdown("[r]: https://r.example\n\n本文")).toEqual([para(text("本文"))]);
   });

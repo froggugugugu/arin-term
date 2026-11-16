@@ -459,6 +459,7 @@ const DEFAULT_REPLIES: TauriMockConfig = {
   open_document: { ok: { kind: "not-found" } },
   save_document: { ok: { kind: "saved" } },
   check_document: { ok: { kind: "unchanged" } },
+  adopt_document: { ok: true },
   set_document_dirty: { ok: null },
   select_editor: { ok: null },
   close_editor: { ok: { kind: "closed" } },

@@ -17,7 +17,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use arin_core::editor::{
-    CheckDocumentOutcome, EditorCloseRequest, OpenDocumentOutcome, SaveDocumentOutcome,
+    CheckDocumentOutcome, CheckText, EditorCloseRequest, OpenDocumentOutcome, SaveDocumentOutcome,
+    SaveMode,
 };
 use arin_core::fileops::{ConflictResolution, FileOpOutcome, NewEntryKind};
 use arin_core::layout::font_sizes::FontSizeTarget;
@@ -75,6 +76,9 @@ fn collect_generated(cfg: &Config) -> BTreeMap<PathBuf, String> {
     collector.visit::<OpenDocumentOutcome>();
     collector.visit::<SaveDocumentOutcome>();
     collector.visit::<CheckDocumentOutcome>();
+    // 保存のしかたと、確認で本文を受け取るか(コマンドの引数)。
+    collector.visit::<SaveMode>();
+    collector.visit::<CheckText>();
     collector.visit::<EditorCloseRequest>();
     collector.files
 }

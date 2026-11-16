@@ -16,7 +16,7 @@ pub use document::{
     is_markdown_path, same_content,
 };
 pub use outcome::{
-    CheckDocumentOutcome, DocumentNotAllowedReason, EditorCloseRequest, OpenDocumentOutcome,
-    SaveDocumentOutcome,
+    CheckDocumentOutcome, CheckText, DocumentNotAllowedReason, EditorCloseRequest,
+    OpenDocumentOutcome, SaveDocumentOutcome, SaveMode,
 };
 pub use store::{EditorError, EditorId, EditorStore, EditorTab};

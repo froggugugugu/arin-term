@@ -6,10 +6,14 @@ import type { LineEnding } from "./LineEnding";
  */
 export type CheckDocumentOutcome = { "kind": "unchanged" } | { "kind": "changed", 
 /**
- * 新しい本文(先頭の BOM は外してある)。`withText` が偽・文字として読めない・大きすぎるときは `null`。
+ * 新しい本文(先頭の BOM は外してある)。`withText` が `never`・文字として読めない・大きすぎるときは `null`。
  */
 text: string | null, 
 /**
  * 新しい本文の改行(`text` が `null` のときは `lf`)。
  */
-lineEnding: LineEnding, } | { "kind": "missing" };
+lineEnding: LineEnding, 
+/**
+ * 読んだ版の印(`text` があるときだけ。版の中身ではない)。
+ */
+token: number | null, } | { "kind": "missing" };

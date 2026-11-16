@@ -64,6 +64,18 @@ pub enum OpenDocumentOutcome {
     },
 }
 
+/// `save_document` の保存のしかた(本人が保存の衝突の確認で選んだもの)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum SaveMode {
+    /// ふつうの保存。開いたとき(最後に保存・当てたとき)の版と同じときだけ置き換え、無ければ作らない。
+    Normal,
+    /// 「上書き保存」。版を比べずに置き換える。無ければ作らない(`missing`)。
+    Overwrite,
+    /// 「同じ名前で作る」。無いときだけ作る(`RENAME_EXCL`)。同じ名前があれば書かずに `changed-outside`。
+    Create,
+}
+
 /// `save_document` の応答。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(
@@ -72,23 +84,35 @@ pub enum OpenDocumentOutcome {
     rename_all_fields = "camelCase"
 )]
 pub enum SaveDocumentOutcome {
-    /// 保存した(未保存の印は消え、写しが届く)。
+    /// 保存した(版を持ち直す)。未保存の印は替えない(保存中に打った分があるかは画面しか知らないので、画面が送る)。
     Saved,
-    /// 開いたあと(最後に保存・読み直したあと)に外で変わっていたので書いていない。
-    /// 本人が「上書き保存」を選んだら `overwriteChanged` を真にして呼び直す。
+    /// 開いたあと(最後に保存・当てたあと)に外で変わっていた、または「作る」で同じ名前があったので書いていない。
+    /// 本人が「上書き保存」を選んだら `overwrite` で呼び直す。
     ChangedOutside,
     /// ファイルが無い(外で消えた・名前が変わった)ので書いていない。本人が「同じ名前で作る」を選んだら
-    /// `overwriteChanged` を真にして呼び直す(作るときは上書きしない)。
+    /// `create` で呼び直す(作るときは上書きしない)。
     Missing,
     /// 読み取り専用で開いた文書なので書いていない。
     ReadOnly,
     /// 保存すると 1 MiB を超えるので書いていない。
     TooLarge,
-    /// 保存できなかった。元のファイルは変わっていない。
+    /// 保存できなかった(保存先のフォルダが無いときを含む)。元のファイルは変わっていない。
     Failed {
         /// 画面に出す 1 行の文言(絶対パスを含まない)。
         message: String,
     },
+}
+
+/// `check_document` で本文を受け取るか。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum CheckText {
+    /// 受け取らない(未保存の変更があるとき)。
+    Never,
+    /// 外で変わっていたら受け取る(未保存の変更が無いとき)。
+    IfChanged,
+    /// 変わっていなくても受け取る(本人が衝突の確認で「読み直す」を選んだとき)。
+    Always,
 }
 
 /// `check_document` の応答(外で変わったかの確認。ADR-015 の 5)。
@@ -99,15 +123,18 @@ pub enum SaveDocumentOutcome {
     rename_all_fields = "camelCase"
 )]
 pub enum CheckDocumentOutcome {
-    /// 変わっていない(`touch` だけのときもこれ)。
+    /// 変わっていない(`touch` だけのときもこれ)。`withText` が `always` で読めたときは `changed` になる。
     Unchanged,
-    /// 外で変わった。`withText` が真で文字として読めたときだけ `text` に新しい本文が入り、エディタはその版を持ち直す
-    /// (未保存の印も消える)。`text` が `null` のときは持ち直していない(保存すると `changed-outside` になる)。
+    /// 外で変わった(`withText` が `always` なら、変わっていなくても読めればこれ)。確認はエディタの状態を変えない。
+    /// `text` があるときは `token` に読んだ版の印が入る。画面は本文を実際に当てたあとにだけ、その印で
+    /// `adopt_document` を呼ぶ(そのとき Rust は版を持ち直す)。当てなければ版は古いままで、保存は `changed-outside` になる。
     Changed {
-        /// 新しい本文(先頭の BOM は外してある)。`withText` が偽・文字として読めない・大きすぎるときは `null`。
+        /// 新しい本文(先頭の BOM は外してある)。`withText` が `never`・文字として読めない・大きすぎるときは `null`。
         text: Option<String>,
         /// 新しい本文の改行(`text` が `null` のときは `lf`)。
         line_ending: LineEnding,
+        /// 読んだ版の印(`text` があるときだけ。版の中身ではない)。
+        token: Option<u32>,
     },
     /// ファイルが無い(ふつうのファイルでなくなった場合を含む)。
     Missing,

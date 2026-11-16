@@ -166,7 +166,7 @@ describe("editorController(未保存と保存。AC-E04・E05)", () => {
 
     expect(t.fake.calls.slice(1)).toEqual([
       { command: "set_document_dirty", args: { editorId: "e1", dirty: true } },
-      { command: "save_document", args: { editorId: "e1", text: "# bc\n", overwriteChanged: false } },
+      { command: "save_document", args: { editorId: "e1", text: "# bc\n", mode: "normal" } },
       // 保存した文書を基準にし直したので未保存が消える
       { command: "set_document_dirty", args: { editorId: "e1", dirty: false } },
     ]);
@@ -196,7 +196,7 @@ describe("editorController(未保存と保存。AC-E04・E05)", () => {
     expect(t.editors.isDirty("e1")).toBe(true);
   });
 
-  it("changed_outside_で衝突の確認を出し_上書き保存で_overwrite_changed_が真で呼ぶ", async () => {
+  it("changed_outside_で衝突の確認を出し_上書き保存は_mode_overwrite_で呼ぶ", async () => {
     const replies = [{ kind: "changed-outside" } as const, { kind: "saved" } as const];
     const t = setup({ save_document: () => replies.shift() ?? { kind: "saved" } });
     await t.controller.openDocument("p1", "a.md");
@@ -210,8 +210,8 @@ describe("editorController(未保存と保存。AC-E04・E05)", () => {
     expect(t.ui.getState().saveConflict).toBeNull();
     const saves = t.fake.calls.filter((c) => c.command === "save_document").map((c) => c.args);
     expect(saves).toEqual([
-      { editorId: "e1", text: "x", overwriteChanged: false },
-      { editorId: "e1", text: "x", overwriteChanged: true },
+      { editorId: "e1", text: "x", mode: "normal" },
+      { editorId: "e1", text: "x", mode: "overwrite" },
     ]);
   });
 
@@ -228,10 +228,10 @@ describe("editorController(未保存と保存。AC-E04・E05)", () => {
     expect(t.ui.getState().pendingEditorFocus).toBe("e1");
   });
 
-  it("読み直すは未保存でも本文を受け取って置き換える", async () => {
+  it("読み直すは未保存でも_外の版が手元と同じでも本文を受け取って置き換え_当てた版を伝える", async () => {
     const t = setup({
       save_document: () => ({ kind: "changed-outside" }),
-      check_document: () => ({ kind: "changed", text: "外の文書", lineEnding: "lf" }),
+      check_document: () => ({ kind: "changed", text: "外の文書", lineEnding: "lf", token: 4 }),
     });
     await t.controller.openDocument("p1", "a.md");
     t.surface().type("打った");
@@ -239,14 +239,17 @@ describe("editorController(未保存と保存。AC-E04・E05)", () => {
 
     await t.controller.resolveSaveConflict("reload");
 
+    // always: 外の版が手元と同じ(unchanged になる)ときも本文を受け取る
     expect(t.fake.calls.filter((c) => c.command === "check_document").map((c) => c.args)).toEqual([
-      { editorId: "e1", withText: true },
+      { editorId: "e1", withText: "always" },
     ]);
     expect(t.editors.text("e1")).toBe("外の文書");
     expect(t.editors.isDirty("e1")).toBe(false);
+    expect(t.commands().slice(-2)).toEqual(["set_document_dirty", "adopt_document"]);
+    expect(t.fake.calls.at(-1)).toEqual({ command: "adopt_document", args: { editorId: "e1", token: 4 } });
   });
 
-  it("消えていたら作るか聞き_作るは_overwrite_changed_が真で呼ぶ", async () => {
+  it("消えていたら作るか聞き_作るは_mode_create_で呼ぶ", async () => {
     const replies = [{ kind: "missing" } as const, { kind: "saved" } as const];
     const t = setup({ save_document: () => replies.shift() ?? { kind: "saved" } });
     await t.controller.openDocument("p1", "a.md");
@@ -255,7 +258,12 @@ describe("editorController(未保存と保存。AC-E04・E05)", () => {
     expect(t.ui.getState().saveConflict).toEqual({ editorId: "e1", kind: "missing" });
     await t.controller.resolveSaveConflict("create");
 
-    expect(t.fake.calls.at(-1)).toMatchObject({ command: "save_document", args: { overwriteChanged: true } });
+    expect(t.fake.calls.filter((c) => c.command === "save_document").map((c) => c.args)).toMatchObject([
+      { mode: "normal" },
+      { mode: "create" },
+    ]);
+    // 保存で印が変わらなかったので、今の印を 1 回送る(Rust は保存で印を替えない)
+    expect(t.fake.calls.at(-1)).toEqual({ command: "set_document_dirty", args: { editorId: "e1", dirty: false } });
   });
 
   it("保存できない理由はエディタの帯に出す", async () => {
@@ -324,7 +332,7 @@ describe("editorController(閉じる。AC-E07)", () => {
 
 describe("editorController(外での変更。AC-E06)", () => {
   it("tree_changed_で親フォルダが変わった開いている文書を確かめる", async () => {
-    const t = setup({ check_document: () => ({ kind: "changed", text: "新しい", lineEnding: "lf" }) });
+    const t = setup({ check_document: () => ({ kind: "changed", text: "新しい", lineEnding: "lf", token: 1 }) });
     await t.controller.openDocument("p1", "docs/a.md");
     t.app.getState().replaceSnapshot(withEditors([tab("e1", "docs/a.md")]));
 
@@ -336,7 +344,10 @@ describe("editorController(外での変更。AC-E06)", () => {
     t.controller.handleTreeChange({ projectId: "p1", dirs: ["docs"], fullReload: false });
     await flush();
 
-    expect(t.fake.calls.at(-1)).toEqual({ command: "check_document", args: { editorId: "e1", withText: true } });
+    expect(t.fake.calls.slice(-2)).toEqual([
+      { command: "check_document", args: { editorId: "e1", withText: "if-changed" } },
+      { command: "adopt_document", args: { editorId: "e1", token: 1 } },
+    ]);
     expect(t.editors.text("e1")).toBe("新しい");
   });
 
@@ -352,13 +363,13 @@ describe("editorController(外での変更。AC-E06)", () => {
   });
 
   it("未保存なら読み直さず外の変更の印を付ける", async () => {
-    const t = setup({ check_document: () => ({ kind: "changed", text: null, lineEnding: "lf" }) });
+    const t = setup({ check_document: () => ({ kind: "changed", text: null, lineEnding: "lf", token: null }) });
     await t.controller.openDocument("p1", "a.md");
     t.surface().type("打った");
 
     await t.controller.check("e1");
 
-    expect(t.fake.calls.at(-1)).toEqual({ command: "check_document", args: { editorId: "e1", withText: false } });
+    expect(t.fake.calls.at(-1)).toEqual({ command: "check_document", args: { editorId: "e1", withText: "never" } });
     expect(t.editors.text("e1")).toBe("打った");
     expect(t.ui.getState().editorBanners.get("e1")).toEqual({ kind: "changed" });
   });
@@ -384,7 +395,81 @@ describe("editorController(外での変更。AC-E06)", () => {
 
     // 部品のある e1 だけ(e2 は部品が無いので確かめない)
     expect(t.fake.calls.filter((c) => c.command === "check_document").map((c) => c.args)).toEqual([
-      { editorId: "e1", withText: true },
+      { editorId: "e1", withText: "if-changed" },
+    ]);
+  });
+
+  it("応答を待つあいだに打ち始めたら本文を捨て_版を当てたと伝えない", async () => {
+    const reply: { finish?: () => void } = {};
+    const t = setup({
+      check_document: () =>
+        new Promise((resolve) => {
+          reply.finish = () => resolve({ kind: "changed", text: "外の文書", lineEnding: "lf", token: 3 });
+        }),
+    });
+    await t.controller.openDocument("p1", "a.md");
+
+    const checking = t.controller.check("e1");
+    await flush();
+    t.surface().type("打った");
+    reply.finish?.();
+    await checking;
+
+    expect(t.editors.text("e1")).toBe("打った");
+    expect(t.commands()).not.toContain("adopt_document");
+    expect(t.ui.getState().editorBanners.get("e1")).toEqual({ kind: "changed" });
+  });
+
+  it("あとから始めた確認の応答が先に届いたら_古い応答は当てない", async () => {
+    const replies: ((text: string, token: number) => void)[] = [];
+    const t = setup({
+      check_document: () =>
+        new Promise((resolve) => {
+          replies.push((text, token) => resolve({ kind: "changed", text, lineEnding: "lf", token }));
+        }),
+    });
+    await t.controller.openDocument("p1", "a.md");
+
+    const first = t.controller.check("e1");
+    const second = t.controller.check("e1");
+    await flush();
+    replies[1]?.("新しい版", 2);
+    await second;
+    replies[0]?.("古い版", 1);
+    await first;
+
+    expect(t.editors.text("e1")).toBe("新しい版");
+    expect(t.fake.calls.filter((c) => c.command === "adopt_document").map((c) => c.args)).toEqual([
+      { editorId: "e1", token: 2 },
+    ]);
+  });
+
+  it("保存中のエディタは確かめを飛ばし_保存が終わってから_1_回確かめる", async () => {
+    const pending: { finish?: () => void } = {};
+    const t = setup({
+      save_document: () =>
+        new Promise((resolve) => {
+          pending.finish = () => resolve({ kind: "saved" });
+        }),
+    });
+    await t.controller.openDocument("p1", "docs/a.md");
+    t.app.getState().replaceSnapshot(withEditors([tab("e1", "docs/a.md")]));
+    t.surface().type("x");
+    const saving = t.controller.save("e1");
+    await flush();
+
+    // 自分の保存の改名で届いた tree-changed(保存の応答より先)
+    t.controller.handleTreeChange({ projectId: "p1", dirs: ["docs"], fullReload: false });
+    t.controller.checkAll();
+    await flush();
+    expect(t.commands()).not.toContain("check_document");
+
+    pending.finish?.();
+    await saving;
+    await flush();
+
+    expect(t.fake.calls.filter((c) => c.command === "check_document").map((c) => c.args)).toEqual([
+      { editorId: "e1", withText: "if-changed" },
     ]);
   });
 });

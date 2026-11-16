@@ -124,18 +124,22 @@ test.describe("書いて保存し外の変更とぶつかる(AC-E04・E05・E06�
     await page.keyboard.press("Meta+s");
     await expect
       .poll(() => readCallArgs(page, "save_document"))
-      .toEqual([{ editorId: EDITOR_ID, text: `${DOCUMENT}追記`, overwriteChanged: false }]);
+      .toEqual([{ editorId: EDITOR_ID, text: `${DOCUMENT}追記`, mode: "normal" }]);
     await emitEvent(page, "app-snapshot", withEditors(opened, APP.id, [tab({ dirty: false })]));
     await expect(page.getByTestId("editor-tab-dirty")).toHaveCount(0);
 
     // --- 未保存が無いときに外で変わった → 本文ごと受け取って読み直す(AC-E06) ---
     const dirtyBefore = (await readCallArgs(page, "set_document_dirty")).length;
-    await setMockReply(page, "check_document", { ok: { kind: "changed", text: "# 外で書いた\n\n本文\n", lineEnding: "lf" } });
+    await setMockReply(page, "check_document", {
+      ok: { kind: "changed", text: "# 外で書いた\n\n本文\n", lineEnding: "lf", token: 1 },
+    });
     await docsChanged(page);
     await expect
       .poll(async () => (await readCallArgs(page, "check_document")).at(-1))
-      .toEqual({ editorId: EDITOR_ID, withText: true });
+      .toEqual({ editorId: EDITOR_ID, withText: "if-changed" });
     await expect.poll(() => lines(page)).toEqual(["# 外で書いた", "", "本文", ""]);
+    // 当てたあとにだけ、読んだ版の印で持ち直させる(確かめ自体は Rust の状態を変えない)
+    await expect.poll(() => readCallArgs(page, "adopt_document")).toEqual([{ editorId: EDITOR_ID, token: 1 }]);
     await expect(banner(page)).toHaveCount(0);
     // 読み直しは未保存にしない(未保存の印を送らない)
     expect((await readCallArgs(page, "set_document_dirty")).slice(dirtyBefore)).toEqual([]);
@@ -146,12 +150,12 @@ test.describe("書いて保存し外の変更とぶつかる(AC-E04・E05・E06�
       .poll(async () => (await readCallArgs(page, "set_document_dirty")).at(-1))
       .toEqual({ editorId: EDITOR_ID, dirty: true });
     await emitEvent(page, "app-snapshot", withEditors(opened, APP.id, [tab({ dirty: true })]));
-    await setMockReply(page, "check_document", { ok: { kind: "changed", text: null, lineEnding: "lf" } });
+    await setMockReply(page, "check_document", { ok: { kind: "changed", text: null, lineEnding: "lf", token: null } });
     const checksBefore = (await readCallArgs(page, "check_document")).length;
     await docsChanged(page);
     await expect
       .poll(async () => (await readCallArgs(page, "check_document")).slice(checksBefore))
-      .toEqual([{ editorId: EDITOR_ID, withText: false }]);
+      .toEqual([{ editorId: EDITOR_ID, withText: "never" }]);
     await expect(banner(page)).toHaveAttribute("data-kind", "changed");
     await expect(banner(page)).toContainText("ほかのアプリで変更されました");
     expect(await lines(page)).toEqual(["# 外で書いた", "", "本文", "下書き"]);
@@ -162,19 +166,20 @@ test.describe("書いて保存し外の変更とぶつかる(AC-E04・E05・E06�
     const dialog = page.getByTestId("save-conflict-dialog");
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText("「README.md」はほかのアプリで変更されています");
-    await setMockReply(page, "check_document", { ok: { kind: "changed", text: "# 外の最新\n", lineEnding: "lf" } });
+    await setMockReply(page, "check_document", { ok: { kind: "changed", text: "# 外の最新\n", lineEnding: "lf", token: 2 } });
     await dialog.getByRole("button", { name: "読み直す" }).click();
 
     await expect(dialog).toHaveCount(0);
     await expect
       .poll(async () => (await readCallArgs(page, "check_document")).at(-1))
-      .toEqual({ editorId: EDITOR_ID, withText: true });
+      .toEqual({ editorId: EDITOR_ID, withText: "always" });
     await expect.poll(() => lines(page)).toEqual(["# 外の最新", ""]);
+    await expect.poll(async () => (await readCallArgs(page, "adopt_document")).at(-1)).toEqual({ editorId: EDITOR_ID, token: 2 });
     await expect
       .poll(async () => (await readCallArgs(page, "set_document_dirty")).at(-1))
       .toEqual({ editorId: EDITOR_ID, dirty: false });
     await expect(banner(page)).toHaveCount(0);
-    expect((await readCallArgs(page, "save_document")).map((a) => a.overwriteChanged)).toEqual([false, false]);
+    expect((await readCallArgs(page, "save_document")).map((a) => a.mode)).toEqual(["normal", "normal"]);
     await expect.poll(() => editorHasFocus(page)).toBe(true);
   });
 
@@ -189,7 +194,7 @@ test.describe("書いて保存し外の変更とぶつかる(AC-E04・E05・E06�
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await expect
       .poll(async () => (await readCallArgs(page, "check_document")).at(-1))
-      .toEqual({ editorId: EDITOR_ID, withText: false });
+      .toEqual({ editorId: EDITOR_ID, withText: "never" });
     await expect(banner(page)).toHaveAttribute("data-kind", "missing");
     await expect(banner(page)).toContainText("ファイルが見つかりません");
 
@@ -205,7 +210,7 @@ test.describe("書いて保存し外の変更とぶつかる(AC-E04・E05・E06�
     expect(await readCallArgs(page, "save_document")).toHaveLength(1);
     await expect.poll(() => editorHasFocus(page)).toBe(true);
 
-    // --- もう一度 ⌘S → 「作る」 → overwriteChanged が真の保存(Rust は RENAME_EXCL で作る)→ 帯が消える ---
+    // --- もう一度 ⌘S → 「作る」 → mode が create の保存(Rust は RENAME_EXCL で作る)→ 帯が消える ---
     await page.keyboard.press("Meta+s");
     await expect(dialog).toBeVisible();
     await setMockReply(page, "save_document", { ok: { kind: "saved" } });
@@ -213,9 +218,9 @@ test.describe("書いて保存し外の変更とぶつかる(AC-E04・E05・E06�
     await expect
       .poll(() => readCallArgs(page, "save_document"))
       .toEqual([
-        { editorId: EDITOR_ID, text: `${DOCUMENT}消える前に書いた`, overwriteChanged: false },
-        { editorId: EDITOR_ID, text: `${DOCUMENT}消える前に書いた`, overwriteChanged: false },
-        { editorId: EDITOR_ID, text: `${DOCUMENT}消える前に書いた`, overwriteChanged: true },
+        { editorId: EDITOR_ID, text: `${DOCUMENT}消える前に書いた`, mode: "normal" },
+        { editorId: EDITOR_ID, text: `${DOCUMENT}消える前に書いた`, mode: "normal" },
+        { editorId: EDITOR_ID, text: `${DOCUMENT}消える前に書いた`, mode: "create" },
       ]);
     await expect(banner(page)).toHaveCount(0);
     await expect
@@ -273,7 +278,7 @@ test.describe("閉じる・終了・外す(AC-E07)", () => {
     await expect(dialog).toHaveCount(0);
     await expect
       .poll(() => readCallArgs(page, "save_document"))
-      .toEqual([{ editorId: EDITOR_ID, text: `${DOCUMENT}閉じる前`, overwriteChanged: false }]);
+      .toEqual([{ editorId: EDITOR_ID, text: `${DOCUMENT}閉じる前`, mode: "normal" }]);
     await expect
       .poll(() => readCallArgs(page, "close_editor"))
       .toEqual([
@@ -360,7 +365,7 @@ test.describe("キーと Vim(AC-E08・E09)", () => {
 
     await expect
       .poll(() => readCallArgs(page, "save_document"))
-      .toEqual([{ editorId: EDITOR_ID, text: `${DOCUMENT}\nvim で書いた`, overwriteChanged: false }]);
+      .toEqual([{ editorId: EDITOR_ID, text: `${DOCUMENT}\nvim で書いた`, mode: "normal" }]);
     expect(await lines(page)).not.toContain(":w");
 
     // --- 通常に戻すと i は文字になる(作り直さない) ---
@@ -399,7 +404,7 @@ test.describe("キーと Vim(AC-E08・E09)", () => {
     await page.keyboard.press("Meta+s");
     await expect
       .poll(() => readCallArgs(page, "save_document"))
-      .toEqual([{ editorId: EDITOR_ID, text: "置き換えた", overwriteChanged: false }]);
+      .toEqual([{ editorId: EDITOR_ID, text: "置き換えた", mode: "normal" }]);
   });
 });
 

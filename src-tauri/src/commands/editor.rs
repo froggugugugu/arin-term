@@ -7,10 +7,12 @@
 //!
 //! - 開く(`open_document`): 拡張子 → ルートの範囲 → 項目の種類(リンク・フォルダは開かない)→ 読む(1 MiB まで)→
 //!   文字の検査(UTF-8・NUL)の順に調べ、通ったらエディタのタブを開いて本文を返す。同じファイルが開いていれば表示だけ
-//! - 保存(`save_document`): 本人の保存の操作のときだけ画面が呼ぶ。開いたとき(最後に保存・読み直したとき)の版と比べ、
-//!   外で変わっていれば `overwriteChanged` が真のときだけ置き換える。無ければ `overwriteChanged` が真のときだけ作る(上書きしない)。
-//!   BOM は開いたときにあれば付け直す。保存できたら版を持ち直し、未保存の印を消す
-//! - 確認(`check_document`): 外で変わったかを調べる。`withText` が真なら新しい本文を返して版を持ち直す
+//! - 保存(`save_document`): 本人の保存の操作のときだけ画面が呼ぶ。`mode` が `normal` なら開いたとき(最後に保存・当てたとき)の
+//!   版と比べ、外で変わっていれば書かない。`overwrite` は版を比べずに置き換え(無ければ作らない)、`create` は無いときだけ作る
+//!   (同じ名前があれば書かない)。BOM は開いたときにあれば付け直す。保存できたら版を持ち直す。未保存の印は替えない
+//!   (保存中に打った分があるかは画面しか知らないので、画面が送る)
+//! - 確認(`check_document`): 外で変わったかを調べる。エディタの状態は変えない。本文を返すときは、読んだ版を保留にして
+//!   その印(連番)を添える。画面が本文を当てたら `adopt_document` でその印を送り、合えばここで版を持ち直す
 //! - 片付けられなかった保存の一時ファイル(`.arin-save-…`)は消さずに残し、標準エラーに `[arin:editor]` で場所を出す
 //!   (`[arin:fileops]` と同じ扱い)
 //!
@@ -18,12 +20,14 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use arin_core::editor::{
-    CheckDocumentOutcome, DOCUMENT_LIMIT_BYTES, DocumentError, DocumentNotAllowedReason,
-    EditorError, EditorId, EditorTab, LineEnding, OpenDocumentOutcome, SaveDocumentOutcome,
-    decode_document, encode_document, is_markdown_path, same_content,
+    CheckDocumentOutcome, CheckText, DOCUMENT_LIMIT_BYTES, DocumentError, DocumentNotAllowedReason,
+    EditorError, EditorId, EditorTab, FileStamp, LineEnding, OpenDocumentOutcome,
+    SaveDocumentOutcome, SaveMode, decode_document, encode_document, is_markdown_path,
+    same_content,
 };
 use arin_core::fileops::NotAllowedReason;
 use arin_core::fileops::scope::{PathScopeGuard, ScopeError};
@@ -45,6 +49,7 @@ const NOT_A_FILE: &str = "この種類の項目は開けません";
 const SAVE_FAILED: &str = "保存できませんでした";
 const SAVE_NOT_A_FILE: &str = "ふつうのファイルではなくなったので保存できません";
 const SAVE_OUTSIDE: &str = "プロジェクトのフォルダの外になったので保存できません";
+const SAVE_FOLDER_MISSING: &str = "保存先のフォルダが見つかりません";
 const CHECK_FAILED: &str = "ファイルを調べられませんでした";
 
 /// 保存の一時ファイルを片付けられずに残したことを、場所つきの 1 行で知らせる(`LocalDocuments` の知らせ先)。
@@ -67,10 +72,15 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 enum Located {
     /// 操作に使う絶対パス(親の実パス + 名前)。ファイルがあるとは限らない。
     Path(PathBuf),
-    /// 親のフォルダが無い(ファイルも無い)。
-    Missing,
-    /// ルートが見つからない・ルートの外になったなど(画面に出す文言)。
+    /// ルートが見つからない・親のフォルダが無い・ルートの外になったなど(画面に出す文言)。
     Failed(&'static str),
+}
+
+/// 本文つきの確認で読んだ版(画面が当てたと伝えるまで保留にする)。
+struct PendingRead {
+    token: u32,
+    stamp: FileStamp,
+    bom: bool,
 }
 
 /// エディタの文書の操作。Tauri の管理状態に登録する。
@@ -80,6 +90,10 @@ pub struct Editors {
     documents: Arc<dyn DocumentPort>,
     /// エディタごとの、読んだ文書の先頭に BOM があったか(保存で付け直す)。写しには載せない。
     boms: Mutex<HashMap<EditorId, bool>>,
+    /// エディタごとの、本文つきの確認で読んで、まだ当てたと伝えられていない版(いちばん新しいもの)。
+    /// 版を持ち直す処理(保存・当てた)はこの鎖を持ったまま行う(古い版で新しい版を上書きしない)。
+    pending: Mutex<HashMap<EditorId, PendingRead>>,
+    next_token: AtomicU32,
 }
 
 impl Editors {
@@ -94,6 +108,8 @@ impl Editors {
             fs,
             documents,
             boms: Mutex::new(HashMap::new()),
+            pending: Mutex::new(HashMap::new()),
+            next_token: AtomicU32::new(1),
         }
     }
 
@@ -163,8 +179,8 @@ impl Editors {
         })
     }
 
-    /// エディタ `id` の文書を `text` で保存する(ADR-015 の 5)。`overwrite_changed` は本人が確認で
-    /// 「上書き保存」(外で変わっていた)か「同じ名前で作る」(無かった)を選んだとき真。
+    /// エディタ `id` の文書を `text` で保存する(ADR-015 の 5)。`mode` は本人が確認で選んだもの
+    /// (`overwrite` は「上書き保存」、`create` は「同じ名前で作る」)。
     ///
     /// # Errors
     ///
@@ -173,7 +189,7 @@ impl Editors {
         &self,
         id: &EditorId,
         text: &str,
-        overwrite_changed: bool,
+        mode: SaveMode,
     ) -> Result<SaveDocumentOutcome, String> {
         let tab = self.tab(id)?;
         if tab.read_only.is_some() {
@@ -185,39 +201,47 @@ impl Editors {
         }
         let path = match self.locate(&tab)? {
             Located::Path(path) => path,
-            Located::Missing => return Ok(SaveDocumentOutcome::Missing),
             Located::Failed(message) => return Ok(save_failed(message)),
         };
-        let expected = (!overwrite_changed).then_some(&tab.stamp);
-        let stamp = match self.documents.replace(&path, &bytes, expected) {
+        let replaced = match mode {
+            SaveMode::Normal => self.documents.replace(&path, &bytes, Some(&tab.stamp)),
+            SaveMode::Overwrite => self.documents.replace(&path, &bytes, None),
+            // 確認を出しているあいだにできたファイルは上書きしない(同じ名前があれば `changed-outside`)。
+            SaveMode::Create => match self.documents.create_new(&path, &bytes) {
+                Ok(stamp) => Ok(ReplaceOutcome::Replaced(stamp)),
+                Err(e) => return Ok(save_error(&e)),
+            },
+        };
+        let stamp = match replaced {
             Ok(ReplaceOutcome::Replaced(stamp)) => stamp,
             Ok(ReplaceOutcome::Changed(_)) => return Ok(SaveDocumentOutcome::ChangedOutside),
-            Ok(ReplaceOutcome::Missing) if overwrite_changed => {
-                match self.documents.create_new(&path, &bytes) {
-                    Ok(stamp) => stamp,
-                    Err(e) => return Ok(save_error(&e)),
-                }
-            }
             Ok(ReplaceOutcome::Missing) => return Ok(SaveDocumentOutcome::Missing),
             Err(e) => return Ok(save_error(&e)),
         };
+        // 保存より前に読んだ版は当てさせない(当てると、保存した版より古い版を持つ)。
+        let mut pending = lock(&self.pending);
+        pending.remove(id);
         self.sessions
-            .mark_editor_synced(id, stamp)
+            .set_editor_stamp(id, stamp)
             .map_err(|e| e.to_string())?;
         Ok(SaveDocumentOutcome::Saved)
     }
 
-    /// エディタ `id` の文書が外で変わったかを調べる(ADR-015 の 5)。`with_text` が真で変わっていれば、
-    /// 新しい本文を返して版を持ち直す(未保存の印も消す。画面は未保存の変更が無いときだけ真で呼ぶ)。
+    /// エディタ `id` の文書が外で変わったかを調べる(ADR-015 の 5)。エディタの状態(版・未保存の印・BOM)は変えない。
+    /// 本文を返すときは読んだ版を保留にし、その印を添える(画面が当てたら `adopt` で持ち直す)。
     ///
     /// # Errors
     ///
     /// その ID のエディタが無いとき、調べられなかったとき。
-    pub fn check(&self, id: &EditorId, with_text: bool) -> Result<CheckDocumentOutcome, String> {
+    pub fn check(
+        &self,
+        id: &EditorId,
+        with_text: CheckText,
+    ) -> Result<CheckDocumentOutcome, String> {
         let tab = self.tab(id)?;
         let path = match self.locate(&tab)? {
             Located::Path(path) => path,
-            Located::Missing | Located::Failed(_) => return Ok(CheckDocumentOutcome::Missing),
+            Located::Failed(_) => return Ok(CheckDocumentOutcome::Missing),
         };
         let read = match self.documents.read(&path) {
             Ok(read) => read,
@@ -230,32 +254,59 @@ impl Editors {
             Err(DocumentAccessError::TooLarge { .. }) => return Ok(changed_without_text()),
             Err(_) => return Err(CHECK_FAILED.to_owned()),
         };
-        if same_content(&tab.stamp, &read.stamp) {
-            if tab.stamp != read.stamp {
-                // `touch` だけ。版を新しくする(次に比べるとき中身を読まずに済む)。
-                self.sessions
-                    .set_editor_stamp(id, read.stamp)
-                    .map_err(|e| e.to_string())?;
-            }
+        // `touch` だけなら変わっていない(版は持ち直さない。比べるときは中身の要約も見る)。
+        if with_text != CheckText::Always && same_content(&tab.stamp, &read.stamp) {
             return Ok(CheckDocumentOutcome::Unchanged);
         }
         let Ok(decoded) = decode_document(&read.bytes) else {
             return Ok(changed_without_text());
         };
-        if !with_text {
+        if with_text == CheckText::Never {
             return Ok(CheckDocumentOutcome::Changed {
                 text: None,
                 line_ending: decoded.line_ending,
+                token: None,
             });
         }
-        self.set_bom(id, decoded.bom);
-        self.sessions
-            .mark_editor_synced(id, read.stamp)
-            .map_err(|e| e.to_string())?;
+        let token = self.hold(id, read.stamp, decoded.bom);
         Ok(CheckDocumentOutcome::Changed {
             text: Some(decoded.text),
             line_ending: decoded.line_ending,
+            token: Some(token),
         })
+    }
+
+    /// 画面が `check` の本文を当てた。`token` が保留中の版の印と合えば版(と BOM)を持ち直して `true`。
+    /// 合わない(古い確認の印・保存のあとの印・使い終わった印)なら何も変えずに `false`。未保存の印は替えない(画面が送る)。
+    ///
+    /// # Errors
+    ///
+    /// その ID のエディタが無いとき。
+    pub fn adopt(&self, id: &EditorId, token: u32) -> Result<bool, String> {
+        self.tab(id)?;
+        let mut pending = lock(&self.pending);
+        let Some(read) = pending.remove(id) else {
+            return Ok(false);
+        };
+        if read.token != token {
+            pending.insert(id.clone(), read);
+            return Ok(false);
+        }
+        self.sessions
+            .set_editor_stamp(id, read.stamp)
+            .map_err(|e| e.to_string())?;
+        self.set_bom(id, read.bom);
+        Ok(true)
+    }
+
+    /// 読んだ版を保留にして、新しい印を返す(前の保留は捨てる)。閉じたエディタの保留も捨てる。
+    fn hold(&self, id: &EditorId, stamp: FileStamp, bom: bool) -> u32 {
+        let token = self.next_token.fetch_add(1, Ordering::Relaxed);
+        let open = self.open_ids();
+        let mut pending = lock(&self.pending);
+        pending.retain(|known, _| open.contains(known));
+        pending.insert(id.clone(), PendingRead { token, stamp, bom });
+        token
     }
 
     /// エディタを閉じる。閉じたら BOM の覚えも捨てる。
@@ -270,6 +321,7 @@ impl Editors {
             .map_err(|e| e.to_string())?;
         if outcome == CloseEditorOutcome::Closed {
             lock(&self.boms).remove(id);
+            lock(&self.pending).remove(id);
         }
         Ok(outcome)
     }
@@ -286,16 +338,20 @@ impl Editors {
 
     /// BOM の有無を覚える。ついでに、閉じた(⌘W・プロジェクトの削除で外れた)エディタの覚えを捨てる。
     fn set_bom(&self, id: &EditorId, bom: bool) {
-        let open: Vec<EditorId> = self
-            .sessions
+        let open = self.open_ids();
+        let mut boms = lock(&self.boms);
+        boms.retain(|known, _| open.contains(known));
+        boms.insert(id.clone(), bom);
+    }
+
+    /// 開いているエディタの ID。
+    fn open_ids(&self) -> Vec<EditorId> {
+        self.sessions
             .snapshot()
             .editors
             .into_iter()
             .map(|e| e.id)
-            .collect();
-        let mut boms = lock(&self.boms);
-        boms.retain(|known, _| open.contains(known));
-        boms.insert(id.clone(), bom);
+            .collect()
     }
 
     /// 同じプロジェクトの同じ相対パスで開いているエディタ。
@@ -319,9 +375,10 @@ impl Editors {
         let guard = PathScopeGuard::new(self.fs.as_ref(), &root);
         Ok(match guard.folder(&parent) {
             Ok(folder) => Located::Path(folder.real.join(name)),
-            Err(ScopeError::NotFound) => Located::Missing,
+            // 「作る」を選んでも作れないので、確認を繰り返さず理由を出す。
+            Err(ScopeError::NotFound) => Located::Failed(SAVE_FOLDER_MISSING),
             Err(ScopeError::NotAllowed(_)) => Located::Failed(SAVE_OUTSIDE),
-            Err(ScopeError::Fs(_)) => Located::Missing,
+            Err(ScopeError::Fs(_)) => Located::Failed(SAVE_FAILED),
         })
     }
 
@@ -364,6 +421,7 @@ fn changed_without_text() -> CheckDocumentOutcome {
     CheckDocumentOutcome::Changed {
         text: None,
         line_ending: LineEnding::Lf,
+        token: None,
     }
 }
 
@@ -386,7 +444,7 @@ fn open_error(error: &DocumentAccessError) -> OpenDocumentOutcome {
 fn save_error(error: &DocumentAccessError) -> SaveDocumentOutcome {
     match error {
         DocumentAccessError::NotFound(_) => SaveDocumentOutcome::Missing,
-        // 作ろうとしたら同じ名前ができていた(外で作られた)。本人が「上書き保存」を選べば置き換える。
+        // 作ろうとしたら同じ名前ができていた(確認を出しているあいだに外で作られた)。本人が「上書き保存」を選べば置き換える。
         DocumentAccessError::AlreadyExists(_) => SaveDocumentOutcome::ChangedOutside,
         DocumentAccessError::ReadOnly(_) => SaveDocumentOutcome::ReadOnly,
         DocumentAccessError::TooLarge { .. } => SaveDocumentOutcome::TooLarge,
@@ -417,25 +475,35 @@ pub async fn open_document<R: Runtime>(
     on_blocking_thread(app, move |e| e.open(&project_id, &path)).await
 }
 
-/// エディタの文書を保存する(本人の保存の操作のときだけ呼ぶ)。
+/// エディタの文書を保存する(本人の保存の操作のときだけ呼ぶ)。`mode` は `normal`・`overwrite`・`create`。
 #[tauri::command]
 pub async fn save_document<R: Runtime>(
     app: AppHandle<R>,
     editor_id: EditorId,
     text: String,
-    overwrite_changed: bool,
+    mode: SaveMode,
 ) -> Result<SaveDocumentOutcome, String> {
-    on_blocking_thread(app, move |e| e.save(&editor_id, &text, overwrite_changed)).await
+    on_blocking_thread(app, move |e| e.save(&editor_id, &text, mode)).await
 }
 
-/// エディタの文書が外で変わったかを調べる。`with_text` が真なら新しい本文を返す(未保存の変更が無いときだけ真にする)。
+/// エディタの文書が外で変わったかを調べる(状態は変えない)。`with_text` で本文を受け取るかを決める。
 #[tauri::command]
 pub async fn check_document<R: Runtime>(
     app: AppHandle<R>,
     editor_id: EditorId,
-    with_text: bool,
+    with_text: CheckText,
 ) -> Result<CheckDocumentOutcome, String> {
     on_blocking_thread(app, move |e| e.check(&editor_id, with_text)).await
+}
+
+/// `check_document` の本文を画面が当てた。印が保留中の版と合えば版を持ち直して `true`。
+#[tauri::command]
+pub fn adopt_document(
+    editors: State<'_, Editors>,
+    editor_id: EditorId,
+    token: u32,
+) -> Result<bool, String> {
+    editors.adopt(&editor_id, token)
 }
 
 /// 未保存の印を替える(画面は変わり目だけ送る)。変わったら写しが届く。

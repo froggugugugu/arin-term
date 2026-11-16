@@ -4,6 +4,7 @@
 import type { AddProjectOutcome } from "./generated/AddProjectOutcome";
 import type { AppSnapshot } from "./generated/AppSnapshot";
 import type { CheckDocumentOutcome } from "./generated/CheckDocumentOutcome";
+import type { CheckText } from "./generated/CheckText";
 import type { CloseEditorOutcome } from "./generated/CloseEditorOutcome";
 import type { ConflictResolution } from "./generated/ConflictResolution";
 import type { ConnectOutcome } from "./generated/ConnectOutcome";
@@ -23,6 +24,7 @@ import type { QuitRequest } from "./generated/QuitRequest";
 import type { RelPath } from "./generated/RelPath";
 import type { RemoveProjectOutcome } from "./generated/RemoveProjectOutcome";
 import type { SaveDocumentOutcome } from "./generated/SaveDocumentOutcome";
+import type { SaveMode } from "./generated/SaveMode";
 import type { ShortcutTable } from "./generated/ShortcutTable";
 import type { TerminalId } from "./generated/TerminalId";
 import type { TranslucencyTarget } from "./generated/TranslucencyTarget";
@@ -130,8 +132,9 @@ export interface CommandMap {
    * エディタ(M4.8。ADR-015 の 4)。引数はプロジェクトの ID・相対パス・エディタの ID だけ。絶対パスは送らず、届かない。
    */
   open_document: { args: { projectId: ProjectId; path: RelPath }; result: OpenDocumentOutcome };
-  save_document: { args: { editorId: EditorId; text: string; overwriteChanged: boolean }; result: SaveDocumentOutcome };
-  check_document: { args: { editorId: EditorId; withText: boolean }; result: CheckDocumentOutcome };
+  save_document: { args: { editorId: EditorId; text: string; mode: SaveMode }; result: SaveDocumentOutcome };
+  check_document: { args: { editorId: EditorId; withText: CheckText }; result: CheckDocumentOutcome };
+  adopt_document: { args: { editorId: EditorId; token: number }; result: boolean };
   set_document_dirty: { args: { editorId: EditorId; dirty: boolean }; result: null };
   select_editor: { args: { editorId: EditorId }; result: null };
   close_editor: { args: { editorId: EditorId; discard: boolean }; result: CloseEditorOutcome };
@@ -405,12 +408,18 @@ export interface ArinIpc {
   /** `.md`・`.markdown` を開いて表示する(タイル表示ならタブ表示に替わる)。開いていれば表示だけ(already-open)。 */
   openDocument(projectId: ProjectId, path: RelPath): Promise<OpenDocumentOutcome>;
   /**
-   * 保存する(本人の保存の操作のときだけ)。外で変わっていれば overwriteChanged が真のときだけ置き換え、無ければ
-   * overwriteChanged が真のときだけ同じ名前で作る。保存できたら Rust が未保存の印を消す。
+   * 保存する(本人の保存の操作のときだけ)。mode が normal なら外で変わっていれば書かず、overwrite は版を比べずに置き換え
+   * (無ければ作らない)、create は無いときだけ作る(同じ名前があれば changed-outside)。保存できたら Rust は版を持ち直すが、
+   * 未保存の印は替えない(画面が送る)。
    */
-  saveDocument(editorId: EditorId, text: string, overwriteChanged: boolean): Promise<SaveDocumentOutcome>;
-  /** 外で変わったかを調べる。withText が真なら新しい本文を返し、Rust は版を持ち直す(未保存の印も消える)。 */
-  checkDocument(editorId: EditorId, withText: boolean): Promise<CheckDocumentOutcome>;
+  saveDocument(editorId: EditorId, text: string, mode: SaveMode): Promise<SaveDocumentOutcome>;
+  /**
+   * 外で変わったかを調べる。Rust の状態は変えない。withText が if-changed(変わっていれば)・always(変わっていなくても)なら
+   * 本文と読んだ版の印(token)を返す。本文を当てたら adoptDocument でその印を送る。
+   */
+  checkDocument(editorId: EditorId, withText: CheckText): Promise<CheckDocumentOutcome>;
+  /** checkDocument の本文を当てた。印が Rust の保留中の版と合えば、Rust が版を持ち直して true。 */
+  adoptDocument(editorId: EditorId, token: number): Promise<boolean>;
   /** 未保存の有無を知らせる(変わり目だけ送る)。 */
   setDocumentDirty(editorId: EditorId, dirty: boolean): Promise<void>;
   /** そのエディタのタブを表示する。 */
@@ -540,9 +549,9 @@ export function createIpc(transport: IpcTransport): ArinIpc {
     insertEntryPath: (projectId, paths, terminalId) =>
       invoke("insert_entry_path", { projectId, paths, terminalId }),
     openDocument: (projectId, path) => invoke("open_document", { projectId, path }),
-    saveDocument: (editorId, text, overwriteChanged) =>
-      invoke("save_document", { editorId, text, overwriteChanged }),
+    saveDocument: (editorId, text, mode) => invoke("save_document", { editorId, text, mode }),
     checkDocument: (editorId, withText) => invoke("check_document", { editorId, withText }),
+    adoptDocument: (editorId, token) => invoke("adopt_document", { editorId, token }),
     setDocumentDirty: (editorId, dirty) => done(invoke("set_document_dirty", { editorId, dirty })),
     selectEditor: (editorId) => done(invoke("select_editor", { editorId })),
     closeEditor: (editorId, discard) => invoke("close_editor", { editorId, discard }),

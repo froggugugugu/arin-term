@@ -333,8 +333,8 @@ fn エディタの_id_は文字列として_json_になる() {
 #[test]
 fn 文書のコマンドの応答の_json_の形() {
     use arin_core::editor::{
-        CheckDocumentOutcome, DocumentNotAllowedReason, EditorCloseRequest, OpenDocumentOutcome,
-        SaveDocumentOutcome,
+        CheckDocumentOutcome, CheckText, DocumentNotAllowedReason, EditorCloseRequest,
+        OpenDocumentOutcome, SaveDocumentOutcome, SaveMode,
     };
 
     assert_eq!(
@@ -386,10 +386,43 @@ fn 文書のコマンドの応答の_json_の形() {
         serde_json::to_value(CheckDocumentOutcome::Changed {
             text: None,
             line_ending: LineEnding::Crlf,
+            token: None,
         })
         .unwrap(),
-        json!({ "kind": "changed", "text": null, "lineEnding": "crlf" })
+        json!({ "kind": "changed", "text": null, "lineEnding": "crlf", "token": null })
     );
+    assert_eq!(
+        serde_json::to_value(CheckDocumentOutcome::Changed {
+            text: Some("b".to_owned()),
+            line_ending: LineEnding::Lf,
+            token: Some(7),
+        })
+        .unwrap(),
+        json!({ "kind": "changed", "text": "b", "lineEnding": "lf", "token": 7 })
+    );
+    // 保存のしかた・確認で本文を受け取るか(コマンドの引数)。
+    for (mode, text) in [
+        (SaveMode::Normal, "normal"),
+        (SaveMode::Overwrite, "overwrite"),
+        (SaveMode::Create, "create"),
+    ] {
+        assert_eq!(serde_json::to_value(mode).unwrap(), json!(text));
+        assert_eq!(
+            serde_json::from_value::<SaveMode>(json!(text)).unwrap(),
+            mode
+        );
+    }
+    for (with_text, text) in [
+        (CheckText::Never, "never"),
+        (CheckText::IfChanged, "if-changed"),
+        (CheckText::Always, "always"),
+    ] {
+        assert_eq!(serde_json::to_value(with_text).unwrap(), json!(text));
+        assert_eq!(
+            serde_json::from_value::<CheckText>(json!(text)).unwrap(),
+            with_text
+        );
+    }
     assert_eq!(
         serde_json::to_value(CheckDocumentOutcome::Unchanged).unwrap(),
         json!({ "kind": "unchanged" })

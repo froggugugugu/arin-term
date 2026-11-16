@@ -196,17 +196,38 @@ impl Ctx<'_> {
         }
     }
 
-    fn save(&self, id: &EditorId, text: &str, overwrite: bool) -> SaveDocumentOutcome {
+    /// `mode` は `normal`・`overwrite`・`create`。
+    fn save(&self, id: &EditorId, text: &str, mode: &str) -> SaveDocumentOutcome {
         self.call(
             "save_document",
-            json!({ "editorId": id.as_str(), "text": text, "overwriteChanged": overwrite }),
+            json!({ "editorId": id.as_str(), "text": text, "mode": mode }),
         )
     }
 
-    fn check(&self, id: &EditorId, with_text: bool) -> CheckDocumentOutcome {
+    /// `with_text` は `never`・`if-changed`・`always`。
+    fn check(&self, id: &EditorId, with_text: &str) -> CheckDocumentOutcome {
         self.call(
             "check_document",
             json!({ "editorId": id.as_str(), "withText": with_text }),
+        )
+    }
+
+    /// 本文つきの確認の応答(本文と印)。
+    fn check_text(&self, id: &EditorId, with_text: &str) -> (String, u32) {
+        match self.check(id, with_text) {
+            CheckDocumentOutcome::Changed {
+                text: Some(text),
+                token: Some(token),
+                ..
+            } => (text, token),
+            other => panic!("本文が返らない: {other:?}"),
+        }
+    }
+
+    fn adopt(&self, id: &EditorId, token: u32) -> bool {
+        self.call(
+            "adopt_document",
+            json!({ "editorId": id.as_str(), "token": token }),
         )
     }
 
@@ -265,8 +286,8 @@ const CHECKS: &[(&str, Check)] = &[
         ハードリンクは読み取り専用で開き保存しない,
     ),
     (
-        "保存すると中身が変わり写しの未保存が消える",
-        保存すると中身が変わり写しの未保存が消える,
+        "保存すると中身が変わり未保存の印は画面が送るまで残る",
+        保存すると中身が変わり未保存の印は画面が送るまで残る,
     ),
     (
         "外で書き換えたあとの保存は_changed_outside_で中身はそのまま",
@@ -274,12 +295,24 @@ const CHECKS: &[(&str, Check)] = &[
     ),
     ("上書き保存を選ぶと置き換える", 上書き保存を選ぶと置き換える),
     (
-        "check_document_は外の変更を見つける",
-        check_document_は外の変更を見つける,
+        "check_document_は外の変更を見つけ状態を変えない",
+        check_document_は外の変更を見つけ状態を変えない,
+    ),
+    (
+        "当てた版を_adopt_document_で伝えると持ち直す",
+        当てた版を_adopt_document_で伝えると持ち直す,
+    ),
+    (
+        "読み直すを選ぶと変わっていなくても本文を返す",
+        読み直すを選ぶと変わっていなくても本文を返す,
     ),
     (
         "消えたファイルは_missing_で作るを選ぶと作る",
         消えたファイルは_missing_で作るを選ぶと作る,
+    ),
+    (
+        "親のフォルダが無いと作れない理由を返す",
+        親のフォルダが無いと作れない理由を返す,
     ),
     (
         "前後のタブはターミナルのあとにエディタへ進む",
@@ -416,11 +449,15 @@ fn ハードリンクは読み取り専用で開き保存しない(ctx: &Ctx<'_>
         Some(ReadOnlyReason::HardLink)
     );
     assert_eq!(
-        ctx.save(&id, "changed\n", false),
+        ctx.save(&id, "changed\n", "normal"),
         SaveDocumentOutcome::ReadOnly
     );
     assert_eq!(
-        ctx.save(&id, "changed\n", true),
+        ctx.save(&id, "changed\n", "overwrite"),
+        SaveDocumentOutcome::ReadOnly
+    );
+    assert_eq!(
+        ctx.save(&id, "changed\n", "create"),
         SaveDocumentOutcome::ReadOnly
     );
     assert_eq!(fs::read(ctx.file("hard.md")).unwrap(), b"hard\n");
@@ -436,12 +473,12 @@ fn a_md(ctx: &Ctx<'_>) -> EditorId {
 }
 
 /// 前提: `docs/a.md` が開いていて未保存の変更は無い。
-fn 保存すると中身が変わり写しの未保存が消える(ctx: &Ctx<'_>) {
+fn 保存すると中身が変わり未保存の印は画面が送るまで残る(ctx: &Ctx<'_>) {
     let id = a_md(ctx);
     ctx.set_dirty(&id, true);
     assert!(ctx.dirty(&id));
     assert_eq!(
-        ctx.save(&id, "# A2\r\nbody\r\n", false),
+        ctx.save(&id, "# A2\r\nbody\r\n", "normal"),
         SaveDocumentOutcome::Saved
     );
     let mut expected = UTF8_BOM.to_vec();
@@ -451,7 +488,9 @@ fn 保存すると中身が変わり写しの未保存が消える(ctx: &Ctx<'_>
         expected,
         "BOM を付け直す"
     );
-    assert!(!ctx.dirty(&id), "保存すると未保存の印が消える");
+    // 保存中に打った分があるかは画面しか知らない。印は画面が送り直すまで消さない(その間の ⌘Q を確認なしで通さない)。
+    assert!(ctx.dirty(&id), "保存で未保存の印を消した");
+    ctx.set_dirty(&id, false);
     // 一時ファイルが残らない。
     let names: Vec<String> = fs::read_dir(ctx.file("docs"))
         .unwrap()
@@ -460,7 +499,7 @@ fn 保存すると中身が変わり写しの未保存が消える(ctx: &Ctx<'_>
     assert_eq!(names, vec!["a.md".to_owned()]);
     // 続けて保存しても外で変わったとはみなさない(版を持ち直している)。
     assert_eq!(
-        ctx.save(&id, "# A2\r\nbody2\r\n", false),
+        ctx.save(&id, "# A2\r\nbody2\r\n", "normal"),
         SaveDocumentOutcome::Saved
     );
 }
@@ -470,7 +509,13 @@ fn 外で書き換えたあとの保存は_changed_outside_で中身はそのま
     let id = a_md(ctx);
     fs::write(ctx.file("docs/a.md"), b"outside\n").unwrap();
     assert_eq!(
-        ctx.save(&id, "# mine\n", false),
+        ctx.save(&id, "# mine\n", "normal"),
+        SaveDocumentOutcome::ChangedOutside
+    );
+    assert_eq!(fs::read(ctx.file("docs/a.md")).unwrap(), b"outside\n");
+    // 「作る」は同じ名前があれば書かない。
+    assert_eq!(
+        ctx.save(&id, "# mine\n", "create"),
         SaveDocumentOutcome::ChangedOutside
     );
     assert_eq!(fs::read(ctx.file("docs/a.md")).unwrap(), b"outside\n");
@@ -479,40 +524,78 @@ fn 外で書き換えたあとの保存は_changed_outside_で中身はそのま
 /// 前提: 直前の確認で `docs/a.md` が外で書き換わっている。
 fn 上書き保存を選ぶと置き換える(ctx: &Ctx<'_>) {
     let id = a_md(ctx);
-    assert_eq!(ctx.save(&id, "# mine\n", true), SaveDocumentOutcome::Saved);
+    assert_eq!(
+        ctx.save(&id, "# mine\n", "overwrite"),
+        SaveDocumentOutcome::Saved
+    );
     let mut expected = UTF8_BOM.to_vec();
     expected.extend_from_slice(b"# mine\n");
     assert_eq!(fs::read(ctx.file("docs/a.md")).unwrap(), expected);
     assert_eq!(
-        ctx.save(&id, "# mine 2\n", false),
+        ctx.save(&id, "# mine 2\n", "normal"),
         SaveDocumentOutcome::Saved
     );
 }
 
-/// 前提: `docs/a.md` が開いていて、最後の保存から外では変わっていない。
-fn check_document_は外の変更を見つける(ctx: &Ctx<'_>) {
+/// 前提: `docs/a.md` が開いていて、最後の保存から外では変わっていない。未保存の印は無い。
+fn check_document_は外の変更を見つけ状態を変えない(ctx: &Ctx<'_>) {
     let id = a_md(ctx);
-    assert_eq!(ctx.check(&id, false), CheckDocumentOutcome::Unchanged);
+    assert_eq!(ctx.check(&id, "never"), CheckDocumentOutcome::Unchanged);
+    assert_eq!(
+        ctx.check(&id, "if-changed"),
+        CheckDocumentOutcome::Unchanged
+    );
     fs::write(ctx.file("docs/a.md"), b"line 1\r\nline 2\r\n").unwrap();
     assert_eq!(
-        ctx.check(&id, false),
+        ctx.check(&id, "never"),
         CheckDocumentOutcome::Changed {
             text: None,
             line_ending: LineEnding::Crlf,
+            token: None,
         }
     );
-    // 本文なしの確認では版を持ち直さない(保存すると外の変更として止まる)。
+    // 本文つきの確認でも版も未保存の印も替えない(応答を待つあいだに打ち始めたら、画面は本文を捨てる)。
+    ctx.set_dirty(&id, true);
+    let (text, _) = ctx.check_text(&id, "if-changed");
+    assert_eq!(text, "line 1\r\nline 2\r\n");
+    assert!(ctx.dirty(&id), "確認で未保存の印を消した");
     assert_eq!(
-        ctx.check(&id, true),
-        CheckDocumentOutcome::Changed {
-            text: Some("line 1\r\nline 2\r\n".to_owned()),
-            line_ending: LineEnding::Crlf,
-        }
+        ctx.save(&id, "mine\n", "normal"),
+        SaveDocumentOutcome::ChangedOutside,
+        "当てていない版を持ち直した"
     );
-    // 本文つきで読み直したら版を持ち直す。
-    assert_eq!(ctx.check(&id, false), CheckDocumentOutcome::Unchanged);
     assert_eq!(
-        ctx.save(&id, "line 1\nline 3\n", false),
+        fs::read(ctx.file("docs/a.md")).unwrap(),
+        b"line 1\r\nline 2\r\n"
+    );
+    assert!(ctx.dirty(&id));
+    ctx.set_dirty(&id, false);
+}
+
+/// 前提: `docs/a.md` は外で `line 1\r\nline 2\r\n`(BOM なし)に書き換わり、まだ当てていない。
+fn 当てた版を_adopt_document_で伝えると持ち直す(ctx: &Ctx<'_>) {
+    let id = a_md(ctx);
+    let (_, old) = ctx.check_text(&id, "if-changed");
+    let (_, token) = ctx.check_text(&id, "if-changed");
+    assert_ne!(old, token, "読むたびに印が替わる");
+    assert!(!ctx.adopt(&id, old), "古い印で持ち直した");
+    assert!(
+        !ctx.adopt(&id, token.wrapping_add(1)),
+        "知らない印で持ち直した"
+    );
+    assert_eq!(
+        ctx.save(&id, "x\n", "normal"),
+        SaveDocumentOutcome::ChangedOutside
+    );
+    assert!(ctx.adopt(&id, token));
+    assert!(!ctx.adopt(&id, token), "同じ印で 2 回持ち直した");
+    assert!(!ctx.dirty(&id), "持ち直しで未保存の印を付けた");
+    assert_eq!(
+        ctx.check(&id, "if-changed"),
+        CheckDocumentOutcome::Unchanged
+    );
+    assert_eq!(
+        ctx.save(&id, "line 1\nline 3\n", "normal"),
         SaveDocumentOutcome::Saved
     );
     // 読み直した文書には BOM が無かったので付けない。
@@ -520,29 +603,79 @@ fn check_document_は外の変更を見つける(ctx: &Ctx<'_>) {
         fs::read(ctx.file("docs/a.md")).unwrap(),
         b"line 1\nline 3\n"
     );
+    // 保存したら、それより前に読んだ版の印は使えない。
+    fs::write(ctx.file("docs/a.md"), b"outside again\n").unwrap();
+    let (_, before_save) = ctx.check_text(&id, "if-changed");
+    assert_eq!(
+        ctx.save(&id, "line 1\nline 4\n", "overwrite"),
+        SaveDocumentOutcome::Saved
+    );
+    assert!(!ctx.adopt(&id, before_save), "保存より前の版を持ち直した");
+    assert_eq!(
+        ctx.save(&id, "line 1\nline 3\n", "normal"),
+        SaveDocumentOutcome::Saved
+    );
+}
+
+/// 前提: `docs/a.md` は手元の最後の保存と同じ。
+fn 読み直すを選ぶと変わっていなくても本文を返す(ctx: &Ctx<'_>) {
+    let id = a_md(ctx);
+    let (text, token) = ctx.check_text(&id, "always");
+    assert_eq!(text, "line 1\nline 3\n");
+    assert!(ctx.adopt(&id, token));
+    assert_eq!(
+        ctx.save(&id, "line 1\nline 3\n", "normal"),
+        SaveDocumentOutcome::Saved
+    );
 }
 
 /// 前提: `docs/a.md` が開いている。
 fn 消えたファイルは_missing_で作るを選ぶと作る(ctx: &Ctx<'_>) {
     let id = a_md(ctx);
     fs::rename(ctx.file("docs/a.md"), ctx.file("docs/a-moved.md")).unwrap();
-    assert_eq!(ctx.check(&id, true), CheckDocumentOutcome::Missing);
+    assert_eq!(ctx.check(&id, "if-changed"), CheckDocumentOutcome::Missing);
     assert_eq!(
-        ctx.save(&id, "# again\n", false),
+        ctx.save(&id, "# again\n", "normal"),
         SaveDocumentOutcome::Missing
+    );
+    assert_eq!(
+        ctx.save(&id, "# again\n", "overwrite"),
+        SaveDocumentOutcome::Missing,
+        "上書き保存では作らない"
     );
     assert!(
         !ctx.file("docs/a.md").exists(),
         "見つからないときは作らない"
     );
-    assert_eq!(ctx.save(&id, "# again\n", true), SaveDocumentOutcome::Saved);
+    assert_eq!(
+        ctx.save(&id, "# again\n", "create"),
+        SaveDocumentOutcome::Saved
+    );
     assert_eq!(fs::read(ctx.file("docs/a.md")).unwrap(), b"# again\n");
     assert_eq!(
         fs::read(ctx.file("docs/a-moved.md")).unwrap(),
         b"line 1\nline 3\n",
         "移した先には触れない"
     );
-    assert_eq!(ctx.check(&id, false), CheckDocumentOutcome::Unchanged);
+    assert_eq!(ctx.check(&id, "never"), CheckDocumentOutcome::Unchanged);
+}
+
+/// 前提: `sub/c.md` は開いていない。
+fn 親のフォルダが無いと作れない理由を返す(ctx: &Ctx<'_>) {
+    let (id, ..) = ctx.opened("sub/c.md");
+    fs::rename(ctx.file("sub"), ctx.file("sub-moved")).unwrap();
+    assert_eq!(ctx.check(&id, "if-changed"), CheckDocumentOutcome::Missing);
+    for mode in ["normal", "overwrite", "create"] {
+        match ctx.save(&id, "c2\n", mode) {
+            SaveDocumentOutcome::Failed { message } => {
+                assert_eq!(message, "保存先のフォルダが見つかりません", "{mode}");
+            }
+            other => panic!("{mode}: 理由の分かる失敗にならない: {other:?}"),
+        }
+    }
+    assert!(!ctx.file("sub").exists(), "フォルダを作った");
+    assert_eq!(ctx.close(&id, true), CloseEditorOutcome::Closed);
+    fs::rename(ctx.file("sub-moved"), ctx.file("sub")).unwrap();
 }
 
 /// 前提: `docs/a.md` を表示中。タブはターミナル 1 枚とエディタ 1 個。
@@ -742,11 +875,15 @@ fn 無いエディタの_id_は失敗する(ctx: &Ctx<'_>) {
     for (cmd, args) in [
         (
             "save_document",
-            json!({ "editorId": "editor-999", "text": "", "overwriteChanged": false }),
+            json!({ "editorId": "editor-999", "text": "", "mode": "normal" }),
         ),
         (
             "check_document",
-            json!({ "editorId": "editor-999", "withText": false }),
+            json!({ "editorId": "editor-999", "withText": "never" }),
+        ),
+        (
+            "adopt_document",
+            json!({ "editorId": "editor-999", "token": 1 }),
         ),
         (
             "set_document_dirty",
@@ -770,6 +907,8 @@ fn prepare_files(root: &Path, outside: &Path) {
     a.extend_from_slice(b"# A\r\nbody\r\n");
     fs::write(root.join("docs/a.md"), a).unwrap();
     fs::write(root.join("b.txt"), b"text\n").unwrap();
+    fs::create_dir(root.join("sub")).unwrap();
+    fs::write(root.join("sub/c.md"), b"c\n").unwrap();
     fs::write(root.join("big.md"), vec![b'a'; 1024 * 1024 + 1]).unwrap();
     fs::write(root.join("nul.md"), b"a\0b").unwrap();
     fs::write(root.join("latin1.md"), [0x63, 0x61, 0x66, 0xE9]).unwrap();

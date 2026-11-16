@@ -5,7 +5,7 @@
 //   - 生の HTML(ブロック・タグ・コメント・処理命令)は書かれた文字のまま `raw`
 //   - 画像は代わりの文字だけ(URL は捨てる)。リンクは URL の文字だけを持つ(開く情報を持たない)
 //   - 文字参照は数値と 6 つの名前(amp・lt・gt・quot・apos・nbsp)だけを直し、ほかは書かれたまま(HTML の名前の表を持ち込まない)
-//   - 入れ子(引用・リスト・強調・リンク)は MD_MAX_DEPTH 段で打ち切り、それより深い中身は書かれた文字のまま `truncated`
+//   - 入れ子(引用・リスト・強調・リンク・画像)は MD_MAX_DEPTH 段で打ち切り、それより深い中身は書かれた文字のまま `truncated`
 //     (lezer は再帰しないが、この変換と React の描画は再帰するので)
 
 import type { SyntaxNode } from "@lezer/common";
@@ -281,7 +281,8 @@ class Converter {
       builder.skipMark();
       return;
     }
-    const nests = name === "Emphasis" || name === "StrongEmphasis" || name === "Strikethrough" || name === "Link";
+    const nests =
+      name === "Emphasis" || name === "StrongEmphasis" || name === "Strikethrough" || name === "Link" || name === "Image";
     if (nests && depth >= MD_MAX_DEPTH) {
       builder.push({ kind: "truncated", text: this.slice(node.from, node.to) });
       return;

@@ -174,6 +174,7 @@ export function createFakeIpc(handlers: Partial<FakeHandlers> = {}): FakeIpc {
     open_document: () => ({ kind: "not-found" }),
     save_document: () => ({ kind: "saved" }),
     check_document: () => ({ kind: "unchanged" }),
+    adopt_document: () => true,
     set_document_dirty: () => null,
     select_editor: () => null,
     close_editor: () => ({ kind: "closed" }),

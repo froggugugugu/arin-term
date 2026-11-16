@@ -82,6 +82,23 @@ describe("EditorManager(エディタの部品を React の外で持つ。ADR-015
     expect(t.engine.created.map((s) => s.id)).toEqual(["e1", "e2", "e3"]);
   });
 
+  it("改行が混ざった文書は_打って取り消すと未保存でなくなる(基準は部品が揃えた文書)", async () => {
+    const t = setup();
+    await t.manager.open("e1", { text: "a\r\nb\nc", lineEnding: "crlf", readOnly: false });
+    const surface = t.engine.created[0];
+    if (surface === undefined) throw new Error("部品を作っていない");
+    expect(t.manager.isDirty("e1")).toBe(false);
+
+    surface.type(`${surface.current}X`);
+    surface.undo();
+
+    expect(t.manager.isDirty("e1")).toBe(false);
+    expect(t.dirty).toEqual([
+      ["e1", true],
+      ["e1", false],
+    ]);
+  });
+
   it("同じ_id_を開き直しても部品を作り直さない", async () => {
     const t = setup();
     await t.manager.open("e1", doc("a"));

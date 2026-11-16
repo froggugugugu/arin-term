@@ -184,7 +184,7 @@ test.describe("エディタのタブ(AC-E01・E03・E04)", () => {
     await page.keyboard.press("Meta+s");
     await expect
       .poll(() => readCallArgs(page, "save_document"))
-      .toEqual([{ editorId: EDITOR_ID, text: `${DOCUMENT}追記`, overwriteChanged: false }]);
+      .toEqual([{ editorId: EDITOR_ID, text: `${DOCUMENT}追記`, mode: "normal" }]);
     // 文字にはならない
     await expect(content(page)).not.toContainText("追記s");
     await emitEvent(page, "app-snapshot", withEditors(opened, APP.id, [tab({ dirty: false })]));
@@ -274,7 +274,7 @@ test.describe("確認と設定画面(AC-E05・E07・E08)", () => {
     expect(await readCallArgs(page, "close_editor")).toEqual([]);
   });
 
-  test("changed_outside_で衝突の確認が出て_キャンセルでは何も呼ばず_上書き保存で_overwrite_changed_が真", async ({
+  test("changed_outside_で衝突の確認が出て_キャンセルでは何も呼ばず_上書き保存は_mode_overwrite", async ({
     page,
   }) => {
     await open(page, { save_document: { ok: { kind: "changed-outside" } } });
@@ -294,8 +294,8 @@ test.describe("確認と設定画面(AC-E05・E07・E08)", () => {
     await setMockReply(page, "save_document", { ok: { kind: "saved" } });
     await dialog.getByRole("button", { name: "上書き保存" }).click();
     await expect
-      .poll(async () => (await readCallArgs(page, "save_document")).map((a) => a.overwriteChanged))
-      .toEqual([false, false, true]);
+      .poll(async () => (await readCallArgs(page, "save_document")).map((a) => a.mode))
+      .toEqual(["normal", "normal", "overwrite"]);
   });
 
   test("未保存があると終了の確認に文書の名前が並ぶ", async ({ page }) => {

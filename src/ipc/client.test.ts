@@ -685,7 +685,8 @@ describe("エディタのコマンドとイベント(M4.8。ADR-015 の 4)", () 
     const fake = createFakeIpc({
       open_document: () => ({ kind: "opened", editorId: "editor-1", text: "# a", lineEnding: "lf", readOnly: null }),
       save_document: () => ({ kind: "changed-outside" }),
-      check_document: () => ({ kind: "changed", text: null, lineEnding: "lf" }),
+      check_document: () => ({ kind: "changed", text: "# c", lineEnding: "lf", token: 3 }),
+      adopt_document: () => false,
       close_editor: () => ({ kind: "needs-confirmation" }),
     });
     const ipc = createIpc(fake.transport);
@@ -697,8 +698,14 @@ describe("エディタのコマンドとイベント(M4.8。ADR-015 の 4)", () 
       lineEnding: "lf",
       readOnly: null,
     });
-    expect(await ipc.saveDocument("editor-1", "# b", false)).toEqual({ kind: "changed-outside" });
-    expect(await ipc.checkDocument("editor-1", true)).toEqual({ kind: "changed", text: null, lineEnding: "lf" });
+    expect(await ipc.saveDocument("editor-1", "# b", "create")).toEqual({ kind: "changed-outside" });
+    expect(await ipc.checkDocument("editor-1", "if-changed")).toEqual({
+      kind: "changed",
+      text: "# c",
+      lineEnding: "lf",
+      token: 3,
+    });
+    expect(await ipc.adoptDocument("editor-1", 3)).toBe(false);
     expect(await ipc.closeEditor("editor-1", false)).toEqual({ kind: "needs-confirmation" });
     await ipc.setDocumentDirty("editor-1", true);
     await ipc.selectEditor("editor-1");
@@ -706,8 +713,9 @@ describe("エディタのコマンドとイベント(M4.8。ADR-015 の 4)", () 
 
     expect(fake.calls).toEqual([
       { command: "open_document", args: { projectId: "p1", path: "docs/a.md" } },
-      { command: "save_document", args: { editorId: "editor-1", text: "# b", overwriteChanged: false } },
-      { command: "check_document", args: { editorId: "editor-1", withText: true } },
+      { command: "save_document", args: { editorId: "editor-1", text: "# b", mode: "create" } },
+      { command: "check_document", args: { editorId: "editor-1", withText: "if-changed" } },
+      { command: "adopt_document", args: { editorId: "editor-1", token: 3 } },
       { command: "close_editor", args: { editorId: "editor-1", discard: false } },
       { command: "set_document_dirty", args: { editorId: "editor-1", dirty: true } },
       { command: "select_editor", args: { editorId: "editor-1" } },

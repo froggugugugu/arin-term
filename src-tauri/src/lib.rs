@@ -427,6 +427,7 @@ pub fn builder_with_settings_watcher<R: Runtime>(
             commands::editor::open_document,
             commands::editor::save_document,
             commands::editor::check_document,
+            commands::editor::adopt_document,
             commands::editor::set_document_dirty,
             commands::editor::select_editor,
             commands::editor::close_editor,

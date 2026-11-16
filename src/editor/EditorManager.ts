@@ -111,7 +111,8 @@ export class EditorManager {
       vim: this.#vim,
       shortcuts: this.#options.shortcuts,
     });
-    const entry: Entry = { surface, saved: document.text, dirty: false, preview: null };
+    // 基準は部品が改行を揃えたあとの文書(生の document.text だと、改行が混ざった文書は戻しても未保存のまま。replaceText と同じ)
+    const entry: Entry = { surface, saved: surface.text(), dirty: false, preview: null };
     this.#entries.set(id, entry);
     surface.onChange(() => {
       this.#updateDirty(id, entry);

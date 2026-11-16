@@ -2,13 +2,18 @@
 //
 // - 部品(EditorManager)は形(EditorPort)だけを知る(State は src/editor の部品に依存しない。src/state/terminalSync.ts と同じ)
 // - 開く: open_document の応答の本文で部品を作り、作れたら置き場所にフォーカスを求める。開けない理由はツリーの知らせに出す
-// - 未保存: 部品が変わり目だけ知らせ、ここが set_document_dirty で Rust へ送る。保存に成功すると Rust が印を消すので、
-//   保存のあいだに打った分は set_document_dirty(true) で送り直す
-// - 保存: changed-outside・missing は保存の衝突の確認を開く。読み取り専用・大きすぎる・失敗はエディタの帯に出す
+// - 未保存: 部品が変わり目だけ知らせ、ここが set_document_dirty で Rust へ送る。Rust は保存でも確認でも印を替えない。
+//   保存に成功したら、基準を替えても印が変わらなかったとき(保存のあいだに打った分がある)に今の印を 1 回送る
+// - 保存: changed-outside・missing は保存の衝突の確認を開く。「上書き保存」は overwrite、「作る」は create で送る
+//   (create は同じ名前があれば書かない)。読み取り専用・大きすぎる・失敗はエディタの帯に出す
 // - 閉じる: × は close_editor(discard: false)。未保存なら Rust が needs-confirmation を返す(⌘W は Rust が
 //   editor-close-requested を送る)ので、閉じる確認を開く。「保存」は保存できたら閉じる(衝突の確認を挟んでもよい)
 // - 外での変更: 選択中のプロジェクトは tree-changed(開いている文書の親フォルダか全部読み直し)、ほかはタブを表示に戻したとき・
-//   ウィンドウが前面に戻ったときに check_document で確かめる。未保存が無ければ本文ごと受け取って読み直し、あれば帯で知らせる
+//   ウィンドウが前面に戻ったときに check_document で確かめる。未保存が無ければ本文ごと受け取って読み直し、あれば帯で知らせる。
+//   確かめは Rust の状態を変えない。本文を実際に当てたあとにだけ adopt_document で読んだ版の印を送り、Rust が版を持ち直す
+//   (応答を待つあいだに打ち始めた・あとから始めた確かめがある、で本文を捨てたときは送らない。次の保存は changed-outside になる)。
+//   保存中のエディタは確かめを飛ばし、保存が終わってから 1 回確かめる(自分の保存の改名の tree-changed を外の変更と取り違えない)。
+//   衝突の確認の「読み直す」は、外の版が手元と同じでも本文を受け取って当てる(always)
 // - 写しへの追従(syncEditors): 消えたタブの部品と表示の状態を片付け、文字の大きさ(ターミナルの文字の大きさ)・Vim・読み取り専用を当てる
 //
 // どの操作も Promise を失敗させない(失敗は reportError に 1 行で報告する。actions.ts と同じ)。
@@ -20,6 +25,7 @@ import type { EditorId } from "../ipc/generated/EditorId";
 import type { LineEnding } from "../ipc/generated/LineEnding";
 import type { ProjectId } from "../ipc/generated/ProjectId";
 import type { RelPath } from "../ipc/generated/RelPath";
+import type { SaveMode } from "../ipc/generated/SaveMode";
 import type { TreeChange } from "../ipc/generated/TreeChange";
 import { describeError } from "../logic/describeError";
 import { notFoundMessage } from "./actions";
@@ -44,7 +50,14 @@ export interface EditorPort {
 /** ここが使う Rust の操作(ArinIpc の一部)。 */
 export type EditorBackend = Pick<
   ArinIpc,
-  "openDocument" | "saveDocument" | "checkDocument" | "setDocumentDirty" | "selectEditor" | "closeEditor" | "setEditorVim"
+  | "openDocument"
+  | "saveDocument"
+  | "checkDocument"
+  | "adoptDocument"
+  | "setDocumentDirty"
+  | "selectEditor"
+  | "closeEditor"
+  | "setEditorVim"
 >;
 
 export interface EditorControllerDeps {
@@ -110,6 +123,11 @@ export function createEditorController({ ipc, app, ui, editors, reportError }: E
   const saving = new Set<EditorId>();
   /** 閉じる確認の「保存」を選んだエディタ(保存できたら閉じる。衝突の確認を挟んでも続ける)。 */
   const closeAfterSave = new Set<EditorId>();
+  /** 保存のあいだに確かめを求められたエディタ(保存が終わってから 1 回確かめる)。 */
+  const checkAfterSave = new Set<EditorId>();
+  /** エディタごとの、いちばん新しく始めた確かめの番号(古い確かめの本文は当てない)。 */
+  const latestCheck = new Map<EditorId, number>();
+  let checkCount = 0;
 
   const run = async (what: string, request: () => Promise<unknown>): Promise<void> => {
     try {
@@ -125,21 +143,23 @@ export function createEditorController({ ipc, app, ui, editors, reportError }: E
     if (outcome.kind === "needs-confirmation") ui.getState().openUnsavedClose(id);
   };
 
-  /** 保存する。overwrite は「上書き保存」「作る」を選んだあと(外の変更・消えたファイルを置き換える・作る)。 */
-  const save = (id: EditorId, overwrite: boolean) =>
+  /** 保存する。mode は本人が衝突の確認で選んだもの(overwrite は「上書き保存」、create は「作る」)。 */
+  const save = (id: EditorId, mode: SaveMode) =>
     run("保存できなかった", async () => {
       const text = editors().text(id);
       if (text === null || saving.has(id)) return;
       saving.add(id);
       try {
-        const outcome = await ipc.saveDocument(id, text, overwrite);
+        const outcome = await ipc.saveDocument(id, text, mode);
         switch (outcome.kind) {
           case "saved": {
             const port = editors();
+            const dirtyBefore = port.isDirty(id);
             port.markSaved(id, text);
             banner(id, null);
-            // 保存のあいだに打った分は未保存のまま(Rust は印を消したので送り直す)
-            if (port.isDirty(id)) await ipc.setDocumentDirty(id, true);
+            // 基準を替えて印が変わったら部品の知らせ(handleDirtyChange)が送った。変わらなければ今の印を 1 回送る
+            // (Rust は保存で印を替えないので、保存のあいだに打った分も未保存のまま残っている)
+            if (port.isDirty(id) === dirtyBefore) await ipc.setDocumentDirty(id, dirtyBefore);
             if (closeAfterSave.delete(id)) await close(id, false);
             return;
           }
@@ -164,24 +184,35 @@ export function createEditorController({ ipc, app, ui, editors, reportError }: E
         }
       } finally {
         saving.delete(id);
+        if (checkAfterSave.delete(id)) void check(id, false);
       }
     });
 
-  /** 外で変わったかを確かめる。force は「読み直す(変更を捨てる)」(未保存でも読み直す)。 */
-  const check = (id: EditorId, force: boolean) =>
+  /** 外で変わったかを確かめる。force は「読み直す(変更を捨てる)」(未保存でも、外の版が手元と同じでも読み直す)。 */
+  const check = (id: EditorId, force: boolean): Promise<void> =>
     run("ファイルの変更を確かめられなかった", async () => {
       const port = editors();
       if (!port.has(id)) return;
-      const outcome = await ipc.checkDocument(id, force || !port.isDirty(id));
+      if (!force && saving.has(id)) {
+        checkAfterSave.add(id);
+        return;
+      }
+      const serial = ++checkCount;
+      latestCheck.set(id, serial);
+      const outcome = await ipc.checkDocument(id, force ? "always" : port.isDirty(id) ? "never" : "if-changed");
+      // あとから始めた確かめがある(その応答のほうが新しい)
+      if (latestCheck.get(id) !== serial) return;
       switch (outcome.kind) {
         case "unchanged":
           if (ui.getState().editorBanners.get(id)?.kind !== "failed") banner(id, null);
           return;
         case "changed":
-          // 応答を待つあいだに打ち始めていたら読み直さない(本文を受け取っていても捨てる)
-          if (outcome.text !== null && (force || !port.isDirty(id))) {
+          // 応答を待つあいだに打ち始めていたら読み直さない(本文を受け取っていても捨てる。Rust の版は古いまま)
+          if (outcome.text !== null && outcome.token !== null && port.has(id) && (force || !port.isDirty(id))) {
             port.replaceText(id, outcome.text, outcome.lineEnding);
             banner(id, null);
+            // 当てたので、読んだ版を持ち直させる(未保存の印は部品の知らせが送る)
+            await ipc.adoptDocument(id, outcome.token);
           } else {
             banner(id, force ? { kind: "failed", message: RELOAD_FAILED } : { kind: "changed" });
           }
@@ -229,7 +260,7 @@ export function createEditorController({ ipc, app, ui, editors, reportError }: E
       }),
     selectEditor: (id) => run("エディタのタブを選べなかった", () => ipc.selectEditor(id)),
     requestClose: (id) => run("エディタのタブを閉じられなかった", () => close(id, false)),
-    save: (id) => save(id, false),
+    save: (id) => save(id, "normal"),
     resolveUnsavedClose: async (choice) => {
       const pending = ui.getState().unsavedClose;
       if (pending === null) return;
@@ -238,7 +269,7 @@ export function createEditorController({ ipc, app, ui, editors, reportError }: E
       switch (choice) {
         case "save":
           closeAfterSave.add(id);
-          await save(id, false);
+          await save(id, "normal");
           return;
         case "discard":
           await run("エディタのタブを閉じられなかった", () => close(id, true));
@@ -255,8 +286,10 @@ export function createEditorController({ ipc, app, ui, editors, reportError }: E
       const id = pending.editorId;
       switch (choice) {
         case "overwrite":
+          await save(id, "overwrite");
+          return;
         case "create":
-          await save(id, true);
+          await save(id, "create");
           return;
         case "reload":
           closeAfterSave.delete(id);
