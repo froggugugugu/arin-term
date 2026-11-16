@@ -132,7 +132,7 @@ test.describe("開閉とキーボード(AC-F01・AC-F12)", () => {
     await expect(terminalStepper(page)).toHaveAttribute("aria-valuenow", "16");
     await expect(terminalStepper(page)).toHaveText("16 pt");
 
-    // ↓・▲・▼・Home・End も差分で送る(Home・End は端までの差分)
+    // ↓・▲・▼・Home・End も差分で送る(Home・End は範囲の幅ぶんの差分。端に留めるのは Rust)
     await page.keyboard.press("ArrowDown");
     await upButton(page, "interface").click();
     await downButton(page, "interface").click();
@@ -146,8 +146,8 @@ test.describe("開閉とキーボード(AC-F01・AC-F12)", () => {
         { target: "terminal", delta: -1 },
         { target: "interface", delta: 1 },
         { target: "interface", delta: -1 },
-        { target: "terminal", delta: 9 - 16 },
-        { target: "terminal", delta: 28 - 16 },
+        { target: "terminal", delta: -(28 - 9) },
+        { target: "terminal", delta: 28 - 9 },
       ]);
     // ▲▼ のボタンを押してもフォーカスはステッパーに残る
     await upButton(page, "interface").click();
