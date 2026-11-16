@@ -13,7 +13,7 @@
 //! 知らせ・標準エラーに出すのは、コマンドの ID・キーの文字列・理由の種類だけ(AC-K09)。書いた人の文字列(ID とキー)は
 //! 問題を作るときに制御文字を除き [`MAX_SHOWN_CHARS`] 文字で切る。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use super::key::{KeyChord, KeyParseError, Modifier};
@@ -22,6 +22,8 @@ use super::table::{ShortcutBinding, ShortcutCommandId, ShortcutReceiver, Shortcu
 
 /// 知らせに出す ID とキーの文字列の最大の文字数(【仮定】ADR-012 の 3)。
 pub const MAX_SHOWN_CHARS: usize = 64;
+/// 知らせの 1 行に並べる問題の数の上限(残りは「ほか N 件」にまとめる)。
+pub const MAX_NOTICE_ITEMS: usize = 8;
 
 /// 設定の値。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -204,20 +206,38 @@ pub fn notice_line(problems: &[ShortcutSettingProblem]) -> Option<String> {
     if problems.is_empty() {
         return None;
     }
-    let items: Vec<String> = problems.iter().map(ToString::to_string).collect();
+    let items: Vec<String> = problems
+        .iter()
+        .take(MAX_NOTICE_ITEMS)
+        .map(ToString::to_string)
+        .collect();
+    let rest = problems.len().saturating_sub(MAX_NOTICE_ITEMS);
+    let more = if rest == 0 {
+        String::new()
+    } else {
+        format!("、ほか {rest} 件")
+    };
     Some(format!(
-        "ショートカットの設定の {} 行を使わず、既定のキーのままにしました: {}",
+        "ショートカットの設定の {} 行を使わず、既定のキーのままにしました: {}{more}",
         problems.len(),
         items.join("、")
     ))
 }
 
-/// 書いた人の文字列を知らせに出せる形にする(制御文字を除き、[`MAX_SHOWN_CHARS`] 文字で切る)。
+/// 書いた人の文字列を知らせに出せる形にする(制御文字と、文字の向き・行を変える文字を除き、[`MAX_SHOWN_CHARS`] 文字で切る)。
 fn shown(text: &str) -> String {
     text.chars()
-        .filter(|c| !c.is_control())
+        .filter(|&c| !c.is_control() && !is_direction_or_line_mark(c))
         .take(MAX_SHOWN_CHARS)
         .collect()
+}
+
+/// 知らせの見た目の並びを変えられる文字(双方向の制御 U+200E・200F・202A〜202E・2066〜2069 と、行・段落の区切り U+2028・2029)。
+const fn is_direction_or_line_mark(c: char) -> bool {
+    matches!(
+        c,
+        '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{2028}' | '\u{2029}'
+    )
 }
 
 /// 修飾キーの条件(ADR-012 の 3 の #7・#8)に合わなければ理由を返す。
@@ -309,11 +329,13 @@ pub fn apply_overrides(
     // コマンドごとに書かれた値を集める。知らない ID は書いた順に残す。
     let mut written: BTreeMap<ShortcutCommandId, Vec<&OverrideValue>> = BTreeMap::new();
     let mut unknown: Vec<&ShortcutOverride> = Vec::new();
+    // 同じ知らない ID かどうかは集合で見る(行の数だけ並びを探すと、行が多い設定で起動が止まる)。
+    let mut unknown_ids: BTreeSet<&str> = BTreeSet::new();
     for row in overrides {
         match ShortcutCommandId::from_id(&row.id) {
             Some(command) => written.entry(command).or_default().push(&row.value),
             None => {
-                if !unknown.iter().any(|u| u.id == row.id) {
+                if unknown_ids.insert(row.id.as_str()) {
                     unknown.push(row);
                 }
             }

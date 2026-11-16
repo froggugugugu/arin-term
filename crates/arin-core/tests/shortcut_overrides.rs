@@ -4,8 +4,8 @@ use std::collections::BTreeSet;
 
 use arin_core::shortcuts::key::KeyChord;
 use arin_core::shortcuts::overrides::{
-    KeyParseReason, MAX_SHOWN_CHARS, OverrideValue, ShortcutOverride, ShortcutSettingProblem,
-    ShortcutSettingReason, apply_overrides, notice_line,
+    KeyParseReason, MAX_NOTICE_ITEMS, MAX_SHOWN_CHARS, OverrideValue, ShortcutOverride,
+    ShortcutSettingProblem, ShortcutSettingReason, apply_overrides, notice_line,
 };
 use arin_core::shortcuts::reserved::{RESERVED_KEYS, is_reserved};
 use arin_core::shortcuts::sample::sample_settings_toml;
@@ -641,4 +641,54 @@ fn 見本の行のコメントを外しても検査で問題が出ない() {
     let (table, problems) = apply_overrides(&defaults, &rows);
     assert!(problems.is_empty(), "{problems:?}");
     assert_eq!(table, defaults);
+}
+
+#[test]
+fn 知らない_id_が大量でもすぐ終わり知らせは上限の数とほかの件数だけ() {
+    // 1 MiB の設定ファイルに収まる規模(レビューの指摘: 並びを毎回探すと起動が止まる)。
+    let count = 200_000;
+    let rows: Vec<ShortcutOverride> = (0..count).map(|i| text(&format!("x{i}"), "1")).collect();
+
+    let started = std::time::Instant::now();
+    let (table, problems) = apply(&rows);
+    let elapsed = started.elapsed();
+
+    assert_eq!(table, ShortcutTable::default_table());
+    assert_eq!(problems.len(), count);
+    assert!(elapsed < std::time::Duration::from_secs(5), "{elapsed:?}");
+    let notice = notice_line(&problems).expect("知らせがある");
+    assert!(notice.contains(&format!("{count} 行")), "{notice}");
+    assert!(
+        notice.ends_with(&format!("、ほか {} 件", count - MAX_NOTICE_ITEMS)),
+        "{notice}"
+    );
+    assert!(
+        notice.contains(&format!("x{} ", MAX_NOTICE_ITEMS - 1)),
+        "{notice}"
+    );
+    assert!(
+        !notice.contains(&format!("x{MAX_NOTICE_ITEMS} ")),
+        "{notice}"
+    );
+}
+
+#[test]
+fn 同じ知らない_id_は_1_つにまとめる() {
+    let (_, problems) = apply(&[
+        text("nope", "Cmd+T"),
+        text("nope", "Cmd+Y"),
+        text("other", "Cmd+T"),
+    ]);
+    let ids: Vec<&str> = problems.iter().map(ShortcutSettingProblem::id).collect();
+    assert_eq!(ids, vec!["nope", "other"]);
+}
+
+#[test]
+fn 知らせから文字の向きと行を変える文字を除く() {
+    let (_, problems) = apply(&[text("a\u{202E}b\u{2066}c\u{200F}d\u{2028}e", "x\u{202D}y")]);
+    let notice = notice_line(&problems).expect("知らせがある");
+    assert!(notice.contains("abcde"), "{notice}");
+    for mark in ['\u{202E}', '\u{2066}', '\u{200F}', '\u{2028}', '\u{202D}'] {
+        assert!(!notice.contains(mark), "{mark:?} が残っている: {notice:?}");
+    }
 }

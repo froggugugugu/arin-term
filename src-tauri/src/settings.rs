@@ -89,13 +89,24 @@ fn combined_notice(store: &SettingsStore, problems: &[ShortcutSettingProblem]) -
     }
 }
 
-/// 標準エラーに書く行(ファイル全体の問題が先、行の問題は表の順)。
+/// 標準エラーに書く行の問題の数の上限(残りは「ほか N 件」の 1 行にまとめる)。
+pub const MAX_DIAGNOSTIC_PROBLEMS: usize = 50;
+
+/// 標準エラーに書く行(ファイル全体の問題が先、行の問題は表の順。行の問題は [`MAX_DIAGNOSTIC_PROBLEMS`] 件まで)。
 fn diagnostic_lines(store: &SettingsStore, problems: &[ShortcutSettingProblem]) -> Vec<String> {
+    let rest = problems.len().saturating_sub(MAX_DIAGNOSTIC_PROBLEMS);
+    let more = (rest > 0).then(|| format!("ショートカットの設定: ほか {rest} 件"));
     store
         .problem()
         .map(|p| p.diagnostic_line())
         .into_iter()
-        .chain(problems.iter().map(ShortcutSettingProblem::diagnostic_line))
+        .chain(
+            problems
+                .iter()
+                .take(MAX_DIAGNOSTIC_PROBLEMS)
+                .map(ShortcutSettingProblem::diagnostic_line),
+        )
+        .chain(more)
         .map(|line| format!("{DIAGNOSTIC_PREFIX} {line}"))
         .collect()
 }
