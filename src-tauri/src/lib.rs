@@ -255,6 +255,8 @@ pub fn builder_with_settings_watcher<R: Runtime>(
         .manage(Shortcuts::new(resolved.table))
         // 設定の知らせ(`get_settings_notice`)と、読み直し(T65c)のための直前の内容。
         .manage(settings)
+        // 「設定ファイルを開く…」が Finder・既定のアプリに渡す口(T65d)。ツリーの「開く」と同じポート。
+        .manage(settings::SettingsOpener::new(Arc::clone(&desktop)))
         .menu(menu::build)
         .on_menu_event(|app, event| menu::on_menu_event(app, event.id().as_ref()))
         .setup(move |app| {

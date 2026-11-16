@@ -274,8 +274,7 @@ fn 受け口がメニューの項目の行にはすべて文言がある() {
     let missing: Vec<&str> = table
         .by_receiver(ShortcutReceiver::MenuItem)
         .map(ShortcutBinding::command)
-        // 「設定ファイルを開く…」は表に行だけある(T64c)。文言とメニューの項目は T65d で足し、この除外を外す。
-        .filter(|&c| c != C::AppQuit && c != C::AppOpenSettings && menu::label(c).is_none())
+        .filter(|&c| c != C::AppQuit && menu::label(c).is_none())
         .map(ShortcutCommandId::as_str)
         .collect();
     assert!(missing.is_empty(), "文言が無い: {missing:?}");
@@ -348,13 +347,111 @@ fn アプリ名のメニューの最後は自前の終了() {
         items.last(),
         Some(&(menu::QUIT_ID.to_owned(), format!("{name} を終了")))
     );
+    // 自前の項目は、先頭の「設定ファイルを開く…」(T65d)と最後の「終了」だけ。
     assert_eq!(
         items[..items.len() - 1]
             .iter()
-            .filter(|(kind, _)| kind != "標準")
+            .filter(|(kind, _)| kind != "標準" && kind != C::AppOpenSettings.as_str())
             .count(),
         0,
-        "終了のほかに自前の項目がある: {items:?}"
+        "設定ファイルを開くと終了のほかに自前の項目がある: {items:?}"
+    );
+}
+
+fn アプリ名のメニューの先頭に設定ファイルを開くがあり表のキーが付く() {
+    let state_dir = support::TempDir::new("menu-open-settings");
+    let app = build_app(support::launch_in(&state_dir, false));
+    let menu = app.menu().expect("アプリにメニューが付いていない");
+    let name = app.package_info().name.clone();
+
+    // 文言は固定(ADR-012 の 6)。項目の ID は表のコマンドの ID。
+    assert_eq!(C::AppOpenSettings.as_str(), "app.open-settings");
+    assert_eq!(menu::label(C::AppOpenSettings), Some("設定ファイルを開く…"));
+    let items = entries(&menu, &name);
+    assert_eq!(
+        items[..2],
+        [own(C::AppOpenSettings), separator()],
+        "先頭が設定ファイルを開くと区切り線ではない: {items:?}"
+    );
+    // 作った項目からアクセラレータを読み戻せないので、メニューを作るときに見る表のキーで確かめる。
+    let table = app.state::<Shortcuts>().table();
+    let key = menu::accelerator(&table, C::AppOpenSettings).expect("アクセラレータが無い");
+    assert_eq!(key, table.get(C::AppOpenSettings).accelerator().to_string());
+    assert_eq!(key, "Cmd+,");
+    assert_eq!(
+        Accelerator::from_str(&key).expect("muda が読めない"),
+        Accelerator::from_str("cmd+comma").expect("muda が読めない")
+    );
+
+    // 受け口がメニューの項目でない表では載せず、先頭の区切り線も引かない。
+    let table = table_with_receiver(&[(C::AppOpenSettings, ShortcutReceiver::Screen)]);
+    let menu = menu::build_with_table(app.handle(), &table).expect("メニューを作れなかった");
+    let items = entries(&menu, &name);
+    assert!(
+        !own_ids(&menu).contains(C::AppOpenSettings.as_str()),
+        "受け口が画面なのに載っている: {items:?}"
+    );
+    assert_ne!(items.first(), Some(&separator()), "先頭に区切り線が余った");
+}
+
+fn 見出しの並びと既存の項目は変わらない() {
+    let state_dir = support::TempDir::new("menu-open-settings-rest");
+    let app = build_app(support::launch_in(&state_dir, false));
+    let menu = app.menu().expect("アプリにメニューが付いていない");
+    let name = app.package_info().name.clone();
+
+    assert_eq!(
+        titles(&menu),
+        vec![
+            name.clone(),
+            TERMINAL_MENU_TITLE.to_owned(),
+            EDIT_MENU_TITLE.to_owned(),
+            VIEW_MENU_TITLE.to_owned(),
+        ]
+    );
+    // アプリ名のメニューは、先頭の 2 つ(設定ファイルを開く・区切り線)を足しただけで、残りは T65d の前と同じ。
+    assert_eq!(
+        entries(&menu, &name),
+        vec![
+            own(C::AppOpenSettings),
+            separator(),
+            standard(&format!("{name} を隠す")),
+            standard("ほかを隠す"),
+            standard("すべてを表示"),
+            separator(),
+            (menu::QUIT_ID.to_owned(), format!("{name} を終了")),
+        ]
+    );
+    assert_eq!(
+        entries(&menu, TERMINAL_MENU_TITLE),
+        vec![
+            own(C::TerminalNewTab),
+            own(C::TerminalCloseTab),
+            separator(),
+            own(C::TerminalPreviousTab),
+            own(C::TerminalNextTab)
+        ]
+    );
+    assert_eq!(
+        entries(&menu, EDIT_MENU_TITLE),
+        vec![
+            standard("切り取り"),
+            standard("コピー"),
+            standard("ペースト"),
+            separator(),
+            own(C::EditSelectAll)
+        ]
+    );
+    assert_eq!(
+        entries(&menu, VIEW_MENU_TITLE),
+        vec![
+            own(C::ViewToggleDisplayMode),
+            separator(),
+            own(C::ViewPreviousPage),
+            own(C::ViewNextPage),
+            separator(),
+            own(C::ViewToggleMaximize),
+        ]
     );
 }
 
@@ -375,7 +472,7 @@ fn メニューの項目のアクセラレータが表の既定のキーと同�
             ("terminal.next-tab", Some("Cmd+Shift+]".to_owned())),
             ("edit.select-all", Some("Cmd+A".to_owned())),
             ("app.quit", Some("Cmd+Q".to_owned())),
-            // M4.5 の「設定ファイルを開く…」(T64c)。メニューに載せるのは T65d。
+            // M4.5 の「設定ファイルを開く…」(T64c。アプリ名のメニューの先頭に載せる。T65d)。
             ("app.open-settings", Some("Cmd+,".to_owned())),
             ("edit.copy", None),
             ("edit.cut", None),
@@ -450,11 +547,13 @@ fn 受け口がメニューの項目のものだけがメニューに載る() {
     let menu = app.menu().expect("アプリにメニューが付いていない");
     let expected: BTreeSet<String> = ShortcutTable::default_table()
         .by_receiver(ShortcutReceiver::MenuItem)
-        // 「設定ファイルを開く…」は表に行だけある(T64c)。メニューに載せるのは T65d(そのときこの除外を外す)。
-        .filter(|b| b.command() != C::AppOpenSettings)
         .map(|b| b.command().as_str().to_owned())
         .collect();
     assert_eq!(own_ids(&menu), expected);
+    assert!(
+        expected.contains(C::AppOpenSettings.as_str()),
+        "設定ファイルを開くが期待に無い"
+    );
     for view in [
         C::ViewToggleDisplayMode,
         C::ViewPreviousPage,
@@ -807,7 +906,15 @@ fn タブ表示でページ送りと拡大の項目を選んでも何も変わ�
 }
 
 fn main() {
-    let tests: [(&str, fn()); 19] = [
+    let tests: [(&str, fn()); 21] = [
+        (
+            "アプリ名のメニューの先頭に設定ファイルを開くがあり表のキーが付く",
+            アプリ名のメニューの先頭に設定ファイルを開くがあり表のキーが付く,
+        ),
+        (
+            "見出しの並びと既存の項目は変わらない",
+            見出しの並びと既存の項目は変わらない,
+        ),
         (
             "アプリのメニューは本アプリの見出しだけで既定のメニューではない",
             アプリのメニューは本アプリの見出しだけで既定のメニューではない,

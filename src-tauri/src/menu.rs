@@ -12,6 +12,7 @@
 //!   画面の cut・copy・paste イベントになり、画面がフォーカス位置で振り分ける(`src/ui/terminals/clipboardRouting.ts`)。
 //!   標準の項目のキーは muda が決める(⌘X・⌘C・⌘V)ので、表のキーは付けられない
 //! - 受け口が「画面」の行: メニューに載せない(ツリーにフォーカスがあるときに画面の keydown で受ける。【仮定】21)
+//! - 「設定ファイルを開く…」(T65d、ADR-012 の 6): アプリ名のメニューの先頭(区切り線の上)。選ばれたら `settings::open_from_menu`
 //!
 //! Tauri は、メニューを指定しないと macOS で既定のメニュー(`Menu::default`)を付ける。既定のものには ⌘W
 //! (ウィンドウを閉じる)や ⌘M などが入っていてタブ操作とぶつかるので使わない。
@@ -31,6 +32,7 @@ use tauri::{AppHandle, Emitter, Manager, Runtime};
 use crate::events::MENU_COMMAND_EVENT;
 use crate::lifecycle;
 use crate::sessions::SessionRegistry;
+use crate::settings;
 
 /// ショートカットの表(アプリの管理状態。`Builder::manage` で登録する)。
 ///
@@ -122,6 +124,7 @@ pub const fn label(command: ShortcutCommandId) -> Option<&'static str> {
         C::ViewPreviousPage => Some("前のページ"),
         C::ViewNextPage => Some("次のページ"),
         C::ViewToggleMaximize => Some("タイルを拡大/元に戻す"),
+        C::AppOpenSettings => Some("設定ファイルを開く…"),
         _ => None,
     }
 }
@@ -170,7 +173,7 @@ pub fn rebuild<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
 
 /// 表を渡してメニューバーを組み立てる。
 ///
-/// - アプリ名のメニュー: 隠す・ほかを隠す・すべてを表示(標準)・終了(自前)
+/// - アプリ名のメニュー: 設定ファイルを開く…(自前。T65d)・隠す・ほかを隠す・すべてを表示(標準)・終了(自前)
 /// - ターミナル: 新規タブ・タブを閉じる・前のタブ・次のタブ(自前)
 /// - 編集: 切り取り・コピー・ペースト(標準)・すべてを選択(自前)
 /// - 表示: タイル表示とタブ表示の切替・前のページ・次のページ・タイルの拡大(自前。T47c)
@@ -185,7 +188,11 @@ pub fn build_with_table<R: Runtime>(
     table: &ShortcutTable,
 ) -> tauri::Result<Menu<R>> {
     let name = app.package_info().name.clone();
-    let mut app_menu = SubmenuBuilder::new(app, &name)
+    let mut app_menu = SubmenuBuilder::new(app, &name);
+    if let Some(Entry::Own(open_settings)) = entry(app, table, C::AppOpenSettings)? {
+        app_menu = app_menu.item(&open_settings).separator();
+    }
+    let mut app_menu = app_menu
         .hide_with_text(format!("{name} を隠す"))
         .hide_others_with_text("ほかを隠す")
         .show_all_with_text("すべてを表示");
@@ -286,6 +293,7 @@ fn entry<R: Runtime>(
 /// - 表示の 4 項目: `SessionRegistry` の表示の口を呼ぶ(変わったときだけ写しが届く)。タブ表示でのページ送り・拡大、
 ///   端のページでのページ送りは何もしない。項目はいつも有効のまま並べる(M4 の【仮定】9)
 /// - 終了: 終了の要求(動作中のターミナルがあれば画面に確認を求める。FR-063)
+/// - 設定ファイルを開く…: 待ってよいスレッドで、無ければ見本を作ってから既定のアプリで開く(`settings::open_from_menu`。T65d)
 /// - それ以外の ID(標準の項目・画面で受けるコマンドなど): 何もしない
 pub fn on_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     let Some(command) = ShortcutCommandId::from_id(id) else {
@@ -293,6 +301,7 @@ pub fn on_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     };
     match command {
         C::AppQuit => lifecycle::request_quit(app),
+        C::AppOpenSettings => settings::open_from_menu(app),
         C::EditSelectAll => {
             // 画面がまだ無いときなどは送れない。送れなくても失うものは無い(押し直せばよい)。
             let _ = app.emit(MENU_COMMAND_EVENT, MenuCommand::SelectAll);

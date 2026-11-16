@@ -15,26 +15,40 @@ mod support;
 use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::thread::{self, ThreadId};
+use std::time::{Duration, Instant, SystemTime};
 
+use arin_core::ports::desktop::{DesktopError, DesktopPort};
+use arin_core::ports::watch::{ActiveWatch, WatchError, WatchSink, WatcherPort};
 use arin_core::ports::{PtyError, PtyPort, PtySize, SpawnedPty};
 use arin_core::shortcuts::key::KeyChord;
+use arin_core::shortcuts::sample::sample_settings_toml;
 use arin_core::shortcuts::table::{
     ShortcutBinding, ShortcutCommandId, ShortcutReceiver, ShortcutTable,
 };
 use arin_core::terminal::ShellLaunchSpec;
+use arin_lib::TreePorts;
 use arin_lib::events::SETTINGS_CHANGED_EVENT;
 use arin_lib::launch::LaunchConfig;
 use arin_lib::menu::{self, Shortcuts};
+use arin_lib::persistence::PersistencePorts;
+use arin_lib::projects::ProjectPorts;
 use arin_lib::sessions::ShellDefaults;
-use arin_lib::settings::{AppSettings, DIAGNOSTIC_PREFIX};
+use arin_lib::settings::{
+    AppSettings, DIAGNOSTIC_PREFIX, NOTICE_NO_APP_REVEALED, NOTICE_NOT_OPENED,
+    NOTICE_NOT_PLAIN_REVEALED, OpenOutcome,
+};
+use arin_platform::desktop::MacFilePasteboard;
+use arin_platform::fs::LocalFileSystem;
 use muda::accelerator::Accelerator;
 use tauri::menu::{Menu, MenuItemKind};
 use tauri::test::{MockRuntime, get_ipc_response};
-use tauri::{App, AppHandle, Manager, RunEvent};
+use tauri::{App, AppHandle, Listener, Manager, RunEvent};
 
 use ShortcutCommandId as C;
 
@@ -51,16 +65,21 @@ impl PtyPort for NoPty {
 }
 
 fn build_app(launch: LaunchConfig) -> App<MockRuntime> {
-    arin_lib::builder_with_pty::<MockRuntime>(
+    finish(arin_lib::builder_with_pty::<MockRuntime>(
         launch,
         Arc::new(NoPty),
         Arc::new(|| ShellDefaults {
             shell: PathBuf::from("/bin/zsh"),
             locale: None,
         }),
-    )
-    .build(tauri::generate_context!())
-    .unwrap_or_else(|e| panic!("組み立てに失敗した: {e}"))
+    ))
+}
+
+/// 組み立てを仕上げる(`generate_context!` は 1 つのテストのバイナリで 1 か所だけ書ける)。
+fn finish(builder: tauri::Builder<MockRuntime>) -> App<MockRuntime> {
+    builder
+        .build(tauri::generate_context!())
+        .unwrap_or_else(|e| panic!("組み立てに失敗した: {e}"))
 }
 
 /// 組み立てて起動し、準備ができたら `on_ready` を呼んでからウィンドウを閉じ、終了まで進める。
@@ -140,12 +159,10 @@ fn own_ids(menu: &Menu<MockRuntime>) -> BTreeSet<String> {
         .collect()
 }
 
-/// 既定の表のときにメニューに載る自前の項目の ID。
+/// 既定の表のときにメニューに載る自前の項目の ID(「設定ファイルを開く…」を含む。T65d)。
 fn default_own_ids() -> BTreeSet<String> {
     ShortcutTable::default_table()
         .by_receiver(ShortcutReceiver::MenuItem)
-        // 「設定ファイルを開く…」は表に行だけある(T64c)。メニューに載せるのは T65d(そのときこの除外を外す)。
-        .filter(|b| b.command() != C::AppOpenSettings)
         .map(|b| b.command().as_str().to_owned())
         .collect()
 }
@@ -487,8 +504,434 @@ fn 設定が変わったイベントの名前は_settings_changed() {
     assert_eq!(SETTINGS_CHANGED_EVENT, "settings-changed");
 }
 
+// ---------------------------------------------------------------------------
+// 「設定ファイルを開く…」(T65d、ADR-012 の 6、AC-K08)
+// ---------------------------------------------------------------------------
+
+const WAIT: Duration = Duration::from_secs(5);
+
+fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// 偽のデスクトップに届いた頼み。
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DesktopCall {
+    Reveal(PathBuf),
+    Open(PathBuf),
+}
+
+/// Finder もアプリも開かず、頼まれたパスと呼ばれたスレッドを記録する。`open_fails`・`reveal_fails` が真なら失敗を返す。
+#[derive(Default)]
+struct FakeDesktop {
+    calls: Mutex<Vec<DesktopCall>>,
+    threads: Mutex<Vec<ThreadId>>,
+    open_fails: bool,
+    reveal_fails: bool,
+}
+
+impl FakeDesktop {
+    fn failing_open() -> Self {
+        Self {
+            open_fails: true,
+            ..Self::default()
+        }
+    }
+
+    fn calls(&self) -> Vec<DesktopCall> {
+        lock(&self.calls).clone()
+    }
+
+    fn record(&self, call: DesktopCall, fails: bool) -> Result<(), DesktopError> {
+        lock(&self.calls).push(call);
+        lock(&self.threads).push(thread::current().id());
+        // 本物の失敗の文言は絶対パスを含む。知らせに出ないことを確かめるため、同じ形にする。
+        if fails {
+            Err(DesktopError::Failed("/Users/someone/秘密のパス".into()))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl DesktopPort for FakeDesktop {
+    fn reveal_in_finder(&self, path: &Path) -> Result<(), DesktopError> {
+        self.record(DesktopCall::Reveal(path.to_path_buf()), self.reveal_fails)
+    }
+
+    fn open_with_default_app(&self, path: &Path) -> Result<(), DesktopError> {
+        self.record(DesktopCall::Open(path.to_path_buf()), self.open_fails)
+    }
+}
+
+/// どこにも張らない監視(ツリーと設定ファイルの監視。読み直しは各テストが自分で頼む)。
+struct NoWatcher;
+
+impl WatcherPort for NoWatcher {
+    fn watch(&self, _root: &Path, _sink: WatchSink) -> Result<Box<dyn ActiveWatch>, WatchError> {
+        Err(WatchError("このテストでは監視しない".into()))
+    }
+}
+
+/// デスクトップを偽物にし、監視を張らずに組み立てて起動する。準備ができたら `on_ready` を呼び、終了まで進める。
+fn run_with_desktop(
+    state_dir: &Path,
+    desktop: Arc<FakeDesktop>,
+    on_ready: impl FnOnce(&AppHandle<MockRuntime>) + 'static,
+) {
+    let launch = LaunchConfig::from_inputs(None, Some(state_dir.as_os_str()), None)
+        .unwrap_or_else(|e| panic!("組み立ての設定を作れなかった: {e}"));
+    let app = finish(arin_lib::builder_with_settings_watcher::<MockRuntime>(
+        launch,
+        Arc::new(NoPty),
+        Arc::new(|| ShellDefaults {
+            shell: PathBuf::from("/bin/zsh"),
+            locale: None,
+        }),
+        PersistencePorts::native(state_dir.to_path_buf()),
+        ProjectPorts::native(),
+        TreePorts {
+            fs: Arc::new(LocalFileSystem::new()),
+            watcher: Arc::new(NoWatcher),
+            file_pasteboard: Arc::new(MacFilePasteboard::general()),
+        },
+        desktop as Arc<dyn DesktopPort>,
+        Arc::new(NoWatcher),
+    ));
+    let mut on_ready = Some(on_ready);
+    let exited = Rc::new(Cell::new(false));
+    let seen = Rc::clone(&exited);
+    app.run_return(move |handle, event| {
+        let is_exit = matches!(event, RunEvent::Exit);
+        if let RunEvent::Ready = event
+            && let Some(f) = on_ready.take()
+        {
+            f(handle);
+            for window in handle.webview_windows().into_values() {
+                window.destroy().expect("ウィンドウを閉じられなかった");
+            }
+        }
+        arin_lib::lifecycle::on_run_event(handle, event);
+        if is_exit {
+            seen.set(true);
+        }
+    });
+    assert!(exited.get(), "終了まで進まなかった");
+}
+
+fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
+    let deadline = Instant::now() + WAIT;
+    while !done() {
+        assert!(Instant::now() < deadline, "{what}まで待てなかった");
+        thread::sleep(Duration::from_millis(5));
+    }
+}
+
+/// `settings-changed` を数える。
+fn count_settings_changed(handle: &AppHandle<MockRuntime>) -> Arc<Mutex<usize>> {
+    let count = Arc::new(Mutex::new(0));
+    let seen = Arc::clone(&count);
+    handle.listen_any(SETTINGS_CHANGED_EVENT, move |_| *lock(&seen) += 1);
+    count
+}
+
+/// メニューの「設定ファイルを開く…」を選び、偽のデスクトップに `calls` 件の頼みが届くまで待つ。
+/// Finder・アプリへの受け渡しはメインスレッドの外で行う(待つことがあるため)。
+fn choose_open_settings(handle: &AppHandle<MockRuntime>, desktop: &FakeDesktop, calls: usize) {
+    menu::on_menu_event(handle, C::AppOpenSettings.as_str());
+    wait_until("デスクトップへの頼みが届く", || {
+        desktop.calls().len() >= calls
+    });
+    let main = thread::current().id();
+    assert!(
+        lock(&desktop.threads).iter().all(|id| *id != main),
+        "メインスレッドで Finder・アプリに渡した"
+    );
+}
+
+fn modified(path: &Path) -> SystemTime {
+    fs::metadata(path)
+        .and_then(|m| m.modified())
+        .expect("更新日時を読めなかった")
+}
+
+fn assert_no_path(notice: &str, state_dir: &Path) {
+    assert!(
+        !notice.contains(&*state_dir.to_string_lossy()) && !notice.contains('/'),
+        "知らせにパスが出た: {notice:?}"
+    );
+}
+
+fn 無いときは見本を作って開く() {
+    let state_dir = support::TempDir::new("open-settings-missing");
+    let path = state_dir.path().join(SETTINGS);
+    let desktop = Arc::new(FakeDesktop::default());
+    let fake = Arc::clone(&desktop);
+    run_with_desktop(state_dir.path(), Arc::clone(&desktop), move |handle| {
+        choose_open_settings(handle, &fake, 1);
+        assert_eq!(get_settings_notice(handle), None, "開けたのに知らせが出た");
+    });
+    assert_eq!(desktop.calls(), vec![DesktopCall::Open(path.clone())]);
+    // 見本は既定の表から作った全文(ADR-012 の 6)。0600。
+    assert_eq!(
+        fs::read_to_string(&path).expect("見本を読めなかった"),
+        sample_settings_toml(&ShortcutTable::default_table())
+    );
+    assert_eq!(
+        fs::metadata(&path)
+            .expect("見本の情報を読めなかった")
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+    // 見本をそのまま読むと既定の表で、知らせが無い。
+    let paths = support::launch_in(&state_dir, false).paths().clone();
+    let (_settings, resolved) = AppSettings::load(&paths);
+    assert_eq!(resolved.table, ShortcutTable::default_table());
+    assert_eq!(resolved.notice, None);
+}
+
+fn あるときは中身と更新日時を変えずに開く() {
+    let state_dir = support::TempDir::new("open-settings-existing");
+    let text = "[shortcuts]\n\"terminal.new-tab\" = \"Cmd+Shift+T\" # 自分のメモ\n";
+    write_settings(state_dir.path(), text);
+    let path = state_dir.path().join(SETTINGS);
+    // 権限も変えない(見本の 0600 に揃えない)。
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).expect("権限を変えられなかった");
+    let before = modified(&path);
+    thread::sleep(Duration::from_millis(20));
+
+    let desktop = Arc::new(FakeDesktop::default());
+    let fake = Arc::clone(&desktop);
+    run_with_desktop(state_dir.path(), Arc::clone(&desktop), move |handle| {
+        choose_open_settings(handle, &fake, 1);
+        assert_eq!(get_settings_notice(handle), None);
+        // 開いても表は読み込んだときのまま。
+        assert_eq!(
+            menu::accelerator(&handle.state::<Shortcuts>().table(), C::TerminalNewTab).as_deref(),
+            Some("Cmd+Shift+T")
+        );
+    });
+    assert_eq!(desktop.calls(), vec![DesktopCall::Open(path.clone())]);
+    assert_eq!(fs::read_to_string(&path).expect("読めなかった"), text);
+    assert_eq!(modified(&path), before, "更新日時が変わった");
+    assert_eq!(
+        fs::metadata(&path)
+            .expect("情報を読めなかった")
+            .permissions()
+            .mode()
+            & 0o777,
+        0o644
+    );
+    assert_eq!(state_dir.entries_except_state(), vec![SETTINGS.to_owned()]);
+}
+
+fn 開けないと_finder_で表示し知らせる() {
+    let state_dir = support::TempDir::new("open-settings-no-app");
+    let path = state_dir.path().join(SETTINGS);
+    let desktop = Arc::new(FakeDesktop::failing_open());
+    let fake = Arc::clone(&desktop);
+    let dir = state_dir.path().to_path_buf();
+    run_with_desktop(state_dir.path(), Arc::clone(&desktop), move |handle| {
+        let changed = count_settings_changed(handle);
+        choose_open_settings(handle, &fake, 2);
+        // 知らせが替わったので画面に取り直させる(中身は無い)。
+        wait_until("settings-changed が届く", || *lock(&changed) == 1);
+        let notice = get_settings_notice(handle).expect("知らせが無い");
+        assert_eq!(notice, NOTICE_NO_APP_REVEALED);
+        assert_eq!(
+            notice,
+            "設定ファイルを開けるアプリが無いため、Finder で表示しました"
+        );
+        assert_no_path(&notice, &dir);
+    });
+    assert_eq!(
+        desktop.calls(),
+        vec![DesktopCall::Open(path.clone()), DesktopCall::Reveal(path)]
+    );
+
+    // Finder でも表示できなければ、そう知らせる(パスと OS の文言は出さない)。
+    let state_dir = support::TempDir::new("open-settings-no-finder");
+    let desktop = Arc::new(FakeDesktop {
+        open_fails: true,
+        reveal_fails: true,
+        ..FakeDesktop::default()
+    });
+    let fake = Arc::clone(&desktop);
+    let dir = state_dir.path().to_path_buf();
+    run_with_desktop(state_dir.path(), Arc::clone(&desktop), move |handle| {
+        choose_open_settings(handle, &fake, 2);
+        wait_until("知らせが出る", || {
+            get_settings_notice(handle).is_some()
+        });
+        let notice = get_settings_notice(handle).expect("知らせが無い");
+        assert_eq!(notice, NOTICE_NOT_OPENED);
+        assert_no_path(&notice, &dir);
+    });
+}
+
+fn 見本を作れないときは開かず知らせる() {
+    let state_dir = support::TempDir::new("open-settings-readonly");
+    // 書けない状態フォルダ(見本を作れない)。終わったら戻す(一時フォルダを片付けられるように)。
+    fs::set_permissions(state_dir.path(), fs::Permissions::from_mode(0o500))
+        .expect("権限を変えられなかった");
+    let desktop = Arc::new(FakeDesktop::default());
+    let dir = state_dir.path().to_path_buf();
+    run_with_desktop(state_dir.path(), Arc::clone(&desktop), move |handle| {
+        let changed = count_settings_changed(handle);
+        menu::on_menu_event(handle, C::AppOpenSettings.as_str());
+        wait_until("知らせが出る", || {
+            get_settings_notice(handle).is_some()
+        });
+        wait_until("settings-changed が届く", || *lock(&changed) == 1);
+        let notice = get_settings_notice(handle).expect("知らせが無い");
+        assert!(
+            notice.starts_with("設定ファイルの見本を作れなかったため、開きませんでした"),
+            "{notice:?}"
+        );
+        assert_no_path(&notice, &dir);
+    });
+    fs::set_permissions(state_dir.path(), fs::Permissions::from_mode(0o700))
+        .expect("権限を戻せなかった");
+    assert!(
+        desktop.calls().is_empty(),
+        "見本が無いのに開いた: {:?}",
+        desktop.calls()
+    );
+    assert!(
+        !state_dir.entries().iter().any(|n| n == SETTINGS),
+        "設定ファイルができた"
+    );
+}
+
+fn 開けなかった知らせは設定ファイルの問題の知らせを消さず次の読み直しで戻る() {
+    let state_dir = support::TempDir::new("open-settings-notice");
+    let paths = support::launch_in(&state_dir, false).paths().clone();
+    // 予約のキーの行(行の問題)があるファイル。
+    write_settings(
+        state_dir.path(),
+        "[shortcuts]\n\"terminal.close-tab\" = \"Cmd+H\"\n",
+    );
+    let (settings, resolved) = AppSettings::load(&paths);
+    let file_notice = resolved.notice.clone().expect("行の問題の知らせが無い");
+    assert_eq!(settings.notice().as_deref(), Some(file_notice.as_str()));
+
+    // 開けなかった: 開けなかった知らせと、設定ファイルの問題の知らせの両方が 1 行に出る。
+    let report = settings.open_file(&FakeDesktop::failing_open());
+    assert_eq!(report.outcome, OpenOutcome::Revealed);
+    assert!(report.notice_changed);
+    let both = settings.notice().expect("知らせが無い");
+    assert!(both.contains(NOTICE_NO_APP_REVEALED), "{both:?}");
+    assert!(
+        both.contains(&file_notice),
+        "設定ファイルの問題の知らせが消えた: {both:?}"
+    );
+    assert!(!both.contains('\n'));
+
+    // 中身の変わらない読み直し(見本の作成や、保存し直し)では、どちらの知らせも消さず、送らない。
+    let current = resolved.table.clone();
+    assert_eq!(settings.reload_if_changed(&current), None);
+    assert_eq!(settings.notice().as_deref(), Some(both.as_str()));
+
+    // 中身が変わった読み直し: 設定ファイルの問題の知らせだけに戻る(開けなかった知らせは古いので外す)。
+    write_settings(
+        state_dir.path(),
+        "[shortcuts]\n\"terminal.close-tab\" = \"Cmd+H\"\n\"edit.select-all\" = 1\n",
+    );
+    let reloaded = settings
+        .reload_if_changed(&current)
+        .expect("知らせが変わったのに変わらないと言った");
+    assert_eq!(settings.notice(), reloaded.notice);
+    let new_file_notice = reloaded.notice.clone().expect("行の問題の知らせが無い");
+    assert!(!new_file_notice.contains(NOTICE_NO_APP_REVEALED));
+
+    // 構文エラーに直したときも、構文エラーの知らせに正しく替わる。
+    let _ = settings.open_file(&FakeDesktop::failing_open());
+    write_settings(state_dir.path(), "[shortcuts\n");
+    let broken = settings
+        .reload_if_changed(&reloaded.table)
+        .expect("構文エラーなのに変わらないと言った");
+    let syntax = broken.notice.clone().expect("構文エラーの知らせが無い");
+    assert!(syntax.contains("1 行"), "{syntax:?}");
+    assert_eq!(settings.notice(), Some(syntax));
+
+    // 開けたら開けなかった知らせだけを外す(設定ファイルの問題の知らせは残る)。
+    let _ = settings.open_file(&FakeDesktop::failing_open());
+    assert_ne!(settings.notice(), broken.notice);
+    let report = settings.open_file(&FakeDesktop::default());
+    assert_eq!(report.outcome, OpenOutcome::Opened { created: false });
+    assert!(report.notice_changed);
+    assert_eq!(settings.notice(), broken.notice);
+    let report = settings.open_file(&FakeDesktop::default());
+    assert!(!report.notice_changed, "知らせが同じなのに変わったと言った");
+}
+
+fn 実行できるかふつうのファイルでない設定ファイルは開かずに_finder_で表示する() {
+    let state_dir = support::TempDir::new("open-settings-not-plain");
+    let paths = support::launch_in(&state_dir, false).paths().clone();
+    let path = state_dir.path().join(SETTINGS);
+    // 実行の権限がある(既定のアプリが実行しうる)。中身と権限は変えない。
+    write_settings(state_dir.path(), "[shortcuts]\n");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("権限を変えられなかった");
+    let (settings, _) = AppSettings::load(&paths);
+    let desktop = FakeDesktop::default();
+    let report = settings.open_file(&desktop);
+    assert_eq!(report.outcome, OpenOutcome::Revealed);
+    assert_eq!(desktop.calls(), vec![DesktopCall::Reveal(path.clone())]);
+    assert_eq!(
+        settings.notice().as_deref(),
+        Some(NOTICE_NOT_PLAIN_REVEALED)
+    );
+    assert_eq!(
+        fs::read_to_string(&path).expect("読めなかった"),
+        "[shortcuts]\n"
+    );
+    assert_eq!(
+        fs::metadata(&path)
+            .expect("情報を読めなかった")
+            .permissions()
+            .mode()
+            & 0o777,
+        0o755
+    );
+
+    // フォルダ(見本で上書きしない)。
+    let state_dir = support::TempDir::new("open-settings-folder");
+    let paths = support::launch_in(&state_dir, false).paths().clone();
+    let path = state_dir.path().join(SETTINGS);
+    fs::create_dir(&path).expect("フォルダを作れなかった");
+    let (settings, _) = AppSettings::load(&paths);
+    let desktop = FakeDesktop::default();
+    assert_eq!(settings.open_file(&desktop).outcome, OpenOutcome::Revealed);
+    assert_eq!(desktop.calls(), vec![DesktopCall::Reveal(path.clone())]);
+    assert!(path.is_dir(), "フォルダが替わった");
+    assert_eq!(fs::read_dir(&path).expect("読めなかった").count(), 0);
+}
+
 fn main() {
-    let tests: [(&str, fn()); 10] = [
+    let tests: [(&str, fn()); 16] = [
+        (
+            "実行できるかふつうのファイルでない設定ファイルは開かずに_finder_で表示する",
+            実行できるかふつうのファイルでない設定ファイルは開かずに_finder_で表示する,
+        ),
+        ("無いときは見本を作って開く", 無いときは見本を作って開く),
+        (
+            "あるときは中身と更新日時を変えずに開く",
+            あるときは中身と更新日時を変えずに開く,
+        ),
+        (
+            "開けないと_finder_で表示し知らせる",
+            開けないと_finder_で表示し知らせる,
+        ),
+        (
+            "見本を作れないときは開かず知らせる",
+            見本を作れないときは開かず知らせる,
+        ),
+        (
+            "開けなかった知らせは設定ファイルの問題の知らせを消さず次の読み直しで戻る",
+            開けなかった知らせは設定ファイルの問題の知らせを消さず次の読み直しで戻る,
+        ),
         (
             "設定ファイルが無いと既定の表でメニューを作り知らせが無い",
             設定ファイルが無いと既定の表でメニューを作り知らせが無い,
