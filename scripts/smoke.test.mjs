@@ -3,7 +3,7 @@
 // 偽のアプリは、本物と同じように state.json を扱う(読めればブックマークを入れて書き直し、読めなければ退避して空で書く)。
 
 import assert from "node:assert/strict";
-import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, unlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -13,12 +13,21 @@ import {
   BROKEN_STATE,
   FRONTEND_ERROR_PREFIX,
   MARKER_FILE_NAME,
+  SETTINGS_BAD_ROW,
+  SETTINGS_COMMENT_MARK,
+  SETTINGS_DIAGNOSTIC_PREFIX,
+  SETTINGS_FILE_NAME,
+  SETTINGS_FIXTURE,
+  SETTINGS_GOOD_ROW,
   SMOKE_PROJECT_ID,
   STATE_FILE_NAME,
   TEMP_PREFIX,
   TERMINAL_MARKER_FILE_NAME,
   TILE_PROJECT_COUNT,
+  checkSettingsAfterExit,
+  checkSettingsDiagnostics,
   checkStateAfterExit,
+  fingerprintFile,
   createOutputWatcher,
   parseArgs,
   numberedProjectId,
@@ -523,7 +532,171 @@ describe("runSmoke と状態ファイル", () => {
   });
 });
 
+/** 本物のアプリが問題のある行(tree.rename = F2)に出す設定の行(src-tauri/src/settings.rs・arin-core の overrides.rs の形)。 */
+const BAD_ROW_LINE = `${SETTINGS_DIAGNOSTIC_PREFIX} ショートカットの設定: ${SETTINGS_BAD_ROW.id} = ${SETTINGS_BAD_ROW.key}(キーを読めません: 修飾キーでもキーでもない部分があります)`;
+
+/** 標準エラーに行を書く偽のアプリの本体の一部。 */
+const writeStderr = (line) => `process.stderr.write(${JSON.stringify(`${line}\n`)});`;
+
+describe("設定ファイルを置いた起動(--settings)", () => {
+  async function preparedSettings(name) {
+    const dir = path.join(root, name);
+    await mkdir(dir);
+    return { dir, ...(await prepareStateDir(dir, "settings")) };
+  }
+
+  it("設定の指定で一時の状態フォルダに_settings_toml_を置く", async () => {
+    const p = await preparedSettings("fixture-settings");
+    const file = path.join(p.stateDir, SETTINGS_FILE_NAME);
+
+    // 設定ファイルは正しい変更の行と問題のある行を 1 つずつ [shortcuts] の下に持ち、0600 で置かれ、指紋を返す
+    assert.equal(await readFile(file, "utf8"), SETTINGS_FIXTURE);
+    assert.equal((await stat(file)).mode & 0o777, 0o600);
+    assert.deepEqual(p.settings, await fingerprintFile(file));
+    assert.match(p.settings.sha256, /^[0-9a-f]{64}$/);
+    const rows = SETTINGS_FIXTURE.split("\n").filter((l) => l !== "" && !l.startsWith("#"));
+    assert.deepEqual(rows, [
+      "[shortcuts]",
+      `"${SETTINGS_GOOD_ROW.id}" = "${SETTINGS_GOOD_ROW.key}"`,
+      `"${SETTINGS_BAD_ROW.id}" = "${SETTINGS_BAD_ROW.key}"`,
+    ]);
+    assert.ok(SETTINGS_FIXTURE.includes(SETTINGS_COMMENT_MARK));
+    // state.json はプロジェクト 1 件の起動と同じ
+    const state = JSON.parse(await readFile(path.join(p.stateDir, STATE_FILE_NAME), "utf8"));
+    assert.deepEqual(state.projects.map((x) => x.id), [SMOKE_PROJECT_ID]);
+    assert.deepEqual(await readdir(p.projectDirs[0]), []);
+
+    // ほかの種類では設定ファイルを置かない
+    const other = path.join(root, "fixture-no-settings");
+    await mkdir(other);
+    const plain = await prepareStateDir(other, "project");
+    assert.equal(plain.settings, null);
+    assert.deepEqual((await readdir(plain.stateDir)).sort(), [STATE_FILE_NAME]);
+  });
+
+  it("終わったあと設定ファイルの中身と更新日時が同じか確かめる", async () => {
+    const p = await preparedSettings("check-settings");
+    const file = path.join(p.stateDir, SETTINGS_FILE_NAME);
+    const check = () => checkSettingsAfterExit({ stateDir: p.stateDir, expected: p.settings });
+    assert.equal(await check(), null);
+
+    // 中身が変わった(大きさが同じでも)
+    await writeFile(file, SETTINGS_FIXTURE.replace("F2", "F3"));
+    assert.match(await check(), /中身が変わった/);
+
+    // 中身は同じで更新日時だけが変わった(書き直した)
+    await writeFile(file, SETTINGS_FIXTURE);
+    await utimes(file, new Date(2026, 0, 1), new Date(2026, 0, 1));
+    assert.match(await check(), /更新日時が変わった/);
+
+    // settings.toml の名前を含む別のファイル(退避など)ができた
+    const backup = path.join(p.stateDir, `${SETTINGS_FILE_NAME}.broken-20261116T000000Z`);
+    await writeFile(backup, SETTINGS_FIXTURE);
+    assert.match(await check(), /別のファイルができた: settings\.toml\.broken-20261116T000000Z/);
+    await unlink(backup);
+
+    // 消えた
+    await unlink(file);
+    assert.match(await check(), /読めなかった/);
+  });
+
+  it("設定の診断の行に設定の行の全文が無いか確かめる", () => {
+    const opts = { expectBadRow: true, forbiddenPaths: ["/private/var/folders/xx/arin-smoke-abc"] };
+    assert.equal(checkSettingsDiagnostics([BAD_ROW_LINE], opts), null);
+
+    // 設定ファイルの行の全文・コメント・絶対パス・正しい行のことが出たら失敗
+    const prefix = `${SETTINGS_DIAGNOSTIC_PREFIX} ショートカットの設定: `;
+    assert.match(
+      checkSettingsDiagnostics([`${prefix}"${SETTINGS_BAD_ROW.id}" = "${SETTINGS_BAD_ROW.key}"`], opts),
+      /行の全文/,
+    );
+    assert.match(checkSettingsDiagnostics([`${BAD_ROW_LINE} ${SETTINGS_COMMENT_MARK}`], opts), /コメント/);
+    assert.match(
+      checkSettingsDiagnostics([`${prefix}/private/var/folders/xx/arin-smoke-abc/state/settings.toml`], opts),
+      /絶対パス/,
+    );
+    assert.match(
+      checkSettingsDiagnostics([BAD_ROW_LINE, `${prefix}${SETTINGS_GOOD_ROW.id} = ${SETTINGS_GOOD_ROW.key}(知らないコマンドです)`], opts),
+      /正しい行/,
+    );
+    // 形が違う(理由が無い・ID が違う・キーに無い文字が足された)
+    assert.match(checkSettingsDiagnostics([`${prefix}${SETTINGS_BAD_ROW.id} = ${SETTINGS_BAD_ROW.key}`], opts), /形でない/);
+    assert.match(checkSettingsDiagnostics([`${prefix}tree.open = F2(理由)`], opts), /形でない/);
+    assert.match(checkSettingsDiagnostics([`${prefix}${SETTINGS_BAD_ROW.id} = ${SETTINGS_BAD_ROW.key}(/etc/passwd)`], opts), /形でない/);
+    // 1 行も出なければ失敗
+    assert.match(checkSettingsDiagnostics([], opts), /出なかった/);
+
+    // 設定ファイルを置かない起動では、1 行も出ないのが正しい(AC-K03)
+    assert.equal(checkSettingsDiagnostics([], { expectBadRow: false }), null);
+    assert.match(checkSettingsDiagnostics([BAD_ROW_LINE], { expectBadRow: false }), /設定ファイルが無いのに/);
+  });
+
+  it("設定の行を拾い_問題のある行だけが出て設定ファイルが変わらなければ成功する", async () => {
+    const app = await fakeApp("settings-ok", `${writeStderr("ふつうのログ")}\n${writeStderr(BAD_ROW_LINE)}\n${WRITE_MARKER}`);
+    const lines = [];
+
+    const result = await runSmoke(options(app, { stateKind: "settings", log: (l) => lines.push(l) }));
+
+    assert.equal(result.ok, true, result.message);
+    assert.ok(lines.some((l) => l.includes(BAD_ROW_LINE)), "設定の行をログに出していない");
+  });
+
+  it("設定の行が出ない_全文を出す_設定ファイルを書き換えるアプリは失敗する", async () => {
+    const silent = await fakeApp("settings-silent", WRITE_MARKER);
+    assert.match((await runSmoke(options(silent, { stateKind: "settings" }))).message, /出なかった/);
+
+    const leaky = await fakeApp(
+      "settings-leaky",
+      `${writeStderr(`${SETTINGS_DIAGNOSTIC_PREFIX} ショートカットの設定: "${SETTINGS_BAD_ROW.id}" = "${SETTINGS_BAD_ROW.key}"`)}\n${WRITE_MARKER}`,
+    );
+    assert.match((await runSmoke(options(leaky, { stateKind: "settings" }))).message, /行の全文/);
+
+    const rewriting = await fakeApp(
+      "settings-rewrite",
+      `${writeStderr(BAD_ROW_LINE)}\nfs.writeFileSync(path.join(process.env.ARIN_STATE_DIR, "${SETTINGS_FILE_NAME}"), "[shortcuts]\\n");\n${WRITE_MARKER}`,
+    );
+    assert.match((await runSmoke(options(rewriting, { stateKind: "settings" }))).message, /中身が変わった/);
+
+    const renaming = await fakeApp(
+      "settings-rename",
+      `${writeStderr(BAD_ROW_LINE)}\n{ const d = process.env.ARIN_STATE_DIR; fs.copyFileSync(path.join(d, "${SETTINGS_FILE_NAME}"), path.join(d, "${SETTINGS_FILE_NAME}.bak")); }\n${WRITE_MARKER}`,
+    );
+    assert.match((await runSmoke(options(renaming, { stateKind: "settings" }))).message, /別のファイルができた/);
+  });
+
+  it("設定ファイルを置かない起動で設定の行が出たら失敗する", async () => {
+    const app = await fakeApp("settings-unexpected", `${writeStderr(BAD_ROW_LINE)}\n${WRITE_MARKER}`);
+
+    const result = await runSmoke(options(app));
+
+    assert.equal(result.ok, false);
+    assert.match(result.message, /設定ファイルが無いのに/);
+  });
+
+  it("一揃いは設定の指定で_settings_toml_を置いて_1_回だけ起動する", async () => {
+    const app = await fakeApp("suite-settings", `${writeStderr(BAD_ROW_LINE)}\n${WRITE_MARKER}`);
+
+    const results = await runSmokeSuite(options(app, { settings: true }));
+
+    assert.deepEqual(
+      results.map((r) => [r.kind, r.result.ok]),
+      [["settings", true]],
+    );
+    await assert.rejects(runSmokeSuite(options(app, { settings: true, tiles: true })), /同時に指定できない/);
+  });
+});
+
 describe("createOutputWatcher", () => {
+  it("設定の行は画面の失敗とは別に集める", () => {
+    const w = createOutputWatcher();
+
+    w.feed("stderr", Buffer.from(`${SETTINGS_DIAGNOSTIC_PREFIX} a\n${FRONTEND_ERROR_PREFIX} b\n  ${SETTINGS_DIAGNOSTIC_PREFIX} 字下げ\n`));
+    w.end();
+
+    assert.deepEqual(w.settingsLines, [`${SETTINGS_DIAGNOSTIC_PREFIX} a`]);
+    assert.deepEqual(w.frontendErrors, [`${FRONTEND_ERROR_PREFIX} b`]);
+  });
+
   it("塊の切れ目をまたいだ行も、改行で終わらない最後の行も拾い、頭が一致する行だけを集める", () => {
     const w = createOutputWatcher();
 
@@ -555,6 +728,13 @@ describe("parseArgs", () => {
     assert.deepEqual(parseArgs(["--tiles"]), { tiles: true });
     assert.deepEqual(parseArgs(["--tiles", "--env=SMOKE_A=1"]), { tiles: true, extraEnv: { SMOKE_A: "1" } });
     assert.throws(() => parseArgs(["--tiles=1"]), /知らない引数/);
+  });
+
+  it("--settings を受け_ほかの指定と並べられるが_--tiles とは並べられない", () => {
+    assert.deepEqual(parseArgs(["--settings"]), { settings: true });
+    assert.deepEqual(parseArgs(["--settings", "--timeout-ms=500"]), { settings: true, timeoutMs: 500 });
+    assert.throws(() => parseArgs(["--settings", "--tiles"]), /同時に指定できない/);
+    assert.throws(() => parseArgs(["--settings=1"]), /知らない引数/);
   });
 
   it("形の違う --env、スモークが決める環境変数、知らない引数は失敗する", () => {

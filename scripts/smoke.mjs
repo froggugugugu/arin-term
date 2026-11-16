@@ -25,13 +25,22 @@
 // state.json の 9 件にブックマークが入り表示モードがタイルのままであること、9 つのプロジェクトのフォルダに何も
 // 増えていないことを確かめる。
 //
+// `--settings` は、プロジェクト 1 件の state.json に加えて、正しい変更の行と問題のある行を 1 つずつ含む settings.toml
+// (SETTINGS_FIXTURE。計画書 T66a、ADR-012)を状態フォルダに置いて 1 回だけ起動する。準備完了とターミナルの印を待ち、
+// 標準エラーの設定の行(頭が SETTINGS_DIAGNOSTIC_PREFIX)が問題のある行のコマンドの ID とキーの文字列と理由だけで
+// (設定の行の全文・コメント・絶対パスを含まない。AC-K09)、正しい行のことは出ていないことを確かめる。終了後は、
+// 設定ファイルの中身(SHA-256)と大きさ・更新日時が置いたときと同じで、settings.toml の名前を含む別のファイル(退避など)が
+// できていないことを確かめる(アプリは設定ファイルを読むだけ。AC-K05・AC-K10)。メニューの「設定ファイルを開く…」は選ばない
+// (本物の既定のアプリや Finder が開くため)。--settings 以外の起動は settings.toml を置かないので、設定の行が 1 行でも
+// 出たら失敗にする(ファイルが無ければ既定で知らせなし。AC-K03)。
+//
 // - ソケットやポートは使わない(PRD N2・NFR-008)。外から知る手段は印のファイルと標準エラーだけ
 // - .app が無ければビルドせずに失敗する(先に `npm run app`)
 // - 本物の ~/Library/Application Support/Arin/ が作られていない・変わっていないことを前後で確かめる
 // - シェルは利用者の設定ファイル(~/.zshrc など)を読む(M1 の仕様どおり)。ホームに書き込む操作はしない
 // - Node の標準モジュールだけで書く
 //
-// 使い方: node scripts/smoke.mjs [--tiles] [--timeout-ms=30000] [--app=<Arin.app のパス>] [--env=<名前>=<値> ...]
+// 使い方: node scripts/smoke.mjs [--tiles | --settings] [--timeout-ms=30000] [--app=<Arin.app のパス>] [--env=<名前>=<値> ...]
 //
 // --env はアプリに渡す環境変数を足す(何度でも指定できる)。値は特別に扱わず、そのまま渡す。
 // 状態フォルダとスモークの印の環境変数(ARIN_STATE_DIR・ARIN_SMOKE)は、このスクリプトが決めるので指定できない。
@@ -39,6 +48,7 @@
 // 渡してもアプリは読まず、DOM 描画と unicode11 の通常の起動になる(例: --env=ARIN_RENDERER=webgl で確かめられる)。
 
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { rmSync } from "node:fs";
 import { access, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
@@ -71,6 +81,24 @@ export const BROKEN_PREFIX = `${STATE_FILE_NAME}.broken-`;
 export const SMOKE_PROJECT_ID = "5b0c6a2e-1f3d-4e8a-9c7b-2d4e6f8a0b1c";
 /** 壊れた state.json の中身(JSON として読めない)。 */
 export const BROKEN_STATE = '{ "schemaVersion": 1, "projects": [';
+/** 設定ファイルの名前(crates/arin-core/src/paths/app_paths.rs の SETTINGS_FILE_NAME)。 */
+export const SETTINGS_FILE_NAME = "settings.toml";
+/** 設定の標準エラーの行の頭。src-tauri/src/settings.rs の DIAGNOSTIC_PREFIX と合わせる。 */
+export const SETTINGS_DIAGNOSTIC_PREFIX = "[arin:settings]";
+/** --settings の設定ファイルのコメントに入れる目印(標準エラーに出たら、設定ファイルの中身が漏れている)。 */
+export const SETTINGS_COMMENT_MARK = "arin-smoke-settings-comment";
+/** --settings の正しい変更の行(既定の Cmd+T を替える。標準エラーには出ないはず)。 */
+export const SETTINGS_GOOD_ROW = { id: "terminal.new-tab", key: "Cmd+Shift+Y" };
+/** --settings の問題のある行(F キーは KeyChord の書式に無く読めないキー。既定に戻り、標準エラーに 1 行出るはず)。 */
+export const SETTINGS_BAD_ROW = { id: "tree.rename", key: "F2" };
+/** --settings で置く settings.toml の中身。 */
+export const SETTINGS_FIXTURE = [
+  `# スモークの設定(scripts/smoke.mjs --settings)。${SETTINGS_COMMENT_MARK}`,
+  "[shortcuts]",
+  `"${SETTINGS_GOOD_ROW.id}" = "${SETTINGS_GOOD_ROW.key}"`,
+  `"${SETTINGS_BAD_ROW.id}" = "${SETTINGS_BAD_ROW.key}"`,
+  "",
+].join("\n");
 
 export const DEFAULT_APP_PATH = path.join(
   REPO_ROOT,
@@ -184,20 +212,27 @@ function processName(pid) {
 }
 
 /**
- * 標準出力・標準エラーの流れを行に分け、画面の失敗の行を集める。末尾の出力も残す(失敗の報告に添える)。
+ * 標準出力・標準エラーの流れを行に分け、画面の失敗の行と設定の行(頭が SETTINGS_DIAGNOSTIC_PREFIX)を集める。
+ * 末尾の出力も残す(失敗の報告に添える)。
  */
 export function createOutputWatcher() {
   const partial = new Map();
   const frontendErrors = [];
+  const settingsLines = [];
   let tail = "";
   let dropped = 0;
   const onLine = (line) => {
+    if (line.startsWith(SETTINGS_DIAGNOSTIC_PREFIX)) {
+      if (settingsLines.length < MAX_FRONTEND_ERRORS) settingsLines.push(line);
+      return;
+    }
     if (!line.startsWith(FRONTEND_ERROR_PREFIX)) return;
     if (frontendErrors.length < MAX_FRONTEND_ERRORS) frontendErrors.push(line);
     else dropped += 1;
   };
   return {
     frontendErrors,
+    settingsLines,
     get dropped() {
       return dropped;
     },
@@ -253,7 +288,8 @@ export function stateFixture(kind, dirs) {
   const projectDirs = Array.isArray(dirs) ? dirs : [dirs];
   if (kind === "broken") return BROKEN_STATE;
   if (kind === "tiles") return projectsStateFixture(projectDirs, { displayMode: "tiles" });
-  if (kind !== "project") throw new Error(`知らない状態ファイルの種類: ${kind}`);
+  // "settings" の state.json は "project" と同じ(設定ファイルは prepareStateDir が別に置く)。
+  if (kind !== "project" && kind !== "settings") throw new Error(`知らない状態ファイルの種類: ${kind}`);
   const state = {
     schemaVersion: 1,
     projects: [
@@ -264,10 +300,19 @@ export function stateFixture(kind, dirs) {
   return `${JSON.stringify(state, null, 2)}\n`;
 }
 
+/** ファイルの中身の SHA-256(16 進)・大きさ・更新日時。比較だけに使う。 */
+export async function fingerprintFile(file) {
+  const [bytes, s] = await Promise.all([readFile(file), stat(file)]);
+  return { sha256: createHash("sha256").update(bytes).digest("hex"), size: s.size, mtimeMs: s.mtimeMs };
+}
+
 /**
  * root の下に状態フォルダ(state/)とプロジェクトのフォルダを作り、state.json を置く。
  * プロジェクトのフォルダは "tiles" なら projects/p1〜p9、ほかは project/ の 1 つ。
- * @returns {Promise<{ stateDir: string, projectDirs: string[], fixture: string }>}
+ * "settings" なら settings.toml(SETTINGS_FIXTURE)も置き、置いたときの中身の指紋(fingerprintFile)を settings に返す
+ * (ほかの種類では null)。
+ * @returns {Promise<{ stateDir: string, projectDirs: string[], fixture: string,
+ *   settings: { sha256: string, size: number, mtimeMs: number } | null }>}
  */
 export async function prepareStateDir(root, kind) {
   const stateDir = path.join(root, "state");
@@ -279,7 +324,72 @@ export async function prepareStateDir(root, kind) {
   for (const dir of projectDirs) await mkdir(dir, { recursive: true });
   const fixture = stateFixture(kind, projectDirs);
   await writeFile(path.join(stateDir, STATE_FILE_NAME), fixture, { mode: 0o600 });
-  return { stateDir, projectDirs, fixture };
+  let settings = null;
+  if (kind === "settings") {
+    const file = path.join(stateDir, SETTINGS_FILE_NAME);
+    await writeFile(file, SETTINGS_FIXTURE, { mode: 0o600 });
+    settings = await fingerprintFile(file);
+  }
+  return { stateDir, projectDirs, fixture, settings };
+}
+
+/**
+ * 終了後の設定ファイルを確かめる。問題が無ければ null、あれば理由の文字列。
+ * settings.toml の中身(SHA-256)・大きさ・更新日時が置いたとき(expected)と同じで、状態フォルダに settings.toml の名前を
+ * 含むほかのファイル(退避・一時ファイルなど)ができていない(アプリは設定ファイルを読むだけ。AC-K05)。
+ */
+export async function checkSettingsAfterExit({ stateDir, expected }) {
+  const others = (await readdir(stateDir)).filter((n) => n !== SETTINGS_FILE_NAME && n.includes(SETTINGS_FILE_NAME));
+  if (others.length > 0) return `状態フォルダに ${SETTINGS_FILE_NAME} の名前を含む別のファイルができた: ${others.join("、")}`;
+  let after;
+  try {
+    after = await fingerprintFile(path.join(stateDir, SETTINGS_FILE_NAME));
+  } catch (e) {
+    return `終了後に ${SETTINGS_FILE_NAME} を読めなかった(消えた・置き換わった?): ${e.message}`;
+  }
+  if (after.sha256 !== expected.sha256 || after.size !== expected.size) {
+    return `${SETTINGS_FILE_NAME} の中身が変わった(読むだけのはず)`;
+  }
+  if (after.mtimeMs !== expected.mtimeMs) {
+    return `${SETTINGS_FILE_NAME} の更新日時が変わった(${expected.mtimeMs} → ${after.mtimeMs}。読むだけのはず)`;
+  }
+  return null;
+}
+
+/** 正規表現の特別な文字を逃がす。 */
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * 標準エラーの設定の行(頭が SETTINGS_DIAGNOSTIC_PREFIX)を確かめる。問題が無ければ null、あれば理由の文字列。
+ * - expectBadRow が false("settings" 以外の起動。settings.toml が無い): 1 行も無い(AC-K03)
+ * - expectBadRow が true: 1 行以上あり、どれも「ショートカットの設定: <問題のある行の ID> = <キー>(<理由>)」の形で、
+ *   設定ファイルの行の全文(引用符付きの行)・コメント・正しい行の ID・絶対パス(forbiddenPaths)を含まない(AC-K09)
+ */
+export function checkSettingsDiagnostics(lines, { expectBadRow, forbiddenPaths = [] }) {
+  if (!expectBadRow) {
+    return lines.length === 0 ? null : `設定ファイルが無いのに、標準エラーに設定の行が出た:\n${lines.join("\n")}`;
+  }
+  if (lines.length === 0) {
+    return `問題のある行(${SETTINGS_BAD_ROW.id} = ${SETTINGS_BAD_ROW.key})の設定の行(${SETTINGS_DIAGNOSTIC_PREFIX})が標準エラーに出なかった`;
+  }
+  const shape = new RegExp(
+    `^${escapeRegExp(SETTINGS_DIAGNOSTIC_PREFIX)} ショートカットの設定: ${escapeRegExp(SETTINGS_BAD_ROW.id)} = ${escapeRegExp(SETTINGS_BAD_ROW.key)}[(\\uFF08][^()\\uFF08\\uFF09"/]+[)\\uFF09]$`,
+  );
+  const fixtureRows = SETTINGS_FIXTURE.split("\n").filter((l) => l.trim() !== "");
+  for (const line of lines) {
+    const leaked = fixtureRows.find((row) => line.includes(row));
+    if (leaked !== undefined) return `設定の行に設定ファイルの行の全文が出た(${leaked}): ${line}`;
+    if (line.includes(SETTINGS_COMMENT_MARK)) return `設定の行に設定ファイルのコメントが出た: ${line}`;
+    const pathLeak = forbiddenPaths.find((p) => p !== "" && line.includes(p));
+    if (pathLeak !== undefined) return `設定の行に絶対パス(${pathLeak})が出た: ${line}`;
+    if (line.includes(SETTINGS_GOOD_ROW.id)) return `正しい行(${SETTINGS_GOOD_ROW.id})のことが設定の行に出た: ${line}`;
+    if (!shape.test(line)) {
+      return `設定の行が「ショートカットの設定: ${SETTINGS_BAD_ROW.id} = ${SETTINGS_BAD_ROW.key}(理由)」の形でない: ${line}`;
+    }
+  }
+  return null;
 }
 
 /** JSON として読めれば値、読めなければ null。 */
@@ -422,6 +532,7 @@ export async function runSmoke({
       broken: "壊れたもの",
       tiles: `プロジェクト ${TILE_PROJECT_COUNT} 件・タイル表示`,
       project: "プロジェクト 1 件",
+      settings: `プロジェクト 1 件。${SETTINGS_FILE_NAME} に正しい行 1 つと問題のある行 1 つ`,
     };
     log(`状態フォルダ: ${stateDir}(${STATE_FILE_NAME}: ${described[stateKind] ?? stateKind})`);
     for (const [name, value] of Object.entries(extraEnv)) log(`追加の環境変数: ${name}=${value}`);
@@ -526,8 +637,24 @@ export async function runSmoke({
     if (result?.ok) {
       try {
         stateProblem = await checkStateAfterExit({ ...prepared, kind: stateKind });
+        if (stateProblem === null && prepared.settings !== null) {
+          stateProblem = await checkSettingsAfterExit({ stateDir, expected: prepared.settings });
+        }
       } catch (e) {
         stateProblem = `終了後の状態フォルダを調べられなかった: ${e.message}`;
+      }
+      if (stateProblem === null) {
+        watcher.end();
+        let forbiddenPaths = [tempRoot, stateDir];
+        try {
+          forbiddenPaths = [...forbiddenPaths, await realpath(tempRoot)];
+        } catch {
+          // 消す前なので読めるはず。読めなければ与えたパスだけで調べる。
+        }
+        stateProblem = checkSettingsDiagnostics(watcher.settingsLines, {
+          expectBadRow: stateKind === "settings",
+          forbiddenPaths,
+        });
       }
     }
     // 自分が mkdtemp で作ったフォルダだけを消す。
@@ -568,6 +695,11 @@ export async function runSmoke({
           ? `${STATE_FILE_NAME} の ${TILE_PROJECT_COUNT} 件にブックマークが書かれ、表示モードはタイルのまま、プロジェクトのフォルダには何も増えていない`
           : `${STATE_FILE_NAME} にブックマークが書かれ、プロジェクトのフォルダには何も増えていない`,
     );
+    if (stateKind === "settings") {
+      log(`標準エラーの設定の行(${watcher.settingsLines.length} 行):`);
+      for (const line of watcher.settingsLines) log(`  ${line}`);
+      log(`${SETTINGS_FILE_NAME} は中身・大きさ・更新日時とも置いたときのまま、名前を含む別のファイルもできていない`);
+    }
   }
 
   const realAfter = await describeDir(realStateDir);
@@ -590,10 +722,12 @@ export async function runSmoke({
 /**
  * スモークの一揃い。`npm run smoke` はプロジェクト 1 件の state.json で起動し、続けて壊れた state.json でも起動する。
  * tiles が true(--tiles)なら、9 プロジェクトのタイル表示の state.json で 1 回だけ起動する。
+ * settings が true(--settings)なら、プロジェクト 1 件の state.json と settings.toml を置いて 1 回だけ起動する。
  * @returns {Promise<Array<{ kind: string, result: Awaited<ReturnType<typeof runSmoke>> }>>}
  */
-export async function runSmokeSuite({ tiles = false, ...opts } = {}) {
-  const kinds = tiles ? ["tiles"] : ["project", "broken"];
+export async function runSmokeSuite({ tiles = false, settings = false, ...opts } = {}) {
+  if (tiles && settings) throw new Error("--tiles と --settings は同時に指定できない");
+  const kinds = tiles ? ["tiles"] : settings ? ["settings"] : ["project", "broken"];
   const results = [];
   for (const kind of kinds) {
     results.push({ kind, result: await runSmoke({ ...opts, stateKind: kind }) });
@@ -605,8 +739,9 @@ export async function runSmokeSuite({ tiles = false, ...opts } = {}) {
 export function parseArgs(argv) {
   const opts = {};
   for (const arg of argv) {
-    if (arg === "--tiles") {
-      opts.tiles = true;
+    if (arg === "--tiles" || arg === "--settings") {
+      opts[arg.slice(2)] = true;
+      if (opts.tiles && opts.settings) throw new Error("--tiles と --settings は同時に指定できない");
       continue;
     }
     const m = /^--(timeout-ms|app|env)=(.+)$/.exec(arg);
@@ -646,7 +781,12 @@ async function main() {
   }
   let code = 0;
   for (const { kind, result } of await runSmokeSuite(opts)) {
-    const label = kind === "broken" ? "(壊れた state.json)" : kind === "tiles" ? `(タイル表示の ${TILE_PROJECT_COUNT} プロジェクト)` : "";
+    const labels = {
+      broken: "(壊れた state.json)",
+      tiles: `(タイル表示の ${TILE_PROJECT_COUNT} プロジェクト)`,
+      settings: `(${SETTINGS_FILE_NAME} を置いた起動)`,
+    };
+    const label = labels[kind] ?? "";
     if (result.ok) {
       console.log(`スモーク成功${label}: ${result.message}`);
     } else {

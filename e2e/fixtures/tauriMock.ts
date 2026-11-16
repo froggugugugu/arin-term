@@ -21,7 +21,8 @@
 // - ツリー(T43b): list_directory はフォルダごとの応答の表(listings。キーは listingKey)を先に引き、無ければ
 //   コマンドの既定の応答(空のフォルダ)を返す。外からの変更は表を置き換えてから tree-changed を emitEvent で流す
 // - 設定(T65e): get_shortcuts・get_settings_notice の応答を setMockReply で替えてから settings-changed(中身は null)を
-//   emitEvent で流すと、本物の Rust の「保存を検知して読み直した」と同じ形になる
+//   emitEvent で流すと、本物の Rust の「保存を検知して読み直した」と同じ形になる。設定で一部の行を替えた表は
+//   shortcutTableWith で作る(T66a)
 //
 // # 型の合わせ方
 //
@@ -40,6 +41,8 @@ import type { EntryKind } from "../../src/ipc/generated/EntryKind";
 import type { ProjectCardSnapshot } from "../../src/ipc/generated/ProjectCardSnapshot";
 import type { ProjectColor } from "../../src/ipc/generated/ProjectColor";
 import type { RunningTerminal } from "../../src/ipc/generated/RunningTerminal";
+import type { ShortcutCommandId } from "../../src/ipc/generated/ShortcutCommandId";
+import type { ShortcutTable } from "../../src/ipc/generated/ShortcutTable";
 import type { TerminalStatus } from "../../src/ipc/generated/TerminalStatus";
 import type { TerminalTabSnapshot } from "../../src/ipc/generated/TerminalTabSnapshot";
 import type { TileGrid } from "../../src/ipc/generated/TileGrid";
@@ -277,6 +280,14 @@ export function sampleRunningTerminal(
   label: string,
 ): RunningTerminal {
   return { terminalId, projectId, projectName, label };
+}
+
+/**
+ * 既定の表のうち、keys に書いた行だけキーを替えた表(get_shortcuts の応答。T66a)。本物の Rust が設定ファイルの問題の無い行を
+ * 当てた結果の形で、行の順と受け口は既定のまま。問題のある行(既定に戻した行)は keys に書かない。
+ */
+export function shortcutTableWith(keys: Readonly<Partial<Record<ShortcutCommandId, string>>> = {}): ShortcutTable {
+  return DEFAULT_SHORTCUT_TABLE.map((binding) => ({ ...binding, accelerator: keys[binding.command] ?? binding.accelerator }));
 }
 
 const DEFAULT_REPLIES: TauriMockConfig = {
