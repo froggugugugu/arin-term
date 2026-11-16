@@ -1814,6 +1814,12 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
 | AC-F13 | 見た目が控えめで、ライト・ダーク・すりガラスで読める | — | T70b | T70b(画像) | (8) |
 | AC-F14 | テストとスモークは一時の状態フォルダだけ | T68c | — | T71 | — |
 
+### M4.7 透過・タイルの番号キー・改行(ADR-014)
+
+- 方式と受け入れ基準(AC-G01〜G10)は `output/design/ADR_014_translucency-tile-keys-newline.md`。ブランチ `feat/m4.7-appearance-keys`(push していない)
+- 状態(2026-11-17): 実装・レビュー・仕様照合まで済み(どちらも MUST なし)。**本人の確認待ち**
+- 合否一覧と本人に確かめてほしいこと (1)〜(6) は `output/reports/test/M4.7_acceptance.md`
+
 ### M4.8 Markdown エディタ(T80 で分解した。2026-11-17)
 
 **【要件の追加(本人。2026-11-17)】** 「mdslideプロジェクトのようなマークダウンエディタ機能が欲しい(マークダウン限定で良い)。」範囲は「編集+プレビュー」、キー操作は「通常が既定、Vim に切替可」。PRD の非ゴール N1・N7 を `.md`・`.markdown` に限って外す決定になる。PRD への反映は本人の了承のあと(ADR-015 の【要確認】3)。仮の受け入れ基準は ADR-015 の AC-E01〜E15。
@@ -1886,19 +1892,19 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 31.8b(逐次。Rust。M4.7 の実装の完了後)
 
-- [ ] T81a — 文書の規則と型(変更ファイル: crates/arin-core/src/editor/mod.rs, crates/arin-core/src/editor/document.rs, crates/arin-core/src/editor/store.rs, crates/arin-core/src/lib.rs, crates/arin-core/tests/editor_document.rs | 依存: T80)
+- [x] T81a — 文書の規則と型(変更ファイル: crates/arin-core/src/editor/mod.rs, crates/arin-core/src/editor/document.rs, crates/arin-core/src/editor/store.rs, crates/arin-core/src/lib.rs, crates/arin-core/tests/editor_document.rs | 依存: T80)
   - 対応: ADR-015 の 3・5 の規則、AC-E02・E04 の規則の部分
   - 置くもの: `EditorId`、`is_markdown_path(&RelPath)`(大文字小文字を問わない)、`DOCUMENT_LIMIT_BYTES = 1 MiB`、`decode_document(bytes) -> Result<Decoded { text, bom, line_ending }, DocumentError>`(UTF-8 の検査、NUL、BOM)、`encode_document(text, bom) -> Vec<u8>`、`FileStamp { dev, ino, size, mtime_ns, digest }` と `digest(bytes)`(`DefaultHasher`)・`same_content(a, b)`、`ReadOnlyReason`、`EditorTab`・`EditorStore`(プロジェクトごとの並び、同じパスは 1 つ)。入出力なし(`std::fs` を使わない)
   - 並行: 不可
   - 先に書くテスト: `拡張子_md_と_markdown_だけ_大文字も可`、`1_MiB_を超えると大きすぎる`、`不正な_utf8_と_nul_は文字でない`、`bom_を外して覚え保存で付け直す`、`crlf_があれば_crlf`、`stat_が同じなら同じ`、`stat_が違っても要約が同じなら同じ中身`、`同じパスを開くと同じ_id`、`閉じると並びから消え次のエディタ_id_は使い回さない`
   - 検証: `cargo test -p arin-core --test editor_document`
-- [ ] T81b — `Workspace` のエディタのタブと写し(【要確認】1・2 の A)(変更ファイル: crates/arin-core/src/workspace/editors.rs, crates/arin-core/src/workspace/state.rs, crates/arin-core/src/workspace/snapshot.rs, crates/arin-core/src/workspace/terminals.rs, crates/arin-core/src/workspace/events.rs, crates/arin-core/src/workspace/outcome.rs, crates/arin-core/src/workspace/mod.rs, crates/arin-core/tests/workspace_editors.rs, crates/arin-core/tests/app_snapshot.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/test/fakeIpc.ts, src/state/actions.test.ts, src/state/selectors.test.ts, e2e/fixtures/tauriMock.ts | 依存: T81a, M4.7 の実装)
+- [x] T81b — `Workspace` のエディタのタブと写し(【要確認】1・2 の A)(変更ファイル: crates/arin-core/src/workspace/editors.rs, crates/arin-core/src/workspace/state.rs, crates/arin-core/src/workspace/snapshot.rs, crates/arin-core/src/workspace/terminals.rs, crates/arin-core/src/workspace/events.rs, crates/arin-core/src/workspace/outcome.rs, crates/arin-core/src/workspace/mod.rs, crates/arin-core/tests/workspace_editors.rs, crates/arin-core/tests/app_snapshot.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/test/fakeIpc.ts, src/state/actions.test.ts, src/state/selectors.test.ts, e2e/fixtures/tauriMock.ts | 依存: T81a, M4.7 の実装)
   - 対応: AC-E01(重ねて開く)・E07・E11・E12 の規則
   - 置くもの: `Workspace::open_editor(project, path, stamp, read_only) -> (EditorId, bool)`(既に開いていれば表示するだけ。タイル表示ならタブ表示に替える)、`select_editor`、`close_editor(id, discard) -> CloseEditorOutcome`、`set_editor_dirty`、`editor_stamp`・`set_editor_stamp`、`shown_editor`。ターミナルのタブを選ぶ・作ると `shown_editor` は `None`。前後のタブはターミナル → エディタで 1 周、⌘W の対象を `ActiveTab::{Terminal, Editor}` で返す。`remove_project` で開いているエディタも外し、未保存があれば確認を求める。`QuitRequest.unsaved`。アテンションの「見ている」から表示中がエディタのプロジェクトを外す。写しに `editors`・`editor { vim: false }`(T81e で持たせる)・カードの `editorIds`・`shownEditorId`。保存(`persisted_state`)には何も足さない。生成物を作り直し、画面の写しの見本 4 か所を直す
   - 並行: 不可(生成物)
   - 先に書くテスト: `開くとタブ表示でそのエディタが表示中`、`同じファイルを開くと新しいタブを作らず表示する`、`タイル表示で開くとタブ表示になる`、`ターミナルのタブを選ぶとエディタは隠れるが閉じない`、`次のタブはターミナルのあとにエディタへ進み先頭へ戻る`、`表示中がエディタなら閉じる対象はエディタ`、`未保存のエディタは確認なしでは閉じない`、`プロジェクトを外すと未保存の一覧で確認を求める`、`未保存の一覧が終了の確認に載る`、`表示中がエディタのプロジェクトのターミナルにはアテンションが付く`、`エディタを開いても保存する内容は変わらない`、`写しの_json_の形`
   - 検証: `cargo test -p arin-core --test workspace_editors --test app_snapshot --test generated_types --test workspace_projects && npx tsc -b`
-- [ ] T81c — 読み書きの実装(変更ファイル: crates/arin-core/src/ports/document.rs, crates/arin-core/src/ports/mod.rs, crates/arin-platform/src/fs/document.rs, crates/arin-platform/src/fs/mod.rs, crates/arin-platform/tests/document.rs, crates/arin-core/src/tree/exclusion.rs, crates/arin-core/tests/tree_exclusion.rs | 依存: T81a)
+- [x] T81c — 読み書きの実装(変更ファイル: crates/arin-core/src/ports/document.rs, crates/arin-core/src/ports/mod.rs, crates/arin-platform/src/fs/document.rs, crates/arin-platform/src/fs/mod.rs, crates/arin-platform/tests/document.rs, crates/arin-core/src/tree/exclusion.rs, crates/arin-core/tests/tree_exclusion.rs | 依存: T81a)
   - 対応: ADR-015 の 5、AC-E02・E04・E05
   - 置くもの: `DocumentPort`(`read(path) -> (bytes, FileStamp, Option<ReadOnlyReason>)`、`stat(path)`、`replace(path, bytes, expected) -> ReplaceOutcome`、`create_new(path, bytes)`)。実装は親を `O_NOFOLLOW_ANY` で開いて fd 相対、`openat(O_NOFOLLOW)`、一時ファイル `.arin-save-<pid>-<連番>` を `O_EXCL`、`fcopyfile(COPYFILE_METADATA)`、`fsync`、再検査、`renameatx_np(…, 0)`(作るときは `RENAME_EXCL`)。失敗で一時ファイルを残したら報告の口(`LeftoverReport` と同じ形)。除外の規則に `.arin-save-` を足す
   - **着手時に確かめる**: libc 0.2.191 に `fcopyfile`・`COPYFILE_METADATA` があるか(無ければ `copyfile` と同じく自前で宣言する)
@@ -1906,14 +1912,14 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
   - 並行: 可(T81b とファイルが重ならない。同じ時に走らせない)
   - 先に書くテスト(実ファイル): `読むと中身と版と読み取り専用でないことを返す`、`リンクは開かない`、`途中のフォルダがリンクなら失敗`、`ハードリンクは読み取り専用`、`書けないファイルは読み取り専用`、`置き換えると中身が変わり権限と拡張属性が残る`、`版が違えば置き換えず何も変えない`、`消えていれば見つからない`、`作るときは既にあれば上書きしない`、`置き換えのあと一時ファイルが残らない`、`書けないフォルダでは失敗し元の中身のまま`、`除外の規則は_arin_save_を隠す`
   - 検証: `cargo test -p arin-platform --test document && cargo test -p arin-core --test tree_exclusion`
-- [ ] T81d — コマンド・⌘W・終了の確認(変更ファイル: src-tauri/src/commands/editor.rs, src-tauri/src/commands/mod.rs, src-tauri/src/sessions.rs, src-tauri/src/menu.rs, src-tauri/src/lifecycle.rs, src-tauri/src/events.rs, src-tauri/src/tree_watch.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/editor_commands.rs, src-tauri/tests/app_menu.rs | 依存: T81b, T81c)
+- [x] T81d — コマンド・⌘W・終了の確認(変更ファイル: src-tauri/src/commands/editor.rs, src-tauri/src/commands/mod.rs, src-tauri/src/sessions.rs, src-tauri/src/menu.rs, src-tauri/src/lifecycle.rs, src-tauri/src/events.rs, src-tauri/src/tree_watch.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/editor_commands.rs, src-tauri/tests/app_menu.rs | 依存: T81b, T81c)
   - 対応: ADR-015 の 4、AC-E01・E02・E04・E05・E06(Rust 側)・E07
   - 置くもの: コマンド `open_document`・`save_document`・`check_document`・`set_document_dirty`・`select_editor`・`close_editor`(`generate_handler!` に足す)。`PathScopeGuard` を通し、応答と文言に絶対パスを載せない。⌘W: 表示中がエディタなら未保存のとき `editor-close-requested`、そうでなければ閉じる。`quit_or_ask` は未保存も見る。監視は `.arin-save-` を知らせない。`[arin:editor]` の頭。`[[test]]`(`harness = false`)
   - 安全: 一時の状態フォルダと一時のプロジェクトのフォルダだけ
   - 並行: 不可(`lib.rs`)
   - 先に書くテスト(模擬ランタイム): `md_を開くと中身が返り写しにタブが載る`、`md_でないものとルートの外は開かない`、`保存すると中身が変わり写しの未保存が消える`、`外で書き換えたあとの保存は_changed_outside_で中身はそのまま`、`上書き保存を選ぶと置き換える`、`消えたファイルは_missing_で作るを選ぶと作る`、`未保存の表示中のエディタで_cmd_w_を押すと閉じずに_editor_close_requested`、`未保存が無ければ_cmd_w_でエディタだけ閉じターミナルは続く`、`未保存があれば終了の要求で確認を求める`、`check_document_は外の変更を見つける`、`保存の一時ファイルの名前は_tree_changed_に出ない`
   - 検証: `cargo test -p arin --test editor_commands --test app_menu --test app_persistence`
-- [ ] T81e — Vim の保存値と表の行(変更ファイル: crates/arin-core/src/persistence/codec.rs, crates/arin-core/src/workspace/state.rs, crates/arin-core/src/workspace/snapshot.rs, crates/arin-core/src/shortcuts/table.rs, crates/arin-core/src/shortcuts/sample.rs, crates/arin-core/tests/shortcuts.rs, crates/arin-core/tests/persistence_codec.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/logic/keys/defaultShortcuts.ts, src/logic/keys/shortcutTable.ts, scripts/default-shortcuts.test.mjs, src/ipc/client.test.ts, src-tauri/src/commands/editor.rs, src-tauri/src/lib.rs, src-tauri/tests/editor_commands.rs, src-tauri/tests/app_menu.rs | 依存: T81d)
+- [x] T81e — Vim の保存値と表の行(変更ファイル: crates/arin-core/src/persistence/codec.rs, crates/arin-core/src/workspace/state.rs, crates/arin-core/src/workspace/snapshot.rs, crates/arin-core/src/shortcuts/table.rs, crates/arin-core/src/shortcuts/sample.rs, crates/arin-core/tests/shortcuts.rs, crates/arin-core/tests/persistence_codec.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/logic/keys/defaultShortcuts.ts, src/logic/keys/shortcutTable.ts, scripts/default-shortcuts.test.mjs, src/ipc/client.test.ts, src-tauri/src/commands/editor.rs, src-tauri/src/lib.rs, src-tauri/tests/editor_commands.rs, src-tauri/tests/app_menu.rs | 依存: T81d)
   - 対応: ADR-015 の 6、AC-E08(Rust 側)・E14
   - 置くもの: `UiSection.editorVim`(真のときだけ書く。真偽値でなければ偽、退避しない)、`Workspace::set_editor_vim(enabled) -> bool`、写しの `editor.vim`、コマンド `set_editor_vim({ enabled })`。表に `editor.save`(`Cmd+S`、`screen`)、見本に 1 行。行数 32→33 を前提にしたテストを理由付きで直す。`reset_appearance` は Vim に触れない
   - 並行: 不可(生成物・`lib.rs`)
@@ -1922,27 +1928,27 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 31.8c(画面の部品。T82a〜T82c は T80 の完了後すぐ、T82d は T81e の完了後。同じ時に走らせない)
 
-- [ ] T82a — 依存と境界(変更ファイル: package.json, package-lock.json, scripts/check-boundaries.mjs, scripts/check-boundaries.test.mjs, scripts/fixtures/codemirror-outside/, scripts/fixtures/codemirror-imports-ipc/, scripts/fixtures/clean/ | 依存: T80)
+- [x] T82a — 依存と境界(変更ファイル: package.json, package-lock.json, scripts/check-boundaries.mjs, scripts/check-boundaries.test.mjs, scripts/fixtures/codemirror-outside/, scripts/fixtures/codemirror-imports-ipc/, scripts/fixtures/clean/ | 依存: T80)
   - 対応: ADR-015 の 1、AC-E13 の境界
   - 置くもの: ADR-015 の 1 の 11 個を正確な版で足す(`npm view <名前>@<版> time` で公開から 2 週間を過ぎていることを確かめる)。境界の規則 `codemirror-import`(`codemirror`・`@codemirror/*`・`@lezer/*`・`@replit/*` は `src/editor/codemirror/` だけ)、`src/ui/` → `src/editor/codemirror/` の禁止、`src/editor/codemirror/` → `src/ipc/` の禁止。見本のフォルダ
   - **着手時に確かめる**: `node_modules` の 11 個に `eval(`・`new Function` が無いこと(CSP の `script-src 'self'` のまま動くか)。`style-mod` が `<style>` を作るか `adoptedStyleSheets` を使うか(ADR-015 のリスクの CSP)。結果を ADR-015 の末尾に書く
   - 並行: 可(M4.7 とファイルが重ならない)
   - 先に書くテスト(`node --test`): `src_ui_から_codemirror_を_import_すると違反`、`src_editor_codemirror_の中は違反でない`、`lezer_と_replit_も同じ`、`src_ui_から_src_editor_codemirror_を_import_すると違反`、`src_editor_codemirror_から_src_ipc_を_import_すると違反`
   - 検証: `node --test scripts/check-boundaries.test.mjs && node scripts/check-boundaries.mjs`
-- [ ] T82b — Markdown の木(変更ファイル: src/editor/markdownTypes.ts, src/editor/codemirror/markdownAst.ts, src/editor/codemirror/markdownAst.test.ts | 依存: T82a)
+- [x] T82b — Markdown の木(変更ファイル: src/editor/markdownTypes.ts, src/editor/codemirror/markdownAst.ts, src/editor/codemirror/markdownAst.test.ts | 依存: T82a)
   - 対応: ADR-015 の 2、AC-E03 の規則の部分
   - 置くもの: `parseMarkdown(text): MdBlock[]`(GFM)。生の HTML は `raw` の文字、画像は `image { alt }`、リンクは `link { url, children }`(開く情報を持たない)、文字参照は数値と 6 つの名前だけを直す、入れ子は 32 段で打ち切る
   - 並行: 可(T82a のあと)
   - 先に書くテスト(Vitest): `見出し_1_から_6`、`強調と太字と取り消し線`、`番号つきとなしのリストとタスク`、`表の揃え`、`コードの塊とインラインのコード`、`引用と水平線`、`生の_html_は文字のまま`、`script_の要素も文字のまま`、`画像は代わりの文字だけ`、`javascript_の_url_のリンクも文字の情報だけ`、`数値と_6_つの名前の文字参照を直しほかは書かれたまま`、`33_段の引用は_32_段で打ち切る`、`空の文書は空の並び`
   - 検証: `npx tsc -b && npx vitest run src/editor/codemirror/markdownAst.test.ts`
-- [ ] T82c — プレビューの部品(変更ファイル: src/ui/editor/MarkdownPreview.tsx, src/ui/editor/MarkdownPreview.css, src/ui/editor/MarkdownPreview.test.tsx | 依存: T82b)
+- [x] T82c — プレビューの部品(変更ファイル: src/ui/editor/MarkdownPreview.tsx, src/ui/editor/MarkdownPreview.css, src/ui/editor/MarkdownPreview.test.tsx | 依存: T82b)
   - 対応: AC-E03・E10(プレビュー)
   - 置くもの: `MdBlock[]` を React の要素にする(タスクの印は文字、リンクは `span` と `title`、画像は `[画像: …]`)。本文の大きさは props(ターミナルの文字の大きさ)
   - 安全: `innerHTML`・`dangerouslySetInnerHTML` を使わない(境界検査が見る)
   - 並行: 不可
   - 先に書くテスト(Vitest): `どの文書でも_a_href_img_iframe_script_input_を作らない`(表で)、`生の_html_は文字として出る`、`見出しに_id_を付けない`、`本文の大きさが_props_に追従する`
   - 検証: `npx vitest run src/ui/editor`
-- [ ] T82d — エディタの部品と管理(変更ファイル: src/editor/engine.ts, src/editor/EditorManager.ts, src/editor/EditorManager.test.ts, src/editor/codemirror/CodeMirrorEngine.ts, src/test/fakeEditorEngine.ts, src/logic/keys/editorKeyOwner.ts, src/logic/keys/editorKeyOwner.test.ts, src/logic/editor/previewSchedule.ts, src/logic/editor/previewSchedule.test.ts | 依存: T82a, T81e)
+- [x] T82d — エディタの部品と管理(変更ファイル: src/editor/engine.ts, src/editor/EditorManager.ts, src/editor/EditorManager.test.ts, src/editor/codemirror/CodeMirrorEngine.ts, src/test/fakeEditorEngine.ts, src/logic/keys/editorKeyOwner.ts, src/logic/keys/editorKeyOwner.test.ts, src/logic/editor/previewSchedule.ts, src/logic/editor/previewSchedule.test.ts | 依存: T82a, T81e)
   - 対応: ADR-015 の 1・6・7、AC-E04(画面側)・E08・E09・E10
   - 置くもの: `EditorSurface`(`attach`・`detach`・`setText(text, lineEnding)`・`text()`・`setFontSize`・`setVim`・`setReadOnly`・`focus`・`selectAll`・`onChange`・`onSave`)。`CodeMirrorEngine` は `EditorView` と `Compartment` で Vim を付け外し、`lineSeparator`、`:w`、一番前の `keydown` で `editorKeyOwner` が `app` のキーを CodeMirror に渡さない、`editor.save` のキーで保存。`EditorManager` はエディタの ID ごとに部品を React の外で持ち(動的 import で作る)、保存済みの文書と比べて未保存の変わり目だけを知らせる。プレビューの解析は最後の変更から 150 ms 後(`previewSchedule`)
   - **着手時に確かめる**: 画面全体で `copy`・`paste` を受けている処理(`TerminalManager` など)が、エディタにフォーカスがあるときに奪わないか
@@ -1952,20 +1958,20 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 31.8d(つなぎ込み。T81e・T82c・T82d 完了後。逐次)
 
-- [ ] T83a — 通信・状態・ツリー(変更ファイル: src/ipc/client.ts, src/ipc/client.test.ts, src/state/actions.ts, src/state/actions.test.ts, src/state/uiStore.ts, src/state/uiStore.test.ts, src/state/selectors.ts, src/state/selectors.test.ts, src/logic/keys/menuCommand.ts, src/logic/keys/menuCommand.test.ts, src/logic/menu/treeMenu.ts, src/logic/menu/treeMenu.test.ts, src/ui/menu/runTreeMenuCommand.ts, src/ui/menu/runTreeMenuCommand.test.ts, src/ui/tree/FileTreeView.tsx, src/main.tsx, src/test/fakeIpc.ts, e2e/fixtures/tauriMock.ts | 依存: T81e, T82d)
+- [x] T83a — 通信・状態・ツリー(変更ファイル: src/ipc/client.ts, src/ipc/client.test.ts, src/state/actions.ts, src/state/actions.test.ts, src/state/uiStore.ts, src/state/uiStore.test.ts, src/state/selectors.ts, src/state/selectors.test.ts, src/logic/keys/menuCommand.ts, src/logic/keys/menuCommand.test.ts, src/logic/menu/treeMenu.ts, src/logic/menu/treeMenu.test.ts, src/ui/menu/runTreeMenuCommand.ts, src/ui/menu/runTreeMenuCommand.test.ts, src/ui/tree/FileTreeView.tsx, src/main.tsx, src/test/fakeIpc.ts, e2e/fixtures/tauriMock.ts | 依存: T81e, T82d)
   - 対応: AC-E01・E05・E06・E07(画面側)
   - 置くもの: 包み 7 つ(ADR-015 の 4 の表)と `editor-close-requested` の受け口。`actions.openEntry` は `.md`・`.markdown` なら `openDocument`。ツリーのメニューの `.md` に「既定のアプリで開く」(新しい `open-external`。キーなし)。`uiStore` にタブごとの表示の切替・閉じる確認・保存の衝突の確認。`tree-changed`・ウィンドウが前面に戻る・エディタのタブを表示に戻すで `checkDocument`。`select-all` はフォーカスのある部品へ。偽の Rust 側に 7 つのコマンドの応答
   - 並行: 不可
   - 先に書くテスト(Vitest): `md_の開くはエディタで_ts_は既定のアプリ`、`md_の右クリックに既定のアプリで開くがある`、`tree_changed_で親フォルダが変わった開いている文書を確かめる`、`未保存なら読み直さず外の変更の印を付ける`、`changed_outside_で衝突の確認を出す`、`editor_close_requested_で閉じる確認を出す`、`エディタにフォーカスがあるときすべてを選択はエディタへ`
   - 検証: `npx tsc -b && npx vitest run src/ipc src/state src/logic src/ui/menu`
-- [ ] T83b — タブとパネル(変更ファイル: src/ui/terminals/TabBar.tsx, src/ui/terminals/TabBar.css, src/ui/terminals/TerminalArea.tsx, src/ui/terminals/TerminalArea.css, src/ui/editor/EditorPanel.tsx, src/ui/editor/EditorPanel.css, src/ui/editor/ViewSwitch.tsx, src/ui/editor/EditorHost.tsx, e2e/editor.spec.ts | 依存: T83a)
+- [x] T83b — タブとパネル(変更ファイル: src/ui/terminals/TabBar.tsx, src/ui/terminals/TabBar.css, src/ui/terminals/TerminalArea.tsx, src/ui/terminals/TerminalArea.css, src/ui/editor/EditorPanel.tsx, src/ui/editor/EditorPanel.css, src/ui/editor/ViewSwitch.tsx, src/ui/editor/EditorHost.tsx, e2e/editor.spec.ts | 依存: T83a)
   - 対応: AC-E01・E03・E10・E11・E15、ADR-015 の 3・7・8
   - 置くもの: タブバーにエディタのタブ(文書の印、未保存の「●」、読み上げ「未保存」)。`TerminalArea` は表示中がエディタなら `EditorPanel`(帯: 相対パス・切替・保存、外の変更と読み取り専用の帯、本文は並べて・編集・プレビュー)、入力のフォーカスの宛先にエディタを足す
   - **デザイン**(本人の指示): 「AI にありがちなデザインを避け、Apple らしく控えめに」。既存のトークンだけ。Playwright の画像(ライト・ダーク、3 つの切替)を `testreport/` に撮り、自分の目で確かめてから終える
   - 並行: 不可
   - 先に書くテスト(Playwright `e2e/editor.spec.ts`): `ツリーで_md_をダブルクリックするとエディタのタブが開きフォーカスがエディタにある`、`切替で編集だけ_並べて_プレビューだけになる`、`打つとタブに未保存の印が付き_cmd_s_で_save_document_が呼ばれ消える`、`プレビューに見出しと表とタスクが出て_a_href_と_img_が無い`、`ターミナルのタブを選ぶとエディタが隠れ戻すと文字とカーソルが残る`、`ターミナルの文字の大きさの写しでエディタの文字が変わる`、`タイル表示で開くとタブ表示になる`
   - 検証: `npx tsc -b && npx playwright test e2e/editor.spec.ts e2e/tabs.spec.ts e2e/tiles.spec.ts e2e/tree.spec.ts`
-- [ ] T83c — 確認と設定画面(変更ファイル: src/ui/dialogs/UnsavedCloseDialog.tsx, src/ui/dialogs/SaveConflictDialog.tsx, src/ui/dialogs/QuitDialog.tsx, src/ui/dialogs/RemoveProjectDialog.tsx, src/ui/settings/SettingsDialog.tsx, src/ui/settings/SettingsDialog.css, src/ui/shell/AppShell.tsx, e2e/editor-dialogs.spec.ts | 依存: T83b)
+- [x] T83c — 確認と設定画面(変更ファイル: src/ui/dialogs/UnsavedCloseDialog.tsx, src/ui/dialogs/SaveConflictDialog.tsx, src/ui/dialogs/QuitDialog.tsx, src/ui/dialogs/RemoveProjectDialog.tsx, src/ui/settings/SettingsDialog.tsx, src/ui/settings/SettingsDialog.css, src/ui/shell/AppShell.tsx, e2e/editor-dialogs.spec.ts | 依存: T83b)
   - 対応: AC-E05・E07・E08・E15
   - 置くもの: 閉じる確認(「保存」「保存しない」「キャンセル」)、保存の衝突(「上書き保存」「読み直す」「キャンセル」。既定はキャンセル)、消えたファイル(「作る」「キャンセル」)、終了とプロジェクトを外す確認に未保存の一覧。設定画面に「エディタ」の組と「Vim のキー操作」の切替(`role="switch"`、testid `editor-vim-switch`)、文字の大きさの行の名前を「ターミナルとエディタ」に
   - 並行: 不可
@@ -1974,7 +1980,7 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 31.8e(逐次。T83c 完了後)
 
-- [ ] T84 — M4.8 のシナリオの E2E と計測(変更ファイル: e2e/m48-scenario.spec.ts, e2e/fixtures/tauriMock.ts, scripts/perf/ の該当の 1 本 | 依存: T83c)
+- [x] T84 — M4.8 のシナリオの E2E と計測(変更ファイル: e2e/m48-scenario.spec.ts, e2e/fixtures/tauriMock.ts, scripts/perf/ の該当の 1 本 | 依存: T83c)
   - 対応: AC-E01・E04・E06・E09・E13 の通し
   - 先に書くテスト(Playwright): `開いて直して保存し外の変更を読み直し閉じる`、`vim_で_i_で打ち_esc_と_:w_で保存する`、`エディタの上で_cmd_w_と_cmd_t_はメニューへ届き文字にならない`(偽のメニューの操作で)、`最初にエディタを開くまでエディタの塊を読まない`(読み込まれた JS の一覧で)。計測(記録だけ): 1 MiB の文書を開いてプレビューが出るまでの時間、`vite build` のエディタの塊の大きさ
   - 並行: 不可
@@ -1982,7 +1988,7 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 31.8f(逐次。T84 完了後)
 
-- [ ] T85 — 文書の同期(変更ファイル: docs/development-patterns.md, docs/data-model.md, docs/architecture.md, docs/project.md, output/design/ARCH_multi-terminal.md, output/design/ADR_015_markdown-editor.md | 依存: T84)
+- [x] T85 — 文書の同期(変更ファイル: docs/development-patterns.md, docs/data-model.md, docs/architecture.md, docs/project.md, output/design/ARCH_multi-terminal.md, output/design/ADR_015_markdown-editor.md | 依存: T84)
   - 書くもの: `docs/development-patterns.md` §1(境界の 3 つ、「削除と上書きの経路を作らない」の例外の条件)・§1.1(`[arin:editor]`)・§5(偽のエディタの部品、`tauriMock.ts` の文書)・§6(改行の混在、T82a・T82d の着手時の確認の結果)、`docs/data-model.md`(`ui.editorVim`、写しの `editors`・`editor`・カードの 2 つ、コマンド 7 つ、イベント `editor-close-requested`、`QuitRequest.unsaved`、表 33 行)、`docs/architecture.md`(`src/editor/`・`src/ui/editor/`・`crates/arin-core/src/editor/`・新しいテスト)、`docs/project.md`(概要に M4.8、技術スタックに CodeMirror と lezer)。設計書 §6.2・§6.3・§8・§9.1
   - 並行: 不可(文書だけ)
   - 検証: 文書だけ。`git diff --stat` が上の変更ファイルだけであること
@@ -1990,6 +1996,7 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
 #### Phase 31.8g(逐次。人間ゲート)
 
 - [ ] T86a — M4.8 の合否一覧と本人の確認(変更ファイル: output/reports/test/M4.8_acceptance.md, output/tasks/PROGRESS.md | 依存: T85)
+  - 状態(2026-11-17): **AI の分は済み**(検証を 1 つずつ通し、レビューと照合を 1 回ずつ回して MUST 2 件・SHOULD 6 件を `367c281` で直し、合否一覧 `output/reports/test/M4.8_acceptance.md` を書いた)。残りは本人の (1)〜(9)。`npm run perf` は回していない
   - AI がやること: `npm run build && npm test && npm run lint && npm run test:coverage && npm run e2e && npm run app && npm run smoke && node scripts/smoke.mjs --tiles && node scripts/smoke.mjs --settings && node scripts/smoke.mjs --fonts` を 1 件ずつ通し、AC-E の合否一覧を書く。fresh context の `/code-review` と `verifier` を 1 回ずつ回す
   - **人間がやること**(`npm run app:debug` の `.app` の中の実行ファイルを端末から起動し、標準エラーを見ながら): (1) ツリーから `.md` を開くとエディタのタブが出る、ほかのファイルと「既定のアプリで開く」は今までどおり(AC-E01)。(2) 編集・並べて・プレビューの見た目と、生の HTML・画像・リンクの扱い(AC-E03・E15)。(3) ⌘S で保存し、Finder のタグと権限が残る。ほかのエディタで書き換えてから保存すると聞かれる(AC-E04・E05)。(4) ほかのエディタで書き換えると読み直される、未保存なら帯が出る(AC-E06)。(5) 未保存で ⌘W・終了・プロジェクトを外すと聞かれる(AC-E07)。(6) 設定画面で Vim を切り替え、`:w`・Esc が効く。⌘W・⌘T・⌘,・⌘1〜9 がメニューに届く(AC-E08・E09)。(7) 文字の大きさの追従(AC-E10)。(8) 端末に `[arin:frontend-error]`(CSP の違反)が出ない(AC-E13)。(9) ADR-015 の【要確認】1〜3 の回答と PRD への反映の判断
   - 完了条件: AC-E の合否一覧ができ、本人が (1)〜(9) を確かめた

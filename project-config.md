@@ -85,6 +85,7 @@ flowchart LR
 | フレームワーク   | Tauri 2.12 系（Rust 1.98.1 + TypeScript 6.0 系）。画面は React 19.3.1 + zustand 5.0.16。Electron は不採用 |
 | ビルド           | Cargo ワークスペース（`arin-core` / `arin-platform` / `src-tauri`）と Vite 8 系。パッケージ管理は npm |
 | ターミナルエンジン | xterm.js 6.0.0（M1 の Go/No-Go で採用。ADR-001）。描画は DOM、全角幅は `unicode11` に固定（M4 の実測のあと本人が決定。2026-11-16。`@xterm/addon-webgl`・`@xterm/addon-unicode-graphemes` は外した）。アドオンは `addon-fit` 0.11.0、`addon-unicode11` 0.9.0。PTY は Rust 側の `portable-pty` 0.9.0 |
+| Markdown エディタ | `src/editor/codemirror/` だけが使う（境界検査で強制。M4.8。ADR-015）: `codemirror` 6.0.2、`@codemirror/state` 6.7.2、`@codemirror/view` 6.43.10、`@codemirror/lang-markdown` 6.5.2、`@codemirror/language` 6.12.4、`@codemirror/commands` 6.11.0、`@codemirror/search` 6.7.2、`@lezer/highlight` 1.2.3、`@lezer/markdown` 1.7.2、`@lezer/common` 1.5.2、`@replit/codemirror-vim` 6.4.0。推移的な `@codemirror/lint` は `overrides` で 6.9.7 に固定（公開から 2 週間を過ぎた版）。プレビューは lezer の構文木から React の要素を組む（HTML の文字列を作らない） |
 | ファイルの監視   | `notify` 8.2.1（`arin-platform` だけが使う） |
 | 設定ファイルの解析 | `toml` 1.2.1（`arin-platform` だけが使う。`default-features = false`、`std`・`parse`。Tauri と同じ版。公開から 2 週間未満の例外を本人が 2026-11-16 に認めた。ADR-012） |
 | macOS の API     | `arin-platform` だけが使う: `objc2` 0.6.5、`objc2-foundation` 0.3.2、`objc2-app-kit` 0.3.2、`libc` 0.2.191、`base64` 0.23.1（どれも Tauri と同じ版。ADR-009）。フォルダ選択は `NSOpenPanel` を直接呼ぶ（`tauri-plugin-dialog` は使わない） |

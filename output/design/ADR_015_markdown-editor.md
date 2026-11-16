@@ -199,3 +199,25 @@ PRD(`output/prd/PRD_multi-terminal.md:52`・`:58`)は非ゴール N1(テキス�
 - 良い: 本人が Claude Code などと並べて Markdown を直せる。ターミナル・タイルの規則は変わらない。HTML の差し込みの規則と CSP を保つ
 - 悪い: 依存が 11 個増える(境界で隔離)。ファイルを置き換える経路が 1 つできる(5 の条件で限る)。表が 33 行になり、行数を前提にしたテスト・文書を直す
 - 文書: `docs/development-patterns.md` §1(例外の条件、境界)・§1.1(`[arin:editor]`)、`docs/data-model.md`(`ui.editorVim`、写しの `editors`・`editor`、コマンド)、`docs/architecture.md`(`src/editor/`・`src/ui/editor/`・`crates/arin-core/src/editor/`)、`docs/project.md`(技術スタックに CodeMirror)
+
+## 実装で変えた点(2026-11-17)
+
+本文の決定は書き換えず、実装(`6edbccb..367c281`)で変えた・決めた点だけをここに残す。状態(Proposed)と【要確認】1〜3 は本人の了承待ちのまま(どちらも推奨の A で実装した)。
+
+| 箇所 | 本文 | 実装 | 理由 |
+| ---- | ---- | ---- | ---- |
+| 4 の `save_document` | `{ editorId, text, overwriteChanged }` | `{ editorId, text, mode }`。`mode` は `"normal" \| "overwrite" \| "create"`。`create` は同じ名前があれば置き換えず `changed-outside`、`overwrite` でファイルが無ければ `missing` | 「作る」(`RENAME_EXCL`)を真偽値で表せず、確認のあとにできたファイルを置き換えうる(レビューの MUST) |
+| 4 の `check_document` | `{ editorId, withText }`(真偽) | `withText` は `"never" \| "if-changed" \| "always"`。**Rust の状態を変えない**。`changed` に読んだ版の印 `token` | 確かめの応答を待つあいだの打鍵・保存と競合すると、未保存の印と版が失われる(レビューの MUST)。「読み直す」は版が同じでも本文が要る(`always`) |
+| 4 のコマンド | 7 つ | `adopt_document({ editorId, token })` を足して 8 つ。画面が本文を当てたあとにだけ呼び、Rust はここで版を持ち直す | 上と同じ |
+| 4 の未保存の印 | — | 印は画面だけが送る(`set_document_dirty`)。Rust は保存で消さない。保存中のエディタは外の変更の確かめを飛ばし、終わってから 1 回確かめる | 保存のあいだの打鍵が印から漏れる・自分の保存の改名を外の変更と取り違える(レビューの SHOULD) |
+| 5 の版 | `dev`・`ino`・`size`・`mtime` と要約 | `{ stat: { dev, ino, size, mtime_ns }, digest }`。要約は `DefaultHasher`(依存を足さないため。暗号学的ではない)。stat の 4 つが同じなら中身を比べない | 本文のとおり。大きさと mtime を保つ道具の書き換えは見落としうる(残り) |
+| 5 の改行 | CodeMirror の `lineSeparator` を文書に合わせる | `lineSeparator` は使わない。中では `\n` で持ち、保存のときに文書の改行へ戻す。単独の `\r` は保存で `\n` になる | 改行が混ざった文書で、未保存の判定の基準と保存の中身が食い違った(レビューの SHOULD) |
+| 5 の失敗 | 2〜4 で失敗したら一時ファイルを残す | 書きかけで外の変更を見つけて止めたときも `.arin-save-*` が残る。`[arin:editor]` に場所を出す | 削除の経路を作らない。消す経路を作るかは本人の判断(合否一覧) |
+| 6 のキー | 33 行 | 33 行(`editor.save` = `Cmd+S`、受け口 `screen`)。⌘W・前後のタブは Rust がメニューで受け、未保存のエディタの ⌘W は `editor-close-requested` を送る | 本文のとおり |
+| 1 の依存 | 11 個 | 11 個(本文の版のまま)。推移的な `@codemirror/lint` は公開から 2 週間を過ぎた 6.9.7 に `package.json` の `overrides` で固定 | ADR-003 の規則 |
+| リスクのバンドル | 圧縮前 350〜450 KB + Vim 150 KB の見込み | 本体 693 kB → 719 kB(gzip 195 → 203 kB)。エディタの塊 `CodeMirrorEngine-*.js` は 737 kB(gzip 250 kB)で、最初に開くときだけ動的 import | 見込みより大きい。起動には乗らない |
+| リスクの CSP | 足りる見込み | CSP は変えていない(`style-src-elem 'unsafe-inline'` で足りる)。本物の CSP の下でエディタを開く確かめは実機(T86a の (8)) | — |
+| 2 のプレビュー | `style` 属性つきの要素が無い | プレビューの外側の要素 1 つにだけ `style`(文字の大きさ)が付く。リンクの参照(`[a][r]`)は URL を解決しない | 7 の追従のため。参照の解決は範囲の外 |
+| 7 の文字の大きさ | 行の名前を「ターミナルとエディタ」に | そのとおり。エディタの本文とプレビューはターミナルの文字の大きさに追従 | 本文のとおり |
+
+合否一覧と残っている問題は `output/reports/test/M4.8_acceptance.md`。

@@ -6,14 +6,15 @@
 
 ## 1. 境界の規則(`npm run lint` が検査)
 
-- `@tauri-apps/*` を import できるのは `src/ipc/` だけ。`@xterm/*` を import できるのは `src/terminal/xterm/` だけ。`src/ui/` は `src/ipc/`・`src/terminal/xterm/` を import しない(操作は `src/state`・`src/terminal` 経由)。`src/terminal/xterm/` は `src/ipc/` を import しない
+- `@tauri-apps/*` を import できるのは `src/ipc/` だけ。`@xterm/*` を import できるのは `src/terminal/xterm/` だけ。`codemirror`・`@codemirror/*`・`@lezer/*`・`@replit/*` を import できるのは `src/editor/codemirror/` だけ(M4.8)。`src/ui/` は `src/ipc/`・`src/terminal/xterm/`・`src/editor/codemirror/` を import しない(操作は `src/state`・`src/terminal`・`src/editor` 経由)。`src/terminal/xterm/`・`src/editor/codemirror/` は `src/ipc/` を import しない
 - `arin-core` は `std::fs`・`std::process`・`std::net` を使わない。依存は serde・serde_json・thiserror・ts-rs だけ。入出力は `arin-platform` に置く
 - 環境変数を読むのは `src-tauri/src/launch.rs` だけ。`arin-core` は値を引数で受け取る
 - 画面のソースに通信の API(`fetch(` など)と HTML の差し込み(`innerHTML`・`dangerouslySetInnerHTML` など)を書かない
 - CSP(`tauri.conf.json` の `csp`・`devCsp`): `connect-src` は IPC と自アプリだけ、スクリプトは `'self'`/`'none'` だけ、スタイルは `'self'`/`'none'`/`'unsafe-inline'` だけ
-- xterm.js の要素は React の管理の外に置く(ADR-003)
+- xterm.js と CodeMirror の要素は React の管理の外に置く(ADR-003。エディタは `EditorManager` が持ち、タブを替えても取り消しの履歴とカーソルが残る)。CodeMirror は初めてエディタを開くときに動的 import で読む(静的に import しない)
+- プレビューは HTML の文字列を作らない。`markdownAst.ts` が自前の木(`markdownTypes.ts`)にし、`MarkdownPreview.tsx` が React の要素にする。`a[href]`・`img`・`input` を作らない。`style` 属性はプレビューの外側の要素 1 つ(文字の大きさ)だけ
 - 画面から絶対パスを受け取らない・返さない(引数はプロジェクトの ID と相対パス)。ターミナルへ書く文字列は Rust が作る(`insertion_text`)
-- ファイルシステムの書き込みには実パスを渡す(途中にシンボリックリンクがあると失敗する)。削除と上書きの経路を作らない(置き換えはゴミ箱へ入れてから)
+- ファイルシステムの書き込みには実パスを渡す(途中にシンボリックリンクがあると失敗する)。削除と上書きの経路を作らない(置き換えはゴミ箱へ入れてから)。**例外は文書の保存 `save_document` の 1 つだけ**(ADR-015 の 5): 開いた `.md`・`.markdown` のふつうのファイルを、本人の保存の操作のときだけ、同じフォルダの新しい一時ファイル(`.arin-save-…`)に書き終えてから改名で置き換える。外で変わっていれば本人が「上書き保存」を選ばない限り置き換えない。ハードリンク・書けない・持ち主が違うファイルは読み取り専用で開く。「作る」は `RENAME_EXCL`(同じ名前ができていたら置き換えない)。一時ファイルを含め、消す経路は作らない
 
 ## 1.1 標準エラーの頭の文字列
 
@@ -25,6 +26,7 @@
 | `[arin:state]` | `persistence.rs` | 状態ファイルを読めずに退避した・退避できなかった・読み取りや保存に失敗した |
 | `[arin:fileops]` | `fileops.rs`(`report_staging_leftover`) | コピーの作業用フォルダ `.arin-copy-…` を片付けられずに残した(場所を出す。消す処理は無い) |
 | `[arin:watch]` | `tree_watch.rs` | ツリーの監視を張れなかった |
+| `[arin:editor]` | `commands/editor.rs`(`report_save_leftover`) | 保存の一時ファイル `.arin-save-…` を片付けられずに残した(場所を出す。消す処理は無い) |
 | `[arin:settings]` | `settings.rs`(`report` と「設定ファイルを開く…」)、`settings_watch.rs` | 設定ファイルの問題(1 つにつき 1 行)、開く・見本を作る処理の失敗、監視を張れなかった・メニューを作り直せなかった。ID・キーの文字列・行と列・理由の種類だけで、行の全文とパスは出さない |
 
 ## 2. 状態管理
@@ -34,6 +36,11 @@
 - ショートカットのキーは表(`arin-core/shortcuts`、`src/logic/keys/shortcutTable.ts`)から引き、部品やメニューにキーの文字列を直書きしない。見本の表 `defaultShortcuts.ts` は生成物と同じ中身であることを `scripts/default-shortcuts.test.mjs` が確かめる。コマンドの ID の一覧は生成物 `src/ipc/generated/defaultShortcuts.json` を正とし、文書に写さない
 - ショートカットの表は `menu::Shortcuts`(`RwLock`。`table()` は写しを返す)が 1 つだけ持ち、メニューと `get_shortcuts` が見る。差し替えたら `menu::rebuild`(`build_with_table` で作り直して `set_menu`)を**メインスレッドで**呼ぶ(ほかのスレッドからは `run_on_main_thread`)。項目ごとの `set_accelerator` は使わない
 - 画面の文字と行の高さのトークンは `src/logic/appearance/interfaceMetrics.ts` が正本で、`src/ui/design/applyInterfaceMetrics.ts` が `:root` に当てる(M4.6。ADR-013 の 4)。ツリーの行の高さは CSS から読まず `InterfaceMetricsContext` から受け取る。追従させるトークンを足すときは `INTERFACE_TOKEN_DEFAULTS` と `tokens.css` の両方に書く(既定の値の一致はテストが確かめる)
+- エディタの未保存の印は画面だけが送る(`set_document_dirty`。変わり目だけ)。Rust は保存でも確かめでも印を替えない
+- 外の変更の確かめ `check_document` は Rust の状態を変えない。画面が本文を実際に当てたあとにだけ `adopt_document` で読んだ版の印(`token`)を送り、Rust が版を持ち直す。保存中のエディタは確かめを飛ばし、保存が終わってから 1 回確かめる(自分の保存の改名を外の変更と取り違えない)
+- エディタの本文は中では `\n` で持ち、保存のときに文書の改行(`lineEnding`)へ戻す。CodeMirror の `lineSeparator` は使わない
+- エディタの上のキーは `editorKeyOwner` で振り分ける: 表の受け口が `menu-item`・`edit-item` のキーは CodeMirror に渡さずメニューへ、`editor.save` は保存、ほかは CodeMirror。⌘W・前後のタブは Rust がメニューで受け、表示中のエディタが未保存なら `editor-close-requested` を送る
+- エディタの本文とプレビューはターミナルの文字の大きさに追従し、枠は画面の文字の大きさ(ADR-015 の 7)
 - ⌘,(`app.open-settings`)は画面に `menu-command` の `open-settings` を送って設定画面を開く。「設定ファイルを開く…」は表の外のメニューの項目(`menu::OPEN_SETTINGS_FILE_ID`。キーなし)で、表には載らない(表の行数は生成物 `defaultShortcuts.json` が正)
 - 透過(M4.7。ADR-014)は `src/logic/appearance/translucency.ts` が値から不透明度を作り、`src/ui/design/applyTranslucency.ts` が `:root` にライト用・ダーク用の両方を当てる(どちらを使うかは `tokens.css` の media query)。ターミナルの地を塗るのは囲みの 1 段(`.terminal-area__panel`・`.tile__body`)だけで、`.terminal-host` と xterm.js の要素は透明にする(重ねて塗ると濃くなる)
 - タイルの番号キー(`view.focus-tile-1`〜`-9`)は Rust がメニューで受けて `focus_tile_at` を呼ぶ。番号は表示中のページの並び順で、画面の札「#n」は写しの `tileIds` の位置から出す(キーの表示ではないので表から引かない)
@@ -71,6 +78,9 @@
 - `TerminalManager` のテストでは `scheduleFrame` に手で流す偽物を渡す(文字の大きさの変更は 1 フレームにまとめて当てる)
 - `src/logic` のテストで `node:fs` を使うときは型の無い動的 import で読み込む(`interfaceMetrics.test.ts`)
 - E2E で文字の大きさを流すときは `tauriMock.ts` の `withFontSizes`、透過は `withTranslucency` で作った写しを流す(偽の Rust 側は写しを送り返さない)。`@tauri-apps/api` の `invoke` は空の引数を `{}` で送るので、引数なしのコマンドの記録は `{}` になる
+- エディタの部品のテストは `src/test/fakeEditorEngine.ts`(CodeMirror も DOM も使わない)を渡す。本物の `CodeMirrorEngine.ts` は Vitest では動かない(DOM が無い)ので E2E で確かめる
+- E2E でエディタを出すときは `tauriMock.ts` の `withEditors`・`sampleEditorTab` で写しを作る。文書のコマンドの応答は `setMockReply` で替える
+- 文書の読み書きのテスト(`crates/arin-platform/tests/document.rs`)は一時フォルダの実パスで、拡張属性は `libc::setxattr`・`getxattr` で確かめる。`src-tauri/tests/editor_commands.rs` は `harness = false`
 - スモークは「設定ファイルを開く…」を選ばない(本物の既定のアプリや Finder が開く)。テストは偽の `DesktopPort` を使う
 
 ## 6. 過去の問題事例
@@ -102,4 +112,10 @@
 | 設定画面でボタンをマウスで押したあとフォーカスが行き場を失う | WebKit はボタンをマウスで押してもボタンにフォーカスせず、`<dialog>` 自身に置く | `<dialog>` 自身にあるときも行き場が無いとみなして「完了」へ移す(`SettingsDialog.tsx`) |
 | 設定画面を開いたまま ⌘W でタブが閉じうる | ⌘W はメニューの項目のキーで、確認なしでタブを閉じる | 設定画面の keydown で取り消して設定画面だけを閉じる。実機でメニューのキーより先に効くかは未確認 |
 | xterm.js のテーマの地を透明にしても黒いまま | `xterm.css` が `.xterm-viewport` を `#000` で塗る | `src/terminal/xterm/XtermEngine.css` で透明に上書きする(`allowTransparency: true` と合わせて) |
+| `\r\n` と `\n` が混ざった文書の保存の基準が食い違う | CodeMirror は読み込みで改行をそろえる | 中では `\n` で持ち、保存で文書の改行(`\r\n` が 1 つでもあれば `crlf`)に戻す。混ざった文書は保存で 1 種類にそろい、単独の `\r` は `\n` になる(知らせは出さない) |
+| 外の変更の読み直しで未保存の印と版が失われる | 確かめの応答を待つあいだに打鍵・保存が挟まる | `check_document` は状態を変えず、本文を当てたあとにだけ `adopt_document` で版を持ち直す |
+| 書きかけで外の変更を見つけると `.arin-save-…` が残る | 削除の経路を作らない規則 | 標準エラーの `[arin:editor]` に場所を出す。ツリーは隠しファイル表示が ON なら出す(本人が片付ける) |
+| stat が同じだと中身の変更を見落としうる | 版は stat の 4 つが同じなら中身を比べない | 大きさと mtime を保って書き換える道具の変更は拾えない(承知のうえ) |
+| エディタの塊が大きい | CodeMirror・lezer・Vim で `CodeMirrorEngine-*.js` が 737 kB(gzip 250 kB) | 動的 import で別の塊にし、最初に開くときだけ読む。本体は 693 → 719 kB |
+| IME の変換中の ⌘S で保存が走る | 保存のキーは変換中かを見ない | 未対応(合否一覧の残り) |
 | 既定のショートカットが JIS 配列で打てない(⇧⌘\ など) | US 配列の記号のキーは JIS で別の位置・別の組み合わせになる | JIS 配列で打てない記号のキーを既定にしない(M4 は ⇧⌘G に替えた) |

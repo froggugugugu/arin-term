@@ -27,8 +27,9 @@
 | `ui.displayMode` | `"tiles"` | タイル表示のときだけ書く。無い・知らない値・型が違うときは退避せずタブ表示(版は 1 のまま) |
 | `ui.terminalFontSize` / `ui.interfaceFontSize` | 整数(CSS ピクセル) | ターミナルの文字(既定 15、9〜28)と画面の文字の基準値(既定 13、11〜18)。既定のあいだはキーごとに書かない。無い・数でないときは既定、整数でない数は四捨五入、範囲の外は端に留める。どれも退避しない(版は 1 のまま。規則は `layout/font_sizes.rs`) |
 | `ui.windowTranslucency` / `ui.terminalTranslucency` | 整数(%) | ウィンドウの地(既定 45、0〜100)とターミナルの背景(既定 20、0〜80)の透過の度合い。5 刻み。既定のあいだはキーごとに書かない。無い・数でないときは既定、5 の倍数でない値は近い 5 の倍数に丸め、範囲の外は端に留める。どれも退避しない(M4.7。ADR-014。規則は `layout/translucency.rs`) |
+| `ui.editorVim` | 真偽 | エディタの Vim のキー操作(M4.8。ADR-015 の 6)。真のときだけ書く。無い・真偽値でないときは偽(退避しない。版は 1 のまま)。「既定に戻す」(`reset_appearance`)では戻さない |
 
-「見つからない」と表示用のパスは保存しない。
+「見つからない」と表示用のパスは保存しない。エディタのタブも保存しない(再起動で開き直さない。ADR-015 の【要確認】2 の A)。
 
 ### settings.toml(M4.5。ADR-012)
 
@@ -64,8 +65,12 @@ Rust から画面へ渡す状態の写し。画面は届いたもので丸ごと
 | `display` | `DisplaySnapshot` | 右ペインの表示の状態(下)。グリッドとページは Rust が計算し、画面は映すだけ |
 | `fontSizes` | `FontSizesSnapshot` | `terminal`・`interface` のそれぞれに `value`・`min`・`max`・`defaultValue`(M4.6。画面に範囲と既定の数を写さない) |
 | `translucency` | `TranslucencySnapshot` | `window`・`terminal` のそれぞれに `value`・`min`・`max`・`defaultValue`・`step`(M4.7) |
+| `editors` | `EditorTabSnapshot[]` | エディタのタブ(M4.8。プロジェクトの並び順、その中は開いた順)。文書の本文と版は載せない(コマンドの応答で渡す) |
+| `editor` | `EditorSettingsSnapshot` | `vim`(`ui.editorVim`) |
 
-- `ProjectCardSnapshot`: `id`、`name`(表示名)、`color`、`displayPath`(ホームの中は `~` で始める)、`missing`、`showHidden`、`terminalIds`(タブの順)、`activeTerminalId`(0 枚なら `null`)
+- `ProjectCardSnapshot`: `id`、`name`(表示名)、`color`、`displayPath`(ホームの中は `~` で始める)、`missing`、`showHidden`、`terminalIds`(タブの順)、`activeTerminalId`(0 枚なら `null`)、`editorIds`(開いた順)、`shownEditorId`(タブ表示でターミナルの代わりに出すエディタ。ターミナルのタブを選ぶ・作ると `null`)
+- `EditorTabSnapshot`(タブと版の型は `crates/arin-core/src/editor/`): `id`(`"editor-<n>"`)、`projectId`、`path`(`RelPath`)、`label`(ファイル名)、`dirty`(未保存。画面が `set_document_dirty` で送る。Rust は保存でも消さない)、`readOnly`(`hard-link`・`not-owner`・`not-writable`・`folder-not-writable` / `null`)
+- 文書の版(`FileStamp`。画面には渡さない): `{ stat: { dev, ino, size, mtime_ns }, digest }`。`digest` は本文の `DefaultHasher` の 64 ビット(変更の検出用。暗号学的ではない)。stat の 4 つが同じなら中身を比べない
 - `TerminalTabSnapshot`: `id`、`projectId`(いまは必ず値がある。型は `null` を取りうるまま)、`label`(「ターミナル N」)、`status`、`attention`(フォーカス中でないあいだに BEL・OSC 9・OSC 777 があった。フォーカス中になると消える。保存しない)
 - `DisplaySnapshot`(`crates/arin-core/src/workspace/snapshot.rs`。規則は `workspace/display.rs`・`layout/tiles.rs`): `mode`(`"tabs"`/`"tiles"`)、`maximized`(タイル表示のときだけ真。拡大しているのは `focusedTerminalId`)、`page`(0 から。0 枚なら 0)、`pageCount`、`grid`(`cols`×`rows`。0 枚なら 0×0)、`tileIds`(表示中のページのタイル)、`focusedTerminalId`(=選択中のプロジェクトの表示中のタブ)、`attentionPages`(印のあるタイルのページ。昇順)。ページ・グリッド・並びはタブ表示のときも載せる。保存するのは `mode` だけ
 - `TerminalStatus`(`crates/arin-core/src/terminal/state.rs`): `kind` で区別する: `notStarted` → `running` → `exited`(`code`・`signal`)/ `failed`(`message`。次の接続で再起動を試す)
@@ -85,8 +90,11 @@ Rust から画面へ渡す状態の写し。画面は届いたもので丸ごと
 - ファイル操作(応答 `FileOpOutcome`): `create_entry`、`rename_entry`、`move_entry`、`copy_entry`、`trash_entry`、`copy_entries`、`cut_entries`、`paste_entries`
 - デスクトップ: `reveal_entry`、`open_entry`(ふつうのファイルだけ。実行の権限があるもの・`UNOPENABLE_EXTENSIONS` の拡張子は開かない。`src-tauri/src/commands/desktop.rs`)、`copy_entry_path`、`insert_entry_path`(ターミナルへ書く文字列は Rust の `insertion_text` が作る)
 - ショートカット: `get_shortcuts`(応答 `ShortcutTable`。設定ファイルの値を当てた表)、`get_settings_notice`(設定の知らせの 1 行か `null`。写しの `notice` とは別)
+- エディタ(M4.8。ADR-015 の 4 と末尾の追記。`src-tauri/src/commands/editor.rs`): `open_document({projectId, path})`(応答 `OpenDocumentOutcome`: `opened`(本文は BOM を外し、`lineEnding` は `lf`/`crlf`)/ `already-open` / `not-allowed`(`not-markdown`・`link`・`directory`・`too-large`・`not-text`・`outside-root`)/ `not-found` / `failed`)、`save_document({editorId, text, mode})`(`mode` は `normal`・`overwrite`・`create`。`normal` は外で変わっていれば `changed-outside`、`overwrite` は変わっていても置き換えるがファイルが無ければ `missing`、`create` は同じ名前があれば置き換えず `changed-outside`。ほかに `saved`・`read-only`・`too-large`・`failed`)、`check_document({editorId, withText})`(`withText` は `never`・`if-changed`・`always`。**Rust の状態を変えない**。応答 `unchanged` / `changed { text, lineEnding, token }` / `missing`)、`adopt_document({editorId, token})`(画面が `changed` の本文を当てたあとにだけ呼ぶ。Rust はここで版を持ち直す)、`set_document_dirty({editorId, dirty})`(変わり目だけ)、`select_editor`、`close_editor({editorId, discard})`(`closed` / `needs-confirmation`)、`set_editor_vim({enabled})`
+- `remove_project` の `needsConfirmation` と `QuitRequest` に `unsaved: UnsavedEditor[]`(`editorId`・`projectName`・`path`)。動作中のターミナルが無くても未保存のエディタがあれば確認する
+- ショートカットの表は 33 行(M4.8 で `editor.save` = `Cmd+S`、受け口 `screen` を足した)
 - 引数のパスはプロジェクトの ID と `RelPath`(ルートからの相対パス)。絶対パスは画面に渡さない
-- イベント: `app-snapshot`(状態が変わるたびに `AppSnapshot` 全体)、`tree-changed`(`TreeChange { projectId, dirs, fullReload }`)、`menu-command`(`MenuCommand`。`"select-all"` と `"open-settings"`(「設定…」。画面が設定画面を開く))、`quit-requested`(`QuitRequest`。動作中のターミナルの一覧。画面が確認したら `confirm_quit`)、`settings-changed`(中身なし。設定の表か知らせが変わった。画面は `get_shortcuts` と `get_settings_notice` を呼び直す)。出力はイベントではなくチャネルで生のバイト列を送る
+- イベント: `app-snapshot`(状態が変わるたびに `AppSnapshot` 全体)、`tree-changed`(`TreeChange { projectId, dirs, fullReload }`)、`menu-command`(`MenuCommand`。`"select-all"` と `"open-settings"`(「設定…」。画面が設定画面を開く))、`quit-requested`(`QuitRequest`。動作中のターミナルの一覧。画面が確認したら `confirm_quit`)、`settings-changed`(中身なし。設定の表か知らせが変わった。画面は `get_shortcuts` と `get_settings_notice` を呼び直す)、`editor-close-requested`(`EditorCloseRequest { editorId }`。⌘W で表示中のエディタが未保存のとき、Rust は閉じずにこれを送る。画面が確認して `close_editor` を呼ぶ)。出力はイベントではなくチャネルで生のバイト列を送る
 - Finder からのドロップはコマンドではなく `src-tauri/src/lifecycle.rs` が受ける
 
 ### AppPaths(`crates/arin-core/src/paths/app_paths.rs`)
@@ -106,5 +114,6 @@ Rust から画面へ渡す状態の写し。画面は届いたもので丸ごと
 - `state.json` の読み込み: 欠けたキーは既定値、未知のキーは無視。JSON でない・最上位がオブジェクトでない・`schemaVersion` が無い/1 以上の整数でない/新しすぎる・形が違うときは `state.json.broken-<UTC の日時>`(`20261115T093000Z`。同名があれば `-2`、`-3`)に改名して空で始める。同じ ID は先のものだけ残し、一覧に無い選択は外す
 - プロジェクトのパス(`normalize_root`): 絶対パス・UTF-8・`..` を含まない・ゴミ箱の中でない。同じフォルダの二重登録は `AlreadyRegistered`
 - 相対パス(`RelPath`): 規則は `crates/arin-core/src/paths/relative.rs`。名前の規則は `fileops/name.rs`、ツリーの除外は `tree/exclusion.rs`
+- 文書(`crates/arin-core/src/editor/document.rs`・`arin-platform/src/fs/document.rs`): 拡張子 `.md`・`.markdown`(大文字・小文字を問わない)、ふつうのファイル(リンク自体は開かない)、1 MiB 以下、UTF-8 で NUL を含まない。改行は `\r\n` があれば `crlf`。保存の一時ファイルは同じフォルダの `.arin-save-<pid>-<連番>`(監視と一覧は `.arin-copy-` と同じに隠す。`tree/exclusion.rs` の `WORK_NAME_PREFIXES`)
 - 監視の変更: 変わったフォルダが `MAX_CHANGED_DIRS`(1,000)を超えたら `fullReload`(`tree/changes.rs`)
 - スモークの印(状態フォルダ直下の `smoke-ready`、最初の処理済みの通知で書く `smoke-terminal`)は、`ARIN_SMOKE` が厳密に `1` かつ状態フォルダが差し替えられているときだけ書く
