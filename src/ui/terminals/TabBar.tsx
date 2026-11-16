@@ -1,5 +1,6 @@
 import { type KeyboardEvent, useEffect, useRef } from "react";
 
+import { ariaKeyShortcuts, type ShortcutTable, shortcutLabel } from "../../logic/keys/shortcutTable";
 import { moveMenuFocus } from "../../logic/menu/menuNavigation";
 import { projectColorStyle } from "../design/palette";
 import type { ProjectColor, TerminalTab, TerminalTabId } from "../snapshotTypes";
@@ -20,6 +21,8 @@ interface TabBarProps {
   panelId: string;
   /** 新しいタブを開けるか(見つからないプロジェクトでは開けない。設計書 §8)。 */
   canAdd: boolean;
+  /** ショートカットの表(「+」と閉じるボタンのツールチップ・読み上げのキーを引く。部品にキーの文字列を書かない)。 */
+  shortcuts: ShortcutTable;
   onSelect: (id: TerminalTabId) => void;
   onClose: (id: TerminalTabId) => void;
   onNew: () => void;
@@ -50,6 +53,8 @@ const MOVE_KEYS: Readonly<Record<string, string>> = {
  *   Enter・Space で選ぶ(手動の切替。移るたびに Rust へ選択を送らない)。Delete・Backspace でそのタブを閉じる
  * - 閉じるボタンはマウス用で Tab では止まらない(キーボードでは Delete か ⌘W)。読み上げの名前は「「タブ名」を閉じる」
  * - タブが多いときはタブの列だけが横にスクロールし、「+」は常に見える。表示中のタブが変わると、見える位置までスクロールする
+ * - 「+」のツールチップ(「新規ターミナル(⌘T)」)と読み上げのキー(aria-keyshortcuts)、閉じるボタンのツールチップのキーは
+ *   表の terminal.new-tab・terminal.close-tab から引く(設定で替えると追従する。読めなければキーを出さない)
  */
 export function TabBar({
   tabs,
@@ -59,10 +64,14 @@ export function TabBar({
   idBase,
   panelId,
   canAdd,
+  shortcuts,
   onSelect,
   onClose,
   onNew,
 }: TabBarProps) {
+  const newKey = shortcutLabel(shortcuts, "terminal.new-tab");
+  const newAriaKey = ariaKeyShortcuts(shortcuts, "terminal.new-tab");
+  const closeKey = shortcutLabel(shortcuts, "terminal.close-tab");
   const tabRefs = useRef(new Map<TerminalTabId, HTMLButtonElement>());
   // Tab で止まるタブ: 表示中のタブ。表示中が並びに無ければ最初のタブ。
   const focusableId = tabs.some((t) => t.id === activeId) ? activeId : (tabs[0]?.id ?? null);
@@ -140,7 +149,7 @@ export function TabBar({
                 type="button"
                 className="tab-bar__close"
                 aria-label={`「${terminal.label}」を閉じる`}
-                title="タブを閉じる(⌘W)"
+                title={closeKey === null ? "タブを閉じる" : `タブを閉じる(${closeKey})`}
                 tabIndex={-1}
                 onClick={() => onClose(terminal.id)}
               >
@@ -154,8 +163,8 @@ export function TabBar({
         type="button"
         className="tab-bar__new"
         aria-label="新規ターミナル"
-        aria-keyshortcuts="Meta+T"
-        title="新規ターミナル(⌘T)"
+        aria-keyshortcuts={newAriaKey ?? undefined}
+        title={newKey === null ? "新規ターミナル" : `新規ターミナル(${newKey})`}
         disabled={!canAdd}
         onClick={onNew}
       >

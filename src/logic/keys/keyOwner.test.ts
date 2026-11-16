@@ -147,6 +147,26 @@ describe("terminalKeyOwner(M3 の表)", () => {
     expect(ownerFromTable(withoutSettings, chord(",", { metaKey: true }))).toBe("terminal");
   });
 
+  it("表を替えると新しいメニューのキーはターミナルに渡さず古いキーは渡す", () => {
+    // 設定ファイルで新規タブを ⇧⌘Y に替えた表(AC-K06。設定が変わると uiStore の表が置き換わる)
+    const changed = DEFAULT_SHORTCUT_TABLE.map((binding) =>
+      binding.command === "terminal.new-tab" ? { ...binding, accelerator: "Cmd+Shift+Y" } : binding,
+    );
+    expect(ownerFromTable(changed, chord("y", { metaKey: true, shiftKey: true }))).toBe("app");
+    expect(ownerFromTable(changed, chord("Y", { metaKey: true, shiftKey: true }))).toBe("app");
+    // 替える前のキー(⌘T)はターミナルに渡す
+    expect(ownerFromTable(changed, chord("t", { metaKey: true }))).toBe("terminal");
+    // 替える前の表では逆
+    expect(owner(chord("t", { metaKey: true }))).toBe("app");
+    expect(owner(chord("y", { metaKey: true, shiftKey: true }))).toBe("terminal");
+    // 画面で受けるキー(ツリー)を替えても、ターミナルでは新旧どちらもターミナルに渡す
+    const tree = DEFAULT_SHORTCUT_TABLE.map((binding) =>
+      binding.command === "tree.new-file" ? { ...binding, accelerator: "Cmd+Alt+J" } : binding,
+    );
+    expect(ownerFromTable(tree, chord("j", { metaKey: true, altKey: true, code: "KeyJ" }))).toBe("terminal");
+    expect(ownerFromTable(tree, chord("n", { metaKey: true }))).toBe("terminal");
+  });
+
   it("表が空ならすべてターミナルに任せる", () => {
     expect(ownerFromTable([], chord("c", { metaKey: true }))).toBe("terminal");
   });

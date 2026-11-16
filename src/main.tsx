@@ -44,7 +44,7 @@ export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartA
   const actions = createActions({ ipc, ui, app: store, tree, treeController, reportError: reporter.report });
   // 描画方式は DOM、全角幅は unicode11 に固定(M4 で決めた。ADR-001)。
   const engine = new XtermEngine({
-    // Rust から受け取った表(startApp の onShortcuts)。届くまでは uiStore の既定の表の見本。
+    // Rust から受け取った表(startApp の onShortcuts。設定が変わると置き換わる)。届くまでは uiStore の既定の表の見本。
     getShortcuts: () => ui.getState().shortcuts,
   });
   const terminals = new TerminalManager(engine, ipc, { reportError: reporter.report });
@@ -75,8 +75,10 @@ export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartA
       // 選択中のプロジェクトのツリーの外からの変更(FR-014)。保留中は積む。
       onTreeChanged: (change) => treeController.handleTreeChange(change),
     },
-    // ショートカットの表を Rust から受け取る(届くまで・失敗したときは既定の表の見本)。
+    // ショートカットの表と設定の知らせを Rust から受け取る(届くまで・失敗したときは既定の表の見本)。
+    // 設定が変わったと届くたびに startApp が取り直して渡す(T65e)。
     onShortcuts: (table) => ui.getState().setShortcuts(table),
+    onSettingsNotice: (notice) => ui.getState().setSettingsNotice(notice),
     reportError: reporter.report,
     mount: () => {
       // 描き終えてから準備完了を通知するため、描画を同期で済ませる。

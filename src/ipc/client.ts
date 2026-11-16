@@ -34,6 +34,8 @@ export interface CommandMap {
   get_app_snapshot: { args: undefined; result: AppSnapshot };
   /** ショートカットの表(T42e)。メニューバーと同じ表。行はコマンドの ID の順。 */
   get_shortcuts: { args: undefined; result: ShortcutTable };
+  /** 設定の問題の知らせ(1 行。T65b)。問題が無ければ null。設定が変わると settings-changed が届くので呼び直す。 */
+  get_settings_notice: { args: undefined; result: string | null };
   notify_app_ready: { args: undefined; result: null };
   report_frontend_error: { args: { message: string }; result: null };
   confirm_quit: { args: undefined; result: null };
@@ -108,13 +110,15 @@ export type CommandName = keyof CommandMap;
 
 /**
  * Rust から届くイベントと、その中身の対応。名前は src-tauri/src/commands/app.rs(app-snapshot)と
- * src-tauri/src/events.rs(menu-command・quit-requested・tree-changed)の定数と合わせる。
+ * src-tauri/src/events.rs(menu-command・quit-requested・tree-changed・settings-changed)の定数と合わせる。
  */
 export interface EventMap {
   "app-snapshot": AppSnapshot;
   "menu-command": MenuCommand;
   "quit-requested": QuitRequest;
   "tree-changed": TreeChange;
+  /** 設定が変わった(T65c)。中身は無い。表が変わったとき・知らせだけが変わったときのどちらでも届く。 */
+  "settings-changed": null;
 }
 
 export type EventName = keyof EventMap;
@@ -161,10 +165,17 @@ export interface ArinIpc {
   /** 状態の写しを取得する。 */
   getAppSnapshot(): Promise<AppSnapshot>;
   /**
-   * ショートカットの表(コマンドの ID → キーと受け口)を取得する。起動時に 1 回だけ呼ぶ。
-   * メニューバーのアクセラレータと同じ表(M4.5 では設定ファイルの値をまとめたもの)。
+   * ショートカットの表(コマンドの ID → キーと受け口)を取得する。起動時と、設定が変わったと届いたときに呼ぶ。
+   * メニューバーのアクセラレータと同じ表(設定ファイルの値を当てたもの)。
    */
   getShortcuts(): Promise<ShortcutTable>;
+  /** 設定の問題の知らせ(1 行)を取得する。問題が無ければ null。状態ファイルの知らせ(写しの notice)とは別。 */
+  getSettingsNotice(): Promise<string | null>;
+  /**
+   * 設定が変わった(設定ファイルの保存を Rust が検知した)と届くたびに listener を呼ぶ。届いた時点で getShortcuts は
+   * 新しい表を返す。購読が済んだら、やめる関数で解決する。
+   */
+  onSettingsChanged(listener: () => void): Promise<Unlisten>;
   /** 画面の準備ができたことを Rust へ知らせる。 */
   notifyAppReady(): Promise<void>;
   /** 状態の写しが変わるたびに listener を呼ぶ。購読が済んだら、やめる関数で解決する。 */
@@ -374,6 +385,8 @@ export function createIpc(transport: IpcTransport): ArinIpc {
   return {
     getAppSnapshot: () => invoke("get_app_snapshot", undefined),
     getShortcuts: () => invoke("get_shortcuts", undefined),
+    getSettingsNotice: () => invoke("get_settings_notice", undefined),
+    onSettingsChanged: (listener) => transport.listen("settings-changed", () => listener()),
     notifyAppReady: () => done(invoke("notify_app_ready", undefined)),
     onAppSnapshot: (listener) => transport.listen("app-snapshot", listener),
     reportFrontendError: (message) => done(invoke("report_frontend_error", { message })),

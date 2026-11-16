@@ -201,6 +201,25 @@ export function formatAccelerator(accelerator: string): string | null {
   return `${mods}${NAMED_KEY_LABELS[parsed.key] ?? parsed.key}`;
 }
 
+/** 名前のキーの読み上げ用の名前(aria-keyshortcuts。KeyboardEvent の key の名前に合わせ、空白だけ `Space`)。 */
+const ARIA_NAMED_KEYS: Readonly<Record<string, string>> = { " ": "Space" };
+
+/**
+ * 読み上げ用のキーの表示(aria-keyshortcuts の値。`Cmd+Shift+T` → `Meta+Shift+T`)。修飾キーは Meta・Control・Alt・Shift の順、
+ * キーは文字なら大文字、名前のキーは KeyboardEvent の key の名前。読めない文字列は null。
+ */
+export function formatAriaKeyShortcut(accelerator: string): string | null {
+  const parsed = parseAccelerator(accelerator);
+  if (parsed === null) return null;
+  const parts: string[] = [];
+  if (parsed.meta) parts.push("Meta");
+  if (parsed.ctrl) parts.push("Control");
+  if (parsed.alt) parts.push("Alt");
+  if (parsed.shift) parts.push("Shift");
+  parts.push(ARIA_NAMED_KEYS[parsed.key] ?? parsed.key);
+  return parts.join("+");
+}
+
 /** 表からコマンドの ID のキーの文字列を引く。無ければ null。 */
 export function acceleratorOf(table: ShortcutTable, command: ShortcutCommandId): string | null {
   return table.find((binding) => binding.command === command)?.accelerator ?? null;
@@ -224,4 +243,10 @@ export function findBinding(
     if (parsed !== null && matchesAccelerator(parsed, pressed)) return binding;
   }
   return null;
+}
+
+/** 表からコマンドの ID の読み上げ用のキーの表示(aria-keyshortcuts の値)を引く。無い・読めなければ null。 */
+export function ariaKeyShortcuts(table: ShortcutTable, command: ShortcutCommandId): string | null {
+  const accelerator = acceleratorOf(table, command);
+  return accelerator === null ? null : formatAriaKeyShortcut(accelerator);
 }

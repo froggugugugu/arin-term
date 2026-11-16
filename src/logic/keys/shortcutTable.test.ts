@@ -4,7 +4,9 @@ import { DEFAULT_SHORTCUT_TABLE } from "./defaultShortcuts";
 import type { KeyChord } from "./keyOwner";
 import {
   acceleratorOf,
+  ariaKeyShortcuts,
   formatAccelerator,
+  formatAriaKeyShortcut,
   matchesAccelerator,
   parseAccelerator,
   shortcutLabel,
@@ -192,5 +194,42 @@ describe("表の引き方", () => {
     for (const binding of DEFAULT_SHORTCUT_TABLE) {
       expect(parseAccelerator(binding.accelerator), binding.command).not.toBeNull();
     }
+  });
+});
+
+describe("ariaKeyShortcuts(読み上げ用のキーの表示。aria-keyshortcuts の値)", () => {
+  it.each([
+    ["Cmd+T", "Meta+T"],
+    ["Cmd+Shift+T", "Meta+Shift+T"],
+    ["shift+cmd+t", "Meta+Shift+T"],
+    ["Cmd+Alt+N", "Meta+Alt+N"],
+    ["Option+Cmd+C", "Meta+Alt+C"],
+    ["Ctrl+Shift+Tab", "Control+Shift+Tab"],
+    ["Cmd+Ctrl+Alt+Shift+K", "Meta+Control+Alt+Shift+K"],
+    ["Cmd+Backspace", "Meta+Backspace"],
+    ["Cmd+Alt+ArrowLeft", "Meta+Alt+ArrowLeft"],
+    ["Cmd+Shift+Enter", "Meta+Shift+Enter"],
+    ["Cmd+Space", "Meta+Space"],
+    ["Cmd+,", "Meta+,"],
+    ["Cmd+Shift+[", "Meta+Shift+["],
+    ["Cmd+1", "Meta+1"],
+  ])("読み上げ用のキーの表示は_meta_の形(%s → %s)", (accelerator, expected) => {
+    expect(formatAriaKeyShortcut(accelerator)).toBe(expected);
+  });
+
+  it("読めない文字列は表示しない(null)", () => {
+    expect(formatAriaKeyShortcut("")).toBeNull();
+    expect(formatAriaKeyShortcut("Cmd+")).toBeNull();
+    expect(formatAriaKeyShortcut("Hyper+T")).toBeNull();
+  });
+
+  it("表からコマンドの_id_で引き_無い行は_null", () => {
+    expect(ariaKeyShortcuts(DEFAULT_SHORTCUT_TABLE, "terminal.new-tab")).toBe("Meta+T");
+    expect(ariaKeyShortcuts(DEFAULT_SHORTCUT_TABLE, "tree.copy-absolute-path")).toBe("Meta+Alt+C");
+    const changed = DEFAULT_SHORTCUT_TABLE.map((b) =>
+      b.command === "terminal.new-tab" ? { ...b, accelerator: "Cmd+Shift+Y" } : b,
+    );
+    expect(ariaKeyShortcuts(changed, "terminal.new-tab")).toBe("Meta+Shift+Y");
+    expect(ariaKeyShortcuts([], "terminal.new-tab")).toBeNull();
   });
 });

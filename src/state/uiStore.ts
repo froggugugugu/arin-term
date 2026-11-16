@@ -7,6 +7,7 @@
 //
 // ツリーの部品(T43b〜T43d)が読む M3 の状態: メニュー(treeMenu)、インライン編集(inlineEdit)、衝突の確認(treeConflict)、
 // 移動の確認(moveConfirmation)、ツリーの知らせ(treeNotice)、ドラッグ中(treeDragging)、ショートカットの表(shortcuts)。
+// M4.5(T65e): 設定の知らせ(settingsNotice)。表と同じく、起動時と settings-changed が届いたときに startApp が置き換える。
 // メニュー・インライン編集・確認・ドラッグが開いている間は、ツリーの更新を保留する(FR-037。treeStore.ts がここを購読して
 // UpdateGate の理由をそろえる。部品は保留を自分で立てない)。
 
@@ -167,11 +168,21 @@ export interface UiState {
   readonly treeFocused: boolean;
   setTreeFocused: (focused: boolean) => void;
   /**
-   * ショートカットの表。起動時に Rust から get_shortcuts で受け取ったもの。届くまでと、取得に失敗したときは
-   * 既定の表の見本(src/logic/keys/defaultShortcuts.ts)。
+   * ショートカットの表。起動時と設定が変わったと届いたときに Rust から get_shortcuts で受け取ったもの。届くまでと、
+   * 起動時の取得に失敗したときは既定の表の見本(src/logic/keys/defaultShortcuts.ts)。取り直しに失敗したときは今の表のまま。
    */
   readonly shortcuts: ShortcutTable;
   setShortcuts: (table: ShortcutTable) => void;
+  /**
+   * 設定の問題の知らせ(get_settings_notice の 1 行)。無ければ null。状態ファイルの知らせ(写しの notice)とは別に持ち、
+   * 別に閉じる。起動時と、設定が変わったと届いたときに置き換える。
+   */
+  readonly settingsNotice: string | null;
+  /** 設定の知らせを閉じたか。違う文の知らせ(または null)が届くと戻る(同じ文が届き直しても閉じたまま)。 */
+  readonly settingsNoticeDismissed: boolean;
+  setSettingsNotice: (notice: string | null) => void;
+  /** 設定の知らせを閉じる。 */
+  dismissSettingsNotice: () => void;
   /**
    * 表示中のツリーが替わった(別のプロジェクト、または無くなった)ときの片付け。projectId 以外のプロジェクトの
    * メニュー・インライン編集・衝突の確認・移動の確認・ツリーの知らせを閉じ、ドラッグ中とフォーカスの印を戻す(treeStore が呼ぶ)。
@@ -220,6 +231,11 @@ export function createUiStore(): UiStore {
     setTreeFocused: (focused) => set({ treeFocused: focused }),
     shortcuts: DEFAULT_SHORTCUT_TABLE,
     setShortcuts: (table) => set({ shortcuts: table }),
+    settingsNotice: null,
+    settingsNoticeDismissed: false,
+    setSettingsNotice: (notice) =>
+      set((s) => (s.settingsNotice === notice ? s : { settingsNotice: notice, settingsNoticeDismissed: false })),
+    dismissSettingsNotice: () => set({ settingsNoticeDismissed: true }),
     resetTreeUi: (projectId) =>
       set((s) => {
         const other = (owner: ProjectId | undefined) => owner !== undefined && owner !== projectId;

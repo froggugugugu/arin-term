@@ -42,6 +42,32 @@ describe("src/ipc の包み", () => {
     });
   });
 
+  it("設定の知らせの取得は_get_settings_notice_を引数なしで呼び_1_行か_null_を返す", async () => {
+    const fake = createFakeIpc({ get_settings_notice: () => "ショートカットの設定の 1 行を使わず、既定のキーのままにしました: x" });
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.getSettingsNotice()).resolves.toBe("ショートカットの設定の 1 行を使わず、既定のキーのままにしました: x");
+    expect(fake.calls).toEqual([{ command: "get_settings_notice", args: undefined }]);
+    // 偽の通信の既定の応答は知らせ無し
+    await expect(createIpc(createFakeIpc().transport).getSettingsNotice()).resolves.toBeNull();
+  });
+
+  it("設定の変更のイベント_settings_changed_を購読し_届くたびに呼び_やめる関数で外れる", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+    let count = 0;
+
+    const unlisten = await ipc.onSettingsChanged(() => {
+      count += 1;
+    });
+    fake.emit("settings-changed", null);
+    unlisten();
+    fake.emit("settings-changed", null);
+
+    expect(count).toBe(1);
+    expect(fake.listenerCount("settings-changed")).toBe(0);
+  });
+
   it("準備完了の通知は notify_app_ready を引数なしで 1 回だけ呼ぶ", async () => {
     const fake = createFakeIpc();
     const ipc = createIpc(fake.transport);

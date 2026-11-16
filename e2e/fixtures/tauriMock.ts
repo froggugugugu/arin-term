@@ -20,6 +20,8 @@
 // - イベントの購読・解除(`plugin:event|listen` など)は Tauri の内部の口なので、記録(__ARIN_E2E_CALLS__)には残さない
 // - ツリー(T43b): list_directory はフォルダごとの応答の表(listings。キーは listingKey)を先に引き、無ければ
 //   コマンドの既定の応答(空のフォルダ)を返す。外からの変更は表を置き換えてから tree-changed を emitEvent で流す
+// - 設定(T65e): get_shortcuts・get_settings_notice の応答を setMockReply で替えてから settings-changed(中身は null)を
+//   emitEvent で流すと、本物の Rust の「保存を検知して読み直した」と同じ形になる
 //
 // # 型の合わせ方
 //
@@ -280,6 +282,7 @@ export function sampleRunningTerminal(
 const DEFAULT_REPLIES: TauriMockConfig = {
   get_app_snapshot: { ok: sampleSnapshot() },
   get_shortcuts: { ok: DEFAULT_SHORTCUT_TABLE.map((binding) => ({ ...binding })) },
+  get_settings_notice: { ok: null },
   notify_app_ready: { ok: null },
   report_frontend_error: { ok: null },
   confirm_quit: { ok: null },

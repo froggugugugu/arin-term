@@ -10,6 +10,10 @@
 // 写しを取得できなかったときは準備完了を通知しない(起動スモークが失敗として気づけるように)。
 // ショートカットの表(T43a): onShortcuts を渡したときだけ、写しが届いたあと準備完了の通知の前に get_shortcuts で受け取る。
 // 取得の失敗は起動の失敗にしない(既定の表の見本のまま動く)。reportError に 1 行で報告する。
+// 設定への追従(T65e): onShortcuts か onSettingsNotice を渡したときは、取得の前に settings-changed を購読し、届くたびに
+// 表と設定の知らせを両方取り直して受け手に渡す。どちらかを取り直せなければ、どちらも渡さない(今の表のまま。報告だけする)。
+// 続けて届いたときは、最後に始めた取り直しの結果だけを渡す(古い応答があとから届いても戻さない)。
+// 購読の失敗も起動の失敗にしない(起動時の表のまま動く)。
 
 import type { ArinIpc } from "../ipc/client";
 import type { MenuCommand } from "../ipc/generated/MenuCommand";
@@ -44,7 +48,9 @@ export interface StartAppDeps {
   };
   /** Rust から受け取ったショートカットの表の受け手(main.tsx が uiStore.setShortcuts へつなぐ)。渡さなければ取得しない。 */
   onShortcuts?: (table: ShortcutTable) => void;
-  /** 起動を止めない失敗(ショートカットの表を取得できなかった)の報告先。既定は logError。 */
+  /** Rust から受け取った設定の知らせ(1 行か null)の受け手(main.tsx が uiStore.setSettingsNotice へつなぐ)。渡さなければ取得しない。 */
+  onSettingsNotice?: (notice: string | null) => void;
+  /** 起動を止めない失敗(ショートカットの表・設定の知らせを取得できなかった、設定の変更を購読できなかった)の報告先。既定は logError。 */
   reportError?: (message: string) => void;
 }
 
@@ -57,6 +63,7 @@ export async function startApp({
   logError = console.error,
   events = {},
   onShortcuts,
+  onSettingsNotice,
   reportError,
 }: StartAppDeps): Promise<StartAppResult> {
   const fail = (what: string, cause: unknown): StartAppResult => {
@@ -107,14 +114,8 @@ export async function startApp({
     return fail("状態の写しを取得できなかった", cause);
   }
 
-  if (onShortcuts !== undefined) {
-    try {
-      onShortcuts(await ipc.getShortcuts());
-    } catch (cause) {
-      const message = `ショートカットの表を取得できなかったので、既定の表で動かす: ${describeError(cause)}`;
-      if (reportError !== undefined) reportError(message);
-      else logError(message, cause);
-    }
+  if (onShortcuts !== undefined || onSettingsNotice !== undefined) {
+    await followSettings({ ipc, onShortcuts, onSettingsNotice, report: reportError ?? ((m) => logError(m)) });
   }
 
   try {
@@ -123,4 +124,52 @@ export async function startApp({
     return fail("準備完了を通知できなかった", cause);
   }
   return { ok: true };
+}
+
+interface FollowSettingsDeps {
+  ipc: ArinIpc;
+  onShortcuts: ((table: ShortcutTable) => void) | undefined;
+  onSettingsNotice: ((notice: string | null) => void) | undefined;
+  report: (message: string) => void;
+}
+
+/** 設定の変更を購読してから、起動時の表と設定の知らせを受け取る(受け手を渡したものだけ)。 */
+async function followSettings({ ipc, onShortcuts, onSettingsNotice, report }: FollowSettingsDeps): Promise<void> {
+  // 始めた取り直しの番号。応答が届いた時点で最新でなければ捨てる。
+  let latest = 0;
+  const fetchTable = () => (onShortcuts === undefined ? Promise.resolve(null) : ipc.getShortcuts());
+  const fetchNotice = () => (onSettingsNotice === undefined ? Promise.resolve(null) : ipc.getSettingsNotice());
+
+  const refresh = async () => {
+    latest += 1;
+    const seq = latest;
+    try {
+      const [table, notice] = await Promise.all([fetchTable(), fetchNotice()]);
+      if (seq !== latest) return;
+      if (onShortcuts !== undefined && table !== null) onShortcuts(table);
+      onSettingsNotice?.(notice);
+    } catch (cause) {
+      report(`設定の変更を取り直せなかったので、今の表のまま動かす: ${describeError(cause)}`);
+    }
+  };
+
+  try {
+    await ipc.onSettingsChanged(() => void refresh());
+  } catch (cause) {
+    report(`設定の変更を購読できなかったので、起動時の表のまま動かす: ${describeError(cause)}`);
+  }
+
+  // 起動時は、取れたほうだけを渡す(表を取れなければ既定の表の見本のまま、知らせを取れなければ知らせ無し)。
+  latest += 1;
+  const seq = latest;
+  const [table, notice] = await Promise.allSettled([fetchTable(), fetchNotice()]);
+  // 取得のあいだに設定の変更が届いていたら、その取り直しが新しい結果を渡す。
+  if (seq !== latest) return;
+  if (table.status === "fulfilled") {
+    if (onShortcuts !== undefined && table.value !== null) onShortcuts(table.value);
+  } else {
+    report(`ショートカットの表を取得できなかったので、既定の表で動かす: ${describeError(table.reason)}`);
+  }
+  if (notice.status === "fulfilled") onSettingsNotice?.(notice.value);
+  else report(`設定の知らせを取得できなかった: ${describeError(notice.reason)}`);
 }

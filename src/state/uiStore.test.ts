@@ -152,6 +152,37 @@ describe("uiStore(ツリーの表示だけの状態。M3)", () => {
     expect(ui.getState().treeNotice).toBeNull();
   });
 
+  it("設定の知らせは状態の知らせと別に持ち別に閉じられる", () => {
+    const ui = createUiStore();
+    expect(ui.getState().settingsNotice).toBeNull();
+    expect(ui.getState().settingsNoticeDismissed).toBe(false);
+
+    ui.getState().setSettingsNotice("ショートカットの設定の 1 行を使わず、既定のキーのままにしました: x");
+    // 状態の知らせを閉じても、設定の知らせは残る
+    ui.getState().dismissNotice("状態ファイルを退避しました");
+    expect(ui.getState().dismissedNotice).toBe("状態ファイルを退避しました");
+    expect(ui.getState().settingsNotice).toBe("ショートカットの設定の 1 行を使わず、既定のキーのままにしました: x");
+    expect(ui.getState().settingsNoticeDismissed).toBe(false);
+
+    // 設定の知らせを閉じても、状態の知らせの閉じた印は変わらない
+    ui.getState().dismissSettingsNotice();
+    expect(ui.getState().settingsNoticeDismissed).toBe(true);
+    expect(ui.getState().dismissedNotice).toBe("状態ファイルを退避しました");
+
+    // 同じ知らせが届き直しても(表だけが変わったなど)閉じたまま
+    ui.getState().setSettingsNotice("ショートカットの設定の 1 行を使わず、既定のキーのままにしました: x");
+    expect(ui.getState().settingsNoticeDismissed).toBe(true);
+    // 違う知らせが届いたら出し直す
+    ui.getState().setSettingsNotice("設定ファイルの 3 行 5 列目を読めないため、直前の設定のままです");
+    expect(ui.getState().settingsNoticeDismissed).toBe(false);
+    // 知らせが無くなれば消え、次に同じ文が届いても出す
+    ui.getState().dismissSettingsNotice();
+    ui.getState().setSettingsNotice(null);
+    expect([ui.getState().settingsNotice, ui.getState().settingsNoticeDismissed]).toEqual([null, false]);
+    ui.getState().setSettingsNotice("設定ファイルの 3 行 5 列目を読めないため、直前の設定のままです");
+    expect(ui.getState().settingsNoticeDismissed).toBe(false);
+  });
+
   it("ツリーのフォーカスとドラッグ中とショートカットの表を切り替えられる", () => {
     const ui = createUiStore();
     const table = DEFAULT_SHORTCUT_TABLE.slice(0, 2);

@@ -4,7 +4,7 @@ import { createIpc } from "../ipc/client";
 import type { ShortcutTable } from "../ipc/generated/ShortcutTable";
 import type { TreeChange } from "../ipc/generated/TreeChange";
 import { DEFAULT_SHORTCUT_TABLE } from "../logic/keys/defaultShortcuts";
-import { createFakeIpc, sampleSnapshot } from "../test/fakeIpc";
+import { createFakeIpc, deferred, sampleSnapshot } from "../test/fakeIpc";
 import { createAppStore } from "./appStore";
 import { type StartAppDeps, startApp } from "./startApp";
 
@@ -281,5 +281,195 @@ describe("startApp(画面側の起動の手順)", () => {
 
     expect(result).toEqual({ ok: false, error: "ツリーの変更を購読できなかった: not allowed" });
     expect(fake.calls).toEqual([]);
+  });
+});
+
+describe("startApp(設定の表と知らせへの追従。T65e)", () => {
+  /** 応答を待つあいだに積まれた処理を流す。 */
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const withKey = (command: string, accelerator: string): ShortcutTable =>
+    DEFAULT_SHORTCUT_TABLE.map((b) => (b.command === command ? { ...b, accelerator } : { ...b }));
+
+  /** 応答を差し替えられる偽の通信で起動する。 */
+  async function boot(initial: { table: ShortcutTable; notice: string | null }) {
+    const current = { ...initial, failTable: false, failNotice: false };
+    let listenersAtReady = -1;
+    let fakeRef: ReturnType<typeof createFakeIpc> | undefined;
+    const fake = createFakeIpc({
+      get_shortcuts: () => {
+        if (current.failTable) throw "command get_shortcuts failed";
+        return current.table;
+      },
+      get_settings_notice: () => {
+        if (current.failNotice) throw "command get_settings_notice failed";
+        return current.notice;
+      },
+      notify_app_ready: () => {
+        listenersAtReady = fakeRef?.listenerCount("settings-changed") ?? -1;
+        return null;
+      },
+    });
+    fakeRef = fake;
+    const tables: ShortcutTable[] = [];
+    const notices: (string | null)[] = [];
+    const reported: string[] = [];
+    const result = await startApp({
+      ipc: createIpc(fake.transport),
+      store: createAppStore(),
+      mount: () => {},
+      logError: () => {},
+      onShortcuts: (t) => tables.push(t),
+      onSettingsNotice: (n) => notices.push(n),
+      reportError: (m) => reported.push(m),
+    });
+    return { fake, current, tables, notices, reported, result, listenersAtReady: () => listenersAtReady };
+  }
+
+  it("起動時に表と設定の知らせを受け取り_設定の変更を準備完了の通知より先に購読する", async () => {
+    const table = withKey("terminal.new-tab", "Cmd+Shift+Y");
+    const ctx = await boot({ table, notice: "ショートカットの設定の 1 行を使わず、既定のキーのままにしました: x" });
+
+    expect(ctx.result).toEqual({ ok: true });
+    expect(ctx.tables).toEqual([table]);
+    expect(ctx.notices).toEqual(["ショートカットの設定の 1 行を使わず、既定のキーのままにしました: x"]);
+    expect(ctx.fake.calls.map((c) => c.command)).toEqual([
+      "get_app_snapshot",
+      "get_shortcuts",
+      "get_settings_notice",
+      "notify_app_ready",
+    ]);
+    expect(ctx.listenersAtReady()).toBe(1);
+  });
+
+  it("設定が変わったと届くと表と知らせを取り直して置き換える", async () => {
+    const ctx = await boot({ table: withKey("terminal.new-tab", "Cmd+T"), notice: null });
+    ctx.fake.calls.length = 0;
+
+    const changed = withKey("terminal.new-tab", "Cmd+Shift+Y");
+    ctx.current.table = changed;
+    ctx.current.notice = "設定ファイルの 3 行 5 列目を読めないため、直前の設定のままです";
+    ctx.fake.emit("settings-changed", null);
+    await flush();
+
+    expect(ctx.fake.calls.map((c) => c.command)).toEqual(["get_shortcuts", "get_settings_notice"]);
+    expect(ctx.tables.at(-1)).toEqual(changed);
+    expect(ctx.notices.at(-1)).toBe("設定ファイルの 3 行 5 列目を読めないため、直前の設定のままです");
+
+    // 知らせだけが消えたときも届く(表は同じまま置き換える)
+    ctx.current.notice = null;
+    ctx.fake.emit("settings-changed", null);
+    await flush();
+    expect(ctx.notices.at(-1)).toBeNull();
+    expect(ctx.tables).toHaveLength(3);
+    expect(ctx.reported).toEqual([]);
+  });
+
+  it("設定の変更が続けて届くと最後の取り直しの結果だけを当てる", async () => {
+    const first = deferred<ShortcutTable>();
+    const tables: ShortcutTable[] = [];
+    let call = 0;
+    const latest = withKey("terminal.new-tab", "Cmd+Shift+U");
+    const fake = createFakeIpc({
+      get_shortcuts: () => {
+        call += 1;
+        if (call === 1) return DEFAULT_SHORTCUT_TABLE.map((b) => ({ ...b }));
+        // 1 回目の取り直しは遅れて届く(古い応答)
+        if (call === 2) return first.promise;
+        return latest;
+      },
+    });
+    await startApp({
+      ipc: createIpc(fake.transport),
+      store: createAppStore(),
+      mount: () => {},
+      logError: () => {},
+      onShortcuts: (t) => tables.push(t),
+    });
+
+    fake.emit("settings-changed", null);
+    fake.emit("settings-changed", null);
+    await flush();
+    first.resolve(withKey("terminal.new-tab", "Cmd+Shift+O"));
+    await flush();
+
+    expect(tables).toHaveLength(2);
+    expect(tables.at(-1)).toEqual(latest);
+  });
+
+  it("取り直せないときは今の表のまま", async () => {
+    const ctx = await boot({ table: withKey("terminal.new-tab", "Cmd+T"), notice: "前の知らせ" });
+
+    ctx.current.table = withKey("terminal.new-tab", "Cmd+Shift+Y");
+    ctx.current.failTable = true;
+    ctx.fake.emit("settings-changed", null);
+    await flush();
+
+    // 表も知らせも置き換えない(片方だけ当てない)
+    expect(ctx.tables).toHaveLength(1);
+    expect(ctx.notices).toEqual(["前の知らせ"]);
+    expect(ctx.reported).toEqual([
+      "設定の変更を取り直せなかったので、今の表のまま動かす: command get_shortcuts failed",
+    ]);
+
+    // 知らせだけを取れなくても、表を置き換えない
+    ctx.current.failTable = false;
+    ctx.current.failNotice = true;
+    ctx.fake.emit("settings-changed", null);
+    await flush();
+    expect(ctx.tables).toHaveLength(1);
+    expect(ctx.reported.at(-1)).toBe(
+      "設定の変更を取り直せなかったので、今の表のまま動かす: command get_settings_notice failed",
+    );
+
+    // 直れば次の知らせで置き換わる
+    ctx.current.failNotice = false;
+    ctx.fake.emit("settings-changed", null);
+    await flush();
+    expect(ctx.tables.at(-1)).toEqual(withKey("terminal.new-tab", "Cmd+Shift+Y"));
+  });
+
+  it("起動時に設定の知らせを取得できなくても起動し_表は受け取って報告だけする", async () => {
+    const fake = createFakeIpc({
+      get_settings_notice: () => {
+        throw "command get_settings_notice not found";
+      },
+    });
+    const reported: string[] = [];
+    const tables: ShortcutTable[] = [];
+    const notices: (string | null)[] = [];
+    const result = await startApp({
+      ipc: createIpc(fake.transport),
+      store: createAppStore(),
+      mount: () => {},
+      logError: () => {},
+      onShortcuts: (t) => tables.push(t),
+      onSettingsNotice: (n) => notices.push(n),
+      reportError: (m) => reported.push(m),
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(tables).toHaveLength(1);
+    expect(notices).toEqual([]);
+    expect(reported).toEqual(["設定の知らせを取得できなかった: command get_settings_notice not found"]);
+  });
+
+  it("設定の変更を購読できなくても起動し_報告だけする", async () => {
+    const fake = createFakeIpc();
+    fake.failListenOf = { event: "settings-changed", cause: "not allowed" };
+    const reported: string[] = [];
+    const tables: ShortcutTable[] = [];
+
+    const result = await startApp({
+      ipc: createIpc(fake.transport),
+      store: createAppStore(),
+      mount: () => {},
+      logError: () => {},
+      onShortcuts: (t) => tables.push(t),
+      reportError: (m) => reported.push(m),
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(tables).toHaveLength(1);
+    expect(reported).toEqual(["設定の変更を購読できなかったので、起動時の表のまま動かす: not allowed"]);
   });
 });

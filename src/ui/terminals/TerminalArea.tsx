@@ -3,6 +3,7 @@ import "./TerminalArea.css";
 import { type ReactNode, useEffect, useId, useRef } from "react";
 import { useStore } from "zustand";
 
+import { shortcutLabel } from "../../logic/keys/shortcutTable";
 import type { Actions } from "../../state/actions";
 import type { AppStore } from "../../state/appStore";
 import { projectTabs, selectedProject, shownTerminal, tileView } from "../../state/selectors";
@@ -49,6 +50,8 @@ interface TerminalAreaProps {
 export function TerminalArea({ store, ui, actions, terminals }: TerminalAreaProps) {
   const snapshot = useStore(store, (s) => s.snapshot);
   const view = useStore(store, (s) => tileView(s.snapshot));
+  // タブバーと空の案内のキーの表示(設定で替わると追従する)。
+  const shortcuts = useStore(ui, (s) => s.shortcuts);
   const idBase = useId();
   const panelId = `${idBase}-panel`;
   const project = selectedProject(snapshot);
@@ -130,6 +133,7 @@ export function TerminalArea({ store, ui, actions, terminals }: TerminalAreaProp
   const tabs = projectTabs(snapshot, project.id);
   const status = terminal === null ? null : describeTerminalStatus(terminal.status);
   const canAdd = !project.missing;
+  const newTabKey = shortcutLabel(shortcuts, "terminal.new-tab");
 
   return (
     <div className="terminal-area">
@@ -141,6 +145,7 @@ export function TerminalArea({ store, ui, actions, terminals }: TerminalAreaProp
         idBase={idBase}
         panelId={panelId}
         canAdd={canAdd}
+        shortcuts={shortcuts}
         onSelect={(id) => void actions.selectTerminal(id)}
         onClose={(id) => void actions.closeTerminal(id)}
         onNew={() => void actions.newTerminal()}
@@ -154,7 +159,7 @@ export function TerminalArea({ store, ui, actions, terminals }: TerminalAreaProp
               className="button button--primary"
               onClick={() => void actions.newTerminal()}
             >
-              新規ターミナル(⌘T)
+              {newTabKey === null ? "新規ターミナル" : `新規ターミナル(${newTabKey})`}
             </button>
           ) : (
             <p>フォルダが見つからないため、新しいターミナルを開けません。左の「再リンク…」でつなぎ直してください。</p>

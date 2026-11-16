@@ -19,7 +19,7 @@ import { ProjectCardList } from "../projects/ProjectCardList";
 import { TerminalArea } from "../terminals/TerminalArea";
 import type { Snapshot } from "../snapshotTypes";
 import { SidebarIcon, TabsViewIcon, TilesViewIcon } from "../tree/icons";
-import { NoticeBar } from "./NoticeBar";
+import { NoticeBar, SettingsNoticeBar } from "./NoticeBar";
 import { PaneSplit } from "./PaneSplit";
 import { TreePane } from "./TreePane";
 import { usePaneSizes } from "./usePaneSizes";
@@ -37,7 +37,7 @@ interface AppShellProps {
 
 /**
  * ウィンドウ全体の枠(設計書 §8・§9.1)。上から順に、上部の帯(左にサイドバーの開閉のアイコンのボタンと起動の失敗、
- * 右端にアプリ名と写しの版を小さく控えめに)、知らせ(1 行)、ペインの分割(左: カード一覧とファイルツリー、
+ * 右端にアプリ名と写しの版を小さく控えめに)、知らせ(状態の知らせと設定の知らせ。それぞれ 1 行で、別々に閉じる)、ペインの分割(左: カード一覧とファイルツリー、
  * 右: ターミナル領域)。削除と終了の確認もここに置く。
  * 地はウィンドウのすりガラス(ADR-010)に半透明の淡い色を重ねたもので、ターミナルの置き場所だけが不透明。
  * 上部の帯の右側(アプリ名の左)に、タブ表示とタイル表示を切り替える区分けのボタンを置く(FR-048。計画【仮定】11)。
@@ -90,6 +90,7 @@ export function AppShell({ store, ui, tree, actions, terminals }: AppShellProps)
       {snapshot !== null && (
         <>
           <NoticeBar notice={snapshot.notice} ui={ui} />
+          <SettingsNoticeBar ui={ui} />
           <PaneSplit
             panes={panes}
             cards={<ProjectCardList store={store} ui={ui} actions={actions} />}

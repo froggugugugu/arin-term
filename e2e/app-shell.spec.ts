@@ -43,11 +43,12 @@ test("画面を開くと AppShell が表示され、写しの取得のあと準�
   await settle(page);
 
   // 本物の経路(@tauri-apps/api の invoke)を通るので、引数の無いコマンドは {} で届く。
-  // 写しを取り、写しのあと、準備完了の前にショートカットの表を受け取る(T43a)。
+  // 写しを取り、写しのあと、準備完了の前にショートカットの表(T43a)と設定の知らせ(T65e)を受け取る。
   // 起動時の指定(get_launch_options)は T50b で外したので呼ばない(描画方式は DOM、全角幅は unicode11 に固定。ADR-001)。
   expect(await readRecordedCalls(page)).toEqual([
     { command: "get_app_snapshot", args: {} },
     { command: "get_shortcuts", args: {} },
+    { command: "get_settings_notice", args: {} },
     { command: "notify_app_ready", args: {} },
   ]);
   await expect(page.getByRole("alert")).toHaveCount(0);

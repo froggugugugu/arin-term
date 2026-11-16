@@ -114,6 +114,7 @@ export function createFakeIpc(handlers: Partial<FakeHandlers> = {}): FakeIpc {
   const all: FakeHandlers = {
     get_app_snapshot: () => sampleSnapshot(),
     get_shortcuts: () => DEFAULT_SHORTCUT_TABLE.map((binding) => ({ ...binding })),
+    get_settings_notice: () => null,
     notify_app_ready: () => null,
     report_frontend_error: () => null,
     confirm_quit: () => null,
