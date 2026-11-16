@@ -1555,7 +1555,7 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 31.5f(逐次。T65c・T65e 完了後。T65 の節目)
 
-- [ ] T65d — 「設定ファイルを開く…」(【要確認】4 の A)(変更ファイル: src-tauri/src/menu.rs, src-tauri/src/settings.rs, src-tauri/tests/app_menu.rs, src-tauri/tests/app_settings.rs | 依存: T65c, T65e)
+- [x] T65d — 「設定ファイルを開く…」(【要確認】4 の A)(変更ファイル: src-tauri/src/menu.rs, src-tauri/src/settings.rs, src-tauri/tests/app_menu.rs, src-tauri/tests/app_settings.rs | 依存: T65c, T65e)
   - 対応: AC-K08、ADR-012 の 6
   - 置くもの: アプリ名のメニューの先頭に「設定ファイルを開く…」(項目の ID は `app.open-settings`、キーは表から)と区切り線。選ばれたら待ってよいスレッドで、`settings.toml` が無ければ見本(`sample_settings_toml`)を作り(無いときだけ)、`DesktopPort::open_with_default_app` で開く。開けなければ `reveal_in_finder` で Finder に出し、設定の知らせで 1 行知らせる(「設定ファイルを開けるアプリが無いため、Finder で表示しました」【仮定】)。見本を作れなければ開かずに知らせる
   - 安全: 既にある設定ファイルの中身を変えない。見本は上書きしない
