@@ -34,7 +34,10 @@
 - ショートカットのキーは表(`arin-core/shortcuts`、`src/logic/keys/shortcutTable.ts`)から引き、部品やメニューにキーの文字列を直書きしない。見本の表 `defaultShortcuts.ts` は生成物と同じ中身であることを `scripts/default-shortcuts.test.mjs` が確かめる。コマンドの ID の一覧は生成物 `src/ipc/generated/defaultShortcuts.json` を正とし、文書に写さない
 - ショートカットの表は `menu::Shortcuts`(`RwLock`。`table()` は写しを返す)が 1 つだけ持ち、メニューと `get_shortcuts` が見る。差し替えたら `menu::rebuild`(`build_with_table` で作り直して `set_menu`)を**メインスレッドで**呼ぶ(ほかのスレッドからは `run_on_main_thread`)。項目ごとの `set_accelerator` は使わない
 - 画面の文字と行の高さのトークンは `src/logic/appearance/interfaceMetrics.ts` が正本で、`src/ui/design/applyInterfaceMetrics.ts` が `:root` に当てる(M4.6。ADR-013 の 4)。ツリーの行の高さは CSS から読まず `InterfaceMetricsContext` から受け取る。追従させるトークンを足すときは `INTERFACE_TOKEN_DEFAULTS` と `tokens.css` の両方に書く(既定の値の一致はテストが確かめる)
-- ⌘,(`app.open-settings`)は画面に `menu-command` の `open-settings` を送って設定画面を開く。「設定ファイルを開く…」は表の外のメニューの項目(`menu::OPEN_SETTINGS_FILE_ID`。キーなし)で、表の行は 23 のまま
+- ⌘,(`app.open-settings`)は画面に `menu-command` の `open-settings` を送って設定画面を開く。「設定ファイルを開く…」は表の外のメニューの項目(`menu::OPEN_SETTINGS_FILE_ID`。キーなし)で、表には載らない(表の行数は生成物 `defaultShortcuts.json` が正)
+- 透過(M4.7。ADR-014)は `src/logic/appearance/translucency.ts` が値から不透明度を作り、`src/ui/design/applyTranslucency.ts` が `:root` にライト用・ダーク用の両方を当てる(どちらを使うかは `tokens.css` の media query)。ターミナルの地を塗るのは囲みの 1 段(`.terminal-area__panel`・`.tile__body`)だけで、`.terminal-host` と xterm.js の要素は透明にする(重ねて塗ると濃くなる)
+- タイルの番号キー(`view.focus-tile-1`〜`-9`)は Rust がメニューで受けて `focus_tile_at` を呼ぶ。番号は表示中のページの並び順で、画面の札「#n」は写しの `tileIds` の位置から出す(キーの表示ではないので表から引かない)
+- ターミナルの Shift+Enter は `ESC`+`CR` を送る(`src/logic/keys/newline.ts`。表より先に判定する。表には載せない)
 - 設定の知らせは写しの `notice` と別に持つ(Rust は `AppSettings`、画面は `uiStore` の `settingsNotice`)。中身は設定ファイルの問題と「設定ファイルを開く…」の結果(開けなかった・見本を作れなかった)の 2 つを 1 行にまとめたもの。開く結果の知らせは、次に開けたときと、読み直しで表か設定ファイルの問題の知らせが変わったときに消える。画面で閉じても、違う文の知らせが届けば出し直す
 
 ## 3. 型の生成
@@ -67,7 +70,7 @@
 - E2E で設定の変更を流すときは、`setMockReply` で `get_shortcuts`・`get_settings_notice` の応答を替えてから `emitEvent(page, "settings-changed", null)` を流す(`e2e/settings.spec.ts`)。`e2e/app-shell.spec.ts` は起動時の呼び出しの並びを完全一致で見るので、起動時の呼び出しを足したら合わせる
 - `TerminalManager` のテストでは `scheduleFrame` に手で流す偽物を渡す(文字の大きさの変更は 1 フレームにまとめて当てる)
 - `src/logic` のテストで `node:fs` を使うときは型の無い動的 import で読み込む(`interfaceMetrics.test.ts`)
-- E2E で文字の大きさを流すときは `tauriMock.ts` の `withFontSizes` で作った写しを流す(偽の Rust 側は写しを送り返さない)。`@tauri-apps/api` の `invoke` は空の引数を `{}` で送るので、引数なしのコマンドの記録は `{}` になる
+- E2E で文字の大きさを流すときは `tauriMock.ts` の `withFontSizes`、透過は `withTranslucency` で作った写しを流す(偽の Rust 側は写しを送り返さない)。`@tauri-apps/api` の `invoke` は空の引数を `{}` で送るので、引数なしのコマンドの記録は `{}` になる
 - スモークは「設定ファイルを開く…」を選ばない(本物の既定のアプリや Finder が開く)。テストは偽の `DesktopPort` を使う
 
 ## 6. 過去の問題事例
@@ -98,4 +101,5 @@
 | 文字の大きさのトークンを `calc()` にするとツリーの行の高さが読めない | CSS の変数の `getPropertyValue` は計算前の文字列を返す | 行の高さは CSS から読まず `interfaceMetrics` の値を文脈で受け取る |
 | 設定画面でボタンをマウスで押したあとフォーカスが行き場を失う | WebKit はボタンをマウスで押してもボタンにフォーカスせず、`<dialog>` 自身に置く | `<dialog>` 自身にあるときも行き場が無いとみなして「完了」へ移す(`SettingsDialog.tsx`) |
 | 設定画面を開いたまま ⌘W でタブが閉じうる | ⌘W はメニューの項目のキーで、確認なしでタブを閉じる | 設定画面の keydown で取り消して設定画面だけを閉じる。実機でメニューのキーより先に効くかは未確認 |
+| xterm.js のテーマの地を透明にしても黒いまま | `xterm.css` が `.xterm-viewport` を `#000` で塗る | `src/terminal/xterm/XtermEngine.css` で透明に上書きする(`allowTransparency: true` と合わせて) |
 | 既定のショートカットが JIS 配列で打てない(⇧⌘\ など) | US 配列の記号のキーは JIS で別の位置・別の組み合わせになる | JIS 配列で打てない記号のキーを既定にしない(M4 は ⇧⌘G に替えた) |

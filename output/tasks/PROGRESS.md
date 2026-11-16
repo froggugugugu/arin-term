@@ -16,8 +16,8 @@
 
 | 項目 | 内容 |
 | ---- | ---- |
-| 最終更新 | 2026-11-17(M4.6=文字の大きさの設定画面は T67〜T72 と T73a の AI の分まで済み、合否一覧は `output/reports/test/M4.6_acceptance.md`。M4 は T50b の AI の分まで済み。M4.5=ショートカットの設定は T64a〜T66b と T66c の AI の分まで済み、合否一覧は `output/reports/test/M4.5_acceptance.md`。**残りはどれも本人の確認**。再開の手順は §3 の 0 番) |
-| ブランチ | `feat/m4.6-font-settings`(`feat/m4.5-keybindings` から分岐。push していない)← `feat/m4.5-keybindings`(`feat/m4-tiles` から分岐。2026-11-16 に push 済み)← `feat/m4-tiles`(`feat/m3-tree` から分岐。`feat/m3-tree` ← `feat/m2-projects` ← `feat/m1-terminal`。4 本とも 2026-11-16 に push 済み。pull request はまだ作っていない)。`feat/m0-skeleton` は push 済みで、pull request #1(main 向け)が開いている |
+| 最終更新 | 2026-11-17(M4.7=透過・タイルの ⌘1〜9・Shift+Enter(ADR-014)は実装・レビュー・照合まで済み、合否一覧は `output/reports/test/M4.7_acceptance.md`。M4.8=Markdown エディタは設計と分解まで(ADR-015、計画の T80〜T86b)。M4.6=文字の大きさの設定画面は T67〜T72 と T73a の AI の分まで済み、合否一覧は `output/reports/test/M4.6_acceptance.md`。M4 は T50b の AI の分まで済み。M4.5=ショートカットの設定は T64a〜T66b と T66c の AI の分まで済み、合否一覧は `output/reports/test/M4.5_acceptance.md`。**残りはどれも本人の確認**。再開の手順は §3 の 0 番) |
+| ブランチ | `feat/m4.7-appearance-keys`(`feat/m4.6-font-settings` から分岐。push していない)← `feat/m4.6-font-settings`(`feat/m4.5-keybindings` から分岐。push していない)← `feat/m4.5-keybindings`(`feat/m4-tiles` から分岐。2026-11-16 に push 済み)← `feat/m4-tiles`(`feat/m3-tree` から分岐。`feat/m3-tree` ← `feat/m2-projects` ← `feat/m1-terminal`。4 本とも 2026-11-16 に push 済み。pull request はまだ作っていない)。`feat/m0-skeleton` は push 済みで、pull request #1(main 向け)が開いている |
 | 最後のコミット | `git log --oneline -1` で確認する(本ファイルに書くと古くなるため) |
 | 起動コマンド | `npm run dev`(開発用)。`.app` は `npm run app` で `target/aarch64-apple-darwin/release/bundle/macos/Arin.app` にできる |
 | スモークテスト | `npm run app && npm run smoke && node scripts/smoke.mjs --tiles && node scripts/smoke.mjs --settings && node scripts/smoke.mjs --fonts` → 期待: 終了コード 0、「スモーク成功」(通常・壊れた `state.json`・タイル表示の 9 プロジェクト) |

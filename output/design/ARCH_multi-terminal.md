@@ -549,6 +549,8 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 | `ui.displayMode` | `"tabs"` / `"tiles"` | 表示モード。タイル表示のときだけ書く(無ければタブ表示。版は 1 のまま) | FR-048 | M4 |
 | `ui.terminalFontSize` | 整数(CSS ピクセル) | ターミナルの文字の大きさ。既定 15、範囲 9〜28。既定のあいだは書かない。無い・数でないときは既定、整数でない数は四捨五入、範囲の外は端に留める(退避しない。版は 1 のまま) | 【要件の追加】M4.6。ADR-013 の 1 | M4.6 |
 | `ui.interfaceFontSize` | 整数(CSS ピクセル) | 画面の文字の大きさの基準値。既定 13、範囲 11〜18。扱いは `ui.terminalFontSize` と同じ | 【要件の追加】M4.6。ADR-013 の 1 | M4.6 |
+| `ui.windowTranslucency` | 整数(%) | ウィンドウの地の透過。既定 45、範囲 0〜100、5 刻み。既定のあいだは書かない。壊れた値は既定・端・丸め(退避しない) | 【要件の追加】M4.7。ADR-014 の 1 | M4.7 |
+| `ui.terminalTranslucency` | 整数(%) | ターミナルの背景の透過。既定 20、範囲 0〜80。扱いは `ui.windowTranslucency` と同じ | 【要件の追加】M4.7。ADR-014 の 1 | M4.7 |
 | `ui.sidebarWidth` | 数値(CSS ピクセル) | 左ペインの幅 | FR-009 | M2 |
 | `ui.sidebarCollapsed` | 真偽 | 左ペインの折りたたみ | FR-009 | M2 |
 | `ui.cardAreaHeight` | 数値(CSS ピクセル) | 左ペイン上段の高さ | FR-009 | M2 |

@@ -33,7 +33,7 @@ src/
 ├── ui/menu/           # 右クリックのメニュー(ContextMenu)
 ├── ui/tree/           # TreeHeader・FileTreeView・TreeRow・InlineNameInput・TreeDragGhost・icons
 ├── ui/design/         # tokens.css、palette.ts(プロジェクト色の値)、applyInterfaceMetrics(画面の文字の大きさを :root に当てる・InterfaceMetricsContext)
-├── ui/settings/       # 設定画面(SettingsDialog・FontSizeStepper)
+├── ui/settings/       # 設定画面(SettingsDialog・ValueStepper)
 ├── logic/             # 純粋ロジック(DOM・他の src/* に依存しない。別 tsconfig。keys/ = キーとメニュー・クリップボードの振り分けとショートカットの表、menu/(treeMenu を含む)、panes/、tree/ = ツリーのモデル・仮想スクロール、dnd/ = ドラッグ、appearance/ = 画面の文字の大きさから追従させるトークンの値)
 └── test/              # テスト補助(fakeIpc)
 e2e/                   # Playwright(fixtures/tauriMock.ts)

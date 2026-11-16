@@ -1,7 +1,7 @@
 // ターミナルの Shift+Enter の改行(M4.7。ADR-014 の 5)。DOM を使わない純粋な関数。
 //
 // Shift+Enter(ほかの修飾キーなし、IME の変換中でない)は ESC + CR を送る。Claude Code・Codex などの入力欄は、これを
-// 「改行」と読む(iTerm2・VS Code の `/terminal-setup` が入れる設定と同じ並び)。素の zsh では Enter と同じに働く。
+// 「改行」と読む(iTerm2・VS Code の `/terminal-setup` が入れる設定と同じ並び)。素の zsh(既定のキーの割り当て)では、実行されずに改行が入る(複数行の入力になる)。
 // 表には載せない(ターミナルに渡す文字の決まりで、コマンドではない)。⌘⇧Enter(拡大)など修飾キーつきは表の扱いのまま。
 
 /** Shift+Enter で送る文字(ESC + CR)。 */

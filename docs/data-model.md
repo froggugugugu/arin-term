@@ -26,6 +26,7 @@
 | `ui.sidebarCollapsed` | 真偽 | |
 | `ui.displayMode` | `"tiles"` | タイル表示のときだけ書く。無い・知らない値・型が違うときは退避せずタブ表示(版は 1 のまま) |
 | `ui.terminalFontSize` / `ui.interfaceFontSize` | 整数(CSS ピクセル) | ターミナルの文字(既定 15、9〜28)と画面の文字の基準値(既定 13、11〜18)。既定のあいだはキーごとに書かない。無い・数でないときは既定、整数でない数は四捨五入、範囲の外は端に留める。どれも退避しない(版は 1 のまま。規則は `layout/font_sizes.rs`) |
+| `ui.windowTranslucency` / `ui.terminalTranslucency` | 整数(%) | ウィンドウの地(既定 45、0〜100)とターミナルの背景(既定 20、0〜80)の透過の度合い。5 刻み。既定のあいだはキーごとに書かない。無い・数でないときは既定、5 の倍数でない値は近い 5 の倍数に丸め、範囲の外は端に留める。どれも退避しない(M4.7。ADR-014。規則は `layout/translucency.rs`) |
 
 「見つからない」と表示用のパスは保存しない。
 
@@ -62,6 +63,7 @@ Rust から画面へ渡す状態の写し。画面は届いたもので丸ごと
 | `notice` | 文字列 / `null` | 状態ファイルを退避したときの 1 行の知らせ |
 | `display` | `DisplaySnapshot` | 右ペインの表示の状態(下)。グリッドとページは Rust が計算し、画面は映すだけ |
 | `fontSizes` | `FontSizesSnapshot` | `terminal`・`interface` のそれぞれに `value`・`min`・`max`・`defaultValue`(M4.6。画面に範囲と既定の数を写さない) |
+| `translucency` | `TranslucencySnapshot` | `window`・`terminal` のそれぞれに `value`・`min`・`max`・`defaultValue`・`step`(M4.7) |
 
 - `ProjectCardSnapshot`: `id`、`name`(表示名)、`color`、`displayPath`(ホームの中は `~` で始める)、`missing`、`showHidden`、`terminalIds`(タブの順)、`activeTerminalId`(0 枚なら `null`)
 - `TerminalTabSnapshot`: `id`、`projectId`(いまは必ず値がある。型は `null` を取りうるまま)、`label`(「ターミナル N」)、`status`、`attention`(フォーカス中でないあいだに BEL・OSC 9・OSC 777 があった。フォーカス中になると消える。保存しない)
@@ -77,7 +79,8 @@ Rust から画面へ渡す状態の写し。画面は届いたもので丸ごと
 - プロジェクト: `add_project_by_dialog`(応答 `added` / `alreadyRegistered` / `cancelled`。パスは画面を経由しない)、`select_project`、`remove_project`(`confirmed` が偽で動作中があれば `needsConfirmation` と動作中の一覧、ほかは `removed`)、`relink_project`(真偽)、`set_project_color`、`copy_project_path`(Rust がペーストボードに書く)
 - ペイン: `set_pane_sizes`、`set_sidebar_collapsed`
 - 表示(M4): `set_display_mode`、`focus_terminal`(閉じたタイルの ID なら何もしない)、`next_tile_page`・`previous_tile_page`(タブ表示・拡大中・端のページでは何もしない)、`toggle_tile_maximize`(`terminalId` は任意。渡せばそのタイルにフォーカスしてから拡大、無ければフォーカス中のタイル。タブ表示では何もしない)
-- 文字の大きさ(M4.6): `step_font_size`(`target` は `terminal`/`interface`、`delta` だけ動かす。端で留め、変わったときだけ写しを送る)、`reset_font_sizes`(両方を既定に)
+- 文字の大きさ(M4.6): `step_font_size`(`target` は `terminal`/`interface`、`delta` だけ動かす。端で留め、変わったときだけ写しを送る)、`reset_appearance`(文字の大きさ 2 つと透過 2 つを既定に。M4.7 で `reset_font_sizes` から替えた)
+- 透過(M4.7): `step_translucency`(`target` は `window`/`terminal`、`delta` は % の差分。5 の倍数に丸めて端で留める)。タイルの番号キーにコマンドは無い(メニューの項目が `focus_tile_at` を呼ぶ)
 - ツリー: `list_directory`(応答 `DirListing`)、`set_show_hidden`
 - ファイル操作(応答 `FileOpOutcome`): `create_entry`、`rename_entry`、`move_entry`、`copy_entry`、`trash_entry`、`copy_entries`、`cut_entries`、`paste_entries`
 - デスクトップ: `reveal_entry`、`open_entry`(ふつうのファイルだけ。実行の権限があるもの・`UNOPENABLE_EXTENSIONS` の拡張子は開かない。`src-tauri/src/commands/desktop.rs`)、`copy_entry_path`、`insert_entry_path`(ターミナルへ書く文字列は Rust の `insertion_text` が作る)
