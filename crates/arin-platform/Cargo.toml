@@ -16,3 +16,4 @@ libc = { workspace = true }
 objc2-app-kit = { workspace = true }
 thiserror = { workspace = true }
 notify = { workspace = true }
+toml = { workspace = true }

@@ -46,6 +46,10 @@ objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std
 # 既定の feature は macos_fsevent だけ。kqueue・crossbeam-channel などは入れない。
 # 推移的な notify-types は Cargo.lock で 2.1.0(2026-01-25 公開)に止めている(2.3.0 は 2 週間未満)。
 notify = { version = "=8.2.1", default-features = false, features = ["macos_fsevent"] }
+# 設定ファイル(settings.toml)の TOML の解析(ADR-012 の 2・4、計画書 T65a)。使うのは arin-platform/src/storage/ だけ。
+# 1.2.1+spec-1.1.0 は 2026-11-06 公開(2 週間未満だが、tauri-utils がすでに同じ版を使っているため本人が例外を認めた。
+# ADR-012 の追記)。MIT OR Apache-2.0。機能は std と parse だけ(tauri-utils が有効にしている範囲の内側。新しいクレートは増えない)。
+toml = { version = "=1.2.1", default-features = false, features = ["std", "parse"] }
 
 # リリースのプロファイルに panic = "abort" を書かない。
 # 1 本のスレッドの異常でアプリ全体を落とさないため(NFR-006)。
