@@ -142,3 +142,10 @@ harness = false
 [[test]]
 name = "settings_watch"
 harness = false
+
+# 文字の大きさのコマンド(刻む・既定に戻す。T68c。ADR-013 の 2)。状態フォルダに 1 プロジェクトの state.json を置き、
+# PTY は偽物にして、写しの送り・状態ファイルの ui.terminalFontSize / ui.interfaceFontSize・シェルが続くことを模擬のアプリで確かめる。
+# 理由は app_builder と同じ。
+[[test]]
+name = "font_commands"
+harness = false

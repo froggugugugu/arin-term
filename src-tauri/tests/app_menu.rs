@@ -34,7 +34,10 @@ use arin_core::terminal::ShellLaunchSpec;
 use arin_core::workspace::{AppSnapshot, MenuCommand};
 use arin_lib::events::MENU_COMMAND_EVENT;
 use arin_lib::launch::LaunchConfig;
-use arin_lib::menu::{self, EDIT_MENU_TITLE, Shortcuts, TERMINAL_MENU_TITLE, VIEW_MENU_TITLE};
+use arin_lib::menu::{
+    self, EDIT_MENU_TITLE, OPEN_SETTINGS_FILE_ID, OPEN_SETTINGS_FILE_LABEL, Shortcuts,
+    TERMINAL_MENU_TITLE, VIEW_MENU_TITLE,
+};
 use arin_lib::sessions::{SessionRegistry, ShellDefaults};
 use muda::accelerator::Accelerator;
 use serde_json::json;
@@ -142,6 +145,14 @@ fn standard(text: &str) -> (String, String) {
 
 fn separator() -> (String, String) {
     standard("---")
+}
+
+/// 表の外の自前の項目「設定ファイルを開く…」(キーなし。ADR-013 の 6)。
+fn open_settings_file() -> (String, String) {
+    (
+        OPEN_SETTINGS_FILE_ID.to_owned(),
+        OPEN_SETTINGS_FILE_LABEL.to_owned(),
+    )
 }
 
 /// 既定の表の `command` の行の受け口だけを替えた表。
@@ -347,31 +358,41 @@ fn アプリ名のメニューの最後は自前の終了() {
         items.last(),
         Some(&(menu::QUIT_ID.to_owned(), format!("{name} を終了")))
     );
-    // 自前の項目は、先頭の「設定ファイルを開く…」(T65d)と最後の「終了」だけ。
+    // 自前の項目は、先頭の「設定…」と「設定ファイルを開く…」と最後の「終了」だけ。
+    // M4.6(T68d。ADR-013 の 6)で、M4.5 の「設定ファイルを開く…」(表の行 `app.open-settings`)の意味を「設定…」に替え、
+    // 「設定ファイルを開く…」を表の外の項目として足したので、期待を「設定ファイルを開くと終了だけ」から直した。
     assert_eq!(
         items[..items.len() - 1]
             .iter()
-            .filter(|(kind, _)| kind != "標準" && kind != C::AppOpenSettings.as_str())
+            .filter(|(kind, _)| kind != "標準"
+                && kind != C::AppOpenSettings.as_str()
+                && kind != OPEN_SETTINGS_FILE_ID)
             .count(),
         0,
-        "設定ファイルを開くと終了のほかに自前の項目がある: {items:?}"
+        "設定と設定ファイルを開くと終了のほかに自前の項目がある: {items:?}"
     );
 }
 
-fn アプリ名のメニューの先頭に設定ファイルを開くがあり表のキーが付く() {
+/// M4.5(T65d)の `アプリ名のメニューの先頭に設定ファイルを開くがあり表のキーが付く` を、M4.6 の並び(ADR-013 の 6)に直したもの。
+/// 表の行 `app.open-settings` は「設定…」(⌘,)になり、「設定ファイルを開く…」は表の外のキーの無い項目としてその下に置く。
+fn アプリ名のメニューの先頭は設定と設定ファイルを開くで_設定ファイルを開くにはキーが無い() {
     let state_dir = support::TempDir::new("menu-open-settings");
     let app = build_app(support::launch_in(&state_dir, false));
     let menu = app.menu().expect("アプリにメニューが付いていない");
     let name = app.package_info().name.clone();
 
-    // 文言は固定(ADR-012 の 6)。項目の ID は表のコマンドの ID。
+    // 文言は固定(macOS の標準の「設定…」。ADR-013 の 6)。「設定…」の ID は表のコマンドの ID。
     assert_eq!(C::AppOpenSettings.as_str(), "app.open-settings");
-    assert_eq!(menu::label(C::AppOpenSettings), Some("設定ファイルを開く…"));
+    assert_eq!(menu::label(C::AppOpenSettings), Some("設定…"));
+    assert_eq!(OPEN_SETTINGS_FILE_ID, "app.open-settings-file");
+    assert_eq!(OPEN_SETTINGS_FILE_LABEL, "設定ファイルを開く…");
+    // 表の外の項目(コマンドの ID に無い。表は 23 行のまま)。
+    assert_eq!(ShortcutCommandId::from_id(OPEN_SETTINGS_FILE_ID), None);
     let items = entries(&menu, &name);
     assert_eq!(
-        items[..2],
-        [own(C::AppOpenSettings), separator()],
-        "先頭が設定ファイルを開くと区切り線ではない: {items:?}"
+        items[..3],
+        [own(C::AppOpenSettings), open_settings_file(), separator()],
+        "先頭が設定・設定ファイルを開く・区切り線ではない: {items:?}"
     );
     // 作った項目からアクセラレータを読み戻せないので、メニューを作るときに見る表のキーで確かめる。
     let table = app.state::<Shortcuts>().table();
@@ -382,8 +403,10 @@ fn アプリ名のメニューの先頭に設定ファイルを開くがあり�
         Accelerator::from_str(&key).expect("muda が読めない"),
         Accelerator::from_str("cmd+comma").expect("muda が読めない")
     );
+    // 「設定ファイルを開く…」にはキーが無い(表のどの行のキーとも重ならない)。
+    assert_eq!(menu::OPEN_SETTINGS_FILE_ACCELERATOR, None);
 
-    // 受け口がメニューの項目でない表では載せず、先頭の区切り線も引かない。
+    // 受け口がメニューの項目でない表では「設定…」を載せない。「設定ファイルを開く…」は残り、区切り線は 1 本だけ。
     let table = table_with_receiver(&[(C::AppOpenSettings, ShortcutReceiver::Screen)]);
     let menu = menu::build_with_table(app.handle(), &table).expect("メニューを作れなかった");
     let items = entries(&menu, &name);
@@ -391,7 +414,7 @@ fn アプリ名のメニューの先頭に設定ファイルを開くがあり�
         !own_ids(&menu).contains(C::AppOpenSettings.as_str()),
         "受け口が画面なのに載っている: {items:?}"
     );
-    assert_ne!(items.first(), Some(&separator()), "先頭に区切り線が余った");
+    assert_eq!(items[..2], [open_settings_file(), separator()], "{items:?}");
 }
 
 fn 見出しの並びと既存の項目は変わらない() {
@@ -409,11 +432,13 @@ fn 見出しの並びと既存の項目は変わらない() {
             VIEW_MENU_TITLE.to_owned(),
         ]
     );
-    // アプリ名のメニューは、先頭の 2 つ(設定ファイルを開く・区切り線)を足しただけで、残りは T65d の前と同じ。
+    // アプリ名のメニューは、先頭の 3 つ(設定・設定ファイルを開く・区切り線)を足しただけで、残りは T65d の前と同じ。
+    // M4.6(T68d。ADR-013 の 6)で「設定ファイルを開く…」を表の外の項目として「設定…」の下に足したので、期待に 1 つ足した。
     assert_eq!(
         entries(&menu, &name),
         vec![
             own(C::AppOpenSettings),
+            open_settings_file(),
             separator(),
             standard(&format!("{name} を隠す")),
             standard("ほかを隠す"),
@@ -472,7 +497,7 @@ fn メニューの項目のアクセラレータが表の既定のキーと同�
             ("terminal.next-tab", Some("Cmd+Shift+]".to_owned())),
             ("edit.select-all", Some("Cmd+A".to_owned())),
             ("app.quit", Some("Cmd+Q".to_owned())),
-            // M4.5 の「設定ファイルを開く…」(T64c。アプリ名のメニューの先頭に載せる。T65d)。
+            // M4.5 で足した行(T64c)。M4.6 で「設定…」に替えた(ADR-013 の 6。アプリ名のメニューの先頭に載せる)。
             ("app.open-settings", Some("Cmd+,".to_owned())),
             ("edit.copy", None),
             ("edit.cut", None),
@@ -542,18 +567,19 @@ fn 受け口がメニューの項目のものだけがメニューに載る() {
     let state_dir = support::TempDir::new("menu-receivers");
     let app = build_app(support::launch_in(&state_dir, false));
 
-    // 既定の表: 自前の項目はちょうど受け口がメニューの項目の行(表示の 4 行を含む。T47c)。
-    // 画面で受けるツリーのキーは載らない(【仮定】21)。
+    // 既定の表: 自前の項目はちょうど受け口がメニューの項目の行(表示の 4 行を含む。T47c)と、表の外の「設定ファイルを開く…」
+    // (M4.6 の T68d で足した。ADR-013 の 6)。画面で受けるツリーのキーは載らない(【仮定】21)。
     let menu = app.menu().expect("アプリにメニューが付いていない");
-    let expected: BTreeSet<String> = ShortcutTable::default_table()
+    let mut expected: BTreeSet<String> = ShortcutTable::default_table()
         .by_receiver(ShortcutReceiver::MenuItem)
         .map(|b| b.command().as_str().to_owned())
         .collect();
-    assert_eq!(own_ids(&menu), expected);
     assert!(
         expected.contains(C::AppOpenSettings.as_str()),
-        "設定ファイルを開くが期待に無い"
+        "設定が期待に無い"
     );
+    expected.insert(OPEN_SETTINGS_FILE_ID.to_owned());
+    assert_eq!(own_ids(&menu), expected);
     for view in [
         C::ViewToggleDisplayMode,
         C::ViewPreviousPage,
@@ -841,6 +867,44 @@ fn すべてを選択は画面へ_menu_command_を送りタブに触れない() 
     });
 }
 
+/// 「設定…」(キーでもメニューでも同じ受け口)は画面へ `menu-command` の `"open-settings"` を送る(ADR-013 の 6。AC-F01 の Rust 側)。
+/// 設定ファイルは開かず・作らず、状態も変えない。
+fn 設定を選ぶと_open_settings_のメニューの操作が届く() {
+    let fx = ProjectFixture::new("menu-open-settings-command");
+    let settings_file = fx.root.path().join("state").join("settings.toml");
+    run_app(fx.launch(), move |handle| {
+        let received: Arc<Mutex<Vec<String>>> = Arc::default();
+        let sink = Arc::clone(&received);
+        handle.listen(MENU_COMMAND_EVENT, move |event| {
+            sink.lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(event.payload().to_owned());
+        });
+        let before = snapshot(handle);
+
+        menu::on_menu_event(handle, C::AppOpenSettings.as_str());
+
+        wait_until("menu-command が届く", || {
+            !received
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .is_empty()
+        });
+        // 見本を作る処理は別のスレッドで動くので、少し待ってから作っていないことを確かめる。
+        thread::sleep(Duration::from_millis(200));
+        let payloads = received
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        assert_eq!(payloads, vec!["\"open-settings\"".to_owned()]);
+        let command: MenuCommand =
+            serde_json::from_str(&payloads[0]).expect("MenuCommand として読めなかった");
+        assert_eq!(command, MenuCommand::OpenSettings);
+        assert_eq!(snapshot(handle), before, "設定で状態が変わった");
+        assert!(!settings_file.exists(), "設定で設定ファイル(見本)を作った");
+    });
+}
+
 fn display(handle: &AppHandle<MockRuntime>) -> arin_core::workspace::DisplaySnapshot {
     snapshot(handle).display
 }
@@ -906,10 +970,14 @@ fn タブ表示でページ送りと拡大の項目を選んでも何も変わ�
 }
 
 fn main() {
-    let tests: [(&str, fn()); 21] = [
+    let tests: [(&str, fn()); 22] = [
         (
-            "アプリ名のメニューの先頭に設定ファイルを開くがあり表のキーが付く",
-            アプリ名のメニューの先頭に設定ファイルを開くがあり表のキーが付く,
+            "アプリ名のメニューの先頭は設定と設定ファイルを開くで_設定ファイルを開くにはキーが無い",
+            アプリ名のメニューの先頭は設定と設定ファイルを開くで_設定ファイルを開くにはキーが無い,
+        ),
+        (
+            "設定を選ぶと_open_settings_のメニューの操作が届く",
+            設定を選ぶと_open_settings_のメニューの操作が届く,
         ),
         (
             "見出しの並びと既存の項目は変わらない",

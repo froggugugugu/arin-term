@@ -34,6 +34,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError, TryLockE
 use std::thread;
 use std::time::{Duration, Instant};
 
+use arin_core::layout::font_sizes::FontSizeTarget;
 use arin_core::layout::tiles::DisplayMode;
 use arin_core::persistence::codec::PersistedState;
 use arin_core::ports::{Foreground, PtyError, PtyPort, PtySession, SpawnedPty};
@@ -755,6 +756,28 @@ impl SessionRegistry {
     /// 表示モードをもう一方にする(メニューバーの「表示」の切替。T47c が使う)。必ず変わるので写しを送り `true` を返す。
     pub fn toggle_display_mode(&self) -> bool {
         let changed = lock(&self.inner.workspace).toggle_display_mode();
+        if changed {
+            self.notify();
+        }
+        changed
+    }
+
+    /// 文字の大きさを `delta` だけ動かす(ADR-013 の 2。計画書 T68c)。範囲の端で留め、変わったときだけ写しを送り `true` を返す
+    /// (写しを送ると保存が予約され、状態ファイルの `ui.terminalFontSize`・`ui.interfaceFontSize` が書かれる)。
+    /// 画面が「今の値 + 1」を送る形にしないのは、写しが届く前に続けて押したときに回数どおり上がるようにするため
+    /// (ロックの中で順に足す)。シェルには触れない(寸法は画面が測り直して `resize` で送る)。
+    pub fn step_font_size(&self, target: FontSizeTarget, delta: i32) -> bool {
+        let changed = lock(&self.inner.workspace).step_font_size(target, delta);
+        if changed {
+            self.notify();
+        }
+        changed
+    }
+
+    /// 両方の文字の大きさを既定に戻す(ADR-013 の 2・AC-F07)。変わったときだけ写しを送り `true` を返す
+    /// (両方が既定のときは何もしない)。
+    pub fn reset_font_sizes(&self) -> bool {
+        let changed = lock(&self.inner.workspace).reset_font_sizes();
         if changed {
             self.notify();
         }

@@ -1,5 +1,5 @@
 //! 起動時の状態ファイルの読み込み、保存、退避の知らせ(計画書 T33a、FR-004・FR-056、決定 (d))と、
-//! 表示モードの保存と再起動での復元(計画書 T47b、FR-048)を、
+//! 表示モードの保存と再起動での復元(計画書 T47b、FR-048)と、文字の大きさの保存と復元(計画書 T68c、ADR-013 の AC-F08)を、
 //! Tauri の模擬ランタイムと一時の状態フォルダで確かめる。
 //!
 //! 状態ファイル・ブックマーク・ルートの調査は本物(`arin-platform`)を使い、すべて一時フォルダの中で行う。
@@ -454,8 +454,55 @@ fn 再起動すると前の表示モードで開く() {
     });
 }
 
+/// 文字の大きさの保存と復元(AC-F08。計画書 T68c)。1 回目の起動で `step_font_size` のコマンドでターミナルを 3 つ大きく、
+/// 画面を 2 つ小さくして終え(時計が止まっているので終了のときに書かれる)、2 回目の起動の写しにその値が出ることを確かめる。
+fn 保存した大きさで起動し直すと写しに出る() {
+    let fx = Fixture::new("persist-font-sizes");
+    fx.write_project_state();
+    run_app(fx.launch(), fx.frozen_ports(), |handle| {
+        let s = snapshot(handle);
+        assert_eq!(s.font_sizes.terminal.value, 15);
+        assert_eq!(s.font_sizes.interface.value, 13);
+        let window = handle
+            .get_webview_window("main")
+            .expect("設定にあるウィンドウ main が作られなかった");
+        for args in [
+            serde_json::json!({ "target": "terminal", "delta": 3 }),
+            serde_json::json!({ "target": "interface", "delta": -2 }),
+        ] {
+            get_ipc_response(
+                &window,
+                support::request_with(handle, "step_font_size", InvokeBody::Json(args)),
+            )
+            .unwrap_or_else(|e| panic!("step_font_size が失敗した: {e}"));
+        }
+        let s = snapshot(handle);
+        assert_eq!(s.font_sizes.terminal.value, 18);
+        assert_eq!(s.font_sizes.interface.value, 11);
+    });
+    let text = fs::read_to_string(fx.state_file()).expect("状態ファイルを読めなかった");
+    let saved: serde_json::Value = serde_json::from_str(&text).expect("状態ファイルが JSON でない");
+    assert_eq!(saved["schemaVersion"], 1, "{text}");
+    assert_eq!(saved["ui"]["terminalFontSize"], 18, "{text}");
+    assert_eq!(saved["ui"]["interfaceFontSize"], 11, "{text}");
+
+    run_app(fx.launch(), fx.frozen_ports(), |handle| {
+        let s = snapshot(handle);
+        assert_eq!(s.projects.len(), 1, "{s:?}");
+        assert_eq!(
+            s.font_sizes.terminal.value, 18,
+            "前のターミナルの文字の大きさで開かない"
+        );
+        assert_eq!(
+            s.font_sizes.interface.value, 11,
+            "前の画面の文字の大きさで開かない"
+        );
+        assert_eq!(s.notice, None, "退避した");
+    });
+}
+
 fn main() {
-    let tests: [(&str, fn()); 8] = [
+    let tests: [(&str, fn()); 9] = [
         (
             "状態ファイルが無ければ空で始まる",
             状態ファイルが無ければ空で始まる,
@@ -481,6 +528,10 @@ fn main() {
         (
             "再起動すると前の表示モードで開く",
             再起動すると前の表示モードで開く,
+        ),
+        (
+            "保存した大きさで起動し直すと写しに出る",
+            保存した大きさで起動し直すと写しに出る,
         ),
     ];
     for (name, test) in tests {

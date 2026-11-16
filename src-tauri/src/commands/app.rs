@@ -10,7 +10,7 @@ use crate::diagnostics::frontend_error_line;
 use crate::lifecycle::{self, ReadyNotice};
 use crate::menu::Shortcuts;
 use crate::sessions::SessionRegistry;
-use crate::settings::AppSettings;
+use crate::settings::{self, AppSettings};
 
 /// 状態の写しが変わったときに送るイベントの名前。中身は `AppSnapshot`(設計書 §5.2)。
 pub const SNAPSHOT_EVENT: &str = "app-snapshot";
@@ -53,6 +53,14 @@ pub fn notify_app_ready(ready: State<'_, ReadyNotice>) -> Result<(), String> {
 #[tauri::command]
 pub fn report_frontend_error(message: String) {
     eprintln!("{}", frontend_error_line(&message));
+}
+
+/// 設定画面の「設定ファイルを開く…」(ADR-013 の 6、AC-F10)。メニューの「設定ファイルを開く…」と同じ処理で、
+/// 無いときだけ見本を作り、既定のアプリで開く(開けなければ Finder で表示して知らせる)。引数なし(パスは画面を通らない)。
+/// 待ってよいスレッドに任せて待たずに戻る。結果の知らせは `settings-changed` と `get_settings_notice` で届く。
+#[tauri::command]
+pub fn open_settings_file<R: Runtime>(app: AppHandle<R>) {
+    settings::open_settings_file(&app);
 }
 
 /// 終了の確認(`quit-requested`)で本人が「終了」を選んだ(FR-063)。確認なしで終わる:

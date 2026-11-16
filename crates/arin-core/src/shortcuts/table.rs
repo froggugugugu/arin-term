@@ -40,7 +40,8 @@ pub enum ShortcutCommandId {
     /// 終了。
     #[serde(rename = "app.quit")]
     AppQuit,
-    /// 設定ファイルを開く(M4.5。ADR-012 の 6。無ければ見本を作ってから開く)。
+    /// 設定…(設定画面を開く。M4.6 の ADR-013 の 6)。M4.5(ADR-012 の 6)では「設定ファイルを開く」だった行で、ID・キー・受け口は
+    /// そのまま意味だけを替えた。「設定ファイルを開く…」は表の外のキーの無いメニューの項目(`src-tauri/src/menu.rs`)。
     #[serde(rename = "app.open-settings")]
     AppOpenSettings,
     /// コピー(ターミナルとツリーで共有)。
@@ -251,7 +252,7 @@ pub struct ShortcutTable(Vec<ShortcutBinding>);
 
 impl ShortcutTable {
     /// 既定の表(PRD §6.4 と M2 のメニューのキー。受け口は【仮定】21。表示の 4 行は M4 の【仮定】9・ADR-011 の 6。
-    /// 設定ファイルを開く ⌘, は M4.5 の ADR-012 の 6)。
+    /// 設定 ⌘, は M4.5 の ADR-012 の 6 で足し、M4.6 の ADR-013 の 6 で設定画面を開く意味に替えた)。
     ///
     /// # Panics
     ///

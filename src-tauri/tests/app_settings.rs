@@ -35,7 +35,7 @@ use arin_core::terminal::ShellLaunchSpec;
 use arin_lib::TreePorts;
 use arin_lib::events::SETTINGS_CHANGED_EVENT;
 use arin_lib::launch::LaunchConfig;
-use arin_lib::menu::{self, Shortcuts};
+use arin_lib::menu::{self, OPEN_SETTINGS_FILE_ID, Shortcuts};
 use arin_lib::persistence::PersistencePorts;
 use arin_lib::projects::ProjectPorts;
 use arin_lib::sessions::ShellDefaults;
@@ -159,12 +159,17 @@ fn own_ids(menu: &Menu<MockRuntime>) -> BTreeSet<String> {
         .collect()
 }
 
-/// 既定の表のときにメニューに載る自前の項目の ID(「設定ファイルを開く…」を含む。T65d)。
+/// 既定の表のときにメニューに載る自前の項目の ID(「設定…」を含む)。
+///
+/// M4.6(T68d。ADR-013 の 6)で、表の外のキーの無い項目「設定ファイルを開く…」(`app.open-settings-file`)が増えたので足した
+/// (M4.5 では表の行 `app.open-settings` が「設定ファイルを開く…」で、表の行だけだった)。
 fn default_own_ids() -> BTreeSet<String> {
-    ShortcutTable::default_table()
+    let mut ids: BTreeSet<String> = ShortcutTable::default_table()
         .by_receiver(ShortcutReceiver::MenuItem)
         .map(|b| b.command().as_str().to_owned())
-        .collect()
+        .collect();
+    ids.insert(OPEN_SETTINGS_FILE_ID.to_owned());
+    ids
 }
 
 /// メニューに渡すアクセラレータの文字列を muda で読んだもの。
@@ -225,6 +230,41 @@ fn 設定で替えたキーがメニューの項目のアクセラレータと_g
         assert_eq!(accelerator_in(&json, C::TerminalNewTab), "Cmd+Shift+T");
         assert_eq!(accelerator_in(&json, C::TerminalCloseTab), "Cmd+W");
         assert_eq!(get_settings_notice(handle), None);
+    });
+}
+
+/// AC-F11(ADR-013 の 6): `"app.open-settings" = "Cmd+Shift+,"` で、「設定…」の項目のキーが ⇧⌘, になり、⌘, はどの項目にも付かない。
+/// 「設定ファイルを開く…」はキーが無いまま(設定ファイルの行で変えられない。表の外の項目)。
+fn 設定で替えたキーが設定のメニューの項目に付く() {
+    let state_dir = support::TempDir::new("settings-open-settings-key");
+    write_settings(
+        state_dir.path(),
+        "[shortcuts]\n\"app.open-settings\" = \"Cmd+Shift+,\"\n",
+    );
+    let app = build_app(support::launch_in(&state_dir, false));
+    let table = app.state::<Shortcuts>().table();
+    let given = menu::accelerator(&table, C::AppOpenSettings).expect("アクセラレータが無い");
+    assert_eq!(given, "Cmd+Shift+,");
+    assert_eq!(muda(&given), muda("shift+cmd+comma"));
+    let plain = muda("Cmd+,");
+    for binding in table.by_receiver(ShortcutReceiver::MenuItem) {
+        let key = menu::accelerator(&table, binding.command()).expect("アクセラレータが無い");
+        assert_ne!(muda(&key), plain, "{} に ⌘, が付いた", binding.command());
+    }
+    assert_eq!(menu::OPEN_SETTINGS_FILE_ACCELERATOR, None);
+    // 項目は既定と同じ ID で載る。
+    let menu = app.menu().expect("アプリにメニューが付いていない");
+    assert_eq!(own_ids(&menu), default_own_ids());
+    drop(app);
+
+    run_app(support::launch_in(&state_dir, false), |handle| {
+        let json = get_shortcuts(handle);
+        assert_eq!(accelerator_in(&json, C::AppOpenSettings), "Cmd+Shift+,");
+        assert_eq!(
+            get_settings_notice(handle),
+            None,
+            "問題の無い行が知らせに出た"
+        );
     });
 }
 
@@ -637,8 +677,11 @@ fn count_settings_changed(handle: &AppHandle<MockRuntime>) -> Arc<Mutex<usize>> 
 
 /// メニューの「設定ファイルを開く…」を選び、偽のデスクトップに `calls` 件の頼みが届くまで待つ。
 /// Finder・アプリへの受け渡しはメインスレッドの外で行う(待つことがあるため)。
+///
+/// M4.6(T68d。ADR-013 の 6)で、項目の ID を表の行 `app.open-settings`(いまは「設定…」)から、表の外の
+/// `app.open-settings-file` に替えた。
 fn choose_open_settings(handle: &AppHandle<MockRuntime>, desktop: &FakeDesktop, calls: usize) {
-    menu::on_menu_event(handle, C::AppOpenSettings.as_str());
+    menu::on_menu_event(handle, OPEN_SETTINGS_FILE_ID);
     wait_until("デスクトップへの頼みが届く", || {
         desktop.calls().len() >= calls
     });
@@ -662,7 +705,8 @@ fn assert_no_path(notice: &str, state_dir: &Path) {
     );
 }
 
-fn 無いときは見本を作って開く() {
+/// AC-K08・AC-F10。M4.5 の `無いときは見本を作って開く` を、表の外の項目の ID(`choose_open_settings`)で選ぶ形にしたもの。
+fn 設定ファイルを開くを選ぶと無いときは見本を作って開く() {
     let state_dir = support::TempDir::new("open-settings-missing");
     let path = state_dir.path().join(SETTINGS);
     let desktop = Arc::new(FakeDesktop::default());
@@ -727,6 +771,70 @@ fn あるときは中身と更新日時を変えずに開く() {
     assert_eq!(state_dir.entries_except_state(), vec![SETTINGS.to_owned()]);
 }
 
+/// 設定画面のボタンが呼ぶコマンド `open_settings_file`(引数なし。ADR-013 の 6、AC-F10)。メニューの項目と同じ処理で、
+/// 無いときは見本を作って開き、2 回目は中身を変えずに開く。Finder・アプリへの受け渡しはメインスレッドの外で行う。
+fn open_settings_file_のコマンドも同じく開く() {
+    let state_dir = support::TempDir::new("open-settings-command");
+    let path = state_dir.path().join(SETTINGS);
+    let desktop = Arc::new(FakeDesktop::default());
+    let fake = Arc::clone(&desktop);
+    let sample_path = path.clone();
+    run_with_desktop(state_dir.path(), Arc::clone(&desktop), move |handle| {
+        let window = handle
+            .webview_windows()
+            .into_values()
+            .next()
+            .expect("ウィンドウが無い");
+        let call = || {
+            get_ipc_response(&window, support::request(handle, "open_settings_file"))
+                .unwrap_or_else(|e| panic!("open_settings_file が失敗した: {e}"));
+        };
+        call();
+        wait_until("デスクトップへの頼みが届く", || {
+            !fake.calls().is_empty()
+        });
+        let first = fs::read_to_string(&sample_path).expect("見本ができていない");
+        assert_eq!(first, sample_settings_toml(&ShortcutTable::default_table()));
+        let before = modified(&sample_path);
+        thread::sleep(Duration::from_millis(20));
+
+        call();
+        wait_until("2 回目の頼みが届く", || fake.calls().len() >= 2);
+        assert_eq!(
+            fs::read_to_string(&sample_path).expect("読めなかった"),
+            first,
+            "2 回目で中身が変わった"
+        );
+        assert_eq!(modified(&sample_path), before, "2 回目で更新日時が変わった");
+        let main = thread::current().id();
+        assert!(
+            lock(&fake.threads).iter().all(|id| *id != main),
+            "メインスレッドで Finder・アプリに渡した"
+        );
+        assert_eq!(get_settings_notice(handle), None);
+    });
+    assert_eq!(
+        desktop.calls(),
+        vec![DesktopCall::Open(path.clone()), DesktopCall::Open(path)]
+    );
+}
+
+/// 「設定…」(表の行 `app.open-settings`)は画面へ設定画面を開く操作を送るだけで、設定ファイルを作らず開かない
+/// (M4.5 ではこの ID が「設定ファイルを開く…」だった。ADR-013 の 6)。
+fn 設定を選んでも設定ファイルは作らず開かない() {
+    let state_dir = support::TempDir::new("open-settings-not-file");
+    let desktop = Arc::new(FakeDesktop::default());
+    run_with_desktop(state_dir.path(), Arc::clone(&desktop), |handle| {
+        menu::on_menu_event(handle, C::AppOpenSettings.as_str());
+        thread::sleep(Duration::from_millis(200));
+    });
+    assert!(desktop.calls().is_empty(), "{:?}", desktop.calls());
+    assert!(
+        !state_dir.entries().iter().any(|n| n == SETTINGS),
+        "設定ファイルができた"
+    );
+}
+
 fn 開けないと_finder_で表示し知らせる() {
     let state_dir = support::TempDir::new("open-settings-no-app");
     let path = state_dir.path().join(SETTINGS);
@@ -780,7 +888,8 @@ fn 見本を作れないときは開かず知らせる() {
     let dir = state_dir.path().to_path_buf();
     run_with_desktop(state_dir.path(), Arc::clone(&desktop), move |handle| {
         let changed = count_settings_changed(handle);
-        menu::on_menu_event(handle, C::AppOpenSettings.as_str());
+        // M4.6(T68d)で項目の ID を表の外の `app.open-settings-file` に替えた(`choose_open_settings` と同じ)。
+        menu::on_menu_event(handle, OPEN_SETTINGS_FILE_ID);
         wait_until("知らせが出る", || {
             get_settings_notice(handle).is_some()
         });
@@ -910,12 +1019,23 @@ fn 実行できるかふつうのファイルでない設定ファイルは開�
 }
 
 fn main() {
-    let tests: [(&str, fn()); 16] = [
+    let tests: [(&str, fn()); 19] = [
         (
             "実行できるかふつうのファイルでない設定ファイルは開かずに_finder_で表示する",
             実行できるかふつうのファイルでない設定ファイルは開かずに_finder_で表示する,
         ),
-        ("無いときは見本を作って開く", 無いときは見本を作って開く),
+        (
+            "設定ファイルを開くを選ぶと無いときは見本を作って開く",
+            設定ファイルを開くを選ぶと無いときは見本を作って開く,
+        ),
+        (
+            "open_settings_file_のコマンドも同じく開く",
+            open_settings_file_のコマンドも同じく開く,
+        ),
+        (
+            "設定を選んでも設定ファイルは作らず開かない",
+            設定を選んでも設定ファイルは作らず開かない,
+        ),
         (
             "あるときは中身と更新日時を変えずに開く",
             あるときは中身と更新日時を変えずに開く,
@@ -939,6 +1059,10 @@ fn main() {
         (
             "設定で替えたキーがメニューの項目のアクセラレータと_get_shortcuts_の両方に出る",
             設定で替えたキーがメニューの項目のアクセラレータと_get_shortcuts_の両方に出る,
+        ),
+        (
+            "設定で替えたキーが設定のメニューの項目に付く",
+            設定で替えたキーが設定のメニューの項目に付く,
         ),
         (
             "画面で受けるコマンドのキーも_get_shortcuts_に出る",

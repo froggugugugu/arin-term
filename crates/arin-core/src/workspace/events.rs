@@ -16,6 +16,9 @@ use super::RunningTerminal;
 pub enum MenuCommand {
     /// 「すべてを選択」(⌘A)。ターミナルにフォーカスがあれば、そのターミナルを全選択する。
     SelectAll,
+    /// 「設定…」(既定は ⌘,。表の行 `app.open-settings`)。画面が設定画面を開く(開いていれば 1 つのまま。ADR-013 の 5・6)。
+    /// Rust は設定画面が開いているかを知らない。
+    OpenSettings,
 }
 
 /// 終了の確認を求める(`quit-requested` イベントの中身。FR-063)。
@@ -39,6 +42,11 @@ mod tests {
         assert_eq!(
             serde_json::to_value(MenuCommand::SelectAll).unwrap(),
             serde_json::json!("select-all")
+        );
+        // 「設定…」(⌘,)。画面が設定画面を開く(ADR-013 の 6。計画書 T68d)。
+        assert_eq!(
+            serde_json::to_value(MenuCommand::OpenSettings).unwrap(),
+            serde_json::json!("open-settings")
         );
     }
 

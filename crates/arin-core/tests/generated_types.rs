@@ -189,6 +189,7 @@ fn 既定のショートカットの表の_json_が最新である() {
     );
 
     // 計画書 T64c: 表は 23 行で、`app.open-settings` = `Cmd+,`(受け口はメニューの項目)を持つ。
+    // M4.6(T68d。ADR-013 の 6)でこの行の意味を「設定…」(設定画面)に替えたが、行・キー・受け口は変えないので期待も同じ。
     // 書き出しと同じテストの中で読む(別のテストにすると、再生成のときに書き出しと並んで走り古い中身を読む)。
     let rows: serde_json::Value = serde_json::from_str(&actual).expect("JSON でない");
     let rows = rows.as_array().expect("配列でない");
@@ -199,6 +200,6 @@ fn 既定のショートカットの表の_json_が最新である() {
             "accelerator": "Cmd+,",
             "receiver": "menu-item"
         })),
-        "設定ファイルを開くの行が無い"
+        "設定の行が無い"
     );
 }

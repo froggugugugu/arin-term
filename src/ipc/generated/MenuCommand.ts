@@ -6,4 +6,4 @@
  * 画面がフォーカス位置で振り分ける(`src/logic/keys/menuCommand.ts` の `MenuCommand` と同じ文字列)。
  * タブの操作(新規・閉じる・前後)は画面を経由せず Rust が行うので、ここには無い。
  */
-export type MenuCommand = "select-all";
+export type MenuCommand = "select-all" | "open-settings";

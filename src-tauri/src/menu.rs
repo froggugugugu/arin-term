@@ -12,7 +12,10 @@
 //!   画面の cut・copy・paste イベントになり、画面がフォーカス位置で振り分ける(`src/ui/terminals/clipboardRouting.ts`)。
 //!   標準の項目のキーは muda が決める(⌘X・⌘C・⌘V)ので、表のキーは付けられない
 //! - 受け口が「画面」の行: メニューに載せない(ツリーにフォーカスがあるときに画面の keydown で受ける。【仮定】21)
-//! - 「設定ファイルを開く…」(T65d、ADR-012 の 6): アプリ名のメニューの先頭(区切り線の上)。選ばれたら `settings::open_from_menu`
+//! - 「設定…」(表の行 `app.open-settings`。M4.6 の ADR-013 の 6): アプリ名のメニューの先頭。選ばれたら画面へ `menu-command`
+//!   (`"open-settings"`)を送り、画面が設定画面を開く
+//! - 「設定ファイルを開く…」(T65d、ADR-012 の 6。M4.6 からは表の外のキーの無い項目 [`OPEN_SETTINGS_FILE_ID`]): 「設定…」の下
+//!   (区切り線の上)。選ばれたら `settings::open_settings_file`
 //!
 //! Tauri は、メニューを指定しないと macOS で既定のメニュー(`Menu::default`)を付ける。既定のものには ⌘W
 //! (ウィンドウを閉じる)や ⌘M などが入っていてタブ操作とぶつかるので使わない。
@@ -88,6 +91,13 @@ pub const EDIT_MENU_TITLE: &str = "編集";
 pub const VIEW_MENU_TITLE: &str = "表示";
 /// 「終了」の項目の ID(表のコマンドの ID と同じ)。文言はアプリ名を入れて作る(「Arin を終了」)。
 pub const QUIT_ID: &str = ShortcutCommandId::AppQuit.as_str();
+/// 「設定ファイルを開く…」の項目の ID(ADR-013 の 6)。ショートカットの表の外の項目なので、`ShortcutCommandId` には無い
+/// (表の行はすべて既定のキーを持つ決まりで、この項目はキーを持たない)。
+pub const OPEN_SETTINGS_FILE_ID: &str = "app.open-settings-file";
+/// 「設定ファイルを開く…」の文言。
+pub const OPEN_SETTINGS_FILE_LABEL: &str = "設定ファイルを開く…";
+/// 「設定ファイルを開く…」のキー。表の外の項目なので持たない(設定ファイルでも変えられない。ADR-013 の 6)。
+pub const OPEN_SETTINGS_FILE_ACCELERATOR: Option<&str> = None;
 
 use ShortcutCommandId as C;
 
@@ -124,7 +134,7 @@ pub const fn label(command: ShortcutCommandId) -> Option<&'static str> {
         C::ViewPreviousPage => Some("前のページ"),
         C::ViewNextPage => Some("次のページ"),
         C::ViewToggleMaximize => Some("タイルを拡大/元に戻す"),
-        C::AppOpenSettings => Some("設定ファイルを開く…"),
+        C::AppOpenSettings => Some("設定…"),
         _ => None,
     }
 }
@@ -173,7 +183,8 @@ pub fn rebuild<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
 
 /// 表を渡してメニューバーを組み立てる。
 ///
-/// - アプリ名のメニュー: 設定ファイルを開く…(自前。T65d)・隠す・ほかを隠す・すべてを表示(標準)・終了(自前)
+/// - アプリ名のメニュー: 設定…(自前。表の行)・設定ファイルを開く…(自前。表の外。キーなし)・隠す・ほかを隠す・
+///   すべてを表示(標準)・終了(自前)
 /// - ターミナル: 新規タブ・タブを閉じる・前のタブ・次のタブ(自前)
 /// - 編集: 切り取り・コピー・ペースト(標準)・すべてを選択(自前)
 /// - 表示: タイル表示とタブ表示の切替・前のページ・次のページ・タイルの拡大(自前。T47c)
@@ -190,8 +201,14 @@ pub fn build_with_table<R: Runtime>(
     let name = app.package_info().name.clone();
     let mut app_menu = SubmenuBuilder::new(app, &name);
     if let Some(Entry::Own(open_settings)) = entry(app, table, C::AppOpenSettings)? {
-        app_menu = app_menu.item(&open_settings).separator();
+        app_menu = app_menu.item(&open_settings);
     }
+    let mut open_file = MenuItemBuilder::with_id(OPEN_SETTINGS_FILE_ID, OPEN_SETTINGS_FILE_LABEL);
+    if let Some(key) = OPEN_SETTINGS_FILE_ACCELERATOR {
+        open_file = open_file.accelerator(key);
+    }
+    let open_file = open_file.build(app)?;
+    let app_menu = app_menu.item(&open_file).separator();
     let mut app_menu = app_menu
         .hide_with_text(format!("{name} を隠す"))
         .hide_others_with_text("ほかを隠す")
@@ -293,15 +310,24 @@ fn entry<R: Runtime>(
 /// - 表示の 4 項目: `SessionRegistry` の表示の口を呼ぶ(変わったときだけ写しが届く)。タブ表示でのページ送り・拡大、
 ///   端のページでのページ送りは何もしない。項目はいつも有効のまま並べる(M4 の【仮定】9)
 /// - 終了: 終了の要求(動作中のターミナルがあれば画面に確認を求める。FR-063)
-/// - 設定ファイルを開く…: 待ってよいスレッドで、無ければ見本を作ってから既定のアプリで開く(`settings::open_from_menu`。T65d)
+/// - 設定…: 画面へ `menu-command`(`"open-settings"`)を送る(画面が設定画面を開く。ADR-013 の 6)
+/// - 設定ファイルを開く…(表の外の [`OPEN_SETTINGS_FILE_ID`]): 待ってよいスレッドで、無ければ見本を作ってから既定のアプリで開く
+///   (`settings::open_settings_file`。T65d)
 /// - それ以外の ID(標準の項目・画面で受けるコマンドなど): 何もしない
 pub fn on_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
+    if id == OPEN_SETTINGS_FILE_ID {
+        settings::open_settings_file(app);
+        return;
+    }
     let Some(command) = ShortcutCommandId::from_id(id) else {
         return;
     };
     match command {
         C::AppQuit => lifecycle::request_quit(app),
-        C::AppOpenSettings => settings::open_from_menu(app),
+        C::AppOpenSettings => {
+            // 画面がまだ無いときなどは送れない。送れなくても失うものは無い(押し直せばよい)。
+            let _ = app.emit(MENU_COMMAND_EVENT, MenuCommand::OpenSettings);
+        }
         C::EditSelectAll => {
             // 画面がまだ無いときなどは送れない。送れなくても失うものは無い(押し直せばよい)。
             let _ = app.emit(MENU_COMMAND_EVENT, MenuCommand::SelectAll);

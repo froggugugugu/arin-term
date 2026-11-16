@@ -327,11 +327,12 @@ impl SettingsOpener {
     }
 }
 
-/// メニューの「設定ファイルを開く…」が選ばれたとき(`menu::on_menu_event` から。メインスレッドで呼ばれる)。
+/// 「設定ファイルを開く…」が選ばれたとき。メニューの項目(`menu::on_menu_event` から。メインスレッドで呼ばれる)と、
+/// 設定画面のボタンのコマンド `open_settings_file`(`commands/app.rs`。ADR-013 の 6)の両方がこれを呼ぶ。
 ///
 /// 待ってよいスレッドで [`AppSettings::open_file`] を呼び、知らせが変わったら画面へ `settings-changed` を送る
-/// (画面は `get_settings_notice` を取り直す)。管理状態が無ければ何もしない。
-pub fn open_from_menu<R: Runtime>(app: &AppHandle<R>) {
+/// (画面は `get_settings_notice` を取り直す)。待たずに戻る。管理状態が無ければ何もしない。
+pub fn open_settings_file<R: Runtime>(app: &AppHandle<R>) {
     let handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let (Some(settings), Some(opener)) = (

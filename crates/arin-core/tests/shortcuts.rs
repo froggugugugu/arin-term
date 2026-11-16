@@ -17,7 +17,8 @@ fn chord(s: &str) -> KeyChord {
 ///
 /// キーは PRD §6.4 と M2 のメニュー(`src-tauri/src/menu.rs`)のとおり。受け口は【仮定】21。
 /// 最後の 4 行は M4 の表示の操作(計画書 M4 の前提 (f)・【仮定】9、ADR-011 の 6。T47a)。
-/// `app.open-settings` は M4.5 の「設定ファイルを開く…」(計画書 T64c。ADR-012 の 6)。
+/// `app.open-settings` は M4.5 で足した行(計画書 T64c。ADR-012 の 6)。M4.6 で意味を「設定…」(設定画面を開く)に替えた
+/// (ADR-013 の 6。ID・キー・受け口はそのまま)。
 const EXPECTED_DEFAULTS: [(&str, &str, ShortcutReceiver); 23] = [
     ("terminal.new-tab", "Cmd+T", MenuItem),
     ("terminal.close-tab", "Cmd+W", MenuItem),
@@ -209,8 +210,10 @@ fn 表示の_4_行の_id_の文字列() {
 }
 
 #[test]
-fn 設定ファイルを開くの既定は_cmd_カンマで受け口はメニューの項目() {
-    // ADR-012 の 6(【要確認】4 の A): macOS の「設定…」と同じ ⌘,。
+fn 設定の既定は_cmd_カンマで受け口はメニューの項目() {
+    // M4.6(ADR-013 の 6、【要確認】2 の A)で、この行の意味を「設定ファイルを開く」から「設定画面を開く」(メニューの「設定…」)に
+    // 替えた。ID・キー・受け口は M4.5(ADR-012 の 6)のまま変えないので、期待は前のテスト
+    // (`設定ファイルを開くの既定は_cmd_カンマで受け口はメニューの項目`)と同じ。「設定ファイルを開く…」は表の外の項目になった。
     let id = ShortcutCommandId::AppOpenSettings;
     assert_eq!(id.as_str(), "app.open-settings");
     assert_eq!(id.to_string(), "app.open-settings");
@@ -613,8 +616,44 @@ fn 見本はすべてのコマンドの_id_と既定のキーをコメントで�
             "{id} と {key} が見本に無い"
         );
     }
-    // 設定ファイルを開く自身の行もある。
+    // 設定(設定画面を開く。ADR-013 の 6)の行もある。並びは M4.5 から変わらない。
     assert!(sample.contains("# \"app.open-settings\" = \"Cmd+,\""));
+}
+
+#[test]
+fn 見本に文字の大きさは設定画面で変える旨がある() {
+    // ADR-013 の 6: `[terminal]` に `font_size` を書いても効かないことが分かるように、先頭の説明に 1 行足す。
+    let sample = sample_settings_toml(&ShortcutTable::default_table());
+    let heading = sample
+        .lines()
+        .position(|line| line == "[shortcuts]")
+        .expect("見出しが無い");
+    let intro: Vec<&str> = sample.lines().take(heading).collect();
+    let line = "# 文字の大きさはこのファイルではなく、アプリの「設定…」(⌘,)で変えます";
+    let at = intro
+        .iter()
+        .position(|l| *l == line)
+        .unwrap_or_else(|| panic!("見本の説明に文字の大きさの行が無い: {intro:?}"));
+    // 先頭の見出しの行のすぐ下(説明の最初の段落)。
+    assert_eq!(at, 1, "{intro:?}");
+    assert_eq!(intro[0], "# Arin の設定ファイル(settings.toml)");
+}
+
+#[test]
+fn 表の行は_23_のまま() {
+    // ADR-013 の 6(【要確認】2 の A): ⌘, を設定画面へ移しても、表の行は足さない(「設定ファイルを開く…」は表の外の項目)。
+    assert_eq!(ShortcutCommandId::ALL.len(), 23);
+    let table = ShortcutTable::default_table();
+    assert_eq!(table.bindings().len(), 23);
+    assert!(
+        ShortcutCommandId::from_id("app.open-settings-file").is_none(),
+        "表の外の項目の ID が表にある"
+    );
+    assert_eq!(
+        sample_rows(&sample_settings_toml(&table)).len(),
+        23 - 3,
+        "見本の行の数が変わった"
+    );
 }
 
 #[test]
