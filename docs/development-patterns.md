@@ -25,12 +25,15 @@
 | `[arin:state]` | `persistence.rs` | 状態ファイルを読めずに退避した・退避できなかった・読み取りや保存に失敗した |
 | `[arin:fileops]` | `fileops.rs`(`report_staging_leftover`) | コピーの作業用フォルダ `.arin-copy-…` を片付けられずに残した(場所を出す。消す処理は無い) |
 | `[arin:watch]` | `tree_watch.rs` | ツリーの監視を張れなかった |
+| `[arin:settings]` | `settings.rs`(`report` と「設定ファイルを開く…」)、`settings_watch.rs` | 設定ファイルの問題(1 つにつき 1 行)、開く・見本を作る処理の失敗、監視を張れなかった・メニューを作り直せなかった。ID・キーの文字列・行と列・理由の種類だけで、行の全文とパスは出さない |
 
 ## 2. 状態管理
 
 - zustand は `zustand/vanilla` の生成関数で作り、`main.tsx` から props で渡す。モジュールの読み込み時にストアを作らない
 - `AppSnapshot` は画面で書き換えず、届いたもので丸ごと置き換える
-- ショートカットのキーは表(`arin-core/shortcuts`、`src/logic/keys/shortcutTable.ts`)から引き、部品やメニューにキーの文字列を直書きしない。見本の表 `defaultShortcuts.ts` は生成物と同じ中身であることを `scripts/default-shortcuts.test.mjs` が確かめる
+- ショートカットのキーは表(`arin-core/shortcuts`、`src/logic/keys/shortcutTable.ts`)から引き、部品やメニューにキーの文字列を直書きしない。見本の表 `defaultShortcuts.ts` は生成物と同じ中身であることを `scripts/default-shortcuts.test.mjs` が確かめる。コマンドの ID の一覧は生成物 `src/ipc/generated/defaultShortcuts.json` を正とし、文書に写さない
+- ショートカットの表は `menu::Shortcuts`(`RwLock`。`table()` は写しを返す)が 1 つだけ持ち、メニューと `get_shortcuts` が見る。差し替えたら `menu::rebuild`(`build_with_table` で作り直して `set_menu`)を**メインスレッドで**呼ぶ(ほかのスレッドからは `run_on_main_thread`)。項目ごとの `set_accelerator` は使わない
+- 設定の知らせは写しの `notice` と別に持つ(Rust は `AppSettings`、画面は `uiStore` の `settingsNotice`)。中身は設定ファイルの問題と「設定ファイルを開く…」の結果(開けなかった・見本を作れなかった)の 2 つを 1 行にまとめたもの。開く結果の知らせは、次に開けたときと、読み直しで表か設定ファイルの問題の知らせが変わったときに消える。画面で閉じても、違う文の知らせが届けば出し直す
 
 ## 3. 型の生成
 
@@ -47,6 +50,8 @@
 
 - 状態フォルダは `ARIN_STATE_DIR`(絶対パス)で差し替える。テストとスモークは本物の `~/Library/Application Support/Arin/` を読み書きしない。`ARIN_SMOKE=1` は差し替え時だけ有効
 - Tauri のアプリ(模擬ランタイム)を作る `src-tauri/tests/` は `harness = false`(macOS ではメニューの部品をメインスレッドでしか作れず、標準ハーネスの別スレッドでは panic する)。テストを足すときは `src-tauri/Cargo.toml` に `[[test]]` を足す
+- `src-tauri/tests/` の 1 つのテストのバイナリに `tauri::generate_context!()` は 1 か所だけ書ける。組み立てを 2 通り使うときは共通の仕上げの関数(`app_settings.rs` の `finish()`)を通す
+- 設定ファイルの監視は `builder_with_settings_watcher` で偽の `WatcherPort` に差し替える(`src-tauri/tests/settings_watch.rs`)。テストで設定ファイルを書き換えるときは一時ファイルに書いて改名する(その場で上書きすると、読み直しが書きかけの空や途中までの中身を読むことがある)
 - 結合テストで起動直後にターミナルが要るときは `src-tauri/tests/support/` の `launch_with_projects_in`(空の状態フォルダの起動は 0 枚)、`Workspace` を直接作るときは `workspace_with_projects`
 - 実 PTY のテスト(`crates/arin-platform/tests/pty.rs` にならう): シェルは `/bin/zsh` 固定、`HOME` を一時フォルダに向ける、出力は目印の文字列で囲ませて取り出す、共通のロックで直列にする、どの待ちにも上限時間を付ける
 - ペーストボードのテストは一般のペーストボード(利用者のクリップボード)に触れず、名前付きのペーストボードに書いて終わったら解放する(ADR-009)
@@ -57,6 +62,8 @@
 - 本物のゴミ箱を使うテストは `#[ignore]`(`cargo test -p arin-platform --test trash -- --ignored`。入れた項目は自分で片付ける)。Finder・既定のアプリには偽の `DesktopPort` を使う
 - ファイル操作のテストは一時フォルダを `canonicalize` した実パスで使う(macOS の一時領域は `/var` → `/private/var` のリンクを含む)
 - E2E でスクロールや描き直しの直後の状態を測るときは、落ち着いた状態を `expect.poll` で待つ
+- E2E で設定の変更を流すときは、`setMockReply` で `get_shortcuts`・`get_settings_notice` の応答を替えてから `emitEvent(page, "settings-changed", null)` を流す(`e2e/settings.spec.ts`)。`e2e/app-shell.spec.ts` は起動時の呼び出しの並びを完全一致で見るので、起動時の呼び出しを足したら合わせる
+- スモークは「設定ファイルを開く…」を選ばない(本物の既定のアプリや Finder が開く)。テストは偽の `DesktopPort` を使う
 
 ## 6. 過去の問題事例
 
@@ -79,4 +86,7 @@
 | ツリーに `.arin-copy-…` が見える | コピーは宛先のフォルダに一時的な作業用フォルダを作る | 監視はこの名前を隠す。一覧は隠しファイル表示が OFF のとき隠し、ON なら残ったものを出す(`[arin:fileops]` の行と合わせて本人が片付ける) |
 | `scripts/smoke.test.mjs` がときどき落ちる | 一時フォルダの数を数える検査が、ほかのテストと同時に動かすと乱れる | 単独で再実行して確かめる |
 | 画面の表示が前の状態に戻る(タイルのフォーカス・ページ) | 写しを作る→送るが直列でなく、古い写しがあとから届いた(送り手はコマンド・読み取りスレッド・見回りなど複数) | `SessionRegistry::notify` の中で写しを作って送るまでを直列にした(`sessions.rs`)。写しを送る経路を足すときも `notify` を通す |
+| メニューのキーを `MenuItem::set_accelerator` で替えられない | 読めない文字列は黙って `None` になり、muda の macOS の実装は `None` でキーを消さない(Tauri 2.12.5・muda 0.20.0。ADR-012 の 5) | 表を差し替えたら `menu::rebuild` でメニューを丸ごと作り直す |
+| 引用符の無い点つきの ID(`terminal.new-tab = …`)が 1 つの ID にならない | TOML では入れ子の表(`terminal` の下の `new-tab`)になる | `[shortcuts]` の下の入れ子の表は 1 段だけ `.` でつないで読む(`parse_settings_toml`)。見本は引用符で囲む形だけを示す(ADR-012 の 2) |
+| シンボリックリンクの `settings.toml` の先を保存しても反映されない | 監視は状態フォルダに張るので、リンクの先の変更は届かない | 保存のあとにリンク自体を触る(`touch`)か再起動する(見本にも書いた。ADR-012 の 1・5) |
 | 既定のショートカットが JIS 配列で打てない(⇧⌘\ など) | US 配列の記号のキーは JIS で別の位置・別の組み合わせになる | JIS 配列で打てない記号のキーを既定にしない(M4 は ⇧⌘G に替えた) |

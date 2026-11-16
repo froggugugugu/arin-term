@@ -3,7 +3,7 @@
 ## スキーマ配置
 
 - Rust の型が正本(`crates/arin-core/src/`)。画面とやり取りする型は ts-rs で `src/ipc/generated/` に生成し、コミットする
-- 永続化するのは `state.json`(版 1。読み書きは `crates/arin-core/src/persistence/codec.rs`、ファイルの入出力は `arin-platform/src/storage/state_file.rs`、保存のスレッドは `src-tauri/src/persistence.rs`)。設定ファイルは未実装(M6)
+- 永続化するのは `state.json`(版 1。読み書きは `crates/arin-core/src/persistence/codec.rs`、ファイルの入出力は `arin-platform/src/storage/state_file.rs`、保存のスレッドは `src-tauri/src/persistence.rs`)。設定ファイル `settings.toml` は人だけが書き、アプリは読むだけ(M4.5 は `[shortcuts]` だけ。下)
 
 ## スキーマ詳細
 
@@ -27,6 +27,23 @@
 | `ui.displayMode` | `"tiles"` | タイル表示のときだけ書く。無い・知らない値・型が違うときは退避せずタブ表示(版は 1 のまま) |
 
 「見つからない」と表示用のパスは保存しない。
+
+### settings.toml(M4.5。ADR-012)
+
+状態フォルダ直下(`AppPaths::settings_file()`。`ARIN_STATE_DIR` で差し替えたら差し替え先だけを読む)。人だけが書き、アプリは書き換え・退避・削除をしない。例外は「設定ファイルを開く…」が**無いときだけ**見本(`arin-core/shortcuts/sample.rs`)を 0600 で作ること(あれば上書きしない)。読むのは `FsSettingsFile`(`arin-platform/src/storage/settings_file.rs`。TOML の解析もここ)、内容と問題は `SettingsStore`(`arin-core/settings`)、行の規則は `arin-core/shortcuts/overrides.rs`。
+
+```toml
+[shortcuts]
+"terminal.new-tab" = "Cmd+Shift+T"
+```
+
+- 読む節は `[shortcuts]` だけ。ほかの節は黙って無視する(M6 の T56 が足す)
+- 行は `"コマンドの ID" = "キーの文字列"`。ID の一覧と既定のキーは生成物 `src/ipc/generated/defaultShortcuts.json` が正(大文字・小文字を区別する)。キーの書式は `KeyChord::parse`(正規の書式でなくてよい)。書かなかった行は既定、行を消せば既定に戻る。割り当てを外す書き方は無い(`""` は読めないキー)
+- 引用符の無い点つきの ID(`terminal.new-tab = …`)と `[shortcuts.terminal]` の下の行は、入れ子の表を 1 段だけ `.` でつないで同じ ID として読む。2 段以上の入れ子は「文字列でない」
+- 行の問題はその行だけ既定に戻し、残りは使う: 文字列でない・読めないキー・予約のキー(`reserved.rs`)・メニューの項目の行で `Cmd` を含まない・画面の行で `Cmd` を含まず修飾キーの無い `Enter`・`Space`・`Backspace`・`Delete` でもない・重なり(関わる設定の行をすべて戻すのを無くなるまで繰り返す)・同じコマンドを 2 度(引用符の有無だけ違う 2 行)。知らない ID と `edit.cut`・`edit.copy`・`edit.paste`(変えられない)は無視する。どれも知らせる。受け口は変えられない
+- ファイル全体の問題(構文エラー・UTF-8 でない・1 MiB を超える・ファイルでない・読む権限が無い・入出力の失敗)は、起動時は既定の表、動作中は直前の表のまま。`[shortcuts]` が表でなければその節だけ既定。ファイルが無ければ既定で知らせない。同じキーを 2 度書くのは構文エラー
+- 知らせ(`get_settings_notice` の 1 行)と標準エラー(`[arin:settings]`)に出すのは、コマンドの ID・キーの文字列(制御文字を除き 64 文字で切る)・行と列・理由の種類だけ。行の全文・TOML のクレートの文言・絶対パスは出さない
+- 保存は状態フォルダの監視(`src-tauri/src/settings_watch.rs`)で拾い、すぐ反映する。シンボリックリンクの先の変更は拾えない(リンクの先は読む)
 
 ### AppSnapshot(`crates/arin-core/src/workspace/snapshot.rs`)
 
@@ -60,9 +77,9 @@ Rust から画面へ渡す状態の写し。画面は届いたもので丸ごと
 - ツリー: `list_directory`(応答 `DirListing`)、`set_show_hidden`
 - ファイル操作(応答 `FileOpOutcome`): `create_entry`、`rename_entry`、`move_entry`、`copy_entry`、`trash_entry`、`copy_entries`、`cut_entries`、`paste_entries`
 - デスクトップ: `reveal_entry`、`open_entry`(ふつうのファイルだけ。実行の権限があるもの・`UNOPENABLE_EXTENSIONS` の拡張子は開かない。`src-tauri/src/commands/desktop.rs`)、`copy_entry_path`、`insert_entry_path`(ターミナルへ書く文字列は Rust の `insertion_text` が作る)
-- ショートカット: `get_shortcuts`(応答 `ShortcutTable`)
+- ショートカット: `get_shortcuts`(応答 `ShortcutTable`。設定ファイルの値を当てた表)、`get_settings_notice`(設定の知らせの 1 行か `null`。写しの `notice` とは別)
 - 引数のパスはプロジェクトの ID と `RelPath`(ルートからの相対パス)。絶対パスは画面に渡さない
-- イベント: `app-snapshot`(状態が変わるたびに `AppSnapshot` 全体)、`tree-changed`(`TreeChange { projectId, dirs, fullReload }`)、`menu-command`(`MenuCommand`。いまは `"select-all"` だけ)、`quit-requested`(`QuitRequest`。動作中のターミナルの一覧。画面が確認したら `confirm_quit`)。出力はイベントではなくチャネルで生のバイト列を送る
+- イベント: `app-snapshot`(状態が変わるたびに `AppSnapshot` 全体)、`tree-changed`(`TreeChange { projectId, dirs, fullReload }`)、`menu-command`(`MenuCommand`。いまは `"select-all"` だけ)、`quit-requested`(`QuitRequest`。動作中のターミナルの一覧。画面が確認したら `confirm_quit`)、`settings-changed`(中身なし。設定の表か知らせが変わった。画面は `get_shortcuts` と `get_settings_notice` を呼び直す)。出力はイベントではなくチャネルで生のバイト列を送る
 - Finder からのドロップはコマンドではなく `src-tauri/src/lifecycle.rs` が受ける
 
 ### AppPaths(`crates/arin-core/src/paths/app_paths.rs`)

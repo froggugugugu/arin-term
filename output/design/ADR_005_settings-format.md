@@ -23,12 +23,13 @@ PRD は、設定を人間が読める 1 ファイルに置き、形式は JSON �
 設定ファイルは TOML で書き、ファイル名は `settings.toml` とする。
 
 - 正本は `settings.toml` そのもの。`SettingsStore` は読んだ結果と読み込みエラーを持つだけで、永続化しない(§6.1)。
-- ファイルの読み書きは `SettingsFilePort`(実装は `arin-platform` の `SettingsFileStore`)、スキーマ・既定値・検証は `arin-core/settings`(`Settings`、`SettingsValidator`)に置く(§5.1)。
+- ファイルの読み書きは `SettingsFilePort`(実装は `arin-platform` の `FsSettingsFile`。設計時の名前は `SettingsFileStore` で、M4.5 で実装したときにこの名前にした)、スキーマ・既定値・検証は `arin-core/settings`(`Settings`、`SettingsValidator`)に置く(§5.1)。
 - 設定のキーは §6.2 の表(提案)。キーの追加は `Settings` にキーと既定値を足すだけで、未知のキーは無視するので旧版と共存できる(§16)。
 
 未定の点:
 
 - TOML を読むクレートとその版は、設計書で決めていない。`arin-core` に許す依存は `serde`、`serde_json`、`thiserror`、`ts-rs` だけ(§3.1)なので、TOML の解析をどのクレートに置くか(`arin-core` に依存を足すか、`arin-platform` で解析して `arin-core` には値を渡すか)は、設定を実装するとき(FR-057 は M6)に決める。
+  - **決めた(2026-11-16、ADR-012 の 4)**: 解析は `arin-platform`(`storage/settings_file.rs`)に置き、`arin-core` には節ごとの文字列の対とファイル全体の結果だけを渡す(`arin-core` の依存は増やさない)。クレートは `toml` 1.2.1(`default-features = false`、`std`・`parse`。Tauri が引き込んでいる版と同じ)。公開から 2 週間未満の例外は本人が認めた(ADR-012 の末尾)。M4.5 で読むのは `[shortcuts]` だけ
 
 ## 代替案
 
@@ -54,6 +55,6 @@ PRD は、設定を人間が読める 1 ファイルに置き、形式は JSON �
 
 ### ネガティブ
 
-- TOML を読むための依存が 1 つ増える(§15.1 #4 の「依存の数」)。どのクレートにするかは未定で、`/legal-check` と `cargo audit` の対象が増える。
+- TOML を読むための依存が 1 つ増える(§15.1 #4 の「依存の数」)。`/legal-check` と `cargo audit` の対象が増える(クレートは ADR-012 で `toml` 1.2.1 に決めた。Tauri 経由で既に依存の木にあり、新しいクレートは 0)。
 - 状態と設定で形式が 2 つになり、読み込みの部品も 2 つになる。
-- 構文エラーの位置を人に分かる形で画面に出す方法は、まだ決めていない(§7.2 は「エラーを表示する」までを決めている)。
+- 構文エラーの位置を人に分かる形で画面に出す方法は、ADR-012 の 3 で決めた(クレートが返す位置から行と列を数えて 1 行で知らせ、クレートの文言は出さない)。

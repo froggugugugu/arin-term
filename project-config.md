@@ -86,6 +86,7 @@ flowchart LR
 | ビルド           | Cargo ワークスペース（`arin-core` / `arin-platform` / `src-tauri`）と Vite 8 系。パッケージ管理は npm |
 | ターミナルエンジン | xterm.js 6.0.0（M1 の Go/No-Go で採用。ADR-001）。描画は DOM、全角幅は `unicode11` に固定（M4 の実測のあと本人が決定。2026-11-16。`@xterm/addon-webgl`・`@xterm/addon-unicode-graphemes` は外した）。アドオンは `addon-fit` 0.11.0、`addon-unicode11` 0.9.0。PTY は Rust 側の `portable-pty` 0.9.0 |
 | ファイルの監視   | `notify` 8.2.1（`arin-platform` だけが使う） |
+| 設定ファイルの解析 | `toml` 1.2.1（`arin-platform` だけが使う。`default-features = false`、`std`・`parse`。Tauri と同じ版。公開から 2 週間未満の例外を本人が 2026-11-16 に認めた。ADR-012） |
 | macOS の API     | `arin-platform` だけが使う: `objc2` 0.6.5、`objc2-foundation` 0.3.2、`objc2-app-kit` 0.3.2、`libc` 0.2.191、`base64` 0.23.1（どれも Tauri と同じ版。ADR-009）。フォルダ選択は `NSOpenPanel` を直接呼ぶ（`tauri-plugin-dialog` は使わない） |
 | スタイリング     | 素の CSS とカスタムプロパティ（システムのライト／ダークに追従） |
 | 状態管理         | Rust の `arin-core` が正本。画面側は zustand のストアに写しを持つ。永続化は JSON ファイル、設定ファイルは TOML |
@@ -116,7 +117,7 @@ npm run app            # .app バンドルを生成（tauri build。署名なし
 npm run app:debug      # デバッグ版の .app（検証用の記録 [arin:verify] が出る）
 npm run dev            # 開発用に起動（tauri dev。人間が体感確認するとき）
 npm run e2e            # Playwright（ブラウザ方式。出力先 testreport/e2e/）
-npm run smoke          # 実アプリの起動スモーク（-- --tiles で 9 プロジェクトのタイル表示。-- --env=NAME=VALUE、-- --app=<パス> を付けられる）
+npm run smoke          # 実アプリの起動スモーク（-- --tiles で 9 プロジェクトのタイル表示。-- --settings で、設定ファイルを置いた一時の状態フォルダで 1 回起動し、設定の診断の行と、設定ファイルが変わっていないことを確かめる。-- --env=NAME=VALUE、-- --app=<パス> を付けられる）
 npm run perf           # 性能の計測（出力先 testreport/perf/。合否にしない。-- --tree-files=<数> でツリーの見本の数）
 # npm run dist:mac     # 署名・公証。人間のみ実行（秘密情報を扱うため AI は実行しない）
 ```

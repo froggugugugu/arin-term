@@ -369,11 +369,11 @@ arin-term/
 | `arin-core/paths` | 相対・絶対パスの整形、複数選択の連結、シェルエスケープ | `PathFormatter`、`ShellEscaper` | — |
 | `arin-core/terminal` | タブの並びと状態、起動の仕様、アテンションの走査と判定、実行中の判定、タブ名 | `TerminalId`、`TerminalTab`、`TerminalStore`、`ShellLaunchSpec`、`AttentionScanner`、`AttentionPolicy` | `TerminalStore` |
 | `arin-core/layout` | ペインの寸法の規則(M2)。表示モード、タイルのグリッドとページ、タイルからの拡大(M4) | `PaneSizes`(M2)、`DisplayMode`、`TileLayout`(M4) | —(`Workspace` が `PaneSizes` を直接持つ。`LayoutStore` は作らない) |
-| `arin-core/settings` | 設定の読み込み結果、既定値、値の検証 | `Settings`、`SettingsValidator`、`SettingsStore` | `SettingsStore` |
+| `arin-core/settings` | 設定の読み込み結果、既定値、値の検証 | `Settings`、`SettingsLoad`、`SettingsStore`(M4.5。`[shortcuts]` だけ。行の規則は `arin-core/shortcuts` の `apply_overrides`。ADR-012)、`SettingsValidator`(M6) | `SettingsStore` |
 | `arin-core/persistence` | `state.json` の読み書き(`codec` の `decode`・`encode`)、退避の名前(`broken_file_name`)、保存のまとめ(`scheduler`)。版の移行は版 2 を作るときに足す | `PersistedState`、`LoadOutcome`、`SaveScheduler` | 全ストア(読むだけ) |
 | `arin-core/workspace` | ストアをまたぐ操作(切替、削除、起動時の復元、終了前の確認材料、タイルとカードの連動、パスの挿入)。画面へ渡す状態の写しの生成。`Workspace` は `src-tauri/sessions` の `SessionRegistry` の中の Mutex が持つ | `Workspace`、`AppSnapshot` | 全ストア |
 | `arin-core/ports` | OS 入出力の抽象 | `FileSystemPort`、`WatcherPort`、`PtyPort`(前面プロセスの調査 `PtySession::foreground` を含む。M2)、`BookmarkPort`、`RootLocatorPort`、`StateFilePort`、`SettingsFilePort`、`PasteboardPort`、`IdSource`、`DesktopPort`、`NotificationPort`、`GitInfoPort`、`ProcessProbePort`、`Clock` | — |
-| `arin-platform` | 上のポートの実装 | M2 で実装: `NativePty`、`MacBookmarks`、`FsRootLocator`(開いたフォルダは `FdOpenRoot`)、`FsStateFile`、`MacPasteboard`、`UrandomIdSource`、`SystemClock`、フォルダ選択の `choose_folder`。後のマイルストーン: `LocalFileSystem`、`FsEventsWatcher`、`SettingsFileStore`、`DesktopActions`、`UserNotifier`、`GitHeadReader`、`ForegroundProcessProbe` | — |
+| `arin-platform` | 上のポートの実装 | M2 で実装: `NativePty`、`MacBookmarks`、`FsRootLocator`(開いたフォルダは `FdOpenRoot`)、`FsStateFile`、`MacPasteboard`、`UrandomIdSource`、`SystemClock`、フォルダ選択の `choose_folder`。後のマイルストーン: `LocalFileSystem`、`FsEventsWatcher`、`FsSettingsFile`(M4.5。TOML の解析 `parse_settings_toml` もここ。ADR-012)、`DesktopActions`、`UserNotifier`、`GitHeadReader`、`ForegroundProcessProbe` | — |
 | `src-tauri/commands` | 画面からの操作を `Workspace` に渡す | 機能ごとのコマンド関数 | — |
 | `src-tauri/sessions` | ターミナルごとの読み取りスレッドとまとめのスレッド、出力のまとめ、流量制御、チャネルの付け替え。`Workspace` を Mutex で持ち、変わるたびに写しを送る | `SessionRegistry`、`Pump` | `TerminalStore`(イベントの反映先) |
 | `src/logic/tree` | ツリーの行の並び、遅延読み込みの管理、差分の適用、更新の保留、目印、選択、絞り込み | `TreeModel`、`applyDirListing`、`UpdateGate`、`RecentMarks`、`Selection` | — |
@@ -431,7 +431,7 @@ export interface TerminalSurface {
 
 | 分類 | コマンド(画面 → Rust) |
 | ---- | ----------------------- |
-| アプリ | `get_app_snapshot`、`get_shortcuts`(ショートカットの表)、`notify_app_ready`、`confirm_quit`(終了の確定)、`report_frontend_error`。M1 の検証用の `get_launch_options` は M4 の T50b で外した |
+| アプリ | `get_app_snapshot`、`get_shortcuts`(ショートカットの表。設定ファイルの値を当てたもの)、`get_settings_notice`(設定の知らせの 1 行か null。M4.5)、`notify_app_ready`、`confirm_quit`(終了の確定)、`report_frontend_error`。M1 の検証用の `get_launch_options` は M4 の T50b で外した |
 | プロジェクト | `add_project_by_dialog`(ダイアログは Rust が開き、選んだパスは画面を経由しない)、`select_project`、`remove_project`(動作中があり未確認なら何も変えず確認を求める結果を返す)、`relink_project`(同じくダイアログは Rust)、`set_project_color`、`copy_project_path`(パスは画面に返さない)。Finder からのドロップはコマンドではなく Rust がウィンドウのイベントで受ける。案: 並び替え、表示名の変更(M6) |
 | ターミナル | `new_terminal`(選択中プロジェクトの末尾)、`close_terminal`、`select_terminal`、`connect_terminal`(出力チャネルを渡す)、`write_terminal`、`write_terminal_bytes`、`ack_terminal_output`、`resize_terminal`。案: 新規(任意でフォルダ)、フォーカスの通知、タブ名の変更、パスの挿入 |
 | 表示 | `set_pane_sizes`、`set_sidebar_collapsed`、`set_display_mode`、`focus_terminal`(タイルへのフォーカス)、`next_tile_page`・`previous_tile_page`、`toggle_tile_maximize`(`terminalId` は任意。無ければフォーカス中のタイル)(M4) |
@@ -441,7 +441,7 @@ export interface TerminalSurface {
 
 | 分類 | Rust → 画面 |
 | ---- | ----------- |
-| イベント | `app-snapshot`(状態の写しの更新)、`menu-command`(メニューから画面へ渡す操作。M2 は「すべてを選択」だけ)、`quit-requested`(終了の確認の要求と動作中の一覧)。案: ツリーの変更(プロジェクト、フォルダ、項目) |
+| イベント | `app-snapshot`(状態の写しの更新)、`menu-command`(メニューから画面へ渡す操作。M2 は「すべてを選択」だけ)、`quit-requested`(終了の確認の要求と動作中の一覧)、`settings-changed`(中身なし。設定の表か知らせが変わった。画面は `get_shortcuts` と `get_settings_notice` を呼び直す。M4.5)。案: ツリーの変更(プロジェクト、フォルダ、項目) |
 | チャネル | PTY の出力(ターミナルごと。生バイト) |
 
 メニューバーのタブ操作(⌘T・⌘W・⌘⇧[・⌘⇧])は画面を経由せず Rust が `Workspace` を操作し、結果は写しで画面に届く(§9.1)。
@@ -510,7 +510,7 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 | `ProjectStore` | プロジェクトの一覧(順序つき)、選択中のプロジェクト、色、表示名(`customName`。変更の操作は M6)、ルートの参照(ブックマークと最後に分かっていたパス)、「見つからない」状態。ブランチ名は M6、ツリーの保存設定(展開、隠しファイル表示)は M3 で足す | あり(「見つからない」は保存しない) | `state.json` の `projects[]`、`ui.selectedProjectId` |
 | `TerminalStore` | プロジェクトごとのタブの並び(0 枚も許す)、表示中のタブ、タブ名(「ターミナル N」)。シェルが終わったタブは閉じる。ターミナルの状態・cwd・アテンションの印(M4)は `Workspace` が持つ。フォーカス中のターミナルは選択中のプロジェクトの表示中のタブ(M4。ADR-011)。実行中は M6 で足す | なし(FR-050 は Could。§16) | — |
 | ペインの寸法(`PaneSizes`。ストアにせず `Workspace` が直接持つ) | 左ペインの幅、左ペインの折りたたみ、カード領域の高さ。最小寸法と不正な値の規則は `layout::panes`。表示モード・タイルのページ・拡大中かは `Workspace` が持ち(M4。規則は `layout::tiles`・`workspace/display`) | ペインの寸法と表示モードはあり(ページと拡大中は保存しない) | `state.json` の `ui`(表示モードは `ui.displayMode`。タイル表示のときだけ書く) |
-| `SettingsStore` | 設定ファイルを読んだ結果(読み取り専用)と、読み込みエラー(M6) | なし(設定ファイル自体が正本) | `settings.toml` |
+| `SettingsStore` | 設定ファイルを読んだ結果(読み取り専用)と、読み込みエラー(M4.5 で `[shortcuts]` の行。ほかの節は M6)。`src-tauri` の `AppSettings` が持ち、Workspace は持たない | なし(設定ファイル自体が正本) | `settings.toml` |
 
 画面(TypeScript の `src/state`):
 
@@ -518,7 +518,7 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 | ------ | ---- | ------ | -------------- |
 | `appStore` | Rust から届いた状態の写し。画面は書き換えない | なし | — |
 | `treeStore` | プロジェクトごとのツリーの表示モデル(読込済みフォルダ、行、選択、絞り込み文字列、目印、保留中の更新) | なし(展開状態だけ Rust へ送って保存する) | — |
-| `uiStore` | 表示だけの状態(M2 の実装: 開いている確認(終了・削除)、カードのメニュー、閉じた知らせ。フォーカス位置は持たない。ドラッグ中・名前の入力中は M3 で足す) | なし | — |
+| `uiStore` | 表示だけの状態(M2 の実装: 開いている確認(終了・削除)、カードのメニュー、閉じた知らせ。M4.5: ショートカットの表と設定の知らせ(`get_settings_notice`。写しの `notice` とは別に閉じる)。フォーカス位置は持たない。ドラッグ中・名前の入力中は M3 で足す) | なし | — |
 
 画面側のストアは zustand で作る(§15.1 #2)。正本は Rust の `arin-core` で、zustand のストアはその写しとして持つ。規則や判定をストアに書かない。
 
@@ -529,7 +529,7 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 | ファイル | 書き手 | 内容 |
 | -------- | ------ | ---- |
 | `state.json` | アプリだけ | プロジェクト一覧と UI 状態 |
-| `settings.toml` | 人間だけ(アプリは読むだけ) | フォント、配色、確認の省略など(FR-057)。形式は §15.1 #4 |
+| `settings.toml` | 人間だけ(アプリは読むだけ。例外は「設定ファイルを開く…」が無いときだけ見本を 0600 で作ること。ADR-012 の 6) | ショートカットのキー(`[shortcuts]`。M4.5)、フォント、配色、確認の省略など(FR-057。M6)。形式は §15.1 #4 |
 | `state.json.broken-<UTC の日時>` | アプリ(退避) | 読めなかった `state.json` の退避先(FR-058)。日時は `20261115T093000Z` の形。同じ名前があれば `-2`、`-3` と足す【仮定】 |
 
 `state.json` のスキーマ(版 1。M2 で読み書きするのは「M2」の行。それ以外は使うマイルストーンでキーを足す。キーの追加なので版は上げない):
@@ -570,6 +570,7 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 
 | キー | 既定値 | 根拠 |
 | ---- | ------ | ---- |
+| `[shortcuts]` の `"コマンドの ID" = "キーの文字列"` | 既定の表(`arin-core/shortcuts`。ID と既定のキーは生成物 `src/ipc/generated/defaultShortcuts.json`) | 【要件の追加】M4.5。ADR-012 の 2・3。書かなかった行は既定 |
 | `terminal.font_family` | システムの等幅フォント | FR-049 |
 | `terminal.font_size` | 13 | FR-049 |
 | `terminal.theme_light` / `terminal.theme_dark` | 同梱の既定テーマ | FR-049(ライト・ダーク追従) |
@@ -611,7 +612,7 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 **起動(FR-004、FR-039、C-22)**
 
 1. Rust が置き場所を決め、ポートの実装を生成する
-2. 設定ファイルを読む(無ければ既定値。M6)
+2. 設定ファイルを読む(無ければ既定値。M4.5 は `[shortcuts]` だけ。`settings.rs` の `AppSettings::load`。ショートカットの表を当ててからメニューを作る。ほかの節は M6)
 3. `state.json` を読む(壊れていたら退避して空。§6.2「破損時」。`src-tauri/src/persistence.rs` の `load_startup`)
 4. 各プロジェクトのブックマークを解決し、返ったパスを正規化する。古くなっていれば作り直す。ブックマークが null か壊れていれば `lastKnownPath` から作り直す。フォルダが消えていれば「見つからない」にする(保存値は読んだまま)。作り直したときは起動直後に保存を予約する
 5. 解決できた全プロジェクトにターミナルを 1 枚ずつ登録する(この時点では PTY を起動しない)。`Workspace` を作り、`SessionRegistry` に持たせる。保存のスレッドとルートの見回りのスレッドを始める
@@ -732,7 +733,7 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 | 存在と名前衝突 | 実行の瞬間に判定する(メニューを開いた時点ではない) | `FileOperationService`(Core)と `FileSystemPort` |
 | ターミナルへ挿入する文字列 | シェルエスケープ。制御文字を無害化する | `ShellEscaper`(Core) |
 | `state.json` | 読み取りの失敗と未知の版は `state.json.broken-<UTC の日時>` に改名して退避し、空で始めて画面に 1 行で知らせる。改名に失敗したらその回は書かない(§6.2) | `persistence::codec`(Core)、`StateFilePort` |
-| 設定ファイル | 未知のキーは無視。範囲外の値は既定値に戻して理由を表示。構文エラーのときは直前の値を保ち、エラーを表示する | `SettingsValidator`(Core) |
+| 設定ファイル | 未知のキーは無視。範囲外の値は既定値に戻して理由を表示。構文エラーのときは直前の値を保ち、エラーを表示する(起動時の「直前」は既定)。M4.5 の `[shortcuts]`: 問題のある行だけ既定に戻し、知らない ID と変えられないコマンド(`edit.cut`・`edit.copy`・`edit.paste`)は無視し、どれも 1 行で知らせる。予約のキー・修飾キーの条件・重なりの規則は ADR-012 の 3。知らせには ID・キーの文字列・行と列・理由の種類だけを出す | `SettingsStore`(Core)、`arin-core/shortcuts` の `apply_overrides`(M4.5)、`SettingsValidator`(Core。M6) |
 | プロジェクトの登録 | 解決後の正規化したパスが既存と同じなら追加せず既存を選択する。入れ子は別プロジェクトとして許す | `ProjectStore`(FR-010) |
 | OSC 9/777 の本文 | 信頼しない文字列として扱う。長さを切り詰め、制御文字を除く | `AttentionScanner` |
 | 画面に出す文字列(ファイル名、プロジェクト名、ブランチ名) | テキストとして差し込む。HTML として解釈させない | `src/ui`(§12) |
@@ -777,7 +778,7 @@ PRD §11 が「実現できるかは未検証」とした項目。すべて `ari
 
 | 部位 | 実装 | 理由 |
 | ---- | ---- | ---- |
-| メニューバー、フォルダ選択ダイアログ | macOS 標準(Tauri のメニューと、`objc2-app-kit` で直接呼ぶ `NSOpenPanel`。ADR-009)。メニューバーは Tauri の既定を使わず、`menu.rs` で次の 4 つに置き換える(M2。「表示」は M4): 「Arin」(隠す・ほかを隠す・すべてを表示・終了 ⌘Q)、「ターミナル」(新規タブ ⌘T・タブを閉じる ⌘W・前のタブ ⌘⇧[・次のタブ ⌘⇧])、「編集」(切り取り ⌘X・コピー ⌘C・ペースト ⌘V・すべてを選択 ⌘A)、「表示」(タイル表示とタブ表示を切り替える ⇧⌘G・前のページ ⌥⌘←・次のページ ⌥⌘→・タイルを拡大/元に戻す ⇧⌘↩)。キーは既定の表(`arin-core/shortcuts`)から引く。タブ操作は Rust の中で処理して写しで返し、「すべてを選択」は画面へ `menu-command` で送る。「終了」と「すべてを選択」は標準の項目ではなく自前の項目にする | macOS のアプリとして必要。選んだパスが画面を経由しない。既定のメニューの ⌘W などはタブ操作(FR-044)とぶつかる。標準の「終了」は終了の要求を経由せずに終わり(FR-063 の確認を挟めない)、標準の「すべてを選択」は xterm.js ではなく文書全体を選ぶ |
+| メニューバー、フォルダ選択ダイアログ | macOS 標準(Tauri のメニューと、`objc2-app-kit` で直接呼ぶ `NSOpenPanel`。ADR-009)。メニューバーは Tauri の既定を使わず、`menu.rs` で次の 4 つに置き換える(M2。「表示」は M4): 「Arin」(設定ファイルを開く… ⌘,(M4.5)・区切り線・隠す・ほかを隠す・すべてを表示・終了 ⌘Q)、「ターミナル」(新規タブ ⌘T・タブを閉じる ⌘W・前のタブ ⌘⇧[・次のタブ ⌘⇧])、「編集」(切り取り ⌘X・コピー ⌘C・ペースト ⌘V・すべてを選択 ⌘A)、「表示」(タイル表示とタブ表示を切り替える ⇧⌘G・前のページ ⌥⌘←・次のページ ⌥⌘→・タイルを拡大/元に戻す ⇧⌘↩)。キーは表(`arin-core/shortcuts`。M4.5 から設定ファイルの値を当てたもの)から引き、表が変わったら `set_menu` でメニューを丸ごと作り直す(ADR-012 の 5)。タブ操作は Rust の中で処理して写しで返し、「すべてを選択」は画面へ `menu-command` で送る。「終了」と「すべてを選択」は標準の項目ではなく自前の項目にする | macOS のアプリとして必要。選んだパスが画面を経由しない。既定のメニューの ⌘W などはタブ操作(FR-044)とぶつかる。標準の「終了」は終了の要求を経由せずに終わり(FR-063 の確認を挟めない)、標準の「すべてを選択」は xterm.js ではなく文書全体を選ぶ |
 | ウィンドウ内の分割とペイン境界 | 画面内(CSS とマウスのイベント) | 最小寸法、折りたたみ、境界位置の読み書きを `Workspace` の `PaneSizes` 経由で `state.json` に持つ(FR-009) |
 | ツリー | 画面内。見えている行だけを描く仮想スクロール(自作するか React 用のライブラリを使うかは M3 の着手時に決め、足すなら ADR に残す) | 大きなフォルダでも行数に比例して重くならない(NFR-005) |
 | ターミナル | エンジンの要素を `TerminalHost` に入れる | 1 ターミナル 1 要素。表示先が変わるときは要素を付け替える |
