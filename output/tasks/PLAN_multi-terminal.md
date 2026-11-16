@@ -1742,14 +1742,14 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 31.6d(設定画面。T68c・T69a・T69b 完了後。逐次)
 
-- [ ] T70a — 開閉と配線(変更ファイル: src/ipc/client.ts, src/ipc/client.test.ts, src/state/uiStore.ts, src/state/uiStore.test.ts, src/state/actions.ts, src/state/actions.test.ts, src/logic/keys/menuCommand.ts, src/logic/keys/menuCommand.test.ts, src/main.tsx, src/test/fakeIpc.ts, e2e/fixtures/tauriMock.ts | 依存: T68c, T68d)
+- [x] T70a — 開閉と配線(変更ファイル: src/ipc/client.ts, src/ipc/client.test.ts, src/state/uiStore.ts, src/state/uiStore.test.ts, src/state/actions.ts, src/state/actions.test.ts, src/logic/keys/menuCommand.ts, src/logic/keys/menuCommand.test.ts, src/main.tsx, src/test/fakeIpc.ts, e2e/fixtures/tauriMock.ts | 依存: T68c, T68d)
   - 対応: AC-F01・F07・F10(画面側)、【要確認】3 の確認
   - 置くもの: 包み `stepFontSize`・`resetFontSizes`・`openSettingsFile`。`uiStore` に `settingsOpen`・`openSettings`(ほかの確認ダイアログが開いていれば開かない)・`closeSettings`。`routeMenuCommand` に `"open-settings"`。`main.tsx` の `onMenuCommand` で振り分け。偽の Rust 側に 3 つのコマンドの応答
   - **着手時に確かめる(【要確認】3)**: `npm run app:debug` の実機で、`<dialog>` の keydown で ⌘W を `preventDefault` したときにメニューの「タブを閉じる」が動かないか。結果を ADR-013 の末尾に書く。動いてしまうなら T70b の ⌘W の扱いを外し、本人に報告する
   - 並行: 不可
   - 先に書くテスト(Vitest): `設定を開くのメニューの操作で設定画面が開く`、`開いているときにもう一度届いても_1_つのまま`、`ほかの確認ダイアログが開いていれば開かない`、`刻むと_step_font_size_を差分で呼ぶ`、`既定に戻すで_reset_font_sizes_を呼ぶ`、`設定ファイルを開くで_open_settings_file_を呼ぶ`、`すべてを選択の振り分けは変わらない`
   - 検証: `npx tsc -b && npx vitest run src/ipc src/state src/logic/keys`
-- [ ] T70b — 設定画面の部品とデザイン(変更ファイル: src/ui/settings/SettingsDialog.tsx, src/ui/settings/SettingsDialog.css, src/ui/settings/FontSizeStepper.tsx, src/ui/shell/AppShell.tsx, e2e/font-settings.spec.ts | 依存: T70a)
+- [x] T70b — 設定画面の部品とデザイン(変更ファイル: src/ui/settings/SettingsDialog.tsx, src/ui/settings/SettingsDialog.css, src/ui/settings/FontSizeStepper.tsx, src/ui/shell/AppShell.tsx, e2e/font-settings.spec.ts | 依存: T70a)
   - 対応: AC-F01〜F07・F10・F12・F13、ADR-013 の 5
   - 置くもの: シートの `<dialog>`(`role="dialog"`、名前「設定」、背景は透明=【要確認】4)、2 行のステッパー(`role="spinbutton"`、↑↓・Home・End、▲▼ は `tabindex="-1"`、端で無効、`aria-valuetext` は「N ポイント」)、「設定ファイルを開く…」、「既定に戻す」(両方既定で無効)、「完了」。Esc・Return・⌘W(T70a の確認しだい)で閉じ、前のフォーカスへ戻す。Tab は中を回す
   - **デザイン**(本人の指示): 「AI にありがちなデザインを避け、Apple のデザインらしく、ハイセンスに」。既存のトークンの色だけ、グラデーション・絵文字・大きな角丸のカード・影の重ねを使わない、組は区切り線と余白で分ける。Playwright の画像(ライトとダーク、既定・最小・最大の大きさ)を `testreport/` に撮り、自分の目で確かめてから終える
