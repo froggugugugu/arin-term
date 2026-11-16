@@ -1613,6 +1613,207 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
 | AC-K10 | `ARIN_STATE_DIR` の差し替え先の `settings.toml` だけを読む | T64b | T65b | T66a(スモーク) | — |
 | M3 の残り | タブの「+」の `Meta+T` の直書きを表から引く | — | — | T65e | (3) |
 
+### M4.6 フォントサイズの設定画面(T67 で分解した。2026-11-16)
+
+**【要件の追加(本人。2026-11-16)】** 「ターミナルのフォントサイズと、UI のフォントサイズの変更を、設定画面でできるようにする」。本人が決めたこと: (1) 値は `state.json` に保存する。`settings.toml` は人だけが書き、フォントサイズの項目を作らない。(2) ⌘, は設定画面を開く。「設定ファイルを開く…」は設定画面の中のボタンとメニューの項目に移す。(3) ⌘+・⌘− は今回入れない(あとから足せる形)。フォントの種類・配色も入れない。PRD に無い要件なので、PRD への反映(FR の追加、FR-049 の分割、N5 との線引き)は本人の判断を待つ。仮の受け入れ基準は ADR-013 の AC-F01〜F14。
+
+完了条件: ADR-013 の AC-F01〜F14(【要確認】の回答で外れたものを除く)が自動テストと T73a の本人の確認で合格し、下の「M4.6 の完了条件」をすべて満たす。
+
+#### M4.6 の前提
+
+設計の決定は ADR-013(`output/design/ADR_013_font-size-settings.md`。Proposed)。【要確認】の 5 点は**推奨案で計画を組んだ**。
+
+- (a) **T56 からの前倒し**: フォントサイズは M6 の T56(FR-049。`settings.toml` の `[terminal]` の `font_size`)から M4.6 に前倒しし、置き場所を設定ファイルから `state.json` に替えた。T56 の項は書き換えない(フォントの種類・配色などの残りは T56 のまま。ADR-013 の 8)
+- (b) **保存**: `state.json` の `ui.terminalFontSize`(既定 15 = いまの xterm.js の既定)と `ui.interfaceFontSize`(既定 13 = いまの `--font-size-l`)。整数の CSS ピクセル。範囲はターミナル 9〜28・画面 11〜18、1 刻み(【要確認】1)。既定のあいだは書かない。無い・数でないは既定、整数でないは四捨五入、範囲の外は端に留める。退避しない。版は 1 のまま(ADR-013 の 1)
+- (c) **流れ**: 正本は `Workspace`(規則は `crates/arin-core/src/layout/font_sizes.rs`)。コマンド `step_font_size(target, delta)`・`reset_font_sizes()` → 変わったら `notify` → 写しの `fontSizes`(値・最小・最大・既定)→ 画面。保存は既存の保存のスレッド(ADR-013 の 2)
+- (d) **ターミナル**: `TerminalSurface.setFontSize`。表示中は当ててから `fit` し直す(`ResizeObserver` は鳴らない)、隠しているものは表示に戻すときに当てる。変更は 1 フレームにまとめる。PTY への寸法は今の経路(ADR-013 の 3)
+- (e) **画面**: 純粋な関数 `interfaceMetrics(size)`(`src/logic/appearance/`)が整数の px を返し、`:root` の変数を上書きする。追従は文字の 4 トークンと行の高さ 9 トークンと新しい `--tree-input-height`(【要確認】5)。ツリーの行の高さは CSS から読まず同じ関数から受け取る(ADR-013 の 4)
+- (f) **設定画面**: 画面内のシート(`<dialog>`、背景を暗くしない=【要確認】4)、ステッパー(`role="spinbutton"`)、即時に反映、開閉は `uiStore`(ADR-013 の 5)
+- (g) **⌘,**: 表の行 `app.open-settings` の意味を「設定…(設定画面)」に替え、Rust は `menu-command` の `"open-settings"` を送る。「設定ファイルを開く…」は表の外のキーなしの項目(ID `app.open-settings-file`)と、コマンド `open_settings_file`。表は 23 行のまま、生成物の表の中身は変わらない(【要確認】2。ADR-013 の 6)
+- (h) **M4.5 との順**: M4.5 は本人の確認待ち(T66c・T66d)。T66d は `menu.rs`・`settings.rs`・ADR-012・`docs/` を直しうるので、それらを触る T68d・T72 は T66d の完了後に行う。それ以外(T68a〜T68c・T69a〜T69b)は T66d を待たずに始めてよい
+- (i) **M5 の順**: M5 は M4.6 のあとに置く(T51・T52 の依存は T66 のまま書いてある。書き換えは本人の了承のあと T73b で行う)
+- (j) **重い処理は 1 件ずつ**: 下の「並行: 可」はファイルが重ならないという意味で、**同じ時に走らせるのは 1 件だけ**にする(このマシンは並行のビルドとテストで固まった)。順は Phase の番号と、Phase の中の書いた順
+
+【要確認】の回答が推奨と違うとき:
+
+| 【要確認】 | 推奨(計画の前提) | 違う回答のときのタスクの直し |
+| ---------- | ------------------ | ---------------------------- |
+| 1. 範囲と刻み | 9〜28・11〜18、1 刻み | T68a の定数と表のテストだけ |
+| 2. ⌘, と表の行 | A(意味を替える。設定ファイルはキーなしの表の外の項目) | B: T68d で表に 24 行目と新しい既定のキー、生成物と `defaultShortcuts.ts` を作り直す(JIS で打てるかも確かめる)。C: T68d の前に表の型を替える子タスクを 1 つ足す |
+| 3. 設定画面の ⌘W | 取り消して設定画面を閉じる(T70a の着手時に効くか確かめる) | B: T70b の ⌘W の扱いとテストを外す |
+| 4. 背景を暗くするか | 暗くしない | T70b の CSS 1 行と画像 |
+| 5. 画面で追従させる範囲 | 文字と行の高さだけ | アイコンも: T69b にアイコンの px のトークン化を足す(CSS の直書き 10 か所ほど) |
+
+#### 現状のコードから分かった、M4.6 で足すところ・変えるところ
+
+- `XtermEngine.ts:57-63` は `fontSize` を渡していない(xterm.js 6.0.0 の既定 15)。`TerminalSurface` に文字の大きさを変える口が無い → T69a
+- 文字の大きさだけを変えても置き場所の大きさは変わらず、`TerminalHost` の `ResizeObserver` が鳴らない。`fit` は隠しているあいだ何もしない(`XtermEngine.ts:107-110`)→ T69a で明示して呼び、隠しているものは表示に戻すときに当てる
+- `tokens.css` が文字の 4 トークン(11・12・13・15)と行の高さのトークンを持ち、部品の `font-size` はすべてトークン。部品の CSS の px の直書きは 9 ファイルで約 100 か所(`tokens.css` の 42 を除く)で、大半は線・輪・アイコン・余白・幅の上下限。文字の入れ物の直書きは `TreeView.css:178`・`188`(名前の入力欄の 18px)だけ → T69b
+- `FileTreeView.tsx:68-72`・`214-217` は行の高さを付いたときに 1 回だけ CSS から読む(`calc()` にすると読めず 22 に落ちる)→ T69b で関数から受け取る形に替える
+- `PersistedLayout`・`UiSection`(`persistence/codec.rs`)、`Workspace`(`restore`・`persisted_state`・`snapshot`)、`AppSnapshot` に文字の大きさが無い。`PersistedLayout { … }` の構造体の書き方が `codec.rs`・`workspace/state.rs`・`tests/persistence_codec.rs`・`tests/workspace_projects.rs` に計 10 か所 → T68a・T68b
+- 写しの形を足すと、画面の写しの見本(`src/test/fakeIpc.ts`、`src/state/actions.test.ts`、`src/state/selectors.test.ts`、`e2e/fixtures/tauriMock.ts` の `sampleSnapshot`)が型検査で落ちる → T68a で一緒に直す
+- `menu.rs` の自前の項目は表の行からしか作らない。`on_menu_event` は表に無い ID を捨てる。`MenuCommand` は `"select-all"` だけ。画面の `onMenuCommand` は `TerminalManager.handleMenuCommand` 直結(`main.tsx:72`)→ T68d・T70a
+- 確認ダイアログ(`ConfirmDialog`)はモーダルの `<dialog>` と自前の Tab の回し方を持つ。設定画面は確認ではないので別の部品にし、Tab の回し方は同じ考えで書く → T70b
+- ⌘W は確認なしでタブを閉じシェルを終わらせる(`sessions.rs:528-531`)。keydown を取り消したときメニューに回るかは、リポジトリの中の記述が食い違う(`menu.rs:8` と `XtermEngine.ts:67-69`)→ T70a の着手時に確かめる
+- スモーク(`scripts/smoke.mjs`)は `state.json` を置ける(`--tiles`)が、文字の大きさを入れた状態の指定が無い → T71
+
+#### 親タスクと子タスク
+
+| 親 | 子 |
+| -- | -- |
+| T68 — Rust(規則・保存・コマンド・⌘,) | T68a(規則と写しの型)、T68b(保存と `Workspace` の口)、T68c(コマンドと保存の結合)、T68d(⌘, の付け替えとメニュー) |
+| T69 — 画面への反映 | T69a(ターミナル)、T69b(画面の CSS の基準値化とツリー) |
+| T70 — 設定画面 | T70a(開閉と配線)、T70b(部品とデザイン) |
+| T71〜T73 — 通しの確認と文書 | T71(E2E とスモーク)、T72(文書の同期)、T73a(合否一覧と本人の確認)、T73b(反映と最終の検証) |
+
+#### 共有のファイルの持ち回り(表の順に逐次で触る)
+
+| ファイル | 触るタスク(この順) |
+| -------- | ------------------ |
+| `crates/arin-core/src/layout/font_sizes.rs`、`crates/arin-core/src/layout/mod.rs`、`crates/arin-core/tests/font_sizes.rs` | T68a だけ |
+| `crates/arin-core/src/workspace/snapshot.rs`、`crates/arin-core/tests/generated_types.rs`、`src/ipc/generated/` | T68a → T68d(`MenuCommand.ts`) |
+| `crates/arin-core/src/persistence/codec.rs`、`crates/arin-core/tests/persistence_codec.rs`、`crates/arin-core/src/workspace/state.rs`、`crates/arin-core/src/workspace/font_sizes.rs`(新)、`crates/arin-core/tests/workspace_font_sizes.rs`、`crates/arin-core/tests/workspace_projects.rs` | T68a(`state.rs` の写しだけ)→ T68b |
+| `src-tauri/src/sessions.rs`、`src-tauri/src/commands/layout.rs`、`src-tauri/src/lib.rs`、`src-tauri/Cargo.toml`、`src-tauri/tests/font_commands.rs`、`src-tauri/tests/app_persistence.rs` | T68c → T68d(`lib.rs`・`commands/app.rs` だけ) |
+| `crates/arin-core/src/workspace/events.rs`、`crates/arin-core/src/shortcuts/table.rs`(説明の文)、`crates/arin-core/src/shortcuts/sample.rs`、`crates/arin-core/tests/shortcuts.rs`、`src-tauri/src/menu.rs`、`src-tauri/src/settings.rs`、`src-tauri/src/commands/app.rs`、`src-tauri/tests/app_menu.rs`、`src-tauri/tests/app_settings.rs` | T68d だけ |
+| `src/test/fakeIpc.ts`、`e2e/fixtures/tauriMock.ts` | T68a(写しの見本)→ T70a(コマンドの応答)→ T71 |
+| `src/state/actions.test.ts`、`src/state/selectors.test.ts` | T68a → T70a(`actions.test.ts`) |
+| `src/terminal/engine.ts`、`src/terminal/xterm/XtermEngine.ts`、`src/terminal/TerminalManager.ts`(とテスト)、`src/test/fakeTerminalEngine.ts`、`src/state/terminalSync.ts`(とテスト) | T69a だけ |
+| `src/logic/appearance/`、`src/ui/design/tokens.css`、`src/ui/design/applyInterfaceMetrics.ts`、`src/ui/tree/TreeView.css`、`src/ui/tree/FileTreeView.tsx` | T69b だけ |
+| `src/ui/shell/AppShell.tsx` | T69b(基準値を当てる)→ T70b(設定画面を置く) |
+| `src/ipc/client.ts`、`src/ipc/client.test.ts`、`src/state/uiStore.ts`、`src/state/actions.ts`、`src/logic/keys/menuCommand.ts`(とテスト)、`src/main.tsx` | T70a だけ |
+| `src/ui/settings/`(新)、`e2e/font-settings.spec.ts`(新) | T70b だけ |
+| `e2e/m46-scenario.spec.ts`(新)、`scripts/smoke.mjs`、`scripts/smoke.test.mjs` | T71 だけ |
+| `docs/`、`output/design/ARCH_multi-terminal.md`、`output/design/ADR_012_keybindings.md`、`output/design/ADR_013_font-size-settings.md` | T72 → T73b(本人の確認で変わった点だけ) |
+
+#### Phase 31.6a(逐次。文書だけ)
+
+- [x] T67 — M4.6 の分解と ADR(変更ファイル: output/tasks/PLAN_multi-terminal.md, output/design/ADR_013_font-size-settings.md, output/design/ADR_INDEX.md | 依存: なし)
+  - 決めたこと(ADR-013): (1) 保存の形と既定・範囲・読むときの扱い。(2) 流れとコマンド(`delta` で動かす)。(3) ターミナルへの当て方。(4) 画面への当て方と追従の範囲。(5) 設定画面の形。(6) ⌘, と表の行。(7) ⌘+・⌘− の足し方。(8) T56 との分担。仮の受け入れ基準 AC-F01〜F14。【要確認】5 点
+  - 検証: 文書だけ。`ls output/design/ADR_013_*.md` が 1 件(済み)
+
+#### Phase 31.6b(逐次。Rust。T67 完了後)
+
+- [ ] T68a — 文字の大きさの規則と写しの型(変更ファイル: crates/arin-core/src/layout/font_sizes.rs, crates/arin-core/src/layout/mod.rs, crates/arin-core/src/workspace/snapshot.rs, crates/arin-core/src/workspace/state.rs, crates/arin-core/tests/font_sizes.rs, crates/arin-core/tests/app_snapshot.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/, src/test/fakeIpc.ts, src/state/actions.test.ts, src/state/selectors.test.ts, e2e/fixtures/tauriMock.ts | 依存: T67)
+  - 対応: ADR-013 の 1・2、AC-F06・F08・F09 の規則の部分
+  - 置くもの: `FontSizes { terminal, interface }`(既定 15・13)、`FontSizeTarget`(`terminal`/`interface`)、範囲と既定の定数、`stepped(target, delta)`(端で留める)、`reset()`、`from_persisted(raw)`(JSON の値 → 既定・四捨五入・端に留める)。写しの `FontSizesSnapshot`(それぞれ `value`・`min`・`max`・`defaultValue`)を `AppSnapshot.fontSizes` に足す(版は 1 のまま)。`Workspace::snapshot` は当面 `FontSizes::default()` を載せる(T68b で持たせる)。生成物を作り直し、画面の写しの見本 4 か所に既定の `fontSizes` を足す
+  - 安全: 入出力なし
+  - 並行: 不可(生成物)
+  - 先に書くテスト: `既定はターミナル_15_画面_13`、`刻みは範囲の端で留まる`(表で)、`既定に戻すと両方が既定`、`保存値が無い_null_数でないときは既定`、`整数でない数は四捨五入する`、`範囲の外は端に留める`、`写しに値と範囲と既定が載る`、`写しの_json_の形`(生成物が最新)
+  - 検証: `cargo test -p arin-core --test font_sizes --test app_snapshot --test generated_types && npx tsc -b`
+- [ ] T68b — 保存と `Workspace` の口(変更ファイル: crates/arin-core/src/persistence/codec.rs, crates/arin-core/src/workspace/state.rs, crates/arin-core/src/workspace/font_sizes.rs, crates/arin-core/src/workspace/mod.rs, crates/arin-core/tests/persistence_codec.rs, crates/arin-core/tests/workspace_font_sizes.rs, crates/arin-core/tests/workspace_projects.rs | 依存: T68a)
+  - 対応: AC-F06・F07・F08
+  - 置くもの: `PersistedLayout.font_sizes`。`UiSection` に `terminalFontSize`・`interfaceFontSize`(読みは `lenient_display_mode` と同じく退避しない形、既定なら書かない)。`Workspace` が `FontSizes` を持ち、`restore` で読み、`persisted_state`・`snapshot` に出す。`step_font_size(target, delta) -> bool`・`reset_font_sizes() -> bool`(変わったときだけ真)
+  - 安全: 1 つの値のために `state.json` を退避しない
+  - 並行: 不可(T68a に続く)
+  - 先に書くテスト: `文字の大きさが無い版_1_の_state_json_をそのまま読む`、`既定の大きさは書かない`、`変えた大きさを書いて読み戻せる`、`数でない文字の大きさは退避せず既定`、`範囲の外の文字の大きさは端に留める`、`文字の大きさを足しても_schema_version_は_1`、`刻むと写しの値が変わり真を返す`、`端で刻んでも変わらず偽を返す`、`既定に戻すと両方が既定になり既定のときは偽`
+  - 検証: `cargo test -p arin-core --test persistence_codec --test workspace_font_sizes --test workspace_projects`
+- [ ] T68c — コマンドと保存の結合(変更ファイル: src-tauri/src/sessions.rs, src-tauri/src/commands/layout.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/tests/font_commands.rs, src-tauri/tests/app_persistence.rs | 依存: T68b)
+  - 対応: AC-F02(Rust 側)・F06・F07・F08、ADR-013 の 2・7
+  - 置くもの: `SessionRegistry::step_font_size`・`reset_font_sizes`(変わったら `notify`)。コマンド `step_font_size(target, delta)`・`reset_font_sizes()`(`commands/layout.rs`。`generate_handler!` に足す)。`[[test]]`(`harness = false`)
+  - 安全: 一時の状態フォルダだけ
+  - 並行: 不可(`lib.rs`)
+  - 先に書くテスト(模擬ランタイム): `刻むと写しが届き保存される`、`続けて_3_回刻むと_3_上がる`、`端では写しを送らない`、`既定に戻すと両方が既定の写しが届く`、`保存した大きさで起動し直すと写しに出る`、`文字の大きさを変えてもシェルは続く`(セッションの状態が `running` のまま)
+  - 検証: `cargo test -p arin --test font_commands --test app_persistence`
+- [ ] T68d — ⌘, の付け替えとメニュー(【要確認】2 の A)(変更ファイル: crates/arin-core/src/workspace/events.rs, crates/arin-core/src/shortcuts/table.rs, crates/arin-core/src/shortcuts/sample.rs, crates/arin-core/tests/shortcuts.rs, crates/arin-core/tests/generated_types.rs, src/ipc/generated/MenuCommand.ts, src-tauri/src/menu.rs, src-tauri/src/settings.rs, src-tauri/src/commands/app.rs, src-tauri/src/lib.rs, src-tauri/tests/app_menu.rs, src-tauri/tests/app_settings.rs | 依存: T68c, T66d)
+  - 対応: AC-F01・F10・F11(Rust 側)、ADR-013 の 6
+  - 置くもの: `MenuCommand::OpenSettings`(`"open-settings"`)。`menu::label(AppOpenSettings)` を「設定…」に、`on_menu_event` は `menu-command` を送る。表の外の項目「設定ファイルを開く…」(定数 `OPEN_SETTINGS_FILE_ID = "app.open-settings-file"`、キーなし。「設定…」の下)で `settings::open_from_menu` を呼ぶ(名前は `open_settings_file` に替えてよい)。コマンド `open_settings_file`(引数なし)。見本の先頭に「文字の大きさはアプリの「設定…」(⌘,)で変えます」の 1 行。表は 23 行のまま(`table.rs` は説明の文だけ)
+  - 安全: 設定ファイルは無いときだけ見本を作る(ADR-012 の 6 のまま)
+  - 並行: 不可(`lib.rs`・`menu.rs`)
+  - 先に書くテスト: `設定の既定は_cmd_カンマで受け口はメニューの項目`(既存を「設定画面」の意味に読み替え)、`アプリ名のメニューの先頭は設定と設定ファイルを開くで_設定ファイルを開くにはキーが無い`、`設定を選ぶと_open_settings_のメニューの操作が届く`、`設定ファイルを開くを選ぶと無いときは見本を作って開く`(既存の AC-K08 のテストを新しい ID で)、`open_settings_file_のコマンドも同じく開く`、`設定で替えたキーが設定のメニューの項目に付く`(AC-F11)、`見本に文字の大きさは設定画面で変える旨がある`、`表の行は_23_のまま`。既存の `app_menu.rs` の「自前の項目は設定ファイルを開くと終了だけ」は新しい並びに直す(直す理由をテストの説明に書く)
+  - 検証: `cargo test -p arin-core --test shortcuts --test generated_types && cargo test -p arin --test app_menu --test app_settings && node --test scripts/default-shortcuts.test.mjs`。節目として続けて `npm run lint && npm test`(1 件で回す)
+
+#### Phase 31.6c(画面への反映。T68a 完了後。T68b〜T68d と並べられるが同じ時に走らせない)
+
+- [ ] T69a — ターミナルへの反映(変更ファイル: src/terminal/engine.ts, src/terminal/xterm/XtermEngine.ts, src/terminal/TerminalManager.ts, src/terminal/TerminalManager.test.ts, src/test/fakeTerminalEngine.ts, src/state/terminalSync.ts, src/state/terminalSync.test.ts | 依存: T68a)
+  - 対応: AC-F02・F03・F09、ADR-013 の 3
+  - 置くもの: `TerminalSurface.setFontSize(px)`、`createSurface(id, { fontSize })`。`XtermSurface` は表示中なら `options.fontSize` を替えて `fit`、隠していれば覚えて `setVisible(true)` で当ててから `fit`。`TerminalManager.setFontSize(px)`(全サーフェスへ。1 フレームにまとめ最後の値だけ。`#lastShownSize` を更新)。`terminalSync` が写しの `fontSizes.terminal.value` の変化で呼ぶ(`present` より前)
+  - 安全: 接続を切らない・作り直さない
+  - 並行: 可(T68b〜T68d・T69b とファイルが重ならない)
+  - 先に書くテスト(Vitest): `大きさを変えると表示中のサーフェスに当てて寸法を合わせ直す`、`隠しているサーフェスは表示に戻すときに当てる`、`新しく作るサーフェスは今の大きさで作る`、`寸法が変われば_resize_terminal_を送り接続は保つ`、`続けて変えると最後の値だけを_1_回当てる`、`写しの大きさが同じなら何もしない`、`隠したまま作るサーフェスも写しの大きさで作る`(`terminalSync`)
+  - 検証: `npx vitest run src/terminal src/state/terminalSync.test.ts`
+  - 着手時に確かめる: xterm.js 6.0.0 で `display: none` のまま `fontSize` を替えると文字の寸法が 0 で測られるか(ADR-013 の 3 の【仮定】)。T70b の E2E で「隠していたタブを表示すると、初めから新しい大きさだったものと同じ行・桁」を WebKit で確かめる
+- [ ] T69b — 画面の CSS の基準値化とツリー(【要確認】5)(変更ファイル: src/logic/appearance/interfaceMetrics.ts, src/logic/appearance/interfaceMetrics.test.ts, src/ui/design/applyInterfaceMetrics.ts, src/ui/design/tokens.css, src/ui/tree/TreeView.css, src/ui/tree/FileTreeView.tsx, src/ui/shell/AppShell.tsx | 依存: T68a)
+  - 対応: AC-F04・F05・F09、ADR-013 の 4
+  - 置くもの: `interfaceMetrics(size)`(追従の 14 トークンを整数の px で。`round(既定 × size / 13)`)。`applyInterfaceMetrics(root, metrics)`(`style.setProperty`)。`tokens.css` に `--tree-input-height: 18px`、`TreeView.css` の 18px 2 か所を置き換え。`FileTreeView` は行の高さを props か写しから受け取り、変わったら窓を計算し直す(`readRowHeight` と `FALLBACK_ROW_HEIGHT` は外すか既定の値に使う)。`AppShell` が写しの `fontSizes.interface.value` で当てる
+  - 安全: HTML の差し込みを使わない(CSSOM の `setProperty` だけ)
+  - 並行: 可(T69a とファイルが重ならない)
+  - 先に書くテスト: Vitest: `既定の_13_では_tokens_css_の値と同じ`(`tokens.css` を読んで比べる)、`どの大きさでも整数の_px`、`大きさに比例し単調に増える`(表で 11〜18)、`追従させないトークンは返さない`。Playwright(既存の `e2e/tree.spec.ts` に足す): `画面の大きさを変えた写しでツリーの行の高さと仮想スクロールがそろう`、`選択中の行がキーの移動で見える位置に来る`。既存の E2E が既定の大きさで全件通る(AC-F09)
+  - 検証: `npx tsc -b && npx vitest run src/logic/appearance && npx playwright test e2e/tree.spec.ts e2e/app-shell.spec.ts e2e/tiles.spec.ts`
+
+#### Phase 31.6d(設定画面。T68c・T69a・T69b 完了後。逐次)
+
+- [ ] T70a — 開閉と配線(変更ファイル: src/ipc/client.ts, src/ipc/client.test.ts, src/state/uiStore.ts, src/state/uiStore.test.ts, src/state/actions.ts, src/state/actions.test.ts, src/logic/keys/menuCommand.ts, src/logic/keys/menuCommand.test.ts, src/main.tsx, src/test/fakeIpc.ts, e2e/fixtures/tauriMock.ts | 依存: T68c, T68d)
+  - 対応: AC-F01・F07・F10(画面側)、【要確認】3 の確認
+  - 置くもの: 包み `stepFontSize`・`resetFontSizes`・`openSettingsFile`。`uiStore` に `settingsOpen`・`openSettings`(ほかの確認ダイアログが開いていれば開かない)・`closeSettings`。`routeMenuCommand` に `"open-settings"`。`main.tsx` の `onMenuCommand` で振り分け。偽の Rust 側に 3 つのコマンドの応答
+  - **着手時に確かめる(【要確認】3)**: `npm run app:debug` の実機で、`<dialog>` の keydown で ⌘W を `preventDefault` したときにメニューの「タブを閉じる」が動かないか。結果を ADR-013 の末尾に書く。動いてしまうなら T70b の ⌘W の扱いを外し、本人に報告する
+  - 並行: 不可
+  - 先に書くテスト(Vitest): `設定を開くのメニューの操作で設定画面が開く`、`開いているときにもう一度届いても_1_つのまま`、`ほかの確認ダイアログが開いていれば開かない`、`刻むと_step_font_size_を差分で呼ぶ`、`既定に戻すで_reset_font_sizes_を呼ぶ`、`設定ファイルを開くで_open_settings_file_を呼ぶ`、`すべてを選択の振り分けは変わらない`
+  - 検証: `npx tsc -b && npx vitest run src/ipc src/state src/logic/keys`
+- [ ] T70b — 設定画面の部品とデザイン(変更ファイル: src/ui/settings/SettingsDialog.tsx, src/ui/settings/SettingsDialog.css, src/ui/settings/FontSizeStepper.tsx, src/ui/shell/AppShell.tsx, e2e/font-settings.spec.ts | 依存: T70a)
+  - 対応: AC-F01〜F07・F10・F12・F13、ADR-013 の 5
+  - 置くもの: シートの `<dialog>`(`role="dialog"`、名前「設定」、背景は透明=【要確認】4)、2 行のステッパー(`role="spinbutton"`、↑↓・Home・End、▲▼ は `tabindex="-1"`、端で無効、`aria-valuetext` は「N ポイント」)、「設定ファイルを開く…」、「既定に戻す」(両方既定で無効)、「完了」。Esc・Return・⌘W(T70a の確認しだい)で閉じ、前のフォーカスへ戻す。Tab は中を回す
+  - **デザイン**(本人の指示): 「AI にありがちなデザインを避け、Apple のデザインらしく、ハイセンスに」。既存のトークンの色だけ、グラデーション・絵文字・大きな角丸のカード・影の重ねを使わない、組は区切り線と余白で分ける。Playwright の画像(ライトとダーク、既定・最小・最大の大きさ)を `testreport/` に撮り、自分の目で確かめてから終える
+  - 安全: 文言は文字として描く
+  - 並行: 不可
+  - 先に書くテスト(Playwright `e2e/font-settings.spec.ts`): `cmd_カンマのメニューの操作で設定画面が開きターミナルのステッパーにフォーカスがある`、`上矢印で_step_font_size_が_1_で呼ばれ届いた写しで値が変わる`、`ターミナルの大きさの写しでタブ表示とタイル_9_枚の行と桁が変わり_resize_terminal_が送られる`(AC-F02)、`隠していたタブを表示すると初めから新しい大きさだったものと同じ行と桁`(AC-F03)、`画面の大きさの写しでサイドバーとタブとツリーの文字と行の高さが変わりターミナルの文字は変わらない`(AC-F04)、`端ではボタンが無効で値が変わらない`(AC-F06)、`既定に戻すが既定のときは無効`(AC-F07)、`設定ファイルを開くで_open_settings_file_が呼ばれる`、`tab_が設定画面の中を回り_esc_で閉じてターミナルにフォーカスが戻る`(AC-F12)、`ダイアログとステッパーの名前と値が読み上げ用に付く`
+  - 検証: `npx tsc -b && npx playwright test e2e/font-settings.spec.ts e2e/tabs.spec.ts e2e/tiles.spec.ts e2e/settings.spec.ts`
+
+#### Phase 31.6e(逐次。T70b 完了後)
+
+- [ ] T71 — M4.6 のシナリオの E2E と、文字の大きさを入れたスモーク(変更ファイル: e2e/m46-scenario.spec.ts, e2e/fixtures/tauriMock.ts, scripts/smoke.mjs, scripts/smoke.test.mjs | 依存: T70b)
+  - 対応: AC-F02・F04・F08・F14 の通し
+  - 置くもの: スモークに `--fonts`(一時の状態フォルダの `state.json` に `ui.terminalFontSize: 20`・`ui.interfaceFontSize: 15` を置いて起動)。準備完了とターミナルの出力、`[arin:frontend-error]` が無いこと、終わったあと `state.json` に同じ 2 つの値が残り退避のファイルができていないこと、`settings.toml` ができていないことを確かめる
+  - 先に書くテスト: Playwright: `設定画面で両方を変えて閉じると全部が新しい大きさのまま操作できる`、`タイル表示で大きさを続けて変えても行と桁が最後の値に落ち着く`(`expect.poll`)。`scripts/smoke.test.mjs`: `文字の大きさの指定で一時の状態フォルダに_state_json_を置く`、`終わったあと文字の大きさが残り退避が無いか確かめる`
+  - 並行: 不可
+  - 検証: `npx playwright test e2e/m46-scenario.spec.ts`(3 回続けて合格)`&& node --test scripts/smoke.test.mjs && npm run app && node scripts/smoke.mjs --fonts && npm run smoke`
+
+#### Phase 31.6f(逐次。T71・T66d 完了後)
+
+- [ ] T72 — 文書の同期(変更ファイル: docs/data-model.md, docs/architecture.md, docs/development-patterns.md, docs/project.md, output/design/ARCH_multi-terminal.md, output/design/ADR_012_keybindings.md, output/design/ADR_013_font-size-settings.md | 依存: T71, T66d)
+  - 書くもの: `docs/data-model.md`(`ui.terminalFontSize`・`ui.interfaceFontSize`、写しの `fontSizes`、コマンド `step_font_size`・`reset_font_sizes`・`open_settings_file`、`menu-command` の `"open-settings"`、`settings.toml` の節の「設定ファイルを開く…」の場所)、`docs/architecture.md`(`src/ui/settings/`・`src/logic/appearance/`・新しいテスト)、`docs/development-patterns.md`(落とし穴: 文字の大きさだけでは `ResizeObserver` が鳴らない、`display: none` のまま xterm.js の文字の大きさを替えない、CSS の変数を `calc()` にすると `getPropertyValue` が計算前の文字列を返す。T70a の ⌘W の結果)、`docs/project.md`(概要に M4.6)。設計書: §6.1・§6.2(`state.json` の表に 2 行、設定ファイルのキーの表の `terminal.font_size` を「M4.6 で `state.json` に移した」に直す)・§6.3 の写しの表・§9.1(アプリ名のメニューの並び、設定画面)。ADR-012 の末尾に「`app.open-settings` の意味を ADR-013 の 6 で『設定…』に替えた」と追記
+  - 並行: 不可(文書だけ。T71 と同じ時に走らせない)
+  - 検証: 文書だけ。`git diff --stat` が上の変更ファイルだけであること
+
+#### Phase 31.6g(逐次。人間ゲート)
+
+- [ ] T73a — M4.6 の合否一覧と本人の確認(変更ファイル: output/reports/test/M4.6_acceptance.md, output/tasks/PROGRESS.md | 依存: T72)
+  - AI がやること: `npm run build && npm test && npm run lint && npm run test:coverage && npm run e2e && npm run app && npm run smoke && node scripts/smoke.mjs --tiles && node scripts/smoke.mjs --settings && node scripts/smoke.mjs --fonts` を 1 件ずつ通し、AC-F の合否一覧を書く。fresh context の `/code-review` と `verifier` を 1 回ずつ回す
+  - **人間がやること**(`npm run app` の `.app` を Finder から開く): (1) ⌘, とメニューの「設定…」で設定画面が開く(AC-F01)。(2) タブ表示とタイル 9 枚でターミナルの大きさを変えると、すぐ変わり、Claude Code などが続いて描き直される。続けて押しても固まらない(AC-F02)。(3) ほかのタブ・ほかのプロジェクトに切り替えても新しい大きさ(AC-F03)。(4) 画面の大きさを変えると、サイドバー・タブ・ツリー・右クリックのメニューの文字と行がそろって変わり、線とアイコンはにじまない(AC-F04・F05)。(5) 再起動しても残る。「既定に戻す」で M4.5 と同じ見た目に戻る(AC-F07〜F09)。(6) 「設定ファイルを開く…」(設定画面とメニュー)が M4.5 と同じに開く(AC-F10)。(7) キーボードだけで操作でき、⌘W で設定画面が閉じる(タブは閉じない。【要確認】3 の確認の結果しだい)(AC-F12)。(8) 見た目(ライト・ダーク・すりガラスの上。デザインの方針)(AC-F13)。(9) ADR-013 の【要確認】1〜5 の回答と、PRD への反映(FR の追加・FR-049 の分割・N5 との線引き・M4.6 の区切り)、M5 の依存を T73b に替えるかの判断
+  - 完了条件: AC-F の合否一覧ができ、本人が (1)〜(9) を確かめた
+- [ ] T73b — 本人の確認の反映と最終の検証(変更ファイル: output/design/ADR_013_font-size-settings.md, output/design/ADR_INDEX.md, output/prd/PRD_multi-terminal.md(本人が了承した場合だけ), output/tasks/PLAN_multi-terminal.md(M5 の依存。本人が了承した場合だけ), output/reports/test/M4.6_acceptance.md, output/tasks/PROGRESS.md, docs/(変わった点だけ) | 依存: T73a)
+  - 変えるもの: ADR-013 の状態を本人の了承に合わせる。T73a で直すと決めた点を直す(ソースを直すときは先にテストを足す)
+  - 検証: `npm run build && npm test && npm run lint && npm run e2e && npm run app && npm run smoke && node scripts/smoke.mjs --fonts`
+  - 完了条件: 下の「M4.6 の完了条件」をすべて満たす
+
+#### M4.6 の完了条件
+
+- 下の対応表の AC-F が、自動テストと T73a の本人の確認で全件合格している(【要確認】の回答で外したものを除く)
+- `npm run build`・`npm test`・`npm run lint`・`npm run test:coverage`(`arin-core` と `src/logic` のそれぞれで行 80%)・`npm run e2e`(`e2e/m46-scenario.spec.ts` は 3 回続けて合格)・`npm run smoke`・`node scripts/smoke.mjs --tiles`・`--settings`・`--fonts` が終了コード 0
+- 既定の大きさで、既存の E2E が書き換えなしで通る(見た目が M4.5 と同じ。`app_menu.rs` の並びの検査は T68d で理由を付けて直したものだけ)
+- `settings.toml` にフォントの項目が無く、設定画面の操作で `settings.toml` が作られず・変わらない。`state.json` の `schemaVersion` が 1 のまま
+- テストとスモークが本物の `~/Library/Application Support/Arin/` を読み書きしていない
+- `src/ui/` の部品の CSS に、追従させるトークンの値の直書きが無い(`TreeView.css` の 18px を含む)。キーの文字列の直書きが無い
+- 本人が T73a の (1)〜(9) を確かめた。ADR-013 が本人の了承に合わせて直っている
+
+#### 要件と受け入れ基準の対応(PRD に FR が無いので ADR-013 の仮の受け入れ基準 AC-F で対応を取る)
+
+| AC | 受け入れ基準(要約。全文は ADR-013) | Rust | 画面 | E2E・スモーク | 人間(T73a) |
+| -- | ---------------------------------- | ---- | ---- | ------------- | ---------- |
+| AC-F01 | ⌘, と「設定…」で開く。1 つのまま。ターミナルに渡らない | T68d | T70a | T70b | (1) |
+| AC-F02 | ターミナルの大きさが表示中の全部(タイル 9 枚)に即時に効き、PTY に寸法が伝わり、シェルが続く | T68c | T69a | T70b、T71 | (2) |
+| AC-F03 | 隠していたものも表示に戻すと新しい大きさで同じ行・桁 | — | T69a | T70b | (3) |
+| AC-F04 | 画面の大きさで文字と行の高さが変わり、余白・線・アイコン・ターミナルの文字は変わらない | — | T69b | T70b、T71 | (4) |
+| AC-F05 | ツリーの仮想スクロールがそろい、選択中の行が見える | — | T69b | T69b | (4) |
+| AC-F06 | 端で無効・それ以上変わらない | T68a、T68c | T70b | T70b | — |
+| AC-F07 | 「既定に戻す」で両方既定。既定のときは無効 | T68b、T68c | T70a、T70b | T70b | (5) |
+| AC-F08 | 再起動で残る。既定は書かない。壊れた値は既定・端。退避しない。版 1 | T68a、T68b、T68c | — | T71(スモーク) | (5) |
+| AC-F09 | 既定の大きさで見た目が M4.5 と同じ | T68a | T69a、T69b | 既存の E2E | (5) |
+| AC-F10 | 「設定ファイルを開く…」(ボタンとキーなしの項目)が AC-K08 と同じ。設定画面は `settings.toml` を作らない | T68d | T70a、T70b | T71(スモーク) | (6) |
+| AC-F11 | `settings.toml` の `app.open-settings` のキーで設定画面が開く。見本に説明 | T68d | — | — | — |
+| AC-F12 | キーボードだけで使え、閉じるとフォーカスが戻る。読み上げの名前と値 | — | T70a、T70b | T70b | (7) |
+| AC-F13 | 見た目が控えめで、ライト・ダーク・すりガラスで読める | — | T70b | T70b(画像) | (8) |
+| AC-F14 | テストとスモークは一時の状態フォルダだけ | T68c | — | T71 | — |
+
 ### M5 公証・配布(粗い分解。秘密情報を扱う作業は人間)
 
 完了条件: 別ユーザーアカウントで Gatekeeper の警告なく起動する。PRD の依存は M0 だけなので前倒しもできるが、本計画では M4 の後に置いた。M4.5 を足したので、M4.5 の後に置く(2026-11-15。T51・T52 の依存を T50 から T66 に替えた)。
