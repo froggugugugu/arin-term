@@ -65,6 +65,8 @@ fn 写しの_json_の形() {
                     "showHidden": false,
                     "terminalIds": ["terminal-1"],
                     "activeTerminalId": "terminal-1",
+                    "editorIds": [],
+                    "shownEditorId": null,
                 },
                 {
                     "id": id(2).as_str(),
@@ -75,6 +77,8 @@ fn 写しの_json_の形() {
                     "showHidden": false,
                     "terminalIds": [],
                     "activeTerminalId": null,
+                    "editorIds": [],
+                    "shownEditorId": null,
                 },
             ],
             "selectedProjectId": id(1).as_str(),
@@ -108,6 +112,9 @@ fn 写しの_json_の形() {
                 "window": { "value": 45, "min": 0, "max": 100, "defaultValue": 45, "step": 5 },
                 "terminal": { "value": 20, "min": 0, "max": 80, "defaultValue": 20, "step": 5 },
             },
+            // ADR-015 の 3・6(M4.8 で足した項目。項目の追加なので写しの版は上げない)
+            "editors": [],
+            "editor": { "vim": false },
         })
     );
 }

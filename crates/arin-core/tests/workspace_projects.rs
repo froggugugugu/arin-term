@@ -363,12 +363,15 @@ fn 動作中があれば削除は確認を求め_確認なしでは何も変え�
 
     assert_eq!(
         outcome,
-        RemoveOutcome::NeedsConfirmation(vec![RunningTerminal {
-            terminal_id: b,
-            project_id: Some(id(2)),
-            project_name: Some("b".to_owned()),
-            label: "ターミナル 1".to_owned(),
-        }])
+        RemoveOutcome::NeedsConfirmation {
+            running: vec![RunningTerminal {
+                terminal_id: b,
+                project_id: Some(id(2)),
+                project_name: Some("b".to_owned()),
+                label: "ターミナル 1".to_owned(),
+            }],
+            unsaved: vec![],
+        }
     );
     assert_eq!(ws.snapshot(), before);
 }

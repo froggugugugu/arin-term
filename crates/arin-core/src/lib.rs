@@ -5,6 +5,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod editor;
 pub mod fileops;
 pub mod layout;
 pub mod paths;

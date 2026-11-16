@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use super::RunningTerminal;
+use super::{RunningTerminal, UnsavedEditor};
 
 /// メニューバーの項目から画面へ送る操作(`menu-command` イベントの中身。設計書 §9.1)。
 ///
@@ -23,13 +23,16 @@ pub enum MenuCommand {
 
 /// 終了の確認を求める(`quit-requested` イベントの中身。FR-063)。
 ///
-/// 終了の要求(⌘Q、ウィンドウの閉じるボタン)のときに動作中のターミナルがあれば、終了を止めてこれを送る。
+/// 終了の要求(⌘Q、ウィンドウの閉じるボタン)のときに動作中のターミナルか未保存のエディタがあれば、終了を止めてこれを送る。
 /// 画面が確認を出し、確認したら `confirm_quit` を呼ぶ。取り消したら何も呼ばない(何も変わっていない)。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct QuitRequest {
-    /// 動作中のターミナル(プロジェクトの並び順・タブの順)。空にはならない。
+    /// 動作中のターミナル(プロジェクトの並び順・タブの順)。
     pub running: Vec<RunningTerminal>,
+    /// 未保存のエディタ(プロジェクトの並び順・開いた順。`Workspace::unsaved_editors`。ADR-015 の 4)。
+    /// `running` と両方が空にはならない。
+    pub unsaved: Vec<UnsavedEditor>,
 }
 
 #[cfg(test)]
@@ -51,13 +54,18 @@ mod tests {
     }
 
     #[test]
-    fn 終了の確認の中身は動作中の一覧を持つ() {
+    fn 終了の確認の中身は動作中と未保存の一覧を持つ() {
         let request = QuitRequest {
             running: vec![RunningTerminal {
                 terminal_id: TerminalId::new("terminal-3"),
                 project_id: None,
                 project_name: Some("app".to_owned()),
                 label: "ターミナル 1".to_owned(),
+            }],
+            unsaved: vec![UnsavedEditor {
+                editor_id: crate::editor::EditorId::new("editor-2"),
+                project_name: "app".to_owned(),
+                path: crate::paths::RelPath::parse("docs/a.md").unwrap(),
             }],
         };
         assert_eq!(
@@ -68,6 +76,11 @@ mod tests {
                     "projectId": null,
                     "projectName": "app",
                     "label": "ターミナル 1"
+                }],
+                "unsaved": [{
+                    "editorId": "editor-2",
+                    "projectName": "app",
+                    "path": "docs/a.md"
                 }]
             })
         );

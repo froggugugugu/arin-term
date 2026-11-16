@@ -179,8 +179,12 @@ impl Workspace {
     /// どの表示モードでもフォーカス中のターミナル(タブ表示=選択中のプロジェクトの表示中のタブ、
     /// タイル表示=フォーカス中のタイル、拡大中=拡大した 1 枚)。タイル表示で同じページに見えているだけのタイルは含めない
     /// (含めると、FR-055 の「アテンションのあるタイルのタイトルにバッジが付く」が満たせない)。
+    /// タブ表示でエディタを出しているときは空(ターミナルは見えていない。ADR-015 の 3)。
     #[must_use]
     pub fn attended_terminals(&self) -> Vec<TerminalId> {
+        if self.shown_editor().is_some() {
+            return Vec::new();
+        }
         self.resolve().focused.into_iter().collect()
     }
 
@@ -268,14 +272,14 @@ impl Workspace {
     }
 
     /// 保存値を、いまのタブから決まる表示に合わせ直す(選択・タブの追加・閉じる・切替・削除・シェルの終了のあとに呼ぶ)。
-    /// フォーカス中になったターミナルのアテンションの印を消す(設計書 §7.1「アテンション」の 5)。
-    /// ページを送っただけで見えるようになったタイルの印は消さない。
+    /// 見ている(`attended_terminals`)ターミナルのアテンションの印を消す(設計書 §7.1「アテンション」の 5)。
+    /// ページを送っただけで見えるようになったタイルの印と、エディタの裏のターミナルの印は消さない。
     pub(super) fn sync_display(&mut self) {
         let view = self.resolve();
         self.display.page = view.layout.page;
         self.display.maximized = view.maximized;
-        if let Some(focused) = &view.focused {
-            self.tabs.clear_attention(focused);
+        for attended in self.attended_terminals() {
+            self.tabs.clear_attention(&attended);
         }
     }
 
@@ -334,12 +338,14 @@ impl Workspace {
             .ok_or_else(|| TerminalError::NotFound(id.clone()))
     }
 
-    /// そのタイルの持ち主を選び、タブを表示中にしてから表示を合わせ直す。
+    /// そのタイルの持ち主を選び、タブを表示中にしてから表示を合わせ直す。ターミナルを選んだので、
+    /// そのプロジェクトの表示中のエディタは隠す(閉じない。ADR-015 の 3)。
     fn focus_tile(&mut self, id: &TerminalId, project: &ProjectId) {
         // 呼ぶ側が持ち主のプロジェクトがあることを確かめている(ページ送りでは並びから取ったタイルの持ち主)。
         let _ = self.projects.select(project);
         // 呼ぶ側がタブがあることを確かめている。
         let _ = self.tabs.activate(id);
+        self.hide_editor_of(project);
         self.sync_display();
     }
 }

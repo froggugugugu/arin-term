@@ -4,12 +4,14 @@
 
 use std::path::{Path, PathBuf};
 
+use arin_core::editor::EditorId;
+use arin_core::paths::RelPath;
 use arin_core::persistence::codec::{PersistedLayout, PersistedState};
 use arin_core::project::{Project, ProjectColor, ProjectError, ProjectId, RootReference};
 use arin_core::terminal::TerminalId;
 use arin_core::workspace::{
     AddProjectOutcome, ConnectPlan, RemoveOutcome, RemoveProjectOutcome, RootResolution,
-    RunningTerminal, Startup, Workspace, WorkspaceError,
+    RunningTerminal, Startup, UnsavedEditor, Workspace, WorkspaceError,
 };
 
 const HOME: &str = "/Users/me";
@@ -294,10 +296,19 @@ fn 削除の結果から画面への応答を作る() {
         project_name: Some("a".into()),
         label: "ターミナル 1".into(),
     }];
+    // 未保存のエディタも応答に載る(ADR-015 の 4)。
+    let unsaved = vec![UnsavedEditor {
+        editor_id: EditorId::new("editor-1"),
+        project_name: "a".into(),
+        path: RelPath::parse("a.md").unwrap(),
+    }];
 
     assert_eq!(
-        RemoveProjectOutcome::from(&RemoveOutcome::NeedsConfirmation(running.clone())),
-        RemoveProjectOutcome::NeedsConfirmation { running }
+        RemoveProjectOutcome::from(&RemoveOutcome::NeedsConfirmation {
+            running: running.clone(),
+            unsaved: unsaved.clone(),
+        }),
+        RemoveProjectOutcome::NeedsConfirmation { running, unsaved }
     );
     assert_eq!(
         RemoveProjectOutcome::from(&RemoveOutcome::Removed {
@@ -326,7 +337,11 @@ fn 応答の_json_の形() {
         serde_json::json!({ "kind": "removed" })
     );
     assert_eq!(
-        serde_json::to_value(RemoveProjectOutcome::NeedsConfirmation { running: vec![] }).unwrap(),
-        serde_json::json!({ "kind": "needsConfirmation", "running": [] })
+        serde_json::to_value(RemoveProjectOutcome::NeedsConfirmation {
+            running: vec![],
+            unsaved: vec![]
+        })
+        .unwrap(),
+        serde_json::json!({ "kind": "needsConfirmation", "running": [], "unsaved": [] })
     );
 }

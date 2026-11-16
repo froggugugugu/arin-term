@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use ts_rs::TS;
 
+use crate::editor::EditorId;
+use crate::paths::RelPath;
 use crate::persistence::codec::PersistedState;
 use crate::project::{ProjectError, ProjectId, RootReference};
 use crate::terminal::TerminalId;
@@ -42,9 +44,15 @@ pub struct ProjectRoot {
 /// プロジェクトを削除しようとした結果(FR-003)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RemoveOutcome {
-    /// 動作中のターミナルがあるので確認が要る。何も変えていない。
-    NeedsConfirmation(Vec<RunningTerminal>),
+    /// 動作中のターミナルか未保存のエディタがあるので確認が要る。何も変えていない(ADR-015 の 4)。
+    NeedsConfirmation {
+        /// そのプロジェクトの動作中のターミナル(タブの順)。
+        running: Vec<RunningTerminal>,
+        /// そのプロジェクトの未保存のエディタ(開いた順)。
+        unsaved: Vec<UnsavedEditor>,
+    },
     /// 削除した。`terminals` はそのプロジェクトにあったタブ(タブの順)。呼び出し側がセッションを終わらせる。
+    /// 開いていたエディタも外した(未保存の変更は捨てた)。
     Removed {
         /// 閉じたターミナル。
         terminals: Vec<TerminalId>,
@@ -55,10 +63,13 @@ pub enum RemoveOutcome {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum RemoveProjectOutcome {
-    /// 動作中のターミナルがあるので確認が要る。何も変えていない。画面が確認を出し、確認したら `confirmed` を真にして呼び直す。
+    /// 動作中のターミナルか未保存のエディタがあるので確認が要る。何も変えていない。画面が確認を出し、確認したら
+    /// `confirmed` を真にして呼び直す。
     NeedsConfirmation {
         /// そのプロジェクトの動作中のターミナル(タブの順)。
         running: Vec<RunningTerminal>,
+        /// そのプロジェクトの未保存のエディタ(開いた順。ADR-015 の 4)。
+        unsaved: Vec<UnsavedEditor>,
     },
     /// 一覧から外した(フォルダには触れていない)。
     Removed,
@@ -67,8 +78,9 @@ pub enum RemoveProjectOutcome {
 impl From<&RemoveOutcome> for RemoveProjectOutcome {
     fn from(outcome: &RemoveOutcome) -> Self {
         match outcome {
-            RemoveOutcome::NeedsConfirmation(running) => Self::NeedsConfirmation {
+            RemoveOutcome::NeedsConfirmation { running, unsaved } => Self::NeedsConfirmation {
                 running: running.clone(),
+                unsaved: unsaved.clone(),
             },
             RemoveOutcome::Removed { .. } => Self::Removed,
         }
@@ -124,6 +136,31 @@ pub enum WorkspaceError {
     /// プロジェクトを選んでいないので、どこにタブを開くか決められない。
     #[error("プロジェクトが選ばれていないので、ターミナルを開けない")]
     NoProjectSelected,
+    /// 拡張子が `.md`・`.markdown` でないので、エディタで開かない(ADR-015 の 5)。
+    #[error("Markdown のファイルではないので、エディタで開けない: {0}")]
+    NotMarkdown(RelPath),
+}
+
+/// 未保存のエディタ 1 つ(終了・プロジェクトの削除・閉じる確認に出す。ADR-015 の 4)。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct UnsavedEditor {
+    /// エディタの識別子。
+    pub editor_id: EditorId,
+    /// 持ち主のプロジェクトの表示名。
+    pub project_name: String,
+    /// ルート基準の相対パス。
+    pub path: RelPath,
+}
+
+/// エディタを閉じようとした結果(`close_editor` の応答。ADR-015 の 4)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum CloseEditorOutcome {
+    /// 閉じた。
+    Closed,
+    /// 未保存の変更があり `discard` が偽なので閉じていない(何も変えていない)。画面が確認を出す。
+    NeedsConfirmation,
 }
 
 /// 接続のコマンド(`connect_terminal`)の応答。

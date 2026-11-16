@@ -186,7 +186,8 @@ impl Workspace {
         self.open_terminal(&project)
     }
 
-    /// 選択中のプロジェクトの表示中のタブ(⌘W で閉じるもの)。選んでいない・0 枚なら `None`。
+    /// 選択中のプロジェクトの表示中のターミナルのタブ。選んでいない・0 枚なら `None`。
+    /// 表示中がエディタのときもターミナルを返す(⌘W の対象は `active_tab`。ADR-015 の 3)。
     #[must_use]
     pub fn active_terminal(&self) -> Option<TerminalId> {
         let project = self.projects.selected()?;
@@ -210,29 +211,40 @@ impl Workspace {
         Ok(tab)
     }
 
-    /// そのタブを表示中にする。
+    /// そのタブを表示中にする。そのプロジェクトの表示中のエディタは隠す(閉じない。ADR-015 の 3)。
     ///
     /// # Errors
     ///
     /// その ID のタブが無いとき(`TerminalError::NotFound`)。
     pub fn activate_terminal(&mut self, id: &TerminalId) -> Result<(), TerminalError> {
         self.tabs.activate(id)?;
+        if let Some(project) = self.tabs.tab(id).map(|tab| tab.project.clone()) {
+            self.hide_editor_of(&project);
+        }
         self.sync_display();
         Ok(())
     }
 
     /// 選択中のプロジェクトの次のタブを表示中にし、その ID を返す。末尾の次は先頭。選んでいない・0 枚なら `None`。
+    /// ターミナルだけを回り、表示中のエディタは隠す(エディタも回るのは `select_next_tab`。ADR-015 の 3)。
     pub fn select_next_terminal(&mut self) -> Option<TerminalId> {
         let project = self.projects.selected().cloned()?;
         let next = self.tabs.select_next(&project);
+        if next.is_some() {
+            self.hide_editor_of(&project);
+        }
         self.sync_display();
         next
     }
 
     /// 選択中のプロジェクトの前のタブを表示中にし、その ID を返す。先頭の前は末尾。選んでいない・0 枚なら `None`。
+    /// ターミナルだけを回り、表示中のエディタは隠す(エディタも回るのは `select_previous_tab`)。
     pub fn select_previous_terminal(&mut self) -> Option<TerminalId> {
         let project = self.projects.selected().cloned()?;
         let previous = self.tabs.select_previous(&project);
+        if previous.is_some() {
+            self.hide_editor_of(&project);
+        }
         self.sync_display();
         previous
     }

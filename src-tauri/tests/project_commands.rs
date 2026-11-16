@@ -605,10 +605,11 @@ fn 動作中があれば確認を求め_中止なら何も変わらない(
         json!({ "projectId": alpha_id, "confirmed": false }),
     );
 
-    let RemoveProjectOutcome::NeedsConfirmation { running } = outcome else {
+    let RemoveProjectOutcome::NeedsConfirmation { running, unsaved } = outcome else {
         panic!("確認を求めなかった: {outcome:?}");
     };
     assert_eq!(running.len(), 1);
+    assert!(unsaved.is_empty(), "エディタを開いていないので未保存は無い");
     assert_eq!(running[0].project_name.as_deref(), Some("alpha"));
     assert_eq!(running[0].label, "ターミナル 1");
     assert_eq!(snapshot(handle, window), before, "確認の前に何か変わった");

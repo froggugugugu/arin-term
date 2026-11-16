@@ -25,8 +25,8 @@ use arin_core::project::ProjectColor;
 use arin_core::shortcuts::table::ShortcutTable;
 use arin_core::tree::{DirListing, TreeChange};
 use arin_core::workspace::{
-    AddProjectOutcome, AppSnapshot, ConnectOutcome, DisplaySnapshot, FontSizesSnapshot,
-    MenuCommand, QuitRequest, RemoveProjectOutcome, TranslucencySnapshot,
+    AddProjectOutcome, AppSnapshot, CloseEditorOutcome, ConnectOutcome, DisplaySnapshot,
+    FontSizesSnapshot, MenuCommand, QuitRequest, RemoveProjectOutcome, TranslucencySnapshot,
 };
 use ts_rs::{Config, TS, TypeVisitor};
 
@@ -65,6 +65,9 @@ fn collect_generated(cfg: &Config) -> BTreeMap<PathBuf, String> {
     // 透過の対象(コマンドの引数)と写し(ADR-014 の 1。写しは `AppSnapshot` からもたどれる)。
     collector.visit::<TranslucencyTarget>();
     collector.visit::<TranslucencySnapshot>();
+    // エディタのタブ(ADR-015 の 3・4、計画書 T81b)。写しの `editors`・`editor` は `AppSnapshot` から、
+    // 未保存の一覧は `QuitRequest`・`RemoveProjectOutcome` からたどれる。閉じる応答はここから。
+    collector.visit::<CloseEditorOutcome>();
     collector.files
 }
 

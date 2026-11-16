@@ -11,8 +11,10 @@ use std::path::{Path, PathBuf};
 use super::display::DisplayState;
 use super::outcome::{RemoveOutcome, RootResolution, RunningTerminal, Startup};
 use super::snapshot::{
-    AppSnapshot, ProjectCardSnapshot, SNAPSHOT_SCHEMA_VERSION, TerminalTabSnapshot,
+    AppSnapshot, EditorSettingsSnapshot, EditorTabSnapshot, ProjectCardSnapshot,
+    SNAPSHOT_SCHEMA_VERSION, TerminalTabSnapshot,
 };
+use crate::editor::EditorStore;
 use crate::layout::font_sizes::{FontSizeTarget, FontSizes};
 use crate::layout::panes::PaneSizes;
 use crate::layout::translucency::{Translucency, TranslucencyTarget};
@@ -37,6 +39,8 @@ pub struct Workspace {
     pub(super) parent_env: Vec<(OsString, OsString)>,
     pub(super) projects: ProjectStore,
     pub(super) tabs: TerminalStore,
+    /// エディタのタブとプロジェクトごとの表示中のエディタ(`editors.rs`。ADR-015 の 3)。保存しない。
+    pub(super) editors: EditorStore,
     pub(super) terminals: HashMap<TerminalId, TerminalEntry>,
     pub(super) layout: PaneSizes,
     /// 表示モード・タイルのページ・拡大(`display.rs`)。表示モードだけを保存し、ページと拡大中は起動のたびに初めから。
@@ -137,6 +141,7 @@ impl Workspace {
                 .collect(),
             projects: ProjectStore::new(),
             tabs: TerminalStore::default(),
+            editors: EditorStore::default(),
             terminals: HashMap::new(),
             layout: PaneSizes::default(),
             display: DisplayState::default(),
@@ -164,8 +169,9 @@ impl Workspace {
     /// プロジェクトを一覧から外す(FR-003。フォルダには触れない)。
     ///
     /// `running` は呼び出し側が調べた動作中のターミナル(ほかのプロジェクトのものが混ざってよい)。
-    /// そのプロジェクトに動作中のものがあり `confirmed` が偽なら、何も変えずに確認を求める。
-    /// そうでなければタブをすべて外してから一覧から外し、外したタブを返す(セッションの後片付けは呼び出し側)。
+    /// そのプロジェクトに動作中のものか未保存のエディタがあり `confirmed` が偽なら、何も変えずに確認を求める
+    /// (ADR-015 の 4)。そうでなければタブとエディタをすべて外してから一覧から外し、外したタブを返す
+    /// (セッションの後片付けは呼び出し側。エディタの未保存の変更は捨てる)。
     /// 選択中だったなら選択は次(無ければ前、0 件なら無し)に移る。タイル表示で、それでフォーカス中のタイルが無くなり
     /// ほかにタイルが残っていれば、消したプロジェクトのタイルがあった位置のタイル(末尾だったら 1 つ前)にフォーカスを移す
     /// (`close_terminal` と同じ規則。M4 のレビューの S4)。
@@ -187,8 +193,12 @@ impl Workspace {
             .into_iter()
             .filter(|t| t.project_id.as_ref() == Some(id))
             .collect();
-        if !busy.is_empty() && !confirmed {
-            return Ok(RemoveOutcome::NeedsConfirmation(busy));
+        let unsaved = self.unsaved_editors_in(Some(id));
+        if (!busy.is_empty() || !unsaved.is_empty()) && !confirmed {
+            return Ok(RemoveOutcome::NeedsConfirmation {
+                running: busy,
+                unsaved,
+            });
         }
         // 消すプロジェクトのタイルがあった位置(先頭のタイルの位置)。閉じる前にフォーカスがあったときだけ使う。
         let position = self
@@ -196,6 +206,7 @@ impl Workspace {
             .and_then(|_| self.tabs.tabs(id).first().map(|tab| tab.id.clone()))
             .and_then(|first| self.ordered_tabs().position(|tab| tab.id == first));
         let terminals = self.tabs.remove_project(id);
+        self.editors.remove_project(id);
         for terminal in &terminals {
             self.terminals.remove(terminal);
         }
@@ -220,7 +231,8 @@ impl Workspace {
             .collect()
     }
 
-    /// 状態ファイルに保存する内容(FR-056)。表示値(見つからない・表示用のパス・知らせ・タブ)を含めない。
+    /// 状態ファイルに保存する内容(FR-056)。表示値(見つからない・表示用のパス・知らせ・タブ・エディタ)を含めない
+    /// (エディタは再起動で開き直さない。ADR-015 の【要確認】2 の A)。
     #[must_use]
     pub fn persisted_state(&self) -> PersistedState {
         PersistedState {
@@ -267,6 +279,8 @@ impl Workspace {
                     .collect();
                 let active_terminal_id = self.tabs.active(&p.id).cloned();
                 let show_hidden = self.projects.get(&p.id).is_some_and(Project::show_hidden);
+                let editor_ids = self.editors.tabs(&p.id).map(|t| t.id.clone()).collect();
+                let shown_editor_id = self.editors.shown(&p.id).cloned();
                 ProjectCardSnapshot {
                     id: p.id,
                     name: p.name,
@@ -276,6 +290,8 @@ impl Workspace {
                     show_hidden,
                     terminal_ids,
                     active_terminal_id,
+                    editor_ids,
+                    shown_editor_id,
                 }
             })
             .collect();
@@ -292,6 +308,17 @@ impl Workspace {
                 attention: tab.attention,
             })
             .collect();
+        let editors = self
+            .ordered_editors()
+            .map(|tab| EditorTabSnapshot {
+                id: tab.id.clone(),
+                project_id: tab.project.clone(),
+                path: tab.path.clone(),
+                label: tab.label().to_owned(),
+                dirty: tab.dirty,
+                read_only: tab.read_only,
+            })
+            .collect();
         AppSnapshot {
             schema_version: SNAPSHOT_SCHEMA_VERSION,
             app_version: self.app_version.clone(),
@@ -303,13 +330,17 @@ impl Workspace {
             display: self.display_snapshot(),
             font_sizes: self.font_sizes.into(),
             translucency: self.translucency.into(),
+            editors,
+            editor: EditorSettingsSnapshot::default(),
         }
     }
 
     /// プロジェクトの末尾にタブを足し、ルートを cwd にして登録する。プロジェクトが無ければ `None`。
+    /// 新しいタブが表示中になるので、そのプロジェクトの表示中のエディタは隠す(閉じない)。
     pub(super) fn add_tab(&mut self, project: &ProjectId) -> Option<TerminalId> {
         let cwd = self.projects.get(project)?.path().to_path_buf();
         let id = self.tabs.add(project);
+        self.editors.hide(project);
         self.terminals.insert(
             id.clone(),
             TerminalEntry {

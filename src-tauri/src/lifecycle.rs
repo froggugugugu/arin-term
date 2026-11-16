@@ -119,7 +119,14 @@ fn quit_or_ask<R: Runtime>(app: &AppHandle<R>) -> bool {
     }
     // 画面が無いなどで送れなければ確認は出ない。そのときは閉じるボタン・⌘Q を押し直しても同じで、
     // 終わらせるにはシェルを終えてから押す(動作中のプロセスを黙って終わらせない)。
-    let _ = app.emit(QUIT_REQUESTED_EVENT, QuitRequest { running });
+    // 未保存のエディタを確認に載せる・未保存だけでも確認するのは計画書 T81d(ADR-015 の 4)。
+    let _ = app.emit(
+        QUIT_REQUESTED_EVENT,
+        QuitRequest {
+            running,
+            unsaved: Vec::new(),
+        },
+    );
     false
 }
 

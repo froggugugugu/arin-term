@@ -9,10 +9,12 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::editor::{EditorId, ReadOnlyReason};
 use crate::layout::font_sizes::{FontSizeTarget, FontSizes};
 use crate::layout::panes::PaneSizes;
 use crate::layout::tiles::{DisplayMode, TileGrid};
 use crate::layout::translucency::{Translucency, TranslucencyTarget};
+use crate::paths::RelPath;
 use crate::project::{ProjectColor, ProjectId};
 use crate::terminal::{TerminalId, TerminalStatus};
 
@@ -43,6 +45,36 @@ pub struct AppSnapshot {
     pub font_sizes: FontSizesSnapshot,
     /// ウィンドウとターミナルの背景の透過(値・範囲・既定・刻み。ADR-014 の 1)。
     pub translucency: TranslucencySnapshot,
+    /// エディタのタブの一覧(プロジェクトの並び順、その中は開いた順。ADR-015 の 3)。文書の中身は載せない。
+    pub editors: Vec<EditorTabSnapshot>,
+    /// エディタの設定(ADR-015 の 6)。
+    pub editor: EditorSettingsSnapshot,
+}
+
+/// 写しに載せるエディタのタブ 1 つ(ADR-015 の 3)。版と絶対パスは載せない。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorTabSnapshot {
+    /// 識別子。保存・閉じるなどのコマンドで指す。
+    pub id: EditorId,
+    /// 持ち主のプロジェクト。
+    pub project_id: ProjectId,
+    /// ルート基準の相対パス。
+    pub path: RelPath,
+    /// タブの表示名(ファイル名)。
+    pub label: String,
+    /// 未保存の変更がある。
+    pub dirty: bool,
+    /// 読み取り専用の理由。書けるなら `null`。
+    pub read_only: Option<ReadOnlyReason>,
+}
+
+/// 写しに載せるエディタの設定(ADR-015 の 6)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorSettingsSnapshot {
+    /// Vim のキー操作(`state.json` の `ui.editorVim`。保存値は計画書 T81e で持たせる。それまでは偽)。
+    pub vim: bool,
 }
 
 /// 写しに載せる文字の大きさ(ADR-013 の 2)。範囲と既定も載せ、画面に規則の数を写さない。
@@ -183,6 +215,11 @@ pub struct ProjectCardSnapshot {
     pub terminal_ids: Vec<TerminalId>,
     /// 表示中のタブ。0 枚なら `null`。
     pub active_terminal_id: Option<TerminalId>,
+    /// このプロジェクトのエディタ(開いた順。ADR-015 の 3)。タブバーではターミナルのタブの後ろに並べる。
+    pub editor_ids: Vec<EditorId>,
+    /// 表示中のエディタ。`null` でなければ、タブ表示ではこれを表示中のターミナルの代わりに出す
+    /// (タイル表示ではエディタを出さない。ターミナルのタブを選ぶ・作ると `null` に戻る)。
+    pub shown_editor_id: Option<EditorId>,
 }
 
 /// 写しに載せるターミナル(タブ)1 枚。

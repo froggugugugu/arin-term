@@ -7,8 +7,13 @@
 //!
 //! ゴミ箱(`trash`)は `trash.rs`(T40c。`NSFileManager` の `trashItemAtURL`。ADR-007 の (a))。
 //! 入れられなかったときは失敗を返し、別の方式や削除に切り替えない。
+//!
+//! Markdown の文書の読み書き(`document.rs`。[`LocalDocuments`]。ADR-015 の 5)は、ここで唯一の置き換えの経路を持つ
+//! (一時ファイルに書いてから改名で置き換える。その場では書かない。消す操作は置かない)。
 
+mod document;
 mod local;
 mod trash;
 
+pub use document::{LocalDocuments, SAVE_PREFIX};
 pub use local::{LeftoverReport, LocalFileSystem, STAGING_PREFIX};
