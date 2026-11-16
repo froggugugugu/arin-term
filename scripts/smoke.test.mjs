@@ -11,6 +11,7 @@ import { after, before, describe, it } from "node:test";
 import {
   BROKEN_PREFIX,
   BROKEN_STATE,
+  FONT_SIZES_FIXTURE,
   FRONTEND_ERROR_PREFIX,
   MARKER_FILE_NAME,
   SETTINGS_BAD_ROW,
@@ -686,6 +687,121 @@ describe("設定ファイルを置いた起動(--settings)", () => {
   });
 });
 
+describe("文字の大きさを入れた起動(--fonts)", () => {
+  async function preparedFonts(name) {
+    const dir = path.join(root, name);
+    await mkdir(dir);
+    return { dir, ...(await prepareStateDir(dir, "fonts")) };
+  }
+
+  /** アプリが書いたように、ブックマークを入れ lastKnownPath を正規化して書く(edit で ui などを替えられる)。 */
+  async function writeAsApp(p, edit = (state) => state) {
+    const state = JSON.parse(p.fixture);
+    state.projects[0].bookmark = "ZmFrZQ==";
+    state.projects[0].lastKnownPath = await realpath(p.projectDirs[0]);
+    await writeFile(path.join(p.stateDir, STATE_FILE_NAME), JSON.stringify(edit(state)));
+  }
+
+  it("文字の大きさの指定で一時の状態フォルダに_state_json_を置く", async () => {
+    const p = await preparedFonts("fixture-fonts");
+
+    // 既定(15・13)でなく範囲(9〜28・11〜18)の中の値
+    assert.deepEqual({ ...FONT_SIZES_FIXTURE }, { terminalFontSize: 20, interfaceFontSize: 15 });
+    const text = await readFile(path.join(p.stateDir, STATE_FILE_NAME), "utf8");
+    assert.equal(text, p.fixture);
+    const state = JSON.parse(text);
+    assert.equal(state.schemaVersion, 1);
+    // プロジェクト 1 件の起動と同じ state.json の ui に 2 つの値が足される
+    assert.deepEqual(state.projects, JSON.parse(stateFixture("project", p.projectDirs[0])).projects);
+    assert.deepEqual(state.ui, { selectedProjectId: SMOKE_PROJECT_ID, terminalFontSize: 20, interfaceFontSize: 15 });
+    // 一時の状態フォルダは mkdtemp の下に作り、設定ファイルは置かない
+    assert.equal(p.stateDir, path.join(p.dir, "state"));
+    assert.equal(p.settings, null);
+    assert.deepEqual((await readdir(p.stateDir)).sort(), [STATE_FILE_NAME]);
+    assert.deepEqual(await readdir(p.projectDirs[0]), []);
+    // ほかの種類の ui には文字の大きさを入れない(既定のあいだは書かない形)
+    assert.equal("terminalFontSize" in JSON.parse(stateFixture("project", "/x")).ui, false);
+  });
+
+  it("終わったあと文字の大きさが残り退避が無いか確かめる", async () => {
+    const p = await preparedFonts("check-fonts");
+    const check = () => checkStateAfterExit({ ...p, kind: "fonts" });
+
+    await writeAsApp(p);
+    assert.equal(await check(), null);
+
+    // 既定に戻して書かなかった(キーが消えた)・違う値・数でない値になったら失敗
+    await writeAsApp(p, (state) => {
+      delete state.ui.terminalFontSize;
+      return state;
+    });
+    assert.match(await check(), /ui\.terminalFontSize が置いた 20 でない/);
+    await writeAsApp(p, (state) => ({ ...state, ui: { ...state.ui, interfaceFontSize: 18 } }));
+    assert.match(await check(), /ui\.interfaceFontSize が置いた 15 でない\(18\)/);
+    await writeAsApp(p, (state) => ({ ...state, ui: { ...state.ui, terminalFontSize: "20" } }));
+    assert.match(await check(), /ui\.terminalFontSize/);
+
+    // 版が変わったら失敗
+    await writeAsApp(p, (state) => ({ ...state, schemaVersion: 2 }));
+    assert.match(await check(), /版 1 の形でない/);
+
+    // 退避のファイルができたら失敗
+    await writeAsApp(p);
+    const backup = path.join(p.stateDir, `${BROKEN_PREFIX}20261116T000000Z`);
+    await writeFile(backup, p.fixture);
+    assert.match(await check(), /退避した/);
+    await unlink(backup);
+
+    // settings.toml ができたら失敗
+    const settings = path.join(p.stateDir, SETTINGS_FILE_NAME);
+    await writeFile(settings, "");
+    assert.match(await check(), /settings\.toml ができた/);
+    await unlink(settings);
+    assert.equal(await check(), null);
+  });
+
+  it("文字の大きさを書き戻すアプリは成功し_落とすアプリと設定ファイルを作るアプリは失敗する", async () => {
+    const ok = await fakeApp("fonts-ok", WRITE_MARKER);
+    const lines = [];
+    const result = await runSmoke(options(ok, { stateKind: "fonts", log: (l) => lines.push(l) }));
+    assert.equal(result.ok, true, result.message);
+    assert.ok(lines.some((l) => l.includes("ui.terminalFontSize・ui.interfaceFontSize は 20・15 のまま")), "結果をログに出していない");
+
+    // 既定でない値を書き戻さない(落とす)
+    const dropping = await fakeApp(
+      "fonts-drop",
+      `${WRITE_MARKER}\nsetTimeout(() => {
+  const file = path.join(process.env.ARIN_STATE_DIR, "${STATE_FILE_NAME}");
+  const state = JSON.parse(fs.readFileSync(file, "utf8"));
+  delete state.ui.terminalFontSize;
+  delete state.ui.interfaceFontSize;
+  fs.writeFileSync(file, JSON.stringify(state));
+}, 50);`,
+    );
+    assert.match((await runSmoke(options(dropping, { stateKind: "fonts" }))).message, /ui\.terminalFontSize が置いた 20 でない/);
+
+    // 設定ファイルを作る
+    const writing = await fakeApp(
+      "fonts-settings",
+      `fs.writeFileSync(path.join(process.env.ARIN_STATE_DIR, "${SETTINGS_FILE_NAME}"), "");\n${WRITE_MARKER}`,
+    );
+    assert.match((await runSmoke(options(writing, { stateKind: "fonts" }))).message, /settings\.toml ができた/);
+  });
+
+  it("一揃いは文字の大きさの指定で_1_回だけ起動し_ほかの_1_回だけの指定とは並べられない", async () => {
+    const app = await fakeApp("suite-fonts", WRITE_MARKER);
+
+    const results = await runSmokeSuite(options(app, { fonts: true }));
+
+    assert.deepEqual(
+      results.map((r) => [r.kind, r.result.ok]),
+      [["fonts", true]],
+    );
+    await assert.rejects(runSmokeSuite(options(app, { fonts: true, tiles: true })), /同時に指定できない/);
+    await assert.rejects(runSmokeSuite(options(app, { fonts: true, settings: true })), /同時に指定できない/);
+  });
+});
+
 describe("createOutputWatcher", () => {
   it("設定の行は画面の失敗とは別に集める", () => {
     const w = createOutputWatcher();
@@ -735,6 +851,14 @@ describe("parseArgs", () => {
     assert.deepEqual(parseArgs(["--settings", "--timeout-ms=500"]), { settings: true, timeoutMs: 500 });
     assert.throws(() => parseArgs(["--settings", "--tiles"]), /同時に指定できない/);
     assert.throws(() => parseArgs(["--settings=1"]), /知らない引数/);
+  });
+
+  it("--fonts を受け_ほかの指定と並べられるが_--tiles_--settings とは並べられない", () => {
+    assert.deepEqual(parseArgs(["--fonts"]), { fonts: true });
+    assert.deepEqual(parseArgs(["--fonts", "--timeout-ms=500"]), { fonts: true, timeoutMs: 500 });
+    assert.throws(() => parseArgs(["--fonts", "--tiles"]), /同時に指定できない/);
+    assert.throws(() => parseArgs(["--settings", "--fonts"]), /同時に指定できない/);
+    assert.throws(() => parseArgs(["--fonts=1"]), /知らない引数/);
   });
 
   it("形の違う --env、スモークが決める環境変数、知らない引数は失敗する", () => {

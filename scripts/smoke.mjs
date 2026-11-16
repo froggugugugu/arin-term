@@ -34,13 +34,19 @@
 // (本物の既定のアプリや Finder が開くため)。--settings 以外の起動は settings.toml を置かないので、設定の行が 1 行でも
 // 出たら失敗にする(ファイルが無ければ既定で知らせなし。AC-K03)。
 //
+// `--fonts` は、プロジェクト 1 件の state.json の ui に既定でない文字の大きさ(FONT_SIZES_FIXTURE。ターミナル 20・画面 15。
+// 計画書 T71、ADR-013 の 1)を入れて 1 回だけ起動する。準備完了とターミナルの印を待ち、画面の失敗が無いことを確かめる。
+// 終了後は、state.json に同じ 2 つの値が残り(既定でないので書かれ続ける。AC-F08)、版が 1 のまま、退避のファイルが
+// できておらず、状態フォルダに settings.toml ができていない(文字の大きさは設定ファイルに書かない。AC-F10)ことを確かめる。
+// 設定画面は開かず、メニューの「設定ファイルを開く…」も選ばない(本物の既定のアプリや Finder が開くため)。
+//
 // - ソケットやポートは使わない(PRD N2・NFR-008)。外から知る手段は印のファイルと標準エラーだけ
 // - .app が無ければビルドせずに失敗する(先に `npm run app`)
 // - 本物の ~/Library/Application Support/Arin/ が作られていない・変わっていないことを前後で確かめる
 // - シェルは利用者の設定ファイル(~/.zshrc など)を読む(M1 の仕様どおり)。ホームに書き込む操作はしない
 // - Node の標準モジュールだけで書く
 //
-// 使い方: node scripts/smoke.mjs [--tiles | --settings] [--timeout-ms=30000] [--app=<Arin.app のパス>] [--env=<名前>=<値> ...]
+// 使い方: node scripts/smoke.mjs [--tiles | --settings | --fonts] [--timeout-ms=30000] [--app=<Arin.app のパス>] [--env=<名前>=<値> ...]
 //
 // --env はアプリに渡す環境変数を足す(何度でも指定できる)。値は特別に扱わず、そのまま渡す。
 // 状態フォルダとスモークの印の環境変数(ARIN_STATE_DIR・ARIN_SMOKE)は、このスクリプトが決めるので指定できない。
@@ -99,6 +105,12 @@ export const SETTINGS_FIXTURE = [
   `"${SETTINGS_BAD_ROW.id}" = "${SETTINGS_BAD_ROW.key}"`,
   "",
 ].join("\n");
+
+/**
+ * --fonts で state.json の ui に置く文字の大きさ(どちらも既定(15・13)でなく範囲(9〜28・11〜18)の中。
+ * crates/arin-core/src/layout/font_sizes.rs)。
+ */
+export const FONT_SIZES_FIXTURE = Object.freeze({ terminalFontSize: 20, interfaceFontSize: 15 });
 
 export const DEFAULT_APP_PATH = path.join(
   REPO_ROOT,
@@ -281,7 +293,8 @@ export function projectsStateFixture(projectDirs, { displayMode = null } = {}) {
 
 /**
  * 状態ファイルの中身を作る。kind が "project" ならプロジェクト 1 件(bookmark は null)、"tiles" なら projectDirs の
- * プロジェクトをタイル表示で(projectsStateFixture)、"broken" なら JSON として読めないもの。
+ * プロジェクトをタイル表示で(projectsStateFixture)、"broken" なら JSON として読めないもの。"fonts" は "project" の ui に
+ * 文字の大きさ(FONT_SIZES_FIXTURE)を足したもの。
  * projectDirs はプロジェクトのフォルダの一覧(1 つなら文字列でもよい)。
  */
 export function stateFixture(kind, dirs) {
@@ -289,13 +302,13 @@ export function stateFixture(kind, dirs) {
   if (kind === "broken") return BROKEN_STATE;
   if (kind === "tiles") return projectsStateFixture(projectDirs, { displayMode: "tiles" });
   // "settings" の state.json は "project" と同じ(設定ファイルは prepareStateDir が別に置く)。
-  if (kind !== "project" && kind !== "settings") throw new Error(`知らない状態ファイルの種類: ${kind}`);
+  if (kind !== "project" && kind !== "settings" && kind !== "fonts") throw new Error(`知らない状態ファイルの種類: ${kind}`);
   const state = {
     schemaVersion: 1,
     projects: [
       { id: SMOKE_PROJECT_ID, bookmark: null, lastKnownPath: projectDirs[0], customName: null, colorId: "green" },
     ],
-    ui: { selectedProjectId: SMOKE_PROJECT_ID },
+    ui: { selectedProjectId: SMOKE_PROJECT_ID, ...(kind === "fonts" ? FONT_SIZES_FIXTURE : {}) },
   };
   return `${JSON.stringify(state, null, 2)}\n`;
 }
@@ -406,6 +419,8 @@ function parseJson(text) {
  * - "project": state.json のプロジェクトにブックマークが入り、lastKnownPath は正規化したパス
  * - "tiles": 置いた 9 件が同じ順で残り、どれにもブックマークが入り lastKnownPath は正規化したパス。表示モードはタイルのまま
  * - "broken": 退避のファイルが元の中身のままでき、state.json はプロジェクト 0 件
+ * - "fonts": "project" と同じに加えて、ui の文字の大きさが置いた値(FONT_SIZES_FIXTURE)のまま残り、状態フォルダに
+ *   settings.toml ができていない(AC-F08・AC-F10)
  * - どれも: プロジェクトのフォルダに何も増えていない(FR-001 の AC 3)
  */
 export async function checkStateAfterExit({ stateDir, projectDirs, fixture, kind }) {
@@ -451,12 +466,22 @@ export async function checkStateAfterExit({ stateDir, projectDirs, fixture, kind
   if (kind === "tiles" && state.ui?.displayMode !== "tiles") {
     return `終了後の ${STATE_FILE_NAME} の表示モードがタイルでない(ui.displayMode: ${JSON.stringify(state.ui?.displayMode)})`;
   }
+  if (kind === "fonts") {
+    for (const [key, value] of Object.entries(FONT_SIZES_FIXTURE)) {
+      if (state.ui?.[key] !== value) {
+        return `終了後の ${STATE_FILE_NAME} の ui.${key} が置いた ${value} でない(${JSON.stringify(state.ui?.[key])})`;
+      }
+    }
+    if (names.includes(SETTINGS_FILE_NAME)) {
+      return `状態フォルダに ${SETTINGS_FILE_NAME} ができた(文字の大きさは設定ファイルに書かないはず)`;
+    }
+  }
   return null;
 }
 
 /**
  * スモークを 1 回行う。
- * stateKind は起動の前に置く state.json の種類("project"・"tiles"・"broken")。"broken" のときは準備完了の印だけを待つ
+ * stateKind は起動の前に置く state.json の種類("project"・"tiles"・"broken"・"settings"・"fonts")。"broken" のときは準備完了の印だけを待つ
  * (プロジェクトが無いのでターミナルが無い)。"tiles" のときは、印に加えてアプリの子プロセス(シェル)が 9 個揃うまで待つ。
  * @returns {Promise<{ ok: boolean, message: string, seconds: number, pid?: number, shells?: number[] }>}
  */
@@ -533,6 +558,7 @@ export async function runSmoke({
       tiles: `プロジェクト ${TILE_PROJECT_COUNT} 件・タイル表示`,
       project: "プロジェクト 1 件",
       settings: `プロジェクト 1 件。${SETTINGS_FILE_NAME} に正しい行 1 つと問題のある行 1 つ`,
+      fonts: `プロジェクト 1 件。ターミナルの文字 ${FONT_SIZES_FIXTURE.terminalFontSize}・画面の文字 ${FONT_SIZES_FIXTURE.interfaceFontSize}`,
     };
     log(`状態フォルダ: ${stateDir}(${STATE_FILE_NAME}: ${described[stateKind] ?? stateKind})`);
     for (const [name, value] of Object.entries(extraEnv)) log(`追加の環境変数: ${name}=${value}`);
@@ -695,6 +721,11 @@ export async function runSmoke({
           ? `${STATE_FILE_NAME} の ${TILE_PROJECT_COUNT} 件にブックマークが書かれ、表示モードはタイルのまま、プロジェクトのフォルダには何も増えていない`
           : `${STATE_FILE_NAME} にブックマークが書かれ、プロジェクトのフォルダには何も増えていない`,
     );
+    if (stateKind === "fonts") {
+      log(
+        `${STATE_FILE_NAME} の ui.terminalFontSize・ui.interfaceFontSize は ${FONT_SIZES_FIXTURE.terminalFontSize}・${FONT_SIZES_FIXTURE.interfaceFontSize} のまま、退避のファイルも ${SETTINGS_FILE_NAME} もできていない`,
+      );
+    }
     if (stateKind === "settings") {
       log(`標準エラーの設定の行(${watcher.settingsLines.length} 行):`);
       for (const line of watcher.settingsLines) log(`  ${line}`);
@@ -723,11 +754,12 @@ export async function runSmoke({
  * スモークの一揃い。`npm run smoke` はプロジェクト 1 件の state.json で起動し、続けて壊れた state.json でも起動する。
  * tiles が true(--tiles)なら、9 プロジェクトのタイル表示の state.json で 1 回だけ起動する。
  * settings が true(--settings)なら、プロジェクト 1 件の state.json と settings.toml を置いて 1 回だけ起動する。
+ * fonts が true(--fonts)なら、文字の大きさを入れたプロジェクト 1 件の state.json を置いて 1 回だけ起動する。
  * @returns {Promise<Array<{ kind: string, result: Awaited<ReturnType<typeof runSmoke>> }>>}
  */
-export async function runSmokeSuite({ tiles = false, settings = false, ...opts } = {}) {
-  if (tiles && settings) throw new Error("--tiles と --settings は同時に指定できない");
-  const kinds = tiles ? ["tiles"] : settings ? ["settings"] : ["project", "broken"];
+export async function runSmokeSuite({ tiles = false, settings = false, fonts = false, ...opts } = {}) {
+  if ([tiles, settings, fonts].filter(Boolean).length > 1) throw new Error(EXCLUSIVE_MESSAGE);
+  const kinds = tiles ? ["tiles"] : settings ? ["settings"] : fonts ? ["fonts"] : ["project", "broken"];
   const results = [];
   for (const kind of kinds) {
     results.push({ kind, result: await runSmoke({ ...opts, stateKind: kind }) });
@@ -735,13 +767,16 @@ export async function runSmokeSuite({ tiles = false, settings = false, ...opts }
   return results;
 }
 
+/** 1 回だけ起動する種類の指定(--tiles・--settings・--fonts)を並べたときの失敗の文。 */
+const EXCLUSIVE_MESSAGE = "--tiles・--settings・--fonts は同時に指定できない";
+
 /** コマンドラインの引数を runSmoke の引数にする。不正なら例外。 */
 export function parseArgs(argv) {
   const opts = {};
   for (const arg of argv) {
-    if (arg === "--tiles" || arg === "--settings") {
+    if (arg === "--tiles" || arg === "--settings" || arg === "--fonts") {
       opts[arg.slice(2)] = true;
-      if (opts.tiles && opts.settings) throw new Error("--tiles と --settings は同時に指定できない");
+      if ([opts.tiles, opts.settings, opts.fonts].filter(Boolean).length > 1) throw new Error(EXCLUSIVE_MESSAGE);
       continue;
     }
     const m = /^--(timeout-ms|app|env)=(.+)$/.exec(arg);
@@ -785,6 +820,7 @@ async function main() {
       broken: "(壊れた state.json)",
       tiles: `(タイル表示の ${TILE_PROJECT_COUNT} プロジェクト)`,
       settings: `(${SETTINGS_FILE_NAME} を置いた起動)`,
+      fonts: "(文字の大きさを入れた起動)",
     };
     const label = labels[kind] ?? "";
     if (result.ok) {

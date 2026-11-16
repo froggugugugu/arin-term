@@ -295,6 +295,20 @@ export function withFontSizes(
   };
 }
 
+/**
+ * Rust の step_font_size のあとに届く写しを返す(T71。crates/arin-core/src/layout/font_sizes.rs の `stepped` の写し:
+ * 今の値に delta を足し、写しの最小・最大の端に留める)。端で変わらないときも同じ形の写しを返す(Rust は送らない)。
+ */
+export function withSteppedFontSize(
+  snapshot: AppSnapshot,
+  target: "terminal" | "interface",
+  delta: number,
+): AppSnapshot {
+  const current = snapshot.fontSizes[target];
+  const value = Math.max(current.min, Math.min(current.max, current.value + delta));
+  return withFontSizes(snapshot, { [target]: value });
+}
+
 /** 終了・削除の確認に載せる動作中のターミナル 1 枚(quit-requested のイベントの中身などに使う。T34d)。 */
 export function sampleRunningTerminal(
   projectId: string,
@@ -615,4 +629,23 @@ export async function emitEvent<E extends EventName>(page: Page, event: E, paylo
     { event, payload },
   );
   if (delivered === 0) throw new Error(`イベント ${event} の購読が無い`);
+}
+
+/**
+ * 同じイベントを payloads の順に、画面のページの 1 回の実行の中で続けて届ける(T71。あいだに描画のフレームを挟まないので、
+ * Rust が続けて送った写しを画面が同じフレームで受けた形になる)。1 つでも購読が無ければ例外。
+ */
+export async function emitEventsInOneTurn<E extends EventName>(
+  page: Page,
+  event: E,
+  payloads: readonly EventMap[E][],
+): Promise<void> {
+  const delivered = await page.evaluate(
+    ({ event, payloads }) => {
+      const controls = (window as unknown as MockWindow).__ARIN_E2E__;
+      return payloads.map((payload) => controls?.emit(event, payload) ?? 0);
+    },
+    { event, payloads: [...payloads] },
+  );
+  if (delivered.some((n) => n === 0)) throw new Error(`イベント ${event} の購読が無い`);
 }
