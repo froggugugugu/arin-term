@@ -1760,7 +1760,7 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 31.6e(逐次。T70b 完了後)
 
-- [ ] T71 — M4.6 のシナリオの E2E と、文字の大きさを入れたスモーク(変更ファイル: e2e/m46-scenario.spec.ts, e2e/fixtures/tauriMock.ts, scripts/smoke.mjs, scripts/smoke.test.mjs | 依存: T70b)
+- [x] T71 — M4.6 のシナリオの E2E と、文字の大きさを入れたスモーク(変更ファイル: e2e/m46-scenario.spec.ts, e2e/fixtures/tauriMock.ts, scripts/smoke.mjs, scripts/smoke.test.mjs | 依存: T70b)
   - 対応: AC-F02・F04・F08・F14 の通し
   - 置くもの: スモークに `--fonts`(一時の状態フォルダの `state.json` に `ui.terminalFontSize: 20`・`ui.interfaceFontSize: 15` を置いて起動)。準備完了とターミナルの出力、`[arin:frontend-error]` が無いこと、終わったあと `state.json` に同じ 2 つの値が残り退避のファイルができていないこと、`settings.toml` ができていないことを確かめる
   - 先に書くテスト: Playwright: `設定画面で両方を変えて閉じると全部が新しい大きさのまま操作できる`、`タイル表示で大きさを続けて変えても行と桁が最後の値に落ち着く`(`expect.poll`)。`scripts/smoke.test.mjs`: `文字の大きさの指定で一時の状態フォルダに_state_json_を置く`、`終わったあと文字の大きさが残り退避が無いか確かめる`
@@ -1769,7 +1769,7 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 31.6f(逐次。T71・T66d 完了後)
 
-- [ ] T72 — 文書の同期(変更ファイル: docs/data-model.md, docs/architecture.md, docs/development-patterns.md, docs/project.md, output/design/ARCH_multi-terminal.md, output/design/ADR_012_keybindings.md, output/design/ADR_013_font-size-settings.md | 依存: T71, T66d)
+- [x] T72 — 文書の同期(変更ファイル: docs/data-model.md, docs/architecture.md, docs/development-patterns.md, docs/project.md, output/design/ARCH_multi-terminal.md, output/design/ADR_012_keybindings.md, output/design/ADR_013_font-size-settings.md | 依存: T71, T66d)
   - 書くもの: `docs/data-model.md`(`ui.terminalFontSize`・`ui.interfaceFontSize`、写しの `fontSizes`、コマンド `step_font_size`・`reset_font_sizes`・`open_settings_file`、`menu-command` の `"open-settings"`、`settings.toml` の節の「設定ファイルを開く…」の場所)、`docs/architecture.md`(`src/ui/settings/`・`src/logic/appearance/`・新しいテスト)、`docs/development-patterns.md`(落とし穴: 文字の大きさだけでは `ResizeObserver` が鳴らない、`display: none` のまま xterm.js の文字の大きさを替えない、CSS の変数を `calc()` にすると `getPropertyValue` が計算前の文字列を返す。T70a の ⌘W の結果)、`docs/project.md`(概要に M4.6)。設計書: §6.1・§6.2(`state.json` の表に 2 行、設定ファイルのキーの表の `terminal.font_size` を「M4.6 で `state.json` に移した」に直す)・§6.3 の写しの表・§9.1(アプリ名のメニューの並び、設定画面)。ADR-012 の末尾に「`app.open-settings` の意味を ADR-013 の 6 で『設定…』に替えた」と追記
   - 並行: 不可(文書だけ。T71 と同じ時に走らせない)
   - 検証: 文書だけ。`git diff --stat` が上の変更ファイルだけであること
