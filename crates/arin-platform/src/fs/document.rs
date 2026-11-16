@@ -11,9 +11,11 @@
 //! 4. もう一度 1 の `stat` を調べ、変わっていなければ `renameatx_np(…, 0)` で置き換える
 //! 5. 置き換えたファイルを `fstat` して新しい版を返す
 //!
-//! 2〜4 で失敗したら一時ファイルは消さずに残し、場所を知らせ先(`LeftoverReport`)に渡して文言に含める
-//! (削除の経路を作らない。元のファイルは変わっていない)。新しく作る(`create_new`)は 2 の写しを飛ばし、
-//! 4 を `RENAME_EXCL`(既にあれば失敗)で行う。
+//! 2〜4 で止めたら、この保存が作った一時ファイルだけを片付ける(`TempFile::discard`。本人が 2026-11-17 に了承。
+//! ADR-015 の 5)。消すのは、押さえたままの fd と同じ項目(装置番号・inode が同じ、ふつうのファイル、リンク数 1)が
+//! その名前にあるときだけで、違っていれば触らない。片付けられなかったときは残し、場所を知らせ先(`LeftoverReport`)に
+//! 渡して文言に含める。ほかの項目を消す経路は無い(元のファイルは変わっていない)。新しく作る(`create_new`)は
+//! 2 の写しを飛ばし、4 を `RENAME_EXCL`(既にあれば失敗)で行う。
 
 use std::ffi::{CStr, CString};
 use std::fs::File;
@@ -60,7 +62,7 @@ impl LocalDocuments {
         Self::default()
     }
 
-    /// 一時ファイルを片付けられなかったとき、その場所を `report` に渡す(消す処理は足さない)。
+    /// 一時ファイルを片付けられなかったとき、その場所を `report` に渡す。
     #[must_use]
     pub fn with_leftover_report(report: LeftoverReport) -> Self {
         Self {
@@ -68,19 +70,31 @@ impl LocalDocuments {
         }
     }
 
-    /// 一時ファイルを残した。知らせ先に渡し、文言に場所を足す。
-    fn left(&self, temp: &TempFile, error: DocumentAccessError) -> DocumentAccessError {
-        self.note_left(temp);
+    /// 失敗で止めた。一時ファイルを片付け、片付けられなければ文言に場所を足す。
+    fn left(
+        &self,
+        target: &Target,
+        temp: &TempFile,
+        error: DocumentAccessError,
+    ) -> DocumentAccessError {
+        if self.discard(target, temp) {
+            return error;
+        }
         DocumentAccessError::Io(format!(
             "{error}。一時ファイル {} が残った",
             temp.path.display()
         ))
     }
 
-    fn note_left(&self, temp: &TempFile) {
+    /// 使わなかった一時ファイルを片付ける。片付けられなければ残して知らせ先に渡し、`false` を返す。
+    fn discard(&self, target: &Target, temp: &TempFile) -> bool {
+        if temp.discard(target) {
+            return true;
+        }
         if let Some(report) = self.leftover_report {
             report(&temp.path);
         }
+        false
     }
 }
 
@@ -154,34 +168,34 @@ impl DocumentPort for LocalDocuments {
         };
         if rc < 0 {
             let e = io::Error::last_os_error();
-            return Err(self.left(&temp, io_error(path, &e)));
+            return Err(self.left(&target, &temp, io_error(path, &e)));
         }
         // 3. 中身を書いて fsync する
         if let Err(e) = temp.write_all(bytes) {
-            return Err(self.left(&temp, io_error(path, &e)));
+            return Err(self.left(&target, &temp, io_error(path, &e)));
         }
         // 4. もう一度調べてから置き換える
         match target.lstat() {
             Ok(now) if same_stat(&st, &now) => {}
             Ok(_) => {
-                self.note_left(&temp);
+                self.discard(&target, &temp);
                 return match target.read_regular() {
                     Ok((current, cst)) => Ok(ReplaceOutcome::Changed(FileStamp::new(
                         file_stat(&cst),
                         &current,
                     ))),
                     Err(DocumentAccessError::NotFound(_)) => Ok(ReplaceOutcome::Missing),
-                    Err(e) => Err(self.left(&temp, e)),
+                    Err(e) => Err(e),
                 };
             }
             Err(e) if e.raw_os_error() == Some(libc::ENOENT) => {
-                self.note_left(&temp);
+                self.discard(&target, &temp);
                 return Ok(ReplaceOutcome::Missing);
             }
-            Err(e) => return Err(self.left(&temp, io_error(path, &e))),
+            Err(e) => return Err(self.left(&target, &temp, io_error(path, &e))),
         }
         if let Err(e) = rename_at((target.dir.as_raw_fd(), &temp.name), target.at(), 0) {
-            return Err(self.left(&temp, io_error(path, &e)));
+            return Err(self.left(&target, &temp, io_error(path, &e)));
         }
         // 5. 新しい版
         let st = fstat(temp.file.as_raw_fd()).map_err(|e| io_error(path, &e))?;
@@ -206,7 +220,7 @@ impl DocumentPort for LocalDocuments {
         }
         let temp = TempFile::create(&target)?;
         if let Err(e) = temp.write_all(bytes) {
-            return Err(self.left(&temp, io_error(path, &e)));
+            return Err(self.left(&target, &temp, io_error(path, &e)));
         }
         if let Err(e) = rename_at(
             (target.dir.as_raw_fd(), &temp.name),
@@ -214,7 +228,9 @@ impl DocumentPort for LocalDocuments {
             libc::RENAME_EXCL,
         ) {
             let error = io_error(path, &e);
-            self.note_left(&temp);
+            if self.discard(&target, &temp) {
+                return Err(error);
+            }
             return Err(match error {
                 DocumentAccessError::AlreadyExists(message) => DocumentAccessError::AlreadyExists(
                     format!("{message}。一時ファイル {} が残った", temp.path.display()),
@@ -410,6 +426,26 @@ impl TempFile {
         file.write_all(bytes)?;
         file.sync_all()
     }
+
+    /// 使わなかった一時ファイルを消す。消すのは、その名前にあるものが、いま押さえている fd と同じ項目
+    /// (装置番号・inode が同じ、ふつうのファイル、リンク数 1)のときだけ。名前が別のものに替わっていれば触らない。
+    /// 消せたら `true`。このモジュールで項目を消すのはここだけ。
+    fn discard(&self, target: &Target) -> bool {
+        let dir = target.dir.as_raw_fd();
+        let (Ok(own), Ok(named)) = (
+            fstat(self.file.as_raw_fd()),
+            stat_at(dir, &self.name, libc::AT_SYMLINK_NOFOLLOW),
+        ) else {
+            return false;
+        };
+        let same = own.st_dev == named.st_dev && own.st_ino == named.st_ino;
+        let plain = named.st_mode & libc::S_IFMT == libc::S_IFREG && named.st_nlink == 1;
+        if !same || !plain {
+            return false;
+        }
+        // SAFETY: fd は開いているフォルダ、名前は NUL で終わる有効な C 文字列。フラグ 0 はフォルダを消さない
+        unsafe { libc::unlinkat(dir, self.name.as_ptr(), 0) == 0 }
+    }
 }
 
 /// ふつうのファイルでなければ種類に応じた失敗にする。
@@ -493,4 +529,119 @@ fn fstat(fd: RawFd) -> io::Result<libc::stat> {
     }
     // SAFETY: fstat が成功したので st は埋まっている
     Ok(unsafe { st.assume_init() })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+
+    /// 一時フォルダ(実パス)。終わったら中身ごと片付ける。
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(label: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "arin-document-unit-{label}-{}-{}",
+                std::process::id(),
+                SAVE_SEQ.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir_all(&dir).unwrap();
+            Self(dir.canonicalize().unwrap())
+        }
+
+        fn names(&self) -> Vec<String> {
+            let mut names: Vec<String> = fs::read_dir(&self.0)
+                .unwrap()
+                .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+                .collect();
+            names.sort();
+            names
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    static REPORTED: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+
+    fn record(path: &Path) {
+        REPORTED
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(path.to_path_buf());
+    }
+
+    fn reported(path: &Path) -> bool {
+        REPORTED
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .any(|p| p == path)
+    }
+
+    #[test]
+    fn 使わなかった一時ファイルは片付けて知らせない() {
+        let s = Scratch::new("discard");
+        fs::write(s.0.join("a.md"), b"orig").unwrap();
+        let target = Target::open(&s.0.join("a.md")).unwrap();
+        let temp = TempFile::create(&target).unwrap();
+        temp.write_all(b"half").unwrap();
+        assert_eq!(s.names().len(), 2);
+
+        let documents = LocalDocuments::with_leftover_report(record);
+        let error = documents.left(&target, &temp, DocumentAccessError::Io("止めた".to_owned()));
+
+        assert_eq!(error, DocumentAccessError::Io("止めた".to_owned()));
+        assert_eq!(s.names(), vec!["a.md"]);
+        assert_eq!(fs::read(s.0.join("a.md")).unwrap(), b"orig");
+        assert!(!reported(&temp.path));
+    }
+
+    #[test]
+    fn 名前が別のものに替わっていたら消さずに知らせる() {
+        let s = Scratch::new("swapped");
+        fs::write(s.0.join("a.md"), b"orig").unwrap();
+        let target = Target::open(&s.0.join("a.md")).unwrap();
+        let temp = TempFile::create(&target).unwrap();
+        // 一時ファイルの名前を、ほかの人が別のファイルに差し替えた
+        fs::rename(&temp.path, s.0.join("moved")).unwrap();
+        fs::write(&temp.path, b"someone else").unwrap();
+
+        let documents = LocalDocuments::with_leftover_report(record);
+        let error = documents.left(&target, &temp, DocumentAccessError::Io("止めた".to_owned()));
+
+        assert!(matches!(&error, DocumentAccessError::Io(m) if m.contains("が残った")));
+        assert_eq!(fs::read(&temp.path).unwrap(), b"someone else");
+        assert_eq!(s.names().len(), 3);
+        assert!(reported(&temp.path));
+    }
+
+    #[test]
+    fn リンクが増えた一時ファイルは消さない() {
+        let s = Scratch::new("linked");
+        fs::write(s.0.join("a.md"), b"orig").unwrap();
+        let target = Target::open(&s.0.join("a.md")).unwrap();
+        let temp = TempFile::create(&target).unwrap();
+        fs::hard_link(&temp.path, s.0.join("kept")).unwrap();
+
+        assert!(!temp.discard(&target));
+        assert_eq!(s.names().len(), 3);
+    }
+
+    #[test]
+    fn 名前が無くなっていたら何もしない() {
+        let s = Scratch::new("gone");
+        fs::write(s.0.join("a.md"), b"orig").unwrap();
+        let target = Target::open(&s.0.join("a.md")).unwrap();
+        let temp = TempFile::create(&target).unwrap();
+        fs::rename(&temp.path, s.0.join("moved")).unwrap();
+
+        assert!(!temp.discard(&target));
+        assert_eq!(s.names(), vec!["a.md", "moved"]);
+    }
 }
