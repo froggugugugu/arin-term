@@ -36,6 +36,7 @@ use std::time::{Duration, Instant};
 
 use arin_core::layout::font_sizes::FontSizeTarget;
 use arin_core::layout::tiles::DisplayMode;
+use arin_core::layout::translucency::TranslucencyTarget;
 use arin_core::persistence::codec::PersistedState;
 use arin_core::ports::{Foreground, PtyError, PtyPort, PtySession, SpawnedPty};
 use arin_core::project::{ProjectColor, ProjectError, ProjectId, RootReference};
@@ -774,10 +775,21 @@ impl SessionRegistry {
         changed
     }
 
-    /// 両方の文字の大きさを既定に戻す(ADR-013 の 2・AC-F07)。変わったときだけ写しを送り `true` を返す
-    /// (両方が既定のときは何もしない)。
-    pub fn reset_font_sizes(&self) -> bool {
-        let changed = lock(&self.inner.workspace).reset_font_sizes();
+    /// 透過を `delta`(% の差分)だけ動かす(ADR-014 の 1)。近い 5 の倍数に丸めて範囲の端で留め、変わったときだけ写しを送り
+    /// `true` を返す(写しを送ると保存が予約され、状態ファイルの `ui.windowTranslucency`・`ui.terminalTranslucency` が書かれる)。
+    /// 差分で受ける理由は `step_font_size` と同じ。シェルには触れない(画面が CSS の変数を替えるだけ)。
+    pub fn step_translucency(&self, target: TranslucencyTarget, delta: i32) -> bool {
+        let changed = lock(&self.inner.workspace).step_translucency(target, delta);
+        if changed {
+            self.notify();
+        }
+        changed
+    }
+
+    /// 文字の大きさ 2 つと透過 2 つを既定に戻す(ADR-014 の 1・AC-G05。ADR-013 の `reset_font_sizes` を替えたもの)。
+    /// 変わったときだけ写しを送り `true` を返す(4 つとも既定のときは何もしない)。
+    pub fn reset_appearance(&self) -> bool {
+        let changed = lock(&self.inner.workspace).reset_appearance();
         if changed {
             self.notify();
         }
@@ -817,6 +829,17 @@ impl SessionRegistry {
     /// タブ表示・拡大中・最初のページでは何もしない。
     pub fn previous_tile_page(&self) -> bool {
         let changed = lock(&self.inner.workspace).previous_page();
+        if changed {
+            self.notify();
+        }
+        changed
+    }
+
+    /// 表示中のページの `position` 番目(1 始まり)のタイルにフォーカスする(⌘1〜⌘9。ADR-014 の 4)。
+    /// 移ったときだけ写しを送り `true` を返す(プロジェクトが替わればツリーの監視は写しで張り替わる)。
+    /// タブ表示・拡大中・その番号のタイルが無いときは何もしない。
+    pub fn focus_tile_at(&self, position: usize) -> bool {
+        let changed = lock(&self.inner.workspace).focus_tile_at(position);
         if changed {
             self.notify();
         }

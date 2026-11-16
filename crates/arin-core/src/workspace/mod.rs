@@ -1,13 +1,13 @@
 //! ストアをまたぐ操作の入口と、画面へ渡す状態の写しの生成(設計書 §5.1・§5.2・§6.3)。
 //!
 //! `Workspace` が `ProjectStore`(プロジェクトの一覧と選択)・`TerminalStore`(タブの並び)・ペインの寸法・表示の状態
-//! (表示モード・タイルのページ・拡大。`display.rs`)・文字の大きさ(`font_sizes.rs`)と、
+//! (表示モード・タイルのページ・拡大。`display.rs`)・文字の大きさと透過(`appearance.rs`)と、
 //! ターミナルごとの cwd と状態を持つ。入出力はしない。起動時に読んだ状態とルートの解決の結果、
 //! 削除と終了の確認に使う「動作中のターミナル」は呼び出し側(`src-tauri`)が調べて引数で渡す。
 
+mod appearance;
 mod display;
 mod events;
-mod font_sizes;
 mod outcome;
 mod panes;
 mod projects;
@@ -22,7 +22,7 @@ pub use outcome::{
 };
 pub use snapshot::{
     AppSnapshot, DisplaySnapshot, FontSizeSnapshot, FontSizesSnapshot, ProjectCardSnapshot,
-    SNAPSHOT_SCHEMA_VERSION, TerminalTabSnapshot,
+    SNAPSHOT_SCHEMA_VERSION, TerminalTabSnapshot, TranslucencySnapshot, TranslucencyValueSnapshot,
 };
 pub use state::Workspace;
 pub use terminals::ConnectPlan;

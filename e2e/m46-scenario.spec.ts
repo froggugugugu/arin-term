@@ -227,7 +227,7 @@ test.describe("M4.6 のシナリオ(文字の大きさの設定)", () => {
 
     // シェルは続いている(閉じる・既定に戻すは送っていない)
     expect(await callCount(page, "close_terminal")).toBe(0);
-    expect(await callCount(page, "reset_font_sizes")).toBe(0);
+    expect(await callCount(page, "reset_appearance")).toBe(0);
     expect(await connectCount(page, TERMINAL_ID)).toBe(1);
   });
 

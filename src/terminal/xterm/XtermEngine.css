@@ -1,0 +1,8 @@
+/*
+ * xterm.js の地を透明にする(M4.7。ADR-014 の 2)。xterm.css は .xterm-viewport を黒で塗る(macOS でスクロールバーを
+ * 不透明に見せるための指定)。テーマの background を透明にしても、この指定が残ると置き場所の地(半透明の黒)が見えない。
+ * 地は置き場所を囲む部品(.terminal-area__panel・.tile__body)が --color-terminal-bg で塗る。
+ */
+.xterm .xterm-viewport {
+  background-color: transparent;
+}

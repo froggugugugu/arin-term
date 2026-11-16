@@ -3,7 +3,8 @@
 //! 設計書 §6.2 のスキーマのうち M2 で使う分(`projects[]` の `id`・`bookmark`・`lastKnownPath`・`customName`・`colorId`、
 //! `ui` の `selectedProjectId`・`sidebarWidth`・`sidebarCollapsed`・`cardAreaHeight`)と、M3 で足した
 //! `projects[].tree.showHidden`(計画書 T38e)、M4 で足した `ui.displayMode`(計画書 T46c)、M4.6 で足した
-//! `ui.terminalFontSize`・`ui.interfaceFontSize`(計画書 T68b、ADR-013 の 1)を読み書きする。
+//! `ui.terminalFontSize`・`ui.interfaceFontSize`(計画書 T68b、ADR-013 の 1)、M4.7 で足した
+//! `ui.windowTranslucency`・`ui.terminalTranslucency`(ADR-014 の 1)を読み書きする。
 //! `tree.expanded` は M6 まで読まず書かない。
 //! 入出力はしない。読んだバイト列(無ければ `None`)を受けて結果を返し、書く文字列を返すだけ。
 //!
@@ -13,6 +14,8 @@
 //!   タブ表示(既定)のあいだは書かない(M3 までの `state.json` と同じ形のまま。ページと拡大中は保存しない)
 //! - `ui.terminalFontSize`・`ui.interfaceFontSize` が無い・数でないときは退避せずに既定、整数でない数は四捨五入、
 //!   範囲の外は端に留める(規則は `layout::font_sizes`)。既定のあいだはキーごとに書かない
+//! - `ui.windowTranslucency`・`ui.terminalTranslucency` も同じ扱い。数は近い 5 の倍数に丸めて端に留める
+//!   (規則は `layout::translucency`)。既定のあいだはキーごとに書かない
 //! - JSON として読めない・版が正しくない・新しすぎる・形が違うときは「退避する」を返す(決定 (d))。
 //!   退避の名前は [`broken_file_name`] が時計の値から作る(【仮定】3)
 //! - ブックマークは base64 の文字列のまま扱い、中身は解釈しない(【仮定】2)。null のものは作り直しの指示にする(【仮定】13)
@@ -26,6 +29,7 @@ use thiserror::Error;
 
 use crate::layout::font_sizes::{FontSizeTarget, FontSizes};
 use crate::layout::tiles::DisplayMode;
+use crate::layout::translucency::{Translucency, TranslucencyTarget};
 use crate::project::{Project, ProjectId};
 
 /// 状態ファイルの名前。正本はポート側の定数(同じ名前を 2 か所に持たない)。
@@ -37,8 +41,8 @@ pub const STATE_SCHEMA_VERSION: u32 = 1;
 /// 1 日の秒数。
 const SECONDS_PER_DAY: u64 = 86_400;
 
-/// 保存する左ペインの寸法(CSS ピクセル)と右ペインの表示モードと文字の大きさ。
-/// ペインの寸法は読んだ値をそのまま持ち、文字の大きさは読むときに規則を当てたものを持つ。
+/// 保存する左ペインの寸法(CSS ピクセル)と右ペインの表示モードと文字の大きさと透過。
+/// ペインの寸法は読んだ値をそのまま持ち、文字の大きさと透過は読むときに規則を当てたものを持つ。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PersistedLayout {
     /// 左ペインの幅(`ui.sidebarWidth`)。無い・null なら `None`。
@@ -51,6 +55,8 @@ pub struct PersistedLayout {
     pub display_mode: DisplayMode,
     /// ターミナルと画面の文字の大きさ(`ui.terminalFontSize`・`ui.interfaceFontSize`)。無い・数でなければ既定。
     pub font_sizes: FontSizes,
+    /// ウィンドウとターミナルの背景の透過(`ui.windowTranslucency`・`ui.terminalTranslucency`)。無い・数でなければ既定。
+    pub translucency: Translucency,
 }
 
 /// `state.json` に保存する内容。表示値(見つからない・表示用のパス)を持たない。
@@ -156,6 +162,18 @@ struct UiSection {
         skip_serializing_if = "is_default_interface_font_size"
     )]
     interface_font_size: u16,
+    #[serde(
+        default = "default_window_translucency",
+        deserialize_with = "lenient_window_translucency",
+        skip_serializing_if = "is_default_window_translucency"
+    )]
+    window_translucency: u8,
+    #[serde(
+        default = "default_terminal_translucency",
+        deserialize_with = "lenient_terminal_translucency",
+        skip_serializing_if = "is_default_terminal_translucency"
+    )]
+    terminal_translucency: u8,
 }
 
 impl Default for UiSection {
@@ -168,6 +186,8 @@ impl Default for UiSection {
             display_mode: DisplayMode::default(),
             terminal_font_size: default_terminal_font_size(),
             interface_font_size: default_interface_font_size(),
+            window_translucency: default_window_translucency(),
+            terminal_translucency: default_terminal_translucency(),
         }
     }
 }
@@ -226,6 +246,45 @@ fn is_default_interface_font_size(size: &u16) -> bool {
     *size == FontSizeTarget::Interface.default_value()
 }
 
+/// `ui.windowTranslucency` が無いときの値。
+fn default_window_translucency() -> u8 {
+    TranslucencyTarget::Window.default_value()
+}
+
+/// `ui.terminalTranslucency` が無いときの値。
+fn default_terminal_translucency() -> u8 {
+    TranslucencyTarget::Terminal.default_value()
+}
+
+/// `ui.windowTranslucency` を読む。数でない値は状態ファイルを退避せずに既定にし、数は近い 5 の倍数に丸めて端に留める
+/// (ADR-014 の 1)。
+fn lenient_window_translucency<'de, D>(deserializer: D) -> Result<u8, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    Ok(TranslucencyTarget::Window.from_persisted(Some(&value)))
+}
+
+/// `ui.terminalTranslucency` を読む(`lenient_window_translucency` と同じ扱い)。
+fn lenient_terminal_translucency<'de, D>(deserializer: D) -> Result<u8, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    Ok(TranslucencyTarget::Terminal.from_persisted(Some(&value)))
+}
+
+/// 既定のウィンドウの透過なら書かない。
+fn is_default_window_translucency(value: &u8) -> bool {
+    *value == TranslucencyTarget::Window.default_value()
+}
+
+/// 既定のターミナルの背景の透過なら書かない。
+fn is_default_terminal_translucency(value: &u8) -> bool {
+    *value == TranslucencyTarget::Terminal.default_value()
+}
+
 /// 状態ファイルを読む。`contents` は読んだバイト列、ファイルが無ければ `None`。
 #[must_use]
 pub fn decode(contents: Option<&[u8]>) -> LoadOutcome {
@@ -255,6 +314,8 @@ pub fn encode(state: &PersistedState) -> Result<String, EncodeError> {
             display_mode: state.layout.display_mode,
             terminal_font_size: state.layout.font_sizes.terminal,
             interface_font_size: state.layout.font_sizes.interface,
+            window_translucency: state.layout.translucency.window,
+            terminal_translucency: state.layout.translucency.terminal,
         },
     };
     let mut text = serde_json::to_string_pretty(&file)
@@ -333,6 +394,10 @@ fn tidy(file: StateFile) -> LoadedState {
                 font_sizes: FontSizes {
                     terminal: file.ui.terminal_font_size,
                     interface: file.ui.interface_font_size,
+                },
+                translucency: Translucency {
+                    window: file.ui.window_translucency,
+                    terminal: file.ui.terminal_translucency,
                 },
             },
         },

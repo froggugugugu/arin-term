@@ -70,22 +70,22 @@ fn 端で刻んでも変わらず偽を返す() {
 #[test]
 fn 既定に戻すと両方が既定になり既定のときは偽() {
     let mut ws = empty();
-    assert!(!ws.reset_font_sizes(), "初めから既定なので変わらない");
+    assert!(!ws.reset_appearance(), "初めから既定なので変わらない");
 
     ws.step_font_size(FontSizeTarget::Terminal, 3);
     ws.step_font_size(FontSizeTarget::Interface, 2);
 
-    assert!(ws.reset_font_sizes());
+    assert!(ws.reset_appearance());
     assert_eq!(ws.font_sizes(), FontSizes::default());
     assert_eq!(
         ws.snapshot().font_sizes,
         FontSizesSnapshot::from(FontSizes::default())
     );
-    assert!(!ws.reset_font_sizes(), "既定に戻したあとは変わらない");
+    assert!(!ws.reset_appearance(), "既定に戻したあとは変わらない");
 
     // 片方だけ変えていても戻る
     ws.step_font_size(FontSizeTarget::Interface, 1);
-    assert!(ws.reset_font_sizes());
+    assert!(ws.reset_appearance());
     assert_eq!(ws.font_sizes(), FontSizes::default());
 }
 

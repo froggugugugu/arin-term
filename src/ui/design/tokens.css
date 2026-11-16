@@ -4,7 +4,7 @@
  * プロジェクト色の値は palette.ts が持ち、部品が要素に CSS の変数として付ける(.project-colored が外観で使い分ける)。
  *
  * ウィンドウの地はすりガラス(ADR-010): 実アプリではウィンドウを透明にし、macOS の vibrancy(サイドバーの素材)を
- * 窓の全面に敷く。画面は --color-window-bg(半透明の淡い色)を重ねるだけで、ターミナルの置き場所だけを不透明にする。
+ * 窓の全面に敷く。画面は --color-window-bg(半透明の淡い色)を重ねるだけ。ターミナルの置き場所は半透明の黒(M4.7。ADR-014)。
  * ブラウザ(Playwright)では窓の向こうが無く、半透明の色がページの地(白・黒)に重なって不透明の淡いグレーに見える
  * (どちらでも破綻しない色にしてある。Tauri の中かどうかで分けない)。
  */
@@ -17,7 +17,15 @@
    * ウィンドウの地(左ペインと上部の帯。半透明)。すりガラスの上で文字のコントラストを保つため、淡い色を半分ほど重ねる。
    * ブラウザでは白に重なって #f6f6f7 ほどに見える。
    */
-  --color-window-bg: rgba(238, 238, 240, 0.55);
+  --color-window-bg: rgba(238, 238, 240, var(--window-bg-alpha-light));
+  /*
+   * 地の不透明度(M4.7。ADR-014 の 2)。設定画面の「透過」から src/logic/appearance/translucency.ts が値を決め、
+   * src/ui/design/applyTranslucency.ts が :root に上書きする。ここの値は既定(ウィンドウ 45・ターミナル 20)のときの値。
+   * ウィンドウの地はライトとダークで色と不透明度が違うので、不透明度を 2 つ持ち、色の側(外観ごと)がどちらかを受ける。
+   */
+  --window-bg-alpha-light: 0.55;
+  --window-bg-alpha-dark: 0.5;
+  --terminal-bg-alpha: 0.8;
   /* 細い区切り線(ペインの境目、帯の下端)。すりガラスの上でも馴染む半透明の黒。 */
   --color-separator: rgba(0, 0, 0, 0.11);
   /* タブバーの地(すりガラスの上に少しだけ影を落とす)と、表示中のタブの地(明るく浮かせる)。 */
@@ -74,11 +82,11 @@
   --color-copy-badge: #2fb350;
   --color-copy-badge-fg: #ffffff;
   /*
-   * ターミナルの置き場所の地。xterm.js の既定の配色(背景 #000000・文字 #ffffff)に合わせる。置き場所は行の高さの倍数とは
-   * 限らず下端に 1 行に満たない余りが出るので、余りがターミナルと違う色の帯に見えないようにする。
+   * ターミナルの置き場所の地(黒を透過の設定ぶん透かす。ADR-014 の 2)。xterm.js の地は透明にしてあり、この地が見える。
+   * 塗るのは置き場所を囲む 1 段(.terminal-area__panel・.tile__body)だけにする(重ねると濃くなる)。
    * 外観で変えない(xterm.js の配色は外観に追従しない。配色の設定は M6 の FR-049 で、そのときここも合わせる)。
    */
-  --color-terminal-bg: #000000;
+  --color-terminal-bg: rgba(0, 0, 0, var(--terminal-bg-alpha));
   --color-terminal-fg: #ffffff;
   /* ターミナルの置き場所へ落とせるときの重ね(地が外観によらず黒なので、外観で変えない明るめのアクセント色)。 */
   --color-terminal-drop-overlay: rgba(76, 155, 255, 0.1);
@@ -90,6 +98,12 @@
   --color-tile-title-bg: var(--color-tabbar-bg);
   --color-tile-title-focused-bg: var(--color-tab-selected-bg);
   --color-tile-focus-ring: rgba(10, 100, 216, 0.9);
+  /*
+   * タイルの番号の札(M4.7。ADR-014 の 4)。ターミナルの黒い地の上に重ねる半透明の白(地が外観によらず黒なので、外観で変えない)。
+   * フォーカス中のタイルだけ少し濃くする。
+   */
+  --color-tile-number: rgba(255, 255, 255, 0.38);
+  --color-tile-number-focused: rgba(255, 255, 255, 0.62);
   /*
    * アテンションの印(FR-055。タイトルバーの右端と、ページ送りのボタンの右上)。システムの強調色(systemBlue)の小さな塗りの丸に
    * 淡い輪を添え、プロジェクト色の印(輪の無い丸。名前の前)と位置と形で見分ける。点滅させない。
@@ -159,7 +173,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --color-pane: #1f1f21;
-    --color-window-bg: rgba(30, 30, 32, 0.5);
+    --color-window-bg: rgba(30, 30, 32, var(--window-bg-alpha-dark));
     --color-separator: rgba(255, 255, 255, 0.1);
     --color-tabbar-bg: rgba(0, 0, 0, 0.28);
     --color-tab-selected-bg: rgba(255, 255, 255, 0.12);

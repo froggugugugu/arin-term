@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use arin_core::layout::font_sizes::{FontSizeTarget, FontSizes};
 use arin_core::layout::tiles::DisplayMode;
+use arin_core::layout::translucency::{Translucency, TranslucencyTarget};
 use arin_core::persistence::codec::{
     EncodeError, LoadOutcome, LoadedState, PersistedLayout, PersistedState, QuarantineReason,
     STATE_FILE_NAME, STATE_SCHEMA_VERSION, broken_file_name, decode, encode,
@@ -63,6 +64,7 @@ fn sample_state() -> PersistedState {
             card_area_height: Some(240.0),
             display_mode: DisplayMode::Tabs,
             font_sizes: FontSizes::default(),
+            translucency: Translucency::default(),
         },
     }
 }
@@ -240,6 +242,7 @@ fn 欠けたキーは既定値で補う() {
                 card_area_height: None,
                 display_mode: DisplayMode::Tabs,
                 font_sizes: FontSizes::default(),
+                translucency: Translucency::default(),
             },
         }
     );
@@ -377,6 +380,7 @@ fn tree_キーの無い状態ファイルも読める() {
                 card_area_height: Some(220.0),
                 display_mode: DisplayMode::Tabs,
                 font_sizes: FontSizes::default(),
+                translucency: Translucency::default(),
             },
         }
     );
@@ -504,6 +508,7 @@ fn m3_state() -> PersistedState {
             card_area_height: Some(180.0),
             display_mode: DisplayMode::Tabs,
             font_sizes: FontSizes::default(),
+            translucency: Translucency::default(),
         },
     }
 }
@@ -745,6 +750,90 @@ fn 文字の大きさを足しても_schema_version_は_1() {
 
     assert_eq!(value["schemaVersion"], json!(1));
     assert_eq!(value["ui"]["terminalFontSize"], json!(16));
+}
+
+// ---- 透過(ADR-014 の 1、`ui.windowTranslucency`・`ui.terminalTranslucency`。AC-G04) ----
+
+#[test]
+fn 透過が無い版_1_の_state_json_をそのまま読み_既定は書かない() {
+    let m3 = loaded(decode_str(M3_STATE_JSON));
+    assert_eq!(m3.state, m3_state());
+    assert_eq!(m3.state.layout.translucency, Translucency::default());
+
+    let rewritten: Value = serde_json::from_str(&encode(&m3.state).expect("書ける")).unwrap();
+    let original: Value = serde_json::from_str(M3_STATE_JSON).unwrap();
+    assert_eq!(rewritten, original);
+    assert!(rewritten["ui"].get("windowTranslucency").is_none());
+    assert!(rewritten["ui"].get("terminalTranslucency").is_none());
+
+    // 既定かどうかはキーごとに見る
+    let mut state = m3_state();
+    state.layout.translucency = Translucency::default().stepped(TranslucencyTarget::Terminal, 10);
+    let value: Value = serde_json::from_str(&encode(&state).expect("書ける")).unwrap();
+    assert!(value["ui"].get("windowTranslucency").is_none(), "{value}");
+    assert_eq!(value["ui"]["terminalTranslucency"], json!(30));
+}
+
+#[test]
+fn 変えた透過を書いて読み戻せ_schema_version_は_1() {
+    let mut state = m3_state();
+    state.layout.translucency = Translucency::default()
+        .stepped(TranslucencyTarget::Window, -45)
+        .stepped(TranslucencyTarget::Terminal, 60);
+
+    let text = encode(&state).expect("書ける");
+    let value: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value["schemaVersion"], json!(1));
+    assert_eq!(value["ui"]["windowTranslucency"], json!(0));
+    assert_eq!(value["ui"]["terminalTranslucency"], json!(80));
+
+    let back = loaded(decode_str(&text));
+    assert_eq!(back.state, state);
+    assert_eq!(
+        back.state.layout.translucency,
+        Translucency {
+            window: 0,
+            terminal: 80,
+        }
+    );
+}
+
+#[test]
+fn 壊れた透過は退避せず既定_端_丸めにする() {
+    // 数でない値は既定(ほかの内容は保つ)
+    for bad in [json!(null), json!("50"), json!(true), json!([]), json!({})] {
+        let mut value: Value = serde_json::from_str(M3_STATE_JSON).unwrap();
+        value["ui"]["windowTranslucency"] = bad.clone();
+        value["ui"]["terminalTranslucency"] = bad.clone();
+        let outcome = loaded(decode_value(&value));
+        assert_eq!(outcome.state, m3_state(), "{bad}");
+    }
+
+    // (ウィンドウ, ターミナル, 読んだ結果)
+    let cases = [
+        (json!(-10), json!(200), (0, 80)),
+        (json!(1e300), json!(81), (100, 80)),
+        (json!(52), json!(13), (50, 15)),
+        (json!(57.5), json!(22.4), (60, 20)),
+        (json!("濃い"), json!(35), (45, 35)),
+    ];
+    for (window, terminal, (want_window, want_terminal)) in cases {
+        let mut value: Value = serde_json::from_str(M3_STATE_JSON).unwrap();
+        value["ui"]["windowTranslucency"] = window.clone();
+        value["ui"]["terminalTranslucency"] = terminal.clone();
+
+        let outcome = loaded(decode_value(&value));
+
+        assert_eq!(
+            outcome.state.layout.translucency,
+            Translucency {
+                window: want_window,
+                terminal: want_terminal,
+            },
+            "{window} / {terminal}"
+        );
+        assert_eq!(outcome.state.projects, m3_state().projects);
+    }
 }
 
 // ---- 無い・退避 ----

@@ -91,6 +91,11 @@ export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapsho
       terminal: { value: 15, min: 9, max: 28, defaultValue: 15 },
       interface: { value: 13, min: 11, max: 18, defaultValue: 13 },
     },
+    // 透過の既定(Rust の `Translucency::default()` と範囲・刻み。ADR-014 の 1)
+    translucency: {
+      window: { value: 45, min: 0, max: 100, defaultValue: 45, step: 5 },
+      terminal: { value: 20, min: 0, max: 80, defaultValue: 20, step: 5 },
+    },
     ...overrides,
   };
 }
@@ -278,7 +283,7 @@ export function withTileDisplay(snapshot: AppSnapshot, options: TileDisplayOptio
 }
 
 /**
- * 文字の大きさを替えた写しを返す(T70a。Rust の step_font_size・reset_font_sizes のあとに届く写しの形)。
+ * 文字の大きさを替えた写しを返す(T70a。Rust の step_font_size・reset_appearance のあとに届く写しの形)。
  * 範囲と既定は写しのまま(Rust の規則で端に留めるのはテストの側の役目)。渡した写しは書き換えない。
  */
 export function withFontSizes(
@@ -307,6 +312,39 @@ export function withSteppedFontSize(
   const current = snapshot.fontSizes[target];
   const value = Math.max(current.min, Math.min(current.max, current.value + delta));
   return withFontSizes(snapshot, { [target]: value });
+}
+
+/**
+ * 透過を替えた写しを返す(M4.7。Rust の step_translucency・reset_appearance のあとに届く写しの形)。
+ * 範囲・既定・刻みは写しのまま。渡した写しは書き換えない。
+ */
+export function withTranslucency(
+  snapshot: AppSnapshot,
+  values: { window?: number; terminal?: number },
+): AppSnapshot {
+  const { window, terminal } = snapshot.translucency;
+  return {
+    ...snapshot,
+    translucency: {
+      window: { ...window, value: values.window ?? window.value },
+      terminal: { ...terminal, value: values.terminal ?? terminal.value },
+    },
+  };
+}
+
+/**
+ * Rust の step_translucency のあとに届く写しを返す(crates/arin-core/src/layout/translucency.rs の写し:
+ * 今の値に delta(% の差分)を足し、刻みの倍数に丸めて、写しの最小・最大の端に留める)。
+ */
+export function withSteppedTranslucency(
+  snapshot: AppSnapshot,
+  target: "window" | "terminal",
+  delta: number,
+): AppSnapshot {
+  const current = snapshot.translucency[target];
+  const rounded = Math.round((current.value + delta) / current.step) * current.step;
+  const value = Math.max(current.min, Math.min(current.max, rounded));
+  return withTranslucency(snapshot, { [target]: value });
 }
 
 /** 終了・削除の確認に載せる動作中のターミナル 1 枚(quit-requested のイベントの中身などに使う。T34d)。 */
@@ -357,7 +395,9 @@ const DEFAULT_REPLIES: TauriMockConfig = {
   toggle_tile_maximize: { ok: null },
   // 文字の大きさ(T70a)。偽の Rust 側は写しを送り返さないので、テストが withFontSizes で作った写しを流す
   step_font_size: { ok: null },
-  reset_font_sizes: { ok: null },
+  // 透過(M4.7)。同じく、テストが withTranslucency で作った写しを流す
+  step_translucency: { ok: null },
+  reset_appearance: { ok: null },
   open_settings_file: { ok: null },
   list_directory: { ok: { kind: "listed", entries: [] } },
   set_show_hidden: { ok: null },

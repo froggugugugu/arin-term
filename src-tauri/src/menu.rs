@@ -111,11 +111,23 @@ const EDIT_GROUPS: &[&[ShortcutCommandId]] = &[
     &[C::EditCut, C::EditCopy, C::EditPaste],
     &[C::EditSelectAll],
 ];
-/// 「表示」の並び(表示モードの切替、区切り線、前後のページ、区切り線、拡大)。
+/// 「表示」の並び(表示モードの切替、区切り線、前後のページ、区切り線、拡大、区切り線、タイルの番号 1〜9。
+/// 番号は M4.7 の ADR-014 の 4)。
 const VIEW_GROUPS: &[&[ShortcutCommandId]] = &[
     &[C::ViewToggleDisplayMode],
     &[C::ViewPreviousPage, C::ViewNextPage],
     &[C::ViewToggleMaximize],
+    &[
+        C::ViewFocusTile1,
+        C::ViewFocusTile2,
+        C::ViewFocusTile3,
+        C::ViewFocusTile4,
+        C::ViewFocusTile5,
+        C::ViewFocusTile6,
+        C::ViewFocusTile7,
+        C::ViewFocusTile8,
+        C::ViewFocusTile9,
+    ],
 ];
 
 /// メニューに出す項目の文言。メニューに置き場所の無いコマンド(ツリーの操作)と、文言にアプリ名が入る「終了」は `None`。
@@ -134,6 +146,15 @@ pub const fn label(command: ShortcutCommandId) -> Option<&'static str> {
         C::ViewPreviousPage => Some("前のページ"),
         C::ViewNextPage => Some("次のページ"),
         C::ViewToggleMaximize => Some("タイルを拡大/元に戻す"),
+        C::ViewFocusTile1 => Some("タイル 1 にフォーカス"),
+        C::ViewFocusTile2 => Some("タイル 2 にフォーカス"),
+        C::ViewFocusTile3 => Some("タイル 3 にフォーカス"),
+        C::ViewFocusTile4 => Some("タイル 4 にフォーカス"),
+        C::ViewFocusTile5 => Some("タイル 5 にフォーカス"),
+        C::ViewFocusTile6 => Some("タイル 6 にフォーカス"),
+        C::ViewFocusTile7 => Some("タイル 7 にフォーカス"),
+        C::ViewFocusTile8 => Some("タイル 8 にフォーカス"),
+        C::ViewFocusTile9 => Some("タイル 9 にフォーカス"),
         C::AppOpenSettings => Some("設定…"),
         _ => None,
     }
@@ -187,7 +208,8 @@ pub fn rebuild<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
 ///   すべてを表示(標準)・終了(自前)
 /// - ターミナル: 新規タブ・タブを閉じる・前のタブ・次のタブ(自前)
 /// - 編集: 切り取り・コピー・ペースト(標準)・すべてを選択(自前)
-/// - 表示: タイル表示とタブ表示の切替・前のページ・次のページ・タイルの拡大(自前。T47c)
+/// - 表示: タイル表示とタブ表示の切替・前のページ・次のページ・タイルの拡大(自前。T47c)・タイル 1〜9 にフォーカス
+///   (自前。ADR-014 の 4)
 ///
 /// 受け口が合わない行(自前の項目なら「メニューの項目」以外、標準の項目なら「編集の項目」以外)は載せない。
 ///
@@ -309,6 +331,8 @@ fn entry<R: Runtime>(
 /// - すべてを選択: 画面へ `menu-command`(`"select-all"`)を送る
 /// - 表示の 4 項目: `SessionRegistry` の表示の口を呼ぶ(変わったときだけ写しが届く)。タブ表示でのページ送り・拡大、
 ///   端のページでのページ送りは何もしない。項目はいつも有効のまま並べる(M4 の【仮定】9)
+/// - タイル 1〜9 にフォーカス: `SessionRegistry::focus_tile_at` を呼ぶ(ADR-014 の 4。変わったときだけ写しが届く)。
+///   タブ表示・拡大中・無い番号は何もしない。キーはメニューが受けるのでターミナルには渡らない
 /// - 終了: 終了の要求(動作中のターミナルがあれば画面に確認を求める。FR-063)
 /// - 設定…: 画面へ `menu-command`(`"open-settings"`)を送る(画面が設定画面を開く。ADR-013 の 6)
 /// - 設定ファイルを開く…(表の外の [`OPEN_SETTINGS_FILE_ID`]): 待ってよいスレッドで、無ければ見本を作ってから既定のアプリで開く
@@ -370,6 +394,13 @@ pub fn on_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
                 _ => sessions.toggle_tile_maximize(),
             };
         }
-        _ => {}
+        _ => {
+            if let Some(position) = command.tile_position()
+                && let Some(sessions) = app.try_state::<SessionRegistry>()
+            {
+                // タブ表示・拡大中・無い番号・既にフォーカス中のときは何もしない。
+                let _ = sessions.focus_tile_at(position);
+            }
+        }
     }
 }

@@ -8,14 +8,18 @@ import type { Actions } from "../../state/actions";
 import type { AppStore } from "../../state/appStore";
 import type { UiStore } from "../../state/uiStore";
 import type { Snapshot } from "../snapshotTypes";
-import { FontSizeStepper } from "./FontSizeStepper";
+import { type StepperUnit, ValueStepper } from "./ValueStepper";
 
 interface SettingsDialogProps {
   store: AppStore;
   /** 開閉(settingsOpen)とショートカットの表(⌘W のキーを引く)。 */
   ui: UiStore;
-  actions: Pick<Actions, "stepFontSize" | "resetFontSizes" | "openSettingsFile">;
+  actions: Pick<Actions, "stepFontSize" | "stepTranslucency" | "resetAppearance" | "openSettingsFile">;
 }
+
+/** 文字の大きさと透過の単位。 */
+const POINTS: StepperUnit = { suffix: " pt", spoken: "ポイント" };
+const PERCENT: StepperUnit = { suffix: "%", spoken: "パーセント" };
 
 /** Tab で回る要素(▲▼ のボタンは tabindex="-1" なので入らない。無効のボタンも入らない)。 */
 const FOCUSABLE = "button:not([disabled]):not([tabindex='-1']), [tabindex]:not([tabindex='-1'])";
@@ -25,7 +29,8 @@ const MENU_RECEIVERS = ["menu-item"] as const;
 
 /**
  * 設定画面(M4.6。ADR-013 の 5)。⌘, とメニューの「設定…」で開く画面内のシート。uiStore の settingsOpen が真のあいだだけ描く。
- * 文字の大きさ(ターミナル・画面)のステッパーと、「設定ファイルを開く…」、「既定に戻す」・「完了」を持つ。値は写しから読み、
+ * 文字の大きさ(ターミナル・画面)と透過(ウィンドウ・ターミナルの背景。M4.7。ADR-014 の 3)のステッパーと、
+ * 「設定ファイルを開く…」、「既定に戻す」(4 つの値をすべて戻す。すべて既定なら無効)・「完了」を持つ。値は写しから読み、
  * 押すたびにすぐ反映する(「適用」は無い)。背景は暗くしない(変えた大きさを後ろで見ながら選べる。【要確認】4)。
  * 開くとターミナルのステッパーにフォーカスし、Tab・Shift+Tab は中を回る。Esc・Return(ボタン以外の上)・「完了」・
  * ⌘W(表の terminal.close-tab のキー。画面の keydown は取り消す)で閉じ、開く前のフォーカスへ戻す。
@@ -33,25 +38,31 @@ const MENU_RECEIVERS = ["menu-item"] as const;
 export function SettingsDialog({ store, ui, actions }: SettingsDialogProps) {
   const open = useStore(ui, (s) => s.settingsOpen);
   const fontSizes = useStore(store, (s) => s.snapshot?.fontSizes ?? null);
-  if (!open || fontSizes === null) return null;
-  return <SettingsSheet fontSizes={fontSizes} ui={ui} actions={actions} />;
+  const translucency = useStore(store, (s) => s.snapshot?.translucency ?? null);
+  if (!open || fontSizes === null || translucency === null) return null;
+  return <SettingsSheet fontSizes={fontSizes} translucency={translucency} ui={ui} actions={actions} />;
 }
 
 interface SettingsSheetProps {
   fontSizes: Snapshot["fontSizes"];
+  translucency: Snapshot["translucency"];
   ui: UiStore;
   actions: SettingsDialogProps["actions"];
 }
 
-function SettingsSheet({ fontSizes, ui, actions }: SettingsSheetProps) {
+/** 写しの値が既定か。 */
+const isDefault = (entry: { value: number; defaultValue: number }) => entry.value === entry.defaultValue;
+
+function SettingsSheet({ fontSizes, translucency, ui, actions }: SettingsSheetProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const doneRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
   const fontGroupId = useId();
+  const translucencyGroupId = useId();
   const shortcutGroupId = useId();
   const close = () => ui.getState().closeSettings();
   const { terminal, interface: screen } = fontSizes;
-  const allDefault = terminal.value === terminal.defaultValue && screen.value === screen.defaultValue;
+  const allDefault = [terminal, screen, translucency.window, translucency.terminal].every(isDefault);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -138,9 +149,12 @@ function SettingsSheet({ fontSizes, ui, actions }: SettingsSheetProps) {
             <div className="settings-row__text">
               <span className="settings-row__label">ターミナル</span>
             </div>
-            <FontSizeStepper
+            <ValueStepper
               label="ターミナルの文字の大きさ"
               size={terminal}
+              unit={POINTS}
+              upLabel="大きくする"
+              downLabel="小さくする"
               onStep={(delta) => void actions.stepFontSize("terminal", delta)}
             />
           </div>
@@ -149,10 +163,50 @@ function SettingsSheet({ fontSizes, ui, actions }: SettingsSheetProps) {
               <span className="settings-row__label">画面</span>
               <span className="settings-row__hint">サイドバー・タブ・ツリー・メニューの文字</span>
             </div>
-            <FontSizeStepper
+            <ValueStepper
               label="画面の文字の大きさ"
               size={screen}
+              unit={POINTS}
+              upLabel="大きくする"
+              downLabel="小さくする"
               onStep={(delta) => void actions.stepFontSize("interface", delta)}
+            />
+          </div>
+        </div>
+      </section>
+
+      <section className="settings-sheet__group" aria-labelledby={translucencyGroupId}>
+        <h3 id={translucencyGroupId} className="settings-sheet__group-title">
+          透過
+        </h3>
+        <div className="settings-sheet__rows">
+          <div className="settings-row" data-testid="translucency-row-window">
+            <div className="settings-row__text">
+              <span className="settings-row__label">ウィンドウ</span>
+              <span className="settings-row__hint">サイドバーと上部の帯</span>
+            </div>
+            <ValueStepper
+              label="ウィンドウの透過"
+              size={translucency.window}
+              unit={PERCENT}
+              step={translucency.window.step}
+              upLabel="透過を強くする"
+              downLabel="透過を弱くする"
+              onStep={(delta) => void actions.stepTranslucency("window", delta)}
+            />
+          </div>
+          <div className="settings-row" data-testid="translucency-row-terminal">
+            <div className="settings-row__text">
+              <span className="settings-row__label">ターミナルの背景</span>
+            </div>
+            <ValueStepper
+              label="ターミナルの背景の透過"
+              size={translucency.terminal}
+              unit={PERCENT}
+              step={translucency.terminal.step}
+              upLabel="透過を強くする"
+              downLabel="透過を弱くする"
+              onStep={(delta) => void actions.stepTranslucency("terminal", delta)}
             />
           </div>
         </div>
@@ -179,7 +233,7 @@ function SettingsSheet({ fontSizes, ui, actions }: SettingsSheetProps) {
           type="button"
           className="button settings-sheet__reset"
           disabled={allDefault}
-          onClick={() => void actions.resetFontSizes()}
+          onClick={() => void actions.resetAppearance()}
         >
           既定に戻す
         </button>

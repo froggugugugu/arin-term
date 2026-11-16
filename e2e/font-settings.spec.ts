@@ -2,7 +2,7 @@
 //
 // 偽の Rust 側(fixtures/tauriMock.ts)に写しを渡して画面を開き、⌘, とメニューの「設定…」の代わりに menu-command の
 // "open-settings" を emitEvent で流す(本物の Rust はどちらもこの操作を送る)。偽物は写しを送り返さないので、
-// step_font_size・reset_font_sizes の結果は、テストが withFontSizes で作った写しを流して代える。
+// step_font_size・reset_appearance の結果は、テストが withFontSizes で作った写しを流して代える。
 // ターミナルへの当て方(T69a)は WebKit の実物の xterm.js で、行・桁と resize_terminal を見る(AC-F02・F03)。
 // 見た目は、ライトとダーク × 既定の値・端の値(ステッパーが無効)・画面の大きさ 18 の画像を testreport/e2e/font-settings/ に撮る
 // (人が目で確かめる。AC-F13)。
@@ -160,7 +160,16 @@ test.describe("開閉とキーボード(AC-F01・AC-F12)", () => {
     await terminalInput(page, "p-app-t1").focus();
     await openSettings(page);
 
-    const order = [terminalStepper(page), interfaceStepper(page), openFileButton(page), resetButton(page), doneButton(page)];
+    // M4.7 で透過の 2 つのステッパーが文字の大きさの下に入った(ADR-014 の 3)
+    const order = [
+      terminalStepper(page),
+      interfaceStepper(page),
+      page.getByRole("spinbutton", { name: "ウィンドウの透過" }),
+      page.getByRole("spinbutton", { name: "ターミナルの背景の透過" }),
+      openFileButton(page),
+      resetButton(page),
+      doneButton(page),
+    ];
     for (const next of [...order.slice(1), order[0]]) {
       await page.keyboard.press("Tab");
       await expect(next as Locator).toBeFocused();
@@ -283,9 +292,9 @@ test.describe("端と既定(AC-F06・AC-F07)", () => {
     // キーボードで押す(フォーカスがボタンにある状態で無効になる流れを見る)
     await resetButton(page).focus();
     await page.keyboard.press("Space");
-    await expect.poll(() => readCallArgs(page, "reset_font_sizes")).toEqual([{}]);
+    await expect.poll(() => readCallArgs(page, "reset_appearance")).toEqual([{}]);
     await resetButton(page).click();
-    await expect.poll(() => readCallArgs(page, "reset_font_sizes")).toEqual([{}, {}]);
+    await expect.poll(() => readCallArgs(page, "reset_appearance")).toEqual([{}, {}]);
 
     // 既定の写しが届くと無効に戻り、フォーカスは「完了」へ移る(設定画面の外へ落とさない)
     await emitEvent(page, "app-snapshot", base);

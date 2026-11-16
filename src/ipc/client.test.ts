@@ -28,12 +28,12 @@ describe("src/ipc の包み", () => {
     expect(result).toEqual(table);
   });
 
-  it("偽の通信の_get_shortcuts_の既定の応答は既定の表_23_行", async () => {
+  it("偽の通信の_get_shortcuts_の既定の応答は既定の表_32_行", async () => {
     const ipc = createIpc(createFakeIpc().transport);
 
     const result = await ipc.getShortcuts();
 
-    expect(result).toHaveLength(23);
+    expect(result).toHaveLength(32);
     expect(result[0]).toEqual({ command: "terminal.new-tab", accelerator: "Cmd+T", receiver: "menu-item" });
     expect(result.find((b) => b.command === "edit.cut")).toEqual({
       command: "edit.cut",
@@ -158,17 +158,22 @@ describe("src/ipc の包み", () => {
     expect(fake.calls).toEqual([]);
   });
 
-  it("文字の大きさの刻みは_step_font_size_に対象と差分で届き_既定に戻すと設定ファイルを開くは引数なし", async () => {
+  it("文字の大きさと透過の刻みは対象と差分で届き_既定に戻すと設定ファイルを開くは引数なし", async () => {
     const fake = createFakeIpc();
     const ipc = createIpc(fake.transport);
 
     await ipc.stepFontSize("interface", -1);
-    await ipc.resetFontSizes();
+    await ipc.stepTranslucency("terminal", 5);
+    await ipc.stepTranslucency("window", -100);
+    await ipc.resetAppearance();
     await ipc.openSettingsFile();
 
     expect(fake.calls).toEqual([
       { command: "step_font_size", args: { target: "interface", delta: -1 } },
-      { command: "reset_font_sizes", args: undefined },
+      // delta は % の差分(刻みの数ではない。ADR-014 の 1)
+      { command: "step_translucency", args: { target: "terminal", delta: 5 } },
+      { command: "step_translucency", args: { target: "window", delta: -100 } },
+      { command: "reset_appearance", args: undefined },
       { command: "open_settings_file", args: undefined },
     ]);
   });

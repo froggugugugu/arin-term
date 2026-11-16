@@ -84,6 +84,11 @@ export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapsho
       terminal: { value: 15, min: 9, max: 28, defaultValue: 15 },
       interface: { value: 13, min: 11, max: 18, defaultValue: 13 },
     },
+    // 透過の既定(Rust の `Translucency::default()` と範囲・刻み。ADR-014 の 1)
+    translucency: {
+      window: { value: 45, min: 0, max: 100, defaultValue: 45, step: 5 },
+      terminal: { value: 20, min: 0, max: 80, defaultValue: 20, step: 5 },
+    },
     ...overrides,
   };
 }
@@ -145,7 +150,8 @@ export function createFakeIpc(handlers: Partial<FakeHandlers> = {}): FakeIpc {
     previous_tile_page: () => null,
     toggle_tile_maximize: () => null,
     step_font_size: () => null,
-    reset_font_sizes: () => null,
+    step_translucency: () => null,
+    reset_appearance: () => null,
     open_settings_file: () => null,
     list_directory: () => ({ kind: "listed", entries: [] }),
     set_show_hidden: () => null,

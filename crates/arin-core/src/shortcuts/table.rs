@@ -1,4 +1,4 @@
-//! コマンドの ID と既定のキーと受け口の表(計画書 M3 の前提 (e)、T38d、【仮定】21。M4.5 の T64c で 23 行)。
+//! コマンドの ID と既定のキーと受け口の表(計画書 M3 の前提 (e)、T38d、【仮定】21。M4.5 の T64c で 23 行、M4.7 の ADR-014 の 4 で 32 行)。
 //!
 //! キーの文字列をコードのあちこちに直書きせず、この 1 つの表から引く。メニューバー(`src-tauri/src/menu.rs`。T42e)は
 //! 受け口が「メニューの項目」の行からアクセラレータを作り、画面(`src/logic/keys`。T41b)は表を受け取って振り分ける。
@@ -92,11 +92,38 @@ pub enum ShortcutCommandId {
     /// 表示: タイルを拡大する・元に戻す。
     #[serde(rename = "view.toggle-maximize")]
     ViewToggleMaximize,
+    /// 表示: タイル表示で、表示中のページの 1 番目のタイルにフォーカスする(M4.7。ADR-014 の 4)。
+    #[serde(rename = "view.focus-tile-1")]
+    ViewFocusTile1,
+    /// 表示: タイル表示で、表示中のページの 2 番目のタイルにフォーカスする(M4.7。ADR-014 の 4)。
+    #[serde(rename = "view.focus-tile-2")]
+    ViewFocusTile2,
+    /// 表示: タイル表示で、表示中のページの 3 番目のタイルにフォーカスする(M4.7。ADR-014 の 4)。
+    #[serde(rename = "view.focus-tile-3")]
+    ViewFocusTile3,
+    /// 表示: タイル表示で、表示中のページの 4 番目のタイルにフォーカスする(M4.7。ADR-014 の 4)。
+    #[serde(rename = "view.focus-tile-4")]
+    ViewFocusTile4,
+    /// 表示: タイル表示で、表示中のページの 5 番目のタイルにフォーカスする(M4.7。ADR-014 の 4)。
+    #[serde(rename = "view.focus-tile-5")]
+    ViewFocusTile5,
+    /// 表示: タイル表示で、表示中のページの 6 番目のタイルにフォーカスする(M4.7。ADR-014 の 4)。
+    #[serde(rename = "view.focus-tile-6")]
+    ViewFocusTile6,
+    /// 表示: タイル表示で、表示中のページの 7 番目のタイルにフォーカスする(M4.7。ADR-014 の 4)。
+    #[serde(rename = "view.focus-tile-7")]
+    ViewFocusTile7,
+    /// 表示: タイル表示で、表示中のページの 8 番目のタイルにフォーカスする(M4.7。ADR-014 の 4)。
+    #[serde(rename = "view.focus-tile-8")]
+    ViewFocusTile8,
+    /// 表示: タイル表示で、表示中のページの 9 番目のタイルにフォーカスする(M4.7。ADR-014 の 4)。
+    #[serde(rename = "view.focus-tile-9")]
+    ViewFocusTile9,
 }
 
 impl ShortcutCommandId {
     /// すべてのコマンドの ID(表の順)。
-    pub const ALL: [Self; 23] = [
+    pub const ALL: [Self; 32] = [
         Self::TerminalNewTab,
         Self::TerminalCloseTab,
         Self::TerminalPreviousTab,
@@ -120,6 +147,15 @@ impl ShortcutCommandId {
         Self::ViewPreviousPage,
         Self::ViewNextPage,
         Self::ViewToggleMaximize,
+        Self::ViewFocusTile1,
+        Self::ViewFocusTile2,
+        Self::ViewFocusTile3,
+        Self::ViewFocusTile4,
+        Self::ViewFocusTile5,
+        Self::ViewFocusTile6,
+        Self::ViewFocusTile7,
+        Self::ViewFocusTile8,
+        Self::ViewFocusTile9,
     ];
 
     /// ID の文字列(JSON・メニューの項目の ID・設定ファイルで使う)。
@@ -149,6 +185,32 @@ impl ShortcutCommandId {
             Self::ViewPreviousPage => "view.previous-page",
             Self::ViewNextPage => "view.next-page",
             Self::ViewToggleMaximize => "view.toggle-maximize",
+            Self::ViewFocusTile1 => "view.focus-tile-1",
+            Self::ViewFocusTile2 => "view.focus-tile-2",
+            Self::ViewFocusTile3 => "view.focus-tile-3",
+            Self::ViewFocusTile4 => "view.focus-tile-4",
+            Self::ViewFocusTile5 => "view.focus-tile-5",
+            Self::ViewFocusTile6 => "view.focus-tile-6",
+            Self::ViewFocusTile7 => "view.focus-tile-7",
+            Self::ViewFocusTile8 => "view.focus-tile-8",
+            Self::ViewFocusTile9 => "view.focus-tile-9",
+        }
+    }
+
+    /// タイルの番号キーなら、その番号(1〜9。表示中のページの中の並び順)。ほかのコマンドは `None`。
+    #[must_use]
+    pub const fn tile_position(self) -> Option<usize> {
+        match self {
+            Self::ViewFocusTile1 => Some(1),
+            Self::ViewFocusTile2 => Some(2),
+            Self::ViewFocusTile3 => Some(3),
+            Self::ViewFocusTile4 => Some(4),
+            Self::ViewFocusTile5 => Some(5),
+            Self::ViewFocusTile6 => Some(6),
+            Self::ViewFocusTile7 => Some(7),
+            Self::ViewFocusTile8 => Some(8),
+            Self::ViewFocusTile9 => Some(9),
+            _ => None,
         }
     }
 
@@ -252,7 +314,8 @@ pub struct ShortcutTable(Vec<ShortcutBinding>);
 
 impl ShortcutTable {
     /// 既定の表(PRD §6.4 と M2 のメニューのキー。受け口は【仮定】21。表示の 4 行は M4 の【仮定】9・ADR-011 の 6。
-    /// 設定 ⌘, は M4.5 の ADR-012 の 6 で足し、M4.6 の ADR-013 の 6 で設定画面を開く意味に替えた)。
+    /// 設定 ⌘, は M4.5 の ADR-012 の 6 で足し、M4.6 の ADR-013 の 6 で設定画面を開く意味に替えた。
+    /// タイルの番号キー ⌘1〜⌘9 は M4.7 の ADR-014 の 4)。
     ///
     /// # Panics
     ///
@@ -262,7 +325,7 @@ impl ShortcutTable {
         use ShortcutCommandId as C;
         use ShortcutReceiver::{EditItem, MenuItem, Screen};
 
-        let rows: [(C, &str, ShortcutReceiver); 23] = [
+        let rows: [(C, &str, ShortcutReceiver); 32] = [
             (C::TerminalNewTab, "Cmd+T", MenuItem),
             (C::TerminalCloseTab, "Cmd+W", MenuItem),
             (C::TerminalPreviousTab, "Cmd+Shift+[", MenuItem),
@@ -286,6 +349,15 @@ impl ShortcutTable {
             (C::ViewPreviousPage, "Cmd+Alt+ArrowLeft", MenuItem),
             (C::ViewNextPage, "Cmd+Alt+ArrowRight", MenuItem),
             (C::ViewToggleMaximize, "Cmd+Shift+Enter", MenuItem),
+            (C::ViewFocusTile1, "Cmd+1", MenuItem),
+            (C::ViewFocusTile2, "Cmd+2", MenuItem),
+            (C::ViewFocusTile3, "Cmd+3", MenuItem),
+            (C::ViewFocusTile4, "Cmd+4", MenuItem),
+            (C::ViewFocusTile5, "Cmd+5", MenuItem),
+            (C::ViewFocusTile6, "Cmd+6", MenuItem),
+            (C::ViewFocusTile7, "Cmd+7", MenuItem),
+            (C::ViewFocusTile8, "Cmd+8", MenuItem),
+            (C::ViewFocusTile9, "Cmd+9", MenuItem),
         ];
         let bindings = rows
             .into_iter()

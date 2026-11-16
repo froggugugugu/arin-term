@@ -30,6 +30,7 @@ import type { ProjectColor } from "../ipc/generated/ProjectColor";
 import type { ProjectId } from "../ipc/generated/ProjectId";
 import type { RelPath } from "../ipc/generated/RelPath";
 import type { TerminalId } from "../ipc/generated/TerminalId";
+import type { TranslucencyTarget } from "../ipc/generated/TranslucencyTarget";
 import { describeError } from "../logic/describeError";
 import { nameOf, parentPath } from "../logic/tree/treePath";
 import type { AppStore } from "./appStore";
@@ -56,7 +57,8 @@ export type ActionsBackend = Pick<
   | "previousTilePage"
   | "toggleTileMaximize"
   | "stepFontSize"
-  | "resetFontSizes"
+  | "stepTranslucency"
+  | "resetAppearance"
   | "openSettingsFile"
   | "confirmQuit"
   | "setShowHidden"
@@ -139,11 +141,13 @@ export interface Actions {
    */
   toggleTileMaximize(terminalId?: TerminalId): Promise<void>;
 
-  // ── 設定画面(M4.6。ADR-013 の 2・5)。結果は写しの fontSizes で届く。開閉は uiStore ──
+  // ── 設定画面(M4.6・M4.7。ADR-013 の 2・5、ADR-014 の 1・3)。結果は写しの fontSizes・translucency で届く。開閉は uiStore ──
   /** 文字の大きさを delta だけ動かす(ステッパー。今の値を足した数ではなく差分を送る)。 */
   stepFontSize(target: FontSizeTarget, delta: number): Promise<void>;
-  /** ターミナルと画面の文字の大きさを既定に戻す(確認を挟まない)。 */
-  resetFontSizes(): Promise<void>;
+  /** 透過を delta(% の差分)だけ動かす(ステッパー。今の値を足した数ではなく差分を送る)。 */
+  stepTranslucency(target: TranslucencyTarget, delta: number): Promise<void>;
+  /** 文字の大きさ 2 つと透過 2 つを既定に戻す(確認を挟まない)。 */
+  resetAppearance(): Promise<void>;
   /** 設定ファイルを開く(設定画面のボタン。メニューの項目は Rust が直接開く)。 */
   openSettingsFile(): Promise<void>;
 
@@ -389,7 +393,8 @@ export function createActions({ ipc, ui, app, tree, treeController, reportError 
       run("タイルを拡大・元に戻せなかった", () => ipc.toggleTileMaximize(terminalId)),
 
     stepFontSize: (target, delta) => run("文字の大きさを変えられなかった", () => ipc.stepFontSize(target, delta)),
-    resetFontSizes: () => run("文字の大きさを既定に戻せなかった", () => ipc.resetFontSizes()),
+    stepTranslucency: (target, delta) => run("透過を変えられなかった", () => ipc.stepTranslucency(target, delta)),
+    resetAppearance: () => run("見た目を既定に戻せなかった", () => ipc.resetAppearance()),
     openSettingsFile: () => run("設定ファイルを開けなかった", () => ipc.openSettingsFile()),
 
     expandDir: (path) => treeController.expand(path),

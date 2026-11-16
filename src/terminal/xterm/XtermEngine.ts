@@ -4,6 +4,7 @@
 // (M4 で複数枚を実測して決めた。ADR-001)。
 
 import "@xterm/xterm/css/xterm.css";
+import "./XtermEngine.css";
 
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
@@ -11,11 +12,15 @@ import { Terminal } from "@xterm/xterm";
 
 import { DEFAULT_SHORTCUT_TABLE } from "../../logic/keys/defaultShortcuts";
 import { terminalKeyOwner } from "../../logic/keys/keyOwner";
+import { isShiftEnter, newlineInput } from "../../logic/keys/newline";
 import type { ShortcutTable } from "../../logic/keys/shortcutTable";
 import type { SurfaceOptions, TerminalEngine, TerminalId, TerminalSize, TerminalSurface } from "../engine";
 
 /** スクロールバックの行数(FR-043、PRD C-09 で確定)。 */
 export const SCROLLBACK_LINES = 10_000;
+
+/** xterm.js の地の色(完全な透明)。 */
+const TRANSPARENT = "#00000000";
 
 export interface XtermEngineOptions {
   /**
@@ -62,6 +67,10 @@ class XtermSurface implements TerminalSurface {
       // TUI がマウスを取っているあいだも、Option を押しながらのドラッグで文字を選択できるようにする
       // (macOS では既定だと選択を強制する手段が無く、コピーができない)。
       macOptionClickForcesSelection: true,
+      // 地は透明にし、置き場所の地(--color-terminal-bg。透過の設定ぶん透かした黒)を見せる(ADR-014 の 2)。
+      // 透過の値が変わっても xterm.js には何も送らない(CSS の変数だけが変わる)。色付きのセル・選択・カーソルは今のまま。
+      allowTransparency: true,
+      theme: { background: TRANSPARENT },
       // 指定が無ければ xterm.js の既定(15。ADR-013 の 1 の既定と同じ)のまま。
       ...(options.fontSize === undefined ? {} : { fontSize: options.fontSize }),
     });
@@ -71,7 +80,18 @@ class XtermSurface implements TerminalSurface {
     // 表の受け口がメニューの項目・「編集」の項目のキー(⌘C・⌘V など)は xterm.js に処理させず、取り消しもしない。
     // WKWebView はキーを画面に渡したあと、取り消されていなければメニューの項目へ回し、「編集」の項目は画面の
     // コピー・切り取り・ペーストのイベントになる(設計書 §9.1)。ほかのキー(Ctrl の組み合わせ、Option)は xterm.js の既定のまま。
-    this.#terminal.attachCustomKeyEventHandler((event) => terminalKeyOwner(getShortcuts(), event) === "terminal");
+    // Shift+Enter(ADR-014 の 5)は ESC + CR を送り、xterm.js の既定の処理(CR)はさせない。keypress も止める。
+    this.#terminal.attachCustomKeyEventHandler((event) => {
+      if (isShiftEnter(event)) {
+        const input = newlineInput(event);
+        if (input !== null) {
+          event.preventDefault();
+          this.#terminal.input(input);
+        }
+        return false;
+      }
+      return terminalKeyOwner(getShortcuts(), event) === "terminal";
+    });
     this.#terminal.open(this.element);
   }
 

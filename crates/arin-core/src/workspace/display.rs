@@ -104,6 +104,27 @@ impl Workspace {
         self.turn_to_page(&view, view.layout.page - 1)
     }
 
+    /// 表示中のページの `position` 番目(1 始まり。左上が 1、並びの順)のタイルにフォーカスする(⌘1〜⌘9。ADR-014 の 4)。
+    /// フォーカスが移ったら `true`。タブ表示・拡大中(見えていないタイルへ移ると迷うため)・0 番・その番号のタイルが無い
+    /// とき・既にフォーカス中のときは何もせず `false`。
+    pub fn focus_tile_at(&mut self, position: usize) -> bool {
+        let view = self.resolve();
+        if !Self::can_turn_page(&view) || position == 0 {
+            return false;
+        }
+        let Some(target) = view.tiles[view.layout.range].get(position - 1).cloned() else {
+            return false;
+        };
+        if view.focused.as_ref() == Some(&target) {
+            return false;
+        }
+        let Ok(project) = self.tile_owner(&target) else {
+            return false;
+        };
+        self.focus_tile(&target, &project);
+        true
+    }
+
     /// フォーカス中のタイルを拡大する、または拡大を解く(FR-054、前提 (d))。変わったら `true`。
     /// タブ表示のとき・フォーカス中のタイルが無いときは何もしない。拡大を解くと、フォーカス中のタイルのページに戻る。
     pub fn toggle_maximize(&mut self) -> bool {

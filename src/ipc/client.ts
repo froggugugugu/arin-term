@@ -19,6 +19,7 @@ import type { RelPath } from "./generated/RelPath";
 import type { RemoveProjectOutcome } from "./generated/RemoveProjectOutcome";
 import type { ShortcutTable } from "./generated/ShortcutTable";
 import type { TerminalId } from "./generated/TerminalId";
+import type { TranslucencyTarget } from "./generated/TranslucencyTarget";
 import type { TreeChange } from "./generated/TreeChange";
 
 /**
@@ -68,8 +69,13 @@ export interface CommandMap {
    * 保存が予約される(state.json の ui)。settings.toml には触れない。
    */
   step_font_size: { args: { target: FontSizeTarget; delta: number }; result: null };
-  /** 両方を既定に戻す。変わったときだけ写しが届く。 */
-  reset_font_sizes: { args: undefined; result: null };
+  /**
+   * 透過(M4.7。ADR-014 の 1)。delta は % の差分(刻みの数ではない)。Rust が刻みの倍数に丸めて範囲の端で留める。
+   * 変わったときだけ写しの translucency が届き、保存が予約される(state.json の ui)。
+   */
+  step_translucency: { args: { target: TranslucencyTarget; delta: number }; result: null };
+  /** 文字の大きさ 2 つと透過 2 つを既定に戻す(ADR-014 の 1)。変わったときだけ写しが届く。 */
+  reset_appearance: { args: undefined; result: null };
   /** 設定ファイルを開く(無いときだけ見本を作る。ADR-012 の 6)。パスは画面を通らない。 */
   open_settings_file: { args: undefined; result: null };
   next_tile_page: { args: undefined; result: null };
@@ -284,8 +290,10 @@ export interface ArinIpc {
    */
   /** target の文字の大きさを delta だけ動かす(範囲の端で留める)。 */
   stepFontSize(target: FontSizeTarget, delta: number): Promise<void>;
-  /** ターミナルと画面の文字の大きさを既定に戻す。 */
-  resetFontSizes(): Promise<void>;
+  /** target の透過を delta(% の差分)だけ動かす。結果は写しの translucency で届く(M4.7。ADR-014 の 1)。 */
+  stepTranslucency(target: TranslucencyTarget, delta: number): Promise<void>;
+  /** 文字の大きさ(ターミナル・画面)と透過(ウィンドウ・ターミナル)を既定に戻す。 */
+  resetAppearance(): Promise<void>;
   /** 設定ファイル(settings.toml)を既定のアプリで開く。無いときだけ見本を作る。 */
   openSettingsFile(): Promise<void>;
   /**
@@ -466,7 +474,8 @@ export function createIpc(transport: IpcTransport): ArinIpc {
     toggleTileMaximize: (terminalId) =>
       done(invoke("toggle_tile_maximize", terminalId === undefined ? undefined : { terminalId })),
     stepFontSize: (target, delta) => done(invoke("step_font_size", { target, delta })),
-    resetFontSizes: () => done(invoke("reset_font_sizes", undefined)),
+    stepTranslucency: (target, delta) => done(invoke("step_translucency", { target, delta })),
+    resetAppearance: () => done(invoke("reset_appearance", undefined)),
     openSettingsFile: () => done(invoke("open_settings_file", undefined)),
     listDirectory: (projectId, path) => invoke("list_directory", { projectId, path }),
     setShowHidden: (projectId, showHidden) => done(invoke("set_show_hidden", { projectId, showHidden })),

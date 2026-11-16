@@ -15,6 +15,7 @@ use super::snapshot::{
 };
 use crate::layout::font_sizes::{FontSizeTarget, FontSizes};
 use crate::layout::panes::PaneSizes;
+use crate::layout::translucency::{Translucency, TranslucencyTarget};
 use crate::persistence::codec::{PersistedLayout, PersistedState};
 use crate::project::{Project, ProjectError, ProjectId, ProjectStore};
 use crate::terminal::{TerminalId, TerminalStatus, TerminalStore, TerminalTab};
@@ -40,8 +41,10 @@ pub struct Workspace {
     pub(super) layout: PaneSizes,
     /// 表示モード・タイルのページ・拡大(`display.rs`)。表示モードだけを保存し、ページと拡大中は起動のたびに初めから。
     pub(super) display: DisplayState,
-    /// ターミナルと画面の文字の大きさ(`font_sizes.rs`。計画書 T68b、ADR-013 の 2)。
+    /// ターミナルと画面の文字の大きさ(`appearance.rs`。計画書 T68b、ADR-013 の 2)。
     pub(super) font_sizes: FontSizes,
+    /// ウィンドウとターミナルの背景の透過(`appearance.rs`。ADR-014 の 1)。
+    pub(super) translucency: Translucency,
     pub(super) notice: Option<String>,
 }
 
@@ -54,7 +57,7 @@ impl Workspace {
     /// ペインの寸法は保存値に規則(`PaneSizes::sanitized`)を当て、無い項目は初期値にする。
     /// 表示モードは保存値のまま(FR-048。無ければタブ表示)。ページはフォーカス中のタイル(選択中のプロジェクトの
     /// 表示中のタブ)のページになり、拡大はしていない(前提 (b))。
-    /// 文字の大きさは保存値に範囲の規則を当てる(読むときに当ててあるが、範囲の外を持たないように当て直す)。
+    /// 文字の大きさと透過は保存値に範囲の規則を当てる(読むときに当ててあるが、範囲の外を持たないように当て直す)。
     ///
     /// - `app_version`: アプリの版
     /// - `home`: ホームフォルダ。分からなければ空のパスを渡す
@@ -82,6 +85,12 @@ impl Workspace {
         ws.font_sizes = FontSizes::default()
             .with(FontSizeTarget::Terminal, state.layout.font_sizes.terminal)
             .with(FontSizeTarget::Interface, state.layout.font_sizes.interface);
+        ws.translucency = Translucency::default()
+            .with(TranslucencyTarget::Window, state.layout.translucency.window)
+            .with(
+                TranslucencyTarget::Terminal,
+                state.layout.translucency.terminal,
+            );
         ws.notice = notice;
 
         let ids: Vec<ProjectId> = ws
@@ -132,6 +141,7 @@ impl Workspace {
             layout: PaneSizes::default(),
             display: DisplayState::default(),
             font_sizes: FontSizes::default(),
+            translucency: Translucency::default(),
             notice: None,
         }
     }
@@ -236,6 +246,7 @@ impl Workspace {
                 // ページと拡大中は保存しない(設計書 §6.1)
                 display_mode: self.display.mode,
                 font_sizes: self.font_sizes,
+                translucency: self.translucency,
             },
         }
     }
@@ -291,6 +302,7 @@ impl Workspace {
             notice: self.notice.clone(),
             display: self.display_snapshot(),
             font_sizes: self.font_sizes.into(),
+            translucency: self.translucency.into(),
         }
     }
 

@@ -1,26 +1,44 @@
 import { type KeyboardEvent, type MouseEvent, useRef } from "react";
 
-import type { Snapshot } from "../snapshotTypes";
+/** ステッパーが出す値と範囲(写しの文字の大きさ・透過 1 つぶん。正本は Rust で、ここでは値を持たない)。 */
+export interface StepperValue {
+  readonly value: number;
+  readonly min: number;
+  readonly max: number;
+}
 
-/** 写しの文字の大きさ 1 つぶん(値・最小・最大・既定)。 */
-export type FontSizeValue = Snapshot["fontSizes"]["terminal"];
+/** 値の単位。 */
+export interface StepperUnit {
+  /** 値の後ろに出す文字(「 pt」「%」)。 */
+  readonly suffix: string;
+  /** 読み上げの単位(「ポイント」「パーセント」)。 */
+  readonly spoken: string;
+}
 
-interface FontSizeStepperProps {
+interface ValueStepperProps {
   /** 読み上げの名前(「ターミナルの文字の大きさ」など)。 */
   label: string;
-  /** 写しの値と範囲(正本は Rust。ここでは値を持たない)。 */
-  size: FontSizeValue;
+  /** 写しの値と範囲。 */
+  size: StepperValue;
+  /** 単位。 */
+  unit: StepperUnit;
+  /** 1 回の差分(▲▼・↑↓)。既定は 1。 */
+  step?: number;
+  /** ▲▼ のボタンの読み上げの名前。 */
+  upLabel: string;
+  downLabel: string;
   /** 差分だけ動かす(範囲の外へ出る差分は渡さない)。 */
   onStep: (delta: number) => void;
 }
 
 /**
- * 文字の大きさのステッパー(ADR-013 の 5。macOS の NSStepper にならい、値の右に ▲▼ を縦に重ねた小さな部品)。
- * 値は `role="spinbutton"` で Tab に止まり、↑↓ で 1 ずつ、Home で最小・End で最大へ動かす(Home・End は範囲の幅ぶんの差分を送る)。▲▼ のボタンはマウス用で
+ * 値のステッパー(ADR-013 の 5、ADR-014 の 3。macOS の NSStepper にならい、値の右に ▲▼ を縦に重ねた小さな部品)。
+ * 文字の大きさ(1 pt 刻み)と透過(5% 刻み)で共用する。
+ * 値は `role="spinbutton"` で Tab に止まり、↑↓ で 1 刻みずつ、Home で最小・End で最大へ動かす(Home・End は範囲の幅ぶんの差分を送る)。▲▼ のボタンはマウス用で
  * Tab に止めず(`tabindex="-1"`)、押してもフォーカスは値に残す。範囲の端では ▲ か ▼ を無効にし、キーでも送らない。
  * 値は写しが届くまで変えない(押した回数だけ差分を送り、Rust が順に足す)。
  */
-export function FontSizeStepper({ label, size, onStep }: FontSizeStepperProps) {
+export function ValueStepper({ label, size, unit, step = 1, upLabel, downLabel, onStep }: ValueStepperProps) {
   const { value, min, max } = size;
   const canUp = value < max;
   const canDown = value > min;
@@ -32,8 +50,8 @@ export function FontSizeStepper({ label, size, onStep }: FontSizeStepperProps) {
     // 写しが届く前に続けて押したとき(↑ のあとに Home など)に端まで届かない。
     const span = max - min;
     const deltas: Readonly<Record<string, number>> = {
-      ArrowUp: 1,
-      ArrowDown: -1,
+      ArrowUp: step,
+      ArrowDown: -step,
       Home: -span,
       End: span,
     };
@@ -51,7 +69,7 @@ export function FontSizeStepper({ label, size, onStep }: FontSizeStepperProps) {
   };
 
   return (
-    <div className="font-stepper">
+    <div className="value-stepper">
       <div
         ref={spinRef}
         role="spinbutton"
@@ -60,33 +78,33 @@ export function FontSizeStepper({ label, size, onStep }: FontSizeStepperProps) {
         aria-valuenow={value}
         aria-valuemin={min}
         aria-valuemax={max}
-        aria-valuetext={`${value} ポイント`}
-        className="font-stepper__value"
+        aria-valuetext={`${value} ${unit.spoken}`}
+        className="value-stepper__value"
         onKeyDown={onKeyDown}
       >
         {value}
-        <span className="font-stepper__unit"> pt</span>
+        <span className="value-stepper__unit">{unit.suffix}</span>
       </div>
-      <div className="font-stepper__arrows">
+      <div className="value-stepper__arrows">
         <button
           type="button"
           tabIndex={-1}
-          className="font-stepper__arrow"
-          aria-label="大きくする"
+          className="value-stepper__arrow"
+          aria-label={upLabel}
           disabled={!canUp}
           onMouseDown={keepFocus}
-          onClick={() => onStep(1)}
+          onClick={() => onStep(step)}
         >
           <ArrowIcon direction="up" />
         </button>
         <button
           type="button"
           tabIndex={-1}
-          className="font-stepper__arrow"
-          aria-label="小さくする"
+          className="value-stepper__arrow"
+          aria-label={downLabel}
           disabled={!canDown}
           onMouseDown={keepFocus}
-          onClick={() => onStep(-1)}
+          onClick={() => onStep(-step)}
         >
           <ArrowIcon direction="down" />
         </button>

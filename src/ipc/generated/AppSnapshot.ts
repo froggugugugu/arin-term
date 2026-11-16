@@ -5,6 +5,7 @@ import type { PaneSizes } from "./PaneSizes";
 import type { ProjectCardSnapshot } from "./ProjectCardSnapshot";
 import type { ProjectId } from "./ProjectId";
 import type { TerminalTabSnapshot } from "./TerminalTabSnapshot";
+import type { TranslucencySnapshot } from "./TranslucencySnapshot";
 
 /**
  * 画面へ渡す状態の写し。
@@ -45,4 +46,8 @@ display: DisplaySnapshot,
 /**
  * ターミナルと画面の文字の大きさ(値・範囲・既定。計画書 T68a、ADR-013 の 2)。
  */
-fontSizes: FontSizesSnapshot, };
+fontSizes: FontSizesSnapshot, 
+/**
+ * ウィンドウとターミナルの背景の透過(値・範囲・既定・刻み。ADR-014 の 1)。
+ */
+translucency: TranslucencySnapshot, };

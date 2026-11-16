@@ -1,5 +1,5 @@
 //! ペインの寸法のコマンド(FR-009、計画書 T33d)と、右ペインの表示のコマンド(FR-048・FR-052〜054、計画書 T47b)と、
-//! 文字の大きさのコマンド(ADR-013 の 2、計画書 T68c)。
+//! 文字の大きさのコマンド(ADR-013 の 2、計画書 T68c)と、透過と「既定に戻す」のコマンド(ADR-014 の 1)。
 //!
 //! 引数を受けて `SessionRegistry` を呼ぶだけにする。不正な値(最小を下回る・負の値)は `arin-core` の
 //! `PaneSizes` の規則で直す。変わったら写しを送り、保存が予約される(0.5 秒まとめ)。
@@ -10,6 +10,7 @@
 
 use arin_core::layout::font_sizes::FontSizeTarget;
 use arin_core::layout::tiles::DisplayMode;
+use arin_core::layout::translucency::TranslucencyTarget;
 use arin_core::terminal::TerminalId;
 use tauri::State;
 
@@ -47,10 +48,23 @@ pub fn step_font_size(sessions: State<'_, SessionRegistry>, target: FontSizeTarg
     sessions.step_font_size(target, delta);
 }
 
-/// 両方の文字の大きさを既定に戻す(設定画面の「既定に戻す」。ADR-013 の 2・AC-F07)。変わったら写しを送る。
+/// 透過を `delta`(% の差分。▲ は +5、▼ は −5、Home・End は範囲の幅ぶん)だけ動かす(設定画面のステッパー。ADR-014 の 1)。
+/// `target` は `window` / `terminal`。近い 5 の倍数に丸めて範囲の端で留め、変わったら写しを送り、保存が予約される
+/// (状態ファイルの `ui.windowTranslucency`・`ui.terminalTranslucency`)。知らない対象の文字列は引数の読み取りで失敗し、何も変えない。
 #[tauri::command]
-pub fn reset_font_sizes(sessions: State<'_, SessionRegistry>) {
-    sessions.reset_font_sizes();
+pub fn step_translucency(
+    sessions: State<'_, SessionRegistry>,
+    target: TranslucencyTarget,
+    delta: i32,
+) {
+    sessions.step_translucency(target, delta);
+}
+
+/// 文字の大きさ 2 つと透過 2 つを既定に戻す(設定画面の「既定に戻す」。ADR-014 の 1・AC-G05。ADR-013 の
+/// `reset_font_sizes` を替えたもの)。変わったら写しを送る。
+#[tauri::command]
+pub fn reset_appearance(sessions: State<'_, SessionRegistry>) {
+    sessions.reset_appearance();
 }
 
 /// タイルにフォーカスする(タイルのクリック。FR-053、AC-M15)。そのタブのプロジェクトを選び、そのタブを表示中にする。

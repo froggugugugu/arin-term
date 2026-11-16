@@ -12,6 +12,7 @@ use ts_rs::TS;
 use crate::layout::font_sizes::{FontSizeTarget, FontSizes};
 use crate::layout::panes::PaneSizes;
 use crate::layout::tiles::{DisplayMode, TileGrid};
+use crate::layout::translucency::{Translucency, TranslucencyTarget};
 use crate::project::{ProjectColor, ProjectId};
 use crate::terminal::{TerminalId, TerminalStatus};
 
@@ -40,6 +41,8 @@ pub struct AppSnapshot {
     pub display: DisplaySnapshot,
     /// ターミナルと画面の文字の大きさ(値・範囲・既定。計画書 T68a、ADR-013 の 2)。
     pub font_sizes: FontSizesSnapshot,
+    /// ウィンドウとターミナルの背景の透過(値・範囲・既定・刻み。ADR-014 の 1)。
+    pub translucency: TranslucencySnapshot,
 }
 
 /// 写しに載せる文字の大きさ(ADR-013 の 2)。範囲と既定も載せ、画面に規則の数を写さない。
@@ -82,6 +85,53 @@ impl From<FontSizes> for FontSizesSnapshot {
         Self {
             terminal: FontSizeSnapshot::of(sizes, FontSizeTarget::Terminal),
             interface: FontSizeSnapshot::of(sizes, FontSizeTarget::Interface),
+        }
+    }
+}
+
+/// 写しに載せる透過(ADR-014 の 1)。範囲・既定・刻みも載せ、画面に規則の数を写さない。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct TranslucencySnapshot {
+    /// ウィンドウ(サイドバーと帯)。
+    pub window: TranslucencyValueSnapshot,
+    /// ターミナルの背景。
+    pub terminal: TranslucencyValueSnapshot,
+}
+
+/// 写しに載せる 1 つの透過(% の整数。0 は不透明)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct TranslucencyValueSnapshot {
+    /// いまの値(いつも `step` の倍数)。
+    pub value: u8,
+    /// 範囲の最小(この値のとき画面は下げるボタンを無効にする)。
+    pub min: u8,
+    /// 範囲の最大(この値のとき画面は上げるボタンを無効にする)。
+    pub max: u8,
+    /// 既定の値。
+    pub default_value: u8,
+    /// 刻み(ステッパーの 1 回の差分)。
+    pub step: u8,
+}
+
+impl TranslucencyValueSnapshot {
+    fn of(translucency: Translucency, target: TranslucencyTarget) -> Self {
+        Self {
+            value: translucency.get(target),
+            min: target.min(),
+            max: target.max(),
+            default_value: target.default_value(),
+            step: target.step(),
+        }
+    }
+}
+
+impl From<Translucency> for TranslucencySnapshot {
+    fn from(translucency: Translucency) -> Self {
+        Self {
+            window: TranslucencyValueSnapshot::of(translucency, TranslucencyTarget::Window),
+            terminal: TranslucencyValueSnapshot::of(translucency, TranslucencyTarget::Terminal),
         }
     }
 }

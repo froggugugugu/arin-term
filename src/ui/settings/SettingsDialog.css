@@ -100,14 +100,14 @@
 }
 
 /* ── ステッパー(NSStepper にならう: 値の欄と、右に ▲▼ を縦に重ねた細い部品) ── */
-.font-stepper {
+.value-stepper {
   display: flex;
   flex: none;
   align-items: center;
   gap: var(--space-1);
 }
 
-.font-stepper__value {
+.value-stepper__value {
   box-sizing: border-box;
   min-width: 4.5em;
   height: var(--button-height);
@@ -125,16 +125,16 @@
 }
 
 /* 値の欄は文字の入力欄と同じく、フォーカスがあれば常に輪を出す。 */
-.font-stepper__value:focus {
+.value-stepper__value:focus {
   outline: 0;
   box-shadow: var(--shadow-control), 0 0 0 3px var(--color-focus-ring-soft);
 }
 
-.font-stepper__unit {
+.value-stepper__unit {
   color: var(--color-muted);
 }
 
-.font-stepper__arrows {
+.value-stepper__arrows {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -146,7 +146,7 @@
   box-shadow: var(--shadow-control);
 }
 
-.font-stepper__arrow {
+.value-stepper__arrow {
   display: flex;
   flex: 1 1 0;
   align-items: center;
@@ -158,14 +158,14 @@
   color: var(--color-fg);
 }
 
-.font-stepper__arrow + .font-stepper__arrow {
+.value-stepper__arrow + .value-stepper__arrow {
   border-top: 1px solid var(--color-separator);
 }
 
-.font-stepper__arrow:active:not(:disabled) {
+.value-stepper__arrow:active:not(:disabled) {
   background: var(--color-selection-inactive);
 }
 
-.font-stepper__arrow:disabled {
+.value-stepper__arrow:disabled {
   color: var(--color-menu-disabled);
 }

@@ -42,6 +42,9 @@ interface TileGridProps {
  * - タイトルバーのダブルクリックで、そのタイルの ID を渡して拡大を求める(FR-054、計画【仮定】8、M4 のレビューの S3)。
  *   Rust が「そのタイルにフォーカスしてから拡大」を 1 回で行うので、フォーカスのコマンドの成否や届く順によらない
  * - アテンションの印はタイトルバーの右端と、ページ送りの前後のボタン(FR-055)
+ * - 各タイルのターミナルの置き場所の右上に、表示中のページの中の番号の札「#1」〜を控えめに重ねる(⌘1〜9 の番号。ADR-014 の 4)。
+ *   キーの表示ではないので表から引かない。クリックは通し(pointer-events: none)、読み上げない(タイトルで足りる)。
+ *   拡大中(MaximizedTile)とタブ表示では描かない
  * - 入力のフォーカスの移し替えは TerminalArea が行う(フォーカス中のタイルが替わったとき)
  */
 export function TileGrid({ view, store, ui, actions, terminals }: TileGridProps) {
@@ -133,6 +136,11 @@ function Tile({ item, lastCol, lastRow, terminals, onFocus, onMaximize }: TilePr
           </p>
         )}
         <TerminalHost manager={terminals} terminalId={item.id} />
+        {item.position > 0 && (
+          <span className="tile__number" aria-hidden="true" data-testid="tile-number">
+            #{item.position}
+          </span>
+        )}
       </div>
     </div>
   );

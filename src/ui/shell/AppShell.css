@@ -1,7 +1,8 @@
 /*
  * ウィンドウ全体の枠。色・余白・文字サイズは src/ui/design/tokens.css のトークンを使う。
  * html・body・#root は地を塗らない(実アプリではウィンドウが透明で、向こうに macOS のすりガラスがある。ADR-010)。
- * 地は .app-shell の半透明の淡い色だけで、ターミナルの置き場所は不透明(.terminal-host・.terminal-area__panel)。
+ * 地は .app-shell の半透明の淡い色と、ターミナルの置き場所を囲む 1 段(.terminal-area__panel・.tile__body)の半透明の黒
+ * (M4.7。ADR-014 の 2)。xterm.js の地は透明にしてあるので、その下の地が見える。
  */
 html,
 body,
@@ -348,10 +349,12 @@ body {
   font-size: var(--font-size-m);
 }
 
-/* ターミナルの置き場所(タブ表示・タイル・拡大中)。地はターミナルの背景色(下端の 1 行に満たない余りを目立たせない)。 */
+/*
+ * ターミナルの置き場所(タブ表示・タイル・拡大中)。地は塗らない: 囲む .terminal-area__panel・.tile__body が半透明の黒を
+ * 1 段だけ塗る(ここでも塗ると 2 段に重なって濃くなる。M4.7。ADR-014 の 2)。
+ */
 .terminal-host {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  background: var(--color-terminal-bg);
 }

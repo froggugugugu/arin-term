@@ -5,6 +5,7 @@ import { type ReactNode, useInsertionEffect, useMemo } from "react";
 import { useStore } from "zustand";
 
 import { INTERFACE_BASE_SIZE, interfaceMetrics } from "../../logic/appearance/interfaceMetrics";
+import { TRANSLUCENCY_DEFAULTS, translucencyTokens } from "../../logic/appearance/translucency";
 import { APP_NAME } from "../../logic/index";
 import { shortcutLabel } from "../../logic/keys/shortcutTable";
 import { DEFAULT_PANE_SIZES } from "../../logic/panes/paneLayout";
@@ -15,6 +16,7 @@ import type { TreeStore } from "../../state/treeStore";
 import type { UiStore } from "../../state/uiStore";
 import type { TerminalManager } from "../../terminal/TerminalManager";
 import { applyInterfaceMetrics, InterfaceMetricsContext } from "../design/applyInterfaceMetrics";
+import { applyTranslucency } from "../design/applyTranslucency";
 import { QuitDialog } from "../dialogs/QuitDialog";
 import { RemoveProjectDialog } from "../dialogs/RemoveProjectDialog";
 import { ProjectCardList } from "../projects/ProjectCardList";
@@ -48,6 +50,7 @@ interface AppShellProps {
  * 右ペインは表示モードに従い、タブ表示ならタブバーと表示中のターミナル 1 枚、タイル表示なら表示中のページのタイルを描く
  * (TerminalArea)。見えないターミナルは TerminalManager が隠したまま取り込みを続ける。
  * 画面の文字の大きさ(写しの fontSizes.interface。M4.6)は、:root の変数に当て、ツリーの行の高さは文脈で配る(ADR-013 の 4)。
+ * 透過(写しの translucency。M4.7)は、ウィンドウとターミナルの地の不透明度の変数を :root に当てる(ADR-014 の 2)。
  */
 export function AppShell({ store, ui, tree, actions, terminals }: AppShellProps) {
   const snapshot = useStore(store, (s) => s.snapshot);
@@ -59,6 +62,12 @@ export function AppShell({ store, ui, tree, actions, terminals }: AppShellProps)
   // 変数は、子の部品が寸法を測る(レイアウトの副作用)より前に当てる。挿入の副作用は子のレイアウトの副作用より先に走る
   // (ツリーは選択中の行を見せるとき、新しい行の高さで縮んだ・伸びた見える範囲を測る)。
   useInsertionEffect(() => applyInterfaceMetrics(document.documentElement, metrics), [metrics]);
+  const windowTranslucency = snapshot?.translucency.window.value ?? TRANSLUCENCY_DEFAULTS.window;
+  const terminalTranslucency = snapshot?.translucency.terminal.value ?? TRANSLUCENCY_DEFAULTS.terminal;
+  useInsertionEffect(
+    () => applyTranslucency(document.documentElement, translucencyTokens(windowTranslucency, terminalTranslucency)),
+    [windowTranslucency, terminalTranslucency],
+  );
 
   return (
     <InterfaceMetricsContext value={metrics}>

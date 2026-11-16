@@ -29,7 +29,7 @@ function setup(handlers: Partial<FakeHandlers> = {}, fs: Map<string, DirListing>
 
 const running: RunningTerminal = { terminalId: "t1", projectId: "p1", projectName: "app", label: "ターミナル 1" };
 
-describe("actions(文字の大きさと設定ファイル。M4.6)", () => {
+describe("actions(文字の大きさ・透過と設定ファイル。M4.6・M4.7)", () => {
   it("刻むと_step_font_size_を差分で呼ぶ", async () => {
     const { fake, errors, actions } = setup();
 
@@ -46,12 +46,25 @@ describe("actions(文字の大きさと設定ファイル。M4.6)", () => {
     expect(errors).toEqual([]);
   });
 
-  it("既定に戻すで_reset_font_sizes_を呼ぶ", async () => {
+  it("透過を刻むと_step_translucency_を%の差分で呼ぶ", async () => {
     const { fake, errors, actions } = setup();
 
-    await actions.resetFontSizes();
+    await actions.stepTranslucency("window", 5);
+    await actions.stepTranslucency("terminal", -5);
 
-    expect(fake.calls).toEqual([{ command: "reset_font_sizes", args: undefined }]);
+    expect(fake.calls).toEqual([
+      { command: "step_translucency", args: { target: "window", delta: 5 } },
+      { command: "step_translucency", args: { target: "terminal", delta: -5 } },
+    ]);
+    expect(errors).toEqual([]);
+  });
+
+  it("既定に戻すで_reset_appearance_を呼ぶ", async () => {
+    const { fake, errors, actions } = setup();
+
+    await actions.resetAppearance();
+
+    expect(fake.calls).toEqual([{ command: "reset_appearance", args: undefined }]);
     expect(errors).toEqual([]);
   });
 
@@ -69,7 +82,10 @@ describe("actions(文字の大きさと設定ファイル。M4.6)", () => {
       step_font_size: () => {
         throw "壊れた";
       },
-      reset_font_sizes: () => {
+      step_translucency: () => {
+        throw "壊れた";
+      },
+      reset_appearance: () => {
         throw "壊れた";
       },
       open_settings_file: () => {
@@ -78,12 +94,14 @@ describe("actions(文字の大きさと設定ファイル。M4.6)", () => {
     });
 
     await expect(actions.stepFontSize("terminal", 1)).resolves.toBeUndefined();
-    await expect(actions.resetFontSizes()).resolves.toBeUndefined();
+    await expect(actions.stepTranslucency("window", 5)).resolves.toBeUndefined();
+    await expect(actions.resetAppearance()).resolves.toBeUndefined();
     await expect(actions.openSettingsFile()).resolves.toBeUndefined();
 
     expect(errors).toEqual([
       "文字の大きさを変えられなかった: 壊れた",
-      "文字の大きさを既定に戻せなかった: 壊れた",
+      "透過を変えられなかった: 壊れた",
+      "見た目を既定に戻せなかった: 壊れた",
       "設定ファイルを開けなかった: 開けない",
     ]);
   });

@@ -209,6 +209,22 @@ describe("タイルの写しの読み取り(T47e)", () => {
     expect(view.focusedTile?.id).toBe("a2");
   });
 
+  it("タイルの番号は表示中のページの並び順で_1_から(ページを送ると付け直る。ADR-014 の 4)", () => {
+    expect(tileView(ten).tiles.map((t) => t.position)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(tileView(secondPage).tiles.map((t) => [t.id, t.position])).toEqual([["b5", 1]]);
+    // 写しに無いターミナルを飛ばしても、番号は写しの並び(Rust の ⌘1〜9 と同じ位置)のまま
+    const missing = { ...ten, terminals: ten.terminals.filter((t) => t.id !== "a1") };
+    expect(tileView(missing).tiles.map((t) => [t.id, t.position]).slice(0, 2)).toEqual([
+      ["a2", 2],
+      ["a3", 3],
+    ]);
+    // 番号が替わったら(ページの並びが替わったら)同じタイルでも作り直す
+    tileView(ten);
+    const shifted = tileView({ ...ten, display: { ...ten.display, tileIds: ten.display.tileIds.slice(1) } });
+    expect(shifted.tiles[0]?.id).toBe("a2");
+    expect(shifted.tiles[0]?.position).toBe(1);
+  });
+
   it("ページの文字列は_1/2", () => {
     expect(tileView(ten).paging?.label).toBe("1/2");
     expect(tileView(secondPage).paging?.label).toBe("2/2");

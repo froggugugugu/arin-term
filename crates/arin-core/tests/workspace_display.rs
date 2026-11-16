@@ -1181,3 +1181,92 @@ fn どの操作の列のあとも不変条件が成り立つ() {
         }
     }
 }
+
+// ---- タイルの番号キー(ADR-014 の 4、AC-G06。`focus_tile_at`) ----
+
+#[test]
+fn 番号で表示中のページのその番号のタイルにフォーカスが移る() {
+    // A が 5 枚、B が 6 枚 → 1 ページ目は A の 5 枚と B の 4 枚
+    let mut ws = workspace(&[5, 6]);
+    ws.set_display_mode(DisplayMode::Tiles);
+    let all = all_ids(&ws);
+
+    assert!(ws.focus_tile_at(7));
+    assert_eq!(selected(&ws), Some(pid(2)));
+    assert_eq!(
+        ws.snapshot().display.focused_terminal_id,
+        Some(all[6].clone())
+    );
+    assert_eq!(page(&ws), 0);
+    check_invariants(&ws);
+
+    assert!(ws.focus_tile_at(1));
+    assert_eq!(selected(&ws), Some(pid(1)));
+    assert_eq!(
+        ws.snapshot().display.focused_terminal_id,
+        Some(all[0].clone())
+    );
+    check_invariants(&ws);
+
+    // フォーカス中のタイルの番号は変わらない
+    let before = ws.snapshot();
+    assert!(!ws.focus_tile_at(1));
+    assert_eq!(ws.snapshot(), before);
+}
+
+#[test]
+fn 番号はページの中の並び順でページを送ると付け直る() {
+    let mut ws = workspace(&[12]);
+    ws.set_display_mode(DisplayMode::Tiles);
+    let all = all_ids(&ws);
+    ws.focus_terminal(&all[0]).unwrap();
+    assert!(ws.next_page());
+
+    // 2 ページ目は 3 枚(10〜12 枚目)。2 番は全体の 11 枚目
+    assert!(ws.focus_tile_at(2));
+    assert_eq!(
+        ws.snapshot().display.focused_terminal_id,
+        Some(all[10].clone())
+    );
+    assert_eq!(page(&ws), 1);
+    check_invariants(&ws);
+
+    // 無い番号(4〜9)は何もしない
+    let before = ws.snapshot();
+    for position in 4..=9 {
+        assert!(!ws.focus_tile_at(position), "{position}");
+    }
+    assert_eq!(ws.snapshot(), before);
+}
+
+#[test]
+fn 番号の_0_と範囲の外とタブ表示と拡大中は何もしない() {
+    let mut ws = workspace(&[3]);
+    // タブ表示
+    let before = ws.snapshot();
+    assert!(!ws.focus_tile_at(2));
+    assert_eq!(ws.snapshot(), before);
+
+    ws.set_display_mode(DisplayMode::Tiles);
+    let before = ws.snapshot();
+    assert!(!ws.focus_tile_at(0));
+    assert!(!ws.focus_tile_at(4));
+    assert!(!ws.focus_tile_at(10));
+    assert!(!ws.focus_tile_at(usize::MAX));
+    assert_eq!(ws.snapshot(), before);
+
+    // 拡大中
+    assert!(ws.toggle_maximize());
+    let before = ws.snapshot();
+    assert!(!ws.focus_tile_at(2));
+    assert_eq!(ws.snapshot(), before);
+}
+
+#[test]
+fn タイルが_0_枚なら番号は何もしない() {
+    let mut ws = workspace(&[0]);
+    ws.set_display_mode(DisplayMode::Tiles);
+    let before = ws.snapshot();
+    assert!(!ws.focus_tile_at(1));
+    assert_eq!(ws.snapshot(), before);
+}

@@ -1,5 +1,6 @@
-//! 文字の大きさのコマンド(`src-tauri/src/commands/layout.rs` の `step_font_size`・`reset_font_sizes`。計画書 T68c)。
-//! ADR-013 の 2(`delta` で動かす・変わったときだけ写しを送る・保存は既存の保存のスレッド)、AC-F02(Rust 側)・F06・F07・F08。
+//! 見た目のコマンド(`src-tauri/src/commands/layout.rs` の `step_font_size`・`step_translucency`・`reset_appearance`)。
+//! 文字の大きさは計画書 T68c・ADR-013 の 2(`delta` で動かす・変わったときだけ写しを送る・保存は既存の保存のスレッド)、
+//! AC-F02(Rust 側)・F06・F07・F08。透過と「既定に戻す」は ADR-014 の 1(AC-G01・G04・G05 の Rust 側)。
 //!
 //! - 状態フォルダに 1 プロジェクトの `state.json` を置いて起動する(起動時にタブが 1 枚できる)
 //! - PTY は偽物(起動・寸法・終了を記録する)。シェルが続くことは、偽の PTY が終了を受けていないことと写しの状態で確かめる
@@ -22,6 +23,10 @@ use std::time::{Duration, Instant};
 use arin_core::layout::font_sizes::{
     DEFAULT_INTERFACE_FONT_SIZE, DEFAULT_TERMINAL_FONT_SIZE, MAX_TERMINAL_FONT_SIZE,
     MIN_INTERFACE_FONT_SIZE,
+};
+use arin_core::layout::translucency::{
+    DEFAULT_TERMINAL_TRANSLUCENCY, DEFAULT_WINDOW_TRANSLUCENCY, MAX_TERMINAL_TRANSLUCENCY,
+    MIN_WINDOW_TRANSLUCENCY,
 };
 use arin_core::ports::{ChildExit, PtyError, PtyPort, PtySession, PtySize, SpawnedPty};
 use arin_core::terminal::{ShellLaunchSpec, TerminalStatus};
@@ -160,6 +165,13 @@ impl Ctx<'_> {
         );
     }
 
+    fn step_translucency(&self, target: &str, delta: i32) {
+        self.ok(
+            "step_translucency",
+            json!({ "target": target, "delta": delta }),
+        );
+    }
+
     fn sent(&self) -> usize {
         lock(self.events).len()
     }
@@ -184,7 +196,7 @@ impl Ctx<'_> {
         assert!(
             wait_until(|| self.sent() > before && self.last_event().is_some_and(|s| expected(&s))),
             "{what}で期待した写しが届かない: {:?}",
-            self.last_event().map(|s| s.font_sizes)
+            self.last_event().map(|s| (s.font_sizes, s.translucency))
         );
     }
 
@@ -310,28 +322,120 @@ fn 知らない対象は失敗を返し何も変えない(c: &Ctx) {
     assert_eq!(c.snapshot().font_sizes, before.font_sizes);
 }
 
-/// 前提: ターミナル 28・画面 11。既定に戻すと両方が既定になり、状態ファイルから 2 つのキーが消える。
-fn 既定に戻すと両方が既定の写しが届く(c: &Ctx) {
-    c.assert_sent(
-        "既定に戻す",
-        || c.ok("reset_font_sizes", json!({})),
-        |s| {
-            s.font_sizes.terminal.value == DEFAULT_TERMINAL_FONT_SIZE
-                && s.font_sizes.interface.value == DEFAULT_INTERFACE_FONT_SIZE
-        },
+/// 前提: 文字の大きさはターミナル 28・画面 11、透過は既定。透過を動かすと写しが届き、キーごとに保存される。
+fn 透過を動かすと写しが届き保存される(c: &Ctx) {
+    let before = c.snapshot().translucency;
+    assert_eq!(before.window.value, DEFAULT_WINDOW_TRANSLUCENCY);
+    assert_eq!(before.terminal.value, DEFAULT_TERMINAL_TRANSLUCENCY);
+    assert_eq!(before.window.step, 5);
+    assert!(
+        c.saved_ui()
+            .is_none_or(|ui| ui.get("windowTranslucency").is_none()
+                && ui.get("terminalTranslucency").is_none()),
+        "{:?}",
+        c.saved_ui()
     );
-    c.wait_saved("既定に戻したこと", |ui| {
-        ui.get("terminalFontSize").is_none() && ui.get("interfaceFontSize").is_none()
+
+    c.assert_sent(
+        "ターミナルの背景の透過を 5 上げる",
+        || c.step_translucency("terminal", 5),
+        |s| s.translucency.terminal.value == DEFAULT_TERMINAL_TRANSLUCENCY + 5,
+    );
+    assert_eq!(
+        c.snapshot().translucency.window.value,
+        DEFAULT_WINDOW_TRANSLUCENCY,
+        "対象でない透過が変わった"
+    );
+    c.wait_saved("ターミナルの背景の透過", |ui| {
+        ui["terminalTranslucency"] == json!(DEFAULT_TERMINAL_TRANSLUCENCY + 5)
+            && ui.get("windowTranslucency").is_none()
     });
-    c.assert_not_sent("既定のときの既定に戻す", || {
-        c.ok("reset_font_sizes", json!({}));
+
+    // 写しを待たずに続けて 3 回下げる(回数どおり下がる)
+    c.assert_sent(
+        "ウィンドウの透過を続けて 3 回下げる",
+        || {
+            for _ in 0..3 {
+                c.step_translucency("window", -5);
+            }
+        },
+        |s| s.translucency.window.value == DEFAULT_WINDOW_TRANSLUCENCY - 15,
+    );
+    c.wait_saved("ウィンドウの透過", |ui| {
+        ui["windowTranslucency"] == json!(DEFAULT_WINDOW_TRANSLUCENCY - 15)
     });
 }
 
+/// 前提: ウィンドウ 30・ターミナル 25。端に留めてから端の外へ動かしても、5 の倍数に丸めて同じ値になっても写しを送らない。
+fn 透過は端と丸めで変わらなければ写しを送らない(c: &Ctx) {
+    c.assert_sent(
+        "ターミナルの背景を最大の外まで動かす",
+        || c.step_translucency("terminal", 1000),
+        |s| s.translucency.terminal.value == MAX_TERMINAL_TRANSLUCENCY,
+    );
+    c.assert_sent(
+        "ウィンドウを最小の外まで動かす",
+        || c.step_translucency("window", -1000),
+        |s| s.translucency.window.value == MIN_WINDOW_TRANSLUCENCY,
+    );
+    let before = c.snapshot();
+    c.assert_not_sent(
+        "端の外・0・丸めると同じ値になる差分",
+        || {
+            c.step_translucency("terminal", 5);
+            c.step_translucency("window", -5);
+            c.step_translucency("window", 0);
+            c.step_translucency("window", 2);
+        },
+    );
+    assert_eq!(c.snapshot().translucency, before.translucency);
+    assert!(
+        c.call(
+            "step_translucency",
+            json!({ "target": "sidebar", "delta": 5 })
+        )
+        .is_err(),
+        "知らない対象を受け付けた"
+    );
+    c.wait_saved("端の値", |ui| {
+        ui["terminalTranslucency"] == json!(MAX_TERMINAL_TRANSLUCENCY)
+            && ui["windowTranslucency"] == json!(MIN_WINDOW_TRANSLUCENCY)
+    });
+}
+
+/// 前提: 文字の大きさはターミナル 28・画面 11、透過はウィンドウ 0・ターミナル 80。既定に戻すと 4 つとも既定になり、
+/// 状態ファイルから 4 つのキーが消える。
+fn 既定に戻すと文字の大きさと透過が既定の写しが届く(c: &Ctx) {
+    c.assert_sent(
+        "既定に戻す",
+        || c.ok("reset_appearance", json!({})),
+        |s| {
+            s.font_sizes.terminal.value == DEFAULT_TERMINAL_FONT_SIZE
+                && s.font_sizes.interface.value == DEFAULT_INTERFACE_FONT_SIZE
+                && s.translucency.window.value == DEFAULT_WINDOW_TRANSLUCENCY
+                && s.translucency.terminal.value == DEFAULT_TERMINAL_TRANSLUCENCY
+        },
+    );
+    c.wait_saved("既定に戻したこと", |ui| {
+        ui.get("terminalFontSize").is_none()
+            && ui.get("interfaceFontSize").is_none()
+            && ui.get("windowTranslucency").is_none()
+            && ui.get("terminalTranslucency").is_none()
+    });
+    c.assert_not_sent("既定のときの既定に戻す", || {
+        c.ok("reset_appearance", json!({}));
+    });
+    assert!(
+        c.call("reset_font_sizes", json!({})).is_err(),
+        "古い名前のコマンドが残っている"
+    );
+}
+
 /// 前提: 最初の確認でシェルを起動し、その後に大きさを何度も変えた。
-fn 文字の大きさを変えてもシェルは続く(c: &Ctx) {
+fn 文字の大きさと透過を変えてもシェルは続く(c: &Ctx) {
     c.step("terminal", -2);
-    c.ok("reset_font_sizes", json!({}));
+    c.step_translucency("terminal", -10);
+    c.ok("reset_appearance", json!({}));
     thread::sleep(QUIET);
     let s = c.snapshot();
     assert_eq!(s.terminals.len(), 1, "{s:?}");
@@ -358,12 +462,20 @@ const CHECKS: &[(&str, Check)] = &[
         知らない対象は失敗を返し何も変えない,
     ),
     (
-        "既定に戻すと両方が既定の写しが届く",
-        既定に戻すと両方が既定の写しが届く,
+        "透過を動かすと写しが届き保存される",
+        透過を動かすと写しが届き保存される,
     ),
     (
-        "文字の大きさを変えてもシェルは続く",
-        文字の大きさを変えてもシェルは続く,
+        "透過は端と丸めで変わらなければ写しを送らない",
+        透過は端と丸めで変わらなければ写しを送らない,
+    ),
+    (
+        "既定に戻すと文字の大きさと透過が既定の写しが届く",
+        既定に戻すと文字の大きさと透過が既定の写しが届く,
+    ),
+    (
+        "文字の大きさと透過を変えてもシェルは続く",
+        文字の大きさと透過を変えてもシェルは続く,
     ),
 ];
 

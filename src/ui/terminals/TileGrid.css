@@ -1,6 +1,6 @@
 /*
  * タイル表示(M4)。タブバーの位置に同じ高さの帯、その下に表示中のページのタイルのグリッド。
- * タイルの間は細い区切り線(右端の列・下端の行の外周には引かない)。ターミナルの本文は不透明の黒(ADR-010)。
+ * タイルの間は細い区切り線(右端の列・下端の行の外周には引かない)。ターミナルの本文は半透明の黒(M4.7。ADR-014 の 2)。
  */
 .tile-strip {
   display: flex;
@@ -164,6 +164,7 @@
 
 /* 本文(状態の 1 行とターミナルの置き場所)。地はターミナルの背景色。 */
 .tile__body {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -172,6 +173,29 @@
   padding: var(--space-1) 0 0 var(--space-2);
   background: var(--color-terminal-bg);
   color: var(--color-terminal-fg);
+}
+
+/*
+ * 番号の札(⌘1〜9。ADR-014 の 4)。ターミナルの右上に、地も影も付けない小さな等幅の数字を半透明で重ねる(フォーカス中だけ少し濃く)。
+ * xterm.js の補助の要素(z-index 5)より上、落とし先の重ね(10)より下。押下は通す。
+ */
+.tile__number {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-2);
+  z-index: 6;
+  color: var(--color-tile-number);
+  font-family: var(--font-family);
+  font-size: var(--font-size-s);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.tile--focused .tile__number {
+  color: var(--color-tile-number-focused);
 }
 
 .tile__status {

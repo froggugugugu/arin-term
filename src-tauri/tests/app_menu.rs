@@ -147,6 +147,26 @@ fn separator() -> (String, String) {
     standard("---")
 }
 
+/// 「表示」の末尾の組(タイルの番号キー 9 つ。ADR-014 の 4)。
+const FOCUS_TILES: [ShortcutCommandId; 9] = [
+    C::ViewFocusTile1,
+    C::ViewFocusTile2,
+    C::ViewFocusTile3,
+    C::ViewFocusTile4,
+    C::ViewFocusTile5,
+    C::ViewFocusTile6,
+    C::ViewFocusTile7,
+    C::ViewFocusTile8,
+    C::ViewFocusTile9,
+];
+
+/// 「表示」の末尾の、区切り線とタイルの番号キーの 9 項目。
+fn focus_tile_entries() -> Vec<(String, String)> {
+    std::iter::once(separator())
+        .chain(FOCUS_TILES.into_iter().map(own))
+        .collect()
+}
+
 /// 表の外の自前の項目「設定ファイルを開く…」(キーなし。ADR-013 の 6)。
 fn open_settings_file() -> (String, String) {
     (
@@ -212,7 +232,7 @@ fn 見出しの並びは_arin_ターミナル_編集_表示() {
     );
 }
 
-fn 表示に切替_前のページ_次のページ_拡大がこの順である() {
+fn 表示に切替_前のページ_次のページ_拡大_タイルの番号がこの順である() {
     let state_dir = support::TempDir::new("menu-view");
     let app = build_app(support::launch_in(&state_dir, false));
     let menu = app.menu().expect("アプリにメニューが付いていない");
@@ -239,16 +259,30 @@ fn 表示に切替_前のページ_次のページ_拡大がこの順である()
             ("view.toggle-maximize", Some("タイルを拡大/元に戻す")),
         ]
     );
+    // タイルの番号キーの文言(ADR-014 の 4)。
+    for (n, command) in FOCUS_TILES.into_iter().enumerate() {
+        let n = n + 1;
+        assert_eq!(command.as_str(), format!("view.focus-tile-{n}"));
+        assert_eq!(
+            menu::label(command),
+            Some(format!("タイル {n} にフォーカス").as_str())
+        );
+    }
     assert_eq!(
         entries(&menu, VIEW_MENU_TITLE),
-        vec![
-            own(C::ViewToggleDisplayMode),
-            separator(),
-            own(C::ViewPreviousPage),
-            own(C::ViewNextPage),
-            separator(),
-            own(C::ViewToggleMaximize),
+        [
+            vec![
+                own(C::ViewToggleDisplayMode),
+                separator(),
+                own(C::ViewPreviousPage),
+                own(C::ViewNextPage),
+                separator(),
+                own(C::ViewToggleMaximize),
+            ],
+            // M4.7 のタイルの番号キー(ADR-014 の 4)。
+            focus_tile_entries(),
         ]
+        .concat()
     );
 }
 
@@ -260,6 +294,9 @@ fn 表示の項目のアクセラレータが表の既定のキーと同じ() {
         (C::ViewPreviousPage, "Cmd+Alt+ArrowLeft"),
         (C::ViewNextPage, "Cmd+Alt+ArrowRight"),
         (C::ViewToggleMaximize, "Cmd+Shift+Enter"),
+        (C::ViewFocusTile1, "Cmd+1"),
+        (C::ViewFocusTile5, "Cmd+5"),
+        (C::ViewFocusTile9, "Cmd+9"),
     ];
     for (command, key) in expected {
         let given = menu::accelerator(&table, command)
@@ -386,7 +423,7 @@ fn アプリ名のメニューの先頭は設定と設定ファイルを開く�
     assert_eq!(menu::label(C::AppOpenSettings), Some("設定…"));
     assert_eq!(OPEN_SETTINGS_FILE_ID, "app.open-settings-file");
     assert_eq!(OPEN_SETTINGS_FILE_LABEL, "設定ファイルを開く…");
-    // 表の外の項目(コマンドの ID に無い。表は 23 行のまま)。
+    // 表の外の項目(コマンドの ID に無い。表の行は M4.7 で 32 行になったが、この項目は表に入れない)。
     assert_eq!(ShortcutCommandId::from_id(OPEN_SETTINGS_FILE_ID), None);
     let items = entries(&menu, &name);
     assert_eq!(
@@ -469,14 +506,19 @@ fn 見出しの並びと既存の項目は変わらない() {
     );
     assert_eq!(
         entries(&menu, VIEW_MENU_TITLE),
-        vec![
-            own(C::ViewToggleDisplayMode),
-            separator(),
-            own(C::ViewPreviousPage),
-            own(C::ViewNextPage),
-            separator(),
-            own(C::ViewToggleMaximize),
+        [
+            vec![
+                own(C::ViewToggleDisplayMode),
+                separator(),
+                own(C::ViewPreviousPage),
+                own(C::ViewNextPage),
+                separator(),
+                own(C::ViewToggleMaximize),
+            ],
+            // M4.7 のタイルの番号キー(ADR-014 の 4)。
+            focus_tile_entries(),
         ]
+        .concat()
     );
 }
 
@@ -516,6 +558,16 @@ fn メニューの項目のアクセラレータが表の既定のキーと同�
             ("view.previous-page", Some("Cmd+Alt+ArrowLeft".to_owned())),
             ("view.next-page", Some("Cmd+Alt+ArrowRight".to_owned())),
             ("view.toggle-maximize", Some("Cmd+Shift+Enter".to_owned())),
+            // M4.7 のタイルの番号キー(ADR-014 の 4)。
+            ("view.focus-tile-1", Some("Cmd+1".to_owned())),
+            ("view.focus-tile-2", Some("Cmd+2".to_owned())),
+            ("view.focus-tile-3", Some("Cmd+3".to_owned())),
+            ("view.focus-tile-4", Some("Cmd+4".to_owned())),
+            ("view.focus-tile-5", Some("Cmd+5".to_owned())),
+            ("view.focus-tile-6", Some("Cmd+6".to_owned())),
+            ("view.focus-tile-7", Some("Cmd+7".to_owned())),
+            ("view.focus-tile-8", Some("Cmd+8".to_owned())),
+            ("view.focus-tile-9", Some("Cmd+9".to_owned())),
         ]
     );
     for binding in table.by_receiver(ShortcutReceiver::MenuItem) {
@@ -620,11 +672,15 @@ fn 受け口がメニューの項目のものだけがメニューに載る() {
     // 「表示」の真ん中の組が空になっても、区切り線は 1 本だけ。
     assert_eq!(
         entries(&menu, VIEW_MENU_TITLE),
-        vec![
-            own(C::ViewToggleDisplayMode),
-            separator(),
-            own(C::ViewToggleMaximize)
+        [
+            vec![
+                own(C::ViewToggleDisplayMode),
+                separator(),
+                own(C::ViewToggleMaximize),
+            ],
+            focus_tile_entries(),
         ]
+        .concat()
     );
 }
 
@@ -969,8 +1025,62 @@ fn タブ表示でページ送りと拡大の項目を選んでも何も変わ�
     });
 }
 
+fn タイルの番号の項目を選ぶと表示中のページのそのタイルにフォーカスが移る() {
+    let fx = ProjectFixture::new("menu-view-focus-tile");
+    run_app(fx.launch(), |handle| {
+        // 12 枚で 2 ページ。
+        open_tabs(handle, 12);
+        let ids = tabs(handle).0;
+
+        // タブ表示では何もしない(ADR-014 の 4)。
+        let before = snapshot(handle);
+        menu::on_menu_event(handle, C::ViewFocusTile1.as_str());
+        assert_eq!(snapshot(handle), before, "タブ表示で状態が変わった");
+
+        // タイル表示。フォーカス中(最後に開いた 12 枚目)のページ(2 ページ目)で開く。
+        menu::on_menu_event(handle, C::ViewToggleDisplayMode.as_str());
+        let d = display(handle);
+        assert_eq!((d.mode, d.page), (DisplayMode::Tiles, 1));
+
+        // 2 ページ目の 1 番は全体の 10 枚目。
+        menu::on_menu_event(handle, C::ViewFocusTile1.as_str());
+        let d = display(handle);
+        assert_eq!(
+            d.focused_terminal_id
+                .as_ref()
+                .map(|t| t.as_str().to_owned()),
+            Some(ids[9].clone())
+        );
+        assert_eq!(d.page, 1);
+
+        // 無い番号(2 ページ目は 3 枚)は何もしない。
+        let before = snapshot(handle);
+        menu::on_menu_event(handle, C::ViewFocusTile4.as_str());
+        menu::on_menu_event(handle, C::ViewFocusTile9.as_str());
+        assert_eq!(snapshot(handle), before, "無い番号で状態が変わった");
+
+        // 前のページの 9 番は全体の 9 枚目。
+        menu::on_menu_event(handle, C::ViewPreviousPage.as_str());
+        menu::on_menu_event(handle, C::ViewFocusTile9.as_str());
+        let d = display(handle);
+        assert_eq!(
+            d.focused_terminal_id
+                .as_ref()
+                .map(|t| t.as_str().to_owned()),
+            Some(ids[8].clone())
+        );
+
+        // 拡大中は何もしない。
+        menu::on_menu_event(handle, C::ViewToggleMaximize.as_str());
+        let before = snapshot(handle);
+        assert!(before.display.maximized);
+        menu::on_menu_event(handle, C::ViewFocusTile1.as_str());
+        assert_eq!(snapshot(handle), before, "拡大中に状態が変わった");
+    });
+}
+
 fn main() {
-    let tests: [(&str, fn()); 22] = [
+    let tests: [(&str, fn()); 23] = [
         (
             "アプリ名のメニューの先頭は設定と設定ファイルを開くで_設定ファイルを開くにはキーが無い",
             アプリ名のメニューの先頭は設定と設定ファイルを開くで_設定ファイルを開くにはキーが無い,
@@ -1005,8 +1115,8 @@ fn main() {
             メニューの項目のアクセラレータが表の既定のキーと同じ,
         ),
         (
-            "表示に切替_前のページ_次のページ_拡大がこの順である",
-            表示に切替_前のページ_次のページ_拡大がこの順である,
+            "表示に切替_前のページ_次のページ_拡大_タイルの番号がこの順である",
+            表示に切替_前のページ_次のページ_拡大_タイルの番号がこの順である,
         ),
         (
             "表示の項目のアクセラレータが表の既定のキーと同じ",
@@ -1052,6 +1162,10 @@ fn main() {
         (
             "タブ表示でページ送りと拡大の項目を選んでも何も変わらない",
             タブ表示でページ送りと拡大の項目を選んでも何も変わらない,
+        ),
+        (
+            "タイルの番号の項目を選ぶと表示中のページのそのタイルにフォーカスが移る",
+            タイルの番号の項目を選ぶと表示中のページのそのタイルにフォーカスが移る,
         ),
     ];
     for (name, test) in tests {

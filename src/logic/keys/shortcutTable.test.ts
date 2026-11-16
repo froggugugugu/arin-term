@@ -9,6 +9,7 @@ import {
   formatAriaKeyShortcut,
   matchesAccelerator,
   parseAccelerator,
+  type ShortcutCommandId,
   shortcutLabel,
 } from "./shortcutTable";
 
@@ -150,16 +151,21 @@ describe("表の引き方", () => {
     expect(shortcutLabel([], "tree.trash")).toBeNull();
   });
 
-  it("既定の表に表示の_4_行がある", () => {
-    const view = DEFAULT_SHORTCUT_TABLE.filter((binding) => binding.command.startsWith("view."));
+  it("既定の表に表示の_4_行とタイルの番号キーの_9_行がある", () => {
+    const view = DEFAULT_SHORTCUT_TABLE.filter(
+      (binding) => binding.command.startsWith("view.") && !binding.command.startsWith("view.focus-tile-"),
+    );
     expect(view).toEqual([
       { command: "view.toggle-display-mode", accelerator: "Cmd+Shift+G", receiver: "menu-item" },
       { command: "view.previous-page", accelerator: "Cmd+Alt+ArrowLeft", receiver: "menu-item" },
       { command: "view.next-page", accelerator: "Cmd+Alt+ArrowRight", receiver: "menu-item" },
       { command: "view.toggle-maximize", accelerator: "Cmd+Shift+Enter", receiver: "menu-item" },
     ]);
-    // 表の最後の 4 行(Rust の表と同じ順)
-    expect(DEFAULT_SHORTCUT_TABLE.slice(-4)).toEqual(view);
+    // 表の最後の 13 行は表示の 4 行とタイルの番号キーの 9 行(Rust の表と同じ順。ADR-014 の 4)
+    expect(DEFAULT_SHORTCUT_TABLE.slice(-13, -9)).toEqual(view);
+    expect(DEFAULT_SHORTCUT_TABLE.slice(-9).map((binding) => binding.command)).toEqual(
+      Array.from({ length: 9 }, (_, i) => `view.focus-tile-${i + 1}`),
+    );
     // ツールチップに出すキーの表示(T47f が表から引く)
     expect(shortcutLabel(DEFAULT_SHORTCUT_TABLE, "view.toggle-display-mode")).toBe("⇧⌘G");
     expect(shortcutLabel(DEFAULT_SHORTCUT_TABLE, "view.previous-page")).toBe("⌥⌘←");
@@ -174,11 +180,12 @@ describe("表の引き方", () => {
     ).toBe(true);
   });
 
-  it("既定の表に_23_行がある", () => {
-    expect(DEFAULT_SHORTCUT_TABLE).toHaveLength(23);
+  it("既定の表に_32_行がある", () => {
+    // M4.7 でタイルの番号キー 9 行を足した(ADR-014 の 4)
+    expect(DEFAULT_SHORTCUT_TABLE).toHaveLength(32);
     // コマンドの id は 1 行に 1 つ
-    expect(new Set(DEFAULT_SHORTCUT_TABLE.map((binding) => binding.command)).size).toBe(23);
-    // 23 行目は設定ファイルを開く(⌘,。計画 T64c)。表の順では終了のすぐ後ろ
+    expect(new Set(DEFAULT_SHORTCUT_TABLE.map((binding) => binding.command)).size).toBe(32);
+    // 設定は設定ファイルを開く(⌘,。計画 T64c)。表の順では終了のすぐ後ろ
     const index = DEFAULT_SHORTCUT_TABLE.findIndex((binding) => binding.command === "app.open-settings");
     expect(DEFAULT_SHORTCUT_TABLE[index]).toEqual({
       command: "app.open-settings",
@@ -188,6 +195,18 @@ describe("表の引き方", () => {
     expect(DEFAULT_SHORTCUT_TABLE[index - 1]?.command).toBe("app.quit");
     expect(shortcutLabel(DEFAULT_SHORTCUT_TABLE, "app.open-settings")).toBe("⌘,");
     expect(parseAccelerator("Cmd+,")).toEqual({ meta: true, shift: false, alt: false, ctrl: false, key: "," });
+  });
+
+  it("タイルの番号キーは_⌘1〜⌘9_でメニューの項目が受ける", () => {
+    for (let n = 1; n <= 9; n += 1) {
+      const command = `view.focus-tile-${n}` as ShortcutCommandId;
+      expect(DEFAULT_SHORTCUT_TABLE.find((binding) => binding.command === command)).toEqual({
+        command,
+        accelerator: `Cmd+${n}`,
+        receiver: "menu-item",
+      });
+      expect(shortcutLabel(DEFAULT_SHORTCUT_TABLE, command)).toBe(`⌘${n}`);
+    }
   });
 
   it("見本の表はすべての行が読める", () => {

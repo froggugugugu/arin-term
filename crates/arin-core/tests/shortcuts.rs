@@ -17,9 +17,10 @@ fn chord(s: &str) -> KeyChord {
 ///
 /// キーは PRD §6.4 と M2 のメニュー(`src-tauri/src/menu.rs`)のとおり。受け口は【仮定】21。
 /// 最後の 4 行は M4 の表示の操作(計画書 M4 の前提 (f)・【仮定】9、ADR-011 の 6。T47a)。
+/// 末尾の 9 行は M4.7 のタイルの番号キー(ADR-014 の 4)。
 /// `app.open-settings` は M4.5 で足した行(計画書 T64c。ADR-012 の 6)。M4.6 で意味を「設定…」(設定画面を開く)に替えた
 /// (ADR-013 の 6。ID・キー・受け口はそのまま)。
-const EXPECTED_DEFAULTS: [(&str, &str, ShortcutReceiver); 23] = [
+const EXPECTED_DEFAULTS: [(&str, &str, ShortcutReceiver); 32] = [
     ("terminal.new-tab", "Cmd+T", MenuItem),
     ("terminal.close-tab", "Cmd+W", MenuItem),
     ("terminal.previous-tab", "Cmd+Shift+[", MenuItem),
@@ -43,6 +44,16 @@ const EXPECTED_DEFAULTS: [(&str, &str, ShortcutReceiver); 23] = [
     ("view.previous-page", "Cmd+Alt+ArrowLeft", MenuItem),
     ("view.next-page", "Cmd+Alt+ArrowRight", MenuItem),
     ("view.toggle-maximize", "Cmd+Shift+Enter", MenuItem),
+    // M4.7 のタイルの番号キー(ADR-014 の 4)。
+    ("view.focus-tile-1", "Cmd+1", MenuItem),
+    ("view.focus-tile-2", "Cmd+2", MenuItem),
+    ("view.focus-tile-3", "Cmd+3", MenuItem),
+    ("view.focus-tile-4", "Cmd+4", MenuItem),
+    ("view.focus-tile-5", "Cmd+5", MenuItem),
+    ("view.focus-tile-6", "Cmd+6", MenuItem),
+    ("view.focus-tile-7", "Cmd+7", MenuItem),
+    ("view.focus-tile-8", "Cmd+8", MenuItem),
+    ("view.focus-tile-9", "Cmd+9", MenuItem),
 ];
 
 /// 表示の 4 行(コマンドの ID・ID の文字列・既定のキー・受け口)。
@@ -172,8 +183,9 @@ fn 表示の_4_行の既定のキーと受け口() {
         assert_eq!(binding.accelerator().to_string(), key, "{id}");
         assert_eq!(binding.receiver(), MenuItem, "{id}");
     }
-    // 表の最後の 4 行がこの順で並ぶ(ID の順)。
-    let tail: Vec<ShortcutCommandId> = table.bindings()[table.bindings().len() - 4..]
+    // 表示の 4 行がこの順で並ぶ(ID の順)。後ろには M4.7 のタイルの番号キーの 9 行が続く(ADR-014 の 4)。
+    let len = table.bindings().len();
+    let tail: Vec<ShortcutCommandId> = table.bindings()[len - 13..len - 9]
         .iter()
         .map(ShortcutBinding::command)
         .collect();
@@ -206,7 +218,7 @@ fn 表示の_4_行の_id_の文字列() {
         );
         assert!(ShortcutCommandId::ALL.contains(&id), "{id} が ALL に無い");
     }
-    assert_eq!(ShortcutCommandId::ALL.len(), 23);
+    assert_eq!(ShortcutCommandId::ALL.len(), 32);
 }
 
 #[test]
@@ -265,7 +277,16 @@ fn 受け口ごとに行を引ける() {
             "view.toggle-display-mode",
             "view.previous-page",
             "view.next-page",
-            "view.toggle-maximize"
+            "view.toggle-maximize",
+            "view.focus-tile-1",
+            "view.focus-tile-2",
+            "view.focus-tile-3",
+            "view.focus-tile-4",
+            "view.focus-tile-5",
+            "view.focus-tile-6",
+            "view.focus-tile-7",
+            "view.focus-tile-8",
+            "view.focus-tile-9"
         ]
     );
     assert_eq!(ids(EditItem), ["edit.copy", "edit.cut", "edit.paste"]);
@@ -531,7 +552,8 @@ fn 受け口を_1_行で替えられる() {
 
     let table = ShortcutTable::from_bindings(bindings).expect("作れない");
     assert_eq!(table.get(ShortcutCommandId::TreeTrash).receiver(), MenuItem);
-    assert_eq!(table.by_receiver(MenuItem).count(), 12);
+    // 既定の 20 行(M4.7 でタイルの番号キー 9 行を足した)+ 替えた 1 行。
+    assert_eq!(table.by_receiver(MenuItem).count(), 21);
 }
 
 #[test]
@@ -640,20 +662,50 @@ fn 見本に文字の大きさは設定画面で変える旨がある() {
 }
 
 #[test]
-fn 表の行は_23_のまま() {
+fn 表の行は_32() {
     // ADR-013 の 6(【要確認】2 の A): ⌘, を設定画面へ移しても、表の行は足さない(「設定ファイルを開く…」は表の外の項目)。
-    assert_eq!(ShortcutCommandId::ALL.len(), 23);
+    // ADR-014 の 4: タイルの番号キー 9 行を足して 23 → 32 行。
+    assert_eq!(ShortcutCommandId::ALL.len(), 32);
     let table = ShortcutTable::default_table();
-    assert_eq!(table.bindings().len(), 23);
+    assert_eq!(table.bindings().len(), 32);
     assert!(
         ShortcutCommandId::from_id("app.open-settings-file").is_none(),
         "表の外の項目の ID が表にある"
     );
     assert_eq!(
         sample_rows(&sample_settings_toml(&table)).len(),
-        23 - 3,
+        32 - 3,
         "見本の行の数が変わった"
     );
+}
+
+#[test]
+fn タイルの番号キーは_cmd_1_から_9_で受け口はメニューの項目() {
+    let table = ShortcutTable::default_table();
+    let sample = sample_settings_toml(&table);
+    for n in 1..=9usize {
+        let id = format!("view.focus-tile-{n}");
+        let command = ShortcutCommandId::from_id(&id).unwrap_or_else(|| panic!("{id} が無い"));
+        assert_eq!(command.tile_position(), Some(n), "{id}");
+        let binding = table.get(command);
+        assert_eq!(binding.accelerator(), chord(&format!("Cmd+{n}")), "{id}");
+        assert_eq!(binding.receiver(), MenuItem, "{id}");
+        // 見本に 1 行ずつある
+        let row = format!("# \"{id}\" = \"Cmd+{n}\"");
+        assert!(sample.lines().any(|l| l == row), "見本に {row} が無い");
+        // 予約のキーではない(設定ファイルで替えられる)
+        assert!(
+            !arin_core::shortcuts::reserved::is_reserved(chord(&format!("Cmd+{n}"))),
+            "Cmd+{n} が予約のキー"
+        );
+    }
+    // 番号キー以外は番号を持たない
+    let others = ShortcutCommandId::ALL
+        .into_iter()
+        .filter(|c| c.tile_position().is_some())
+        .count();
+    assert_eq!(others, 9);
+    assert_eq!(ShortcutCommandId::ViewNextPage.tile_position(), None);
 }
 
 #[test]

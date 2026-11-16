@@ -35,4 +35,13 @@ export const DEFAULT_SHORTCUT_TABLE: ShortcutTable = [
   { command: "view.previous-page", accelerator: "Cmd+Alt+ArrowLeft", receiver: "menu-item" },
   { command: "view.next-page", accelerator: "Cmd+Alt+ArrowRight", receiver: "menu-item" },
   { command: "view.toggle-maximize", accelerator: "Cmd+Shift+Enter", receiver: "menu-item" },
+  { command: "view.focus-tile-1", accelerator: "Cmd+1", receiver: "menu-item" },
+  { command: "view.focus-tile-2", accelerator: "Cmd+2", receiver: "menu-item" },
+  { command: "view.focus-tile-3", accelerator: "Cmd+3", receiver: "menu-item" },
+  { command: "view.focus-tile-4", accelerator: "Cmd+4", receiver: "menu-item" },
+  { command: "view.focus-tile-5", accelerator: "Cmd+5", receiver: "menu-item" },
+  { command: "view.focus-tile-6", accelerator: "Cmd+6", receiver: "menu-item" },
+  { command: "view.focus-tile-7", accelerator: "Cmd+7", receiver: "menu-item" },
+  { command: "view.focus-tile-8", accelerator: "Cmd+8", receiver: "menu-item" },
+  { command: "view.focus-tile-9", accelerator: "Cmd+9", receiver: "menu-item" },
 ];

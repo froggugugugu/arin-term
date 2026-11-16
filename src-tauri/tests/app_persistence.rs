@@ -501,8 +501,55 @@ fn 保存した大きさで起動し直すと写しに出る() {
     });
 }
 
+/// 透過の保存と復元(ADR-014 の 1・AC-G04)。1 回目の起動で `step_translucency` のコマンドでウィンドウを 20 上げ、
+/// ターミナルの背景を 20 下げて終え、2 回目の起動の写しにその値が出ることを確かめる。版は 1 のまま。
+fn 保存した透過で起動し直すと写しに出る() {
+    let fx = Fixture::new("persist-translucency");
+    fx.write_project_state();
+    run_app(fx.launch(), fx.frozen_ports(), |handle| {
+        let s = snapshot(handle);
+        assert_eq!(s.translucency.window.value, 45);
+        assert_eq!(s.translucency.terminal.value, 20);
+        let window = handle
+            .get_webview_window("main")
+            .expect("設定にあるウィンドウ main が作られなかった");
+        for args in [
+            serde_json::json!({ "target": "window", "delta": 20 }),
+            serde_json::json!({ "target": "terminal", "delta": -20 }),
+        ] {
+            get_ipc_response(
+                &window,
+                support::request_with(handle, "step_translucency", InvokeBody::Json(args)),
+            )
+            .unwrap_or_else(|e| panic!("step_translucency が失敗した: {e}"));
+        }
+        let s = snapshot(handle);
+        assert_eq!(s.translucency.window.value, 65);
+        assert_eq!(s.translucency.terminal.value, 0);
+    });
+    let text = fs::read_to_string(fx.state_file()).expect("状態ファイルを読めなかった");
+    let saved: serde_json::Value = serde_json::from_str(&text).expect("状態ファイルが JSON でない");
+    assert_eq!(saved["schemaVersion"], 1, "{text}");
+    assert_eq!(saved["ui"]["windowTranslucency"], 65, "{text}");
+    assert_eq!(saved["ui"]["terminalTranslucency"], 0, "{text}");
+
+    run_app(fx.launch(), fx.frozen_ports(), |handle| {
+        let s = snapshot(handle);
+        assert_eq!(s.projects.len(), 1, "{s:?}");
+        assert_eq!(
+            s.translucency.window.value, 65,
+            "前のウィンドウの透過で開かない"
+        );
+        assert_eq!(
+            s.translucency.terminal.value, 0,
+            "前のターミナルの背景の透過で開かない"
+        );
+        assert_eq!(s.notice, None, "退避した");
+    });
+}
+
 fn main() {
-    let tests: [(&str, fn()); 9] = [
+    let tests: [(&str, fn()); 10] = [
         (
             "状態ファイルが無ければ空で始まる",
             状態ファイルが無ければ空で始まる,
@@ -532,6 +579,10 @@ fn main() {
         (
             "保存した大きさで起動し直すと写しに出る",
             保存した大きさで起動し直すと写しに出る,
+        ),
+        (
+            "保存した透過で起動し直すと写しに出る",
+            保存した透過で起動し直すと写しに出る,
         ),
     ];
     for (name, test) in tests {

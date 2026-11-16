@@ -458,16 +458,17 @@ test.describe("レイアウトの崩れ(要素の位置と大きさ)", () => {
   });
 
   for (const colorScheme of ["light", "dark"] as const) {
-    test(`ターミナルの置き場所の地はターミナルの背景色と同じ(${colorScheme})`, async ({ page }) => {
-      // 置き場所の大きさは行の高さの倍数とは限らず、下端に 1 行に満たない余りが出る。余りが違う色の帯に見えないようにする。
+    test(`ターミナルの地は置き場所を囲む_1_段だけが塗り_xterm_js_と置き場所は透明(${colorScheme})`, async ({ page }) => {
+      // 置き場所の大きさは行の高さの倍数とは限らず、下端に 1 行に満たない余りが出る。余りが違う色の帯に見えないよう、
+      // 地はターミナルの下の 1 段(タブのパネル)だけが塗る。M4.7 で xterm.js の地を透明にした(ADR-014 の 2。AC-G10 の書き換え)。
       await page.emulateMedia({ colorScheme });
       await open(page, projectsSnapshot([APP]));
       const host = page.getByTestId("terminal-host");
       await expect(host.locator(".xterm-viewport")).toHaveCount(1);
-      const terminalColor = await background(host.locator(".xterm-viewport"));
-      expect(terminalColor).not.toBe("rgba(0, 0, 0, 0)");
-      expect(await background(host)).toBe(terminalColor);
-      expect(await background(page.getByRole("tabpanel"))).toBe(terminalColor);
+      expect(await background(host.locator(".xterm-viewport"))).toBe("rgba(0, 0, 0, 0)");
+      expect(await background(host)).toBe("rgba(0, 0, 0, 0)");
+      // 既定の透過 20 → 黒の不透明度 0.8(外観で変えない)
+      expect(await background(page.getByRole("tabpanel"))).toBe("rgba(0, 0, 0, 0.8)");
     });
   }
 });

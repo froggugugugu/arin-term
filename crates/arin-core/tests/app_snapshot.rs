@@ -103,6 +103,11 @@ fn 写しの_json_の形() {
                 "terminal": { "value": 15, "min": 9, "max": 28, "defaultValue": 15 },
                 "interface": { "value": 13, "min": 11, "max": 18, "defaultValue": 13 },
             },
+            // ADR-014 の 1(M4.7 で足した項目。項目の追加なので写しの版は上げない)
+            "translucency": {
+                "window": { "value": 45, "min": 0, "max": 100, "defaultValue": 45, "step": 5 },
+                "terminal": { "value": 20, "min": 0, "max": 80, "defaultValue": 20, "step": 5 },
+            },
         })
     );
 }

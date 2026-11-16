@@ -89,6 +89,11 @@ export interface TileItem {
   readonly attention: boolean;
   /** フォーカス中のタイルか(=選択中のプロジェクトの表示中のタブ)。 */
   readonly focused: boolean;
+  /**
+   * 表示中のページの中の並び順(1 から。写しの display.tileIds の位置。⌘1〜9 の番号と同じ。ADR-014 の 4)。
+   * 表示中のページに無いタイル(拡大中のフォーカス中のタイルの補い)は 0。
+   */
+  readonly position: number;
 }
 
 /** ページ表示(`1/2` と前後のボタン)。ページが 2 つ以上のタイル表示(拡大中でない)だけで出す(【仮定】3)。 */
@@ -142,6 +147,7 @@ function sameTile(a: TileItem, b: TileItem): boolean {
     a.color === b.color &&
     a.attention === b.attention &&
     a.focused === b.focused &&
+    a.position === b.position &&
     sameStatus(a.status, b.status)
   );
 }
@@ -164,7 +170,7 @@ function buildTileView(snapshot: AppSnapshot, previous: TileView): TileView {
   const reuse = new Map(previous.tiles.map((t) => [t.id, t]));
   if (previous.focusedTile !== null) reuse.set(previous.focusedTile.id, previous.focusedTile);
 
-  const tileOf = (id: TerminalId): TileItem | null => {
+  const tileOf = (id: TerminalId, position: number): TileItem | null => {
     const terminal = terminals.get(id);
     if (terminal === undefined) return null;
     const project = terminal.projectId === null ? undefined : projects.get(terminal.projectId);
@@ -176,15 +182,16 @@ function buildTileView(snapshot: AppSnapshot, previous: TileView): TileView {
       status: terminal.status,
       attention: terminal.attention,
       focused: id === display.focusedTerminalId,
+      position,
     };
     const old = reuse.get(id);
     return old !== undefined && sameTile(old, item) ? old : item;
   };
 
-  const tiles = display.tileIds.flatMap((id) => tileOf(id) ?? []);
+  const tiles = display.tileIds.flatMap((id, index) => tileOf(id, index + 1) ?? []);
   const focusedId = display.focusedTerminalId;
   const focusedTile =
-    focusedId === null ? null : (tiles.find((t) => t.id === focusedId) ?? tileOf(focusedId));
+    focusedId === null ? null : (tiles.find((t) => t.id === focusedId) ?? tileOf(focusedId, 0));
   const { page, pageCount, attentionPages } = display;
   const paging: TilePaging | null =
     display.mode === "tiles" && !display.maximized && pageCount >= 2
