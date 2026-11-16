@@ -15,5 +15,7 @@
 | ADR-011 | [タイル表示の状態は Rust が持ち、画面は M2 のターミナルの置き場所の仕組みで複数枚を出す](ADR_011_tile-view.md) | Proposed(本人の了承は T50a) | 2026-11-15 |
 | ADR-012 | [ショートカットのキーを `settings.toml` の `[shortcuts]` で変えられるようにする(M4.5)](ADR_012_keybindings.md) | Proposed(【要確認】4 点。本人の了承は T66c) | 2026-11-16 |
 | ADR-013 | [ターミナルと画面の文字の大きさを、⌘, で開く設定画面で変え、`state.json` に保存する(M4.6)](ADR_013_font-size-settings.md) | Proposed(【要確認】5 点。本人の了承は T73a) | 2026-11-16 |
+| ADR-014 | [透過の設定(ウィンドウとターミナルの背景)、タイルの番号キー(⌘1〜9)、Shift+Enter の改行(M4.7)](ADR_014_translucency-tile-keys-newline.md) | Proposed(本人の確認待ち) | 2026-11-17 |
+| ADR-015 | [Markdown のファイルを、ターミナルのタブと並ぶエディタのタブで編集・プレビューする(M4.8)](ADR_015_markdown-editor.md) | Proposed(【要確認】3 点。PRD への反映は本人の了承のあと。本人の了承は T86a) | 2026-11-17 |
 
 候補の出どころは `ARCH_multi-terminal.md` §14。
