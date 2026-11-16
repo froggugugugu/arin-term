@@ -16,13 +16,13 @@
 
 | 項目 | 内容 |
 | ---- | ---- |
-| 最終更新 | 2026-11-16(M4 は T50b の AI の分まで済み、残りは本人の確認。M4.5=ショートカットの設定は T63 が済み、本人の決定も出た。T64a〜T64c が済み(ブランチ `feat/m4.5-keybindings`。push していない)。T65a も済み(`toml 1.2.1` は公開から 2 週間未満だが、本人が 2026-11-16 に例外を認めた。ADR-012 の末尾)。T65b も済み(lint・test・app・smoke・smoke --tiles が終了コード 0)。T65c も済み。T65e も済み(lint・test・e2e 222 件が終了コード 0。画像は `testreport/e2e/settings/`)。T65d も済み(lint・test・app・smoke・smoke --tiles が終了コード 0)。次は T66a → T66b。T65d から: スモークは「設定ファイルを開く…」を選ばない(本物のアプリや Finder が開く)。docs に足すこと: `[arin:settings]` は開く処理の失敗でも出る、`src-tauri/tests` の 1 つのバイナリに `tauri::generate_context!()` は 1 回だけ(2 つ目の組み立てが要るときは共通の `finish()`)、2 つの知らせ(開けなかった・ファイルの問題)の持ち方と消える時機。T66c の本人の確認の項目は T65d の報告のとおり(⌘, で見本ができて開く・0600・あるときは変えない・開けるアプリが無いと Finder と知らせ・メニューにキーが出る)。T65e から docs に足すこと: `uiStore` に設定の知らせ、E2E で設定の変更を流す手順(`setMockReply` のあとに `settings-changed`)、`e2e/app-shell.spec.ts` は起動時の呼び出しを完全一致で見る、設計書 §11 に購読と取り直し。本人に見てもらう点: 設定の知らせが長いと 1 行で「…」に省略される(全文は標準エラー)。T65c から docs に足すこと: 設定の監視は `builder_with_settings_watcher` で差し替える、テストで設定ファイルを書き換えるときは一時ファイルに書いて改名する(その場で上書きすると空の中身を読んで 2 回送ることがある。製品でも起こりうるが次の知らせで直る)、`src-tauri/tests/settings_watch.rs`。T66b で docs に足すこと: `[arin:settings]`(`settings.rs` の `report`)、`src-tauri/tests/app_settings.rs`、コマンド `get_settings_notice`、イベント `settings-changed`、`Shortcuts` は `RwLock` で表の差し替えは `menu::rebuild`(メインスレッドで呼ぶ)。**再開の手順は §3 の 0 番**) |
-| ブランチ | `feat/m4-tiles`(`feat/m3-tree` から分岐。`feat/m3-tree` ← `feat/m2-projects` ← `feat/m1-terminal`。4 本とも 2026-11-16 に push 済み。pull request はまだ作っていない)。`feat/m0-skeleton` は push 済みで、pull request #1(main 向け)が開いている |
+| 最終更新 | 2026-11-16(M4 は T50b の AI の分まで済み。M4.5=ショートカットの設定は T64a〜T66b と T66c の AI の分まで済み、合否一覧は `output/reports/test/M4.5_acceptance.md`。**残りはどちらも本人の確認**。再開の手順は §3 の 0 番) |
+| ブランチ | `feat/m4.5-keybindings`(`feat/m4-tiles` から分岐。push していない)← `feat/m4-tiles`(`feat/m3-tree` から分岐。`feat/m3-tree` ← `feat/m2-projects` ← `feat/m1-terminal`。4 本とも 2026-11-16 に push 済み。pull request はまだ作っていない)。`feat/m0-skeleton` は push 済みで、pull request #1(main 向け)が開いている |
 | 最後のコミット | `git log --oneline -1` で確認する(本ファイルに書くと古くなるため) |
 | 起動コマンド | `npm run dev`(開発用)。`.app` は `npm run app` で `target/aarch64-apple-darwin/release/bundle/macos/Arin.app` にできる |
-| スモークテスト | `npm run app && npm run smoke && node scripts/smoke.mjs --tiles` → 期待: 終了コード 0、「スモーク成功」(通常・壊れた `state.json`・タイル表示の 9 プロジェクト) |
+| スモークテスト | `npm run app && npm run smoke && node scripts/smoke.mjs --tiles && node scripts/smoke.mjs --settings` → 期待: 終了コード 0、「スモーク成功」(通常・壊れた `state.json`・タイル表示の 9 プロジェクト) |
 | 既知の壊れている箇所 | なし(残っている問題は `output/reports/test/M2_acceptance.md` の「判断が要る点・残っている問題」)。`scripts/smoke.test.mjs` の一時フォルダの数を数える検査は、ほかのテストを同時に動かすと落ちることがある(単独では通る) |
-| 待ち | **本人の確認: M2(T36)・M3(T45)・M4(T50a。9 枚の体感と描画方式の選択)、1 週間のドッグフーディング**(描画方式は「DOM のまま」と決定済みで、T50b で反映した)。ゴミ箱の検証用の項目(`arin-probe-…` 2 つ、`arin-test-trash-…` 3 つ)の「戻す」の目視と片付け。push と pull request(本人に確認してから)。M0 の残り: pull request #1 のマージの判断、T1 の差分(コミット `b938d3d`)の了承 |
+| 待ち | **本人の確認: M2(T36)・M3(T45)・M4(T50a。9 枚の体感)・M4.5(T66c の (1)〜(10)。`M4.5_acceptance.md`)、1 週間のドッグフーディング**(描画方式は「DOM のまま」と決定済みで、T50b で反映した)。ゴミ箱の検証用の項目(`arin-probe-…` 2 つ、`arin-test-trash-…` 3 つ)の「戻す」の目視と片付け。push と pull request(本人に確認してから)。M0 の残り: pull request #1 のマージの判断、T1 の差分(コミット `b938d3d`)の了承 |
 
 ---
 
@@ -136,6 +136,7 @@
 
 0. **再開の手順(2026-11-16 の時点。文脈が切り替わったらここから)**
    - `git status --short` と `git log --oneline -5` を見る。最後のコミットが「docs: 進捗ノートに再開の手順を書く」より新しくなければ、T50b の変更が未コミットで作業ツリーに残っている可能性がある
+   - **M4.5 は T66c の AI の分まで済み(2026-11-16)**。残りは本人の確認 (1)〜(10) と、その結果を受けた T66d(ADR-012 の状態、PRD への反映、指摘の修正)。本人の判断が要る点(F キーが設定で使えない、知らせの省略、ほか)は `M4.5_acceptance.md` の「判断が要る点・残っている問題」。この Mac が固まったので、重い処理は 1 つずつ、サブエージェントも 1 件ずつ(文書だけのタスクは同時でよい)で進めた。検証は `rtk proxy <コマンド>` で回す
    - **T50b(M4 の最後)は AI の分が済み(2026-11-16。検証を全部通してコミットした。計画のチェックは本人の T50a の確認と ADR-011 の了承が済むまで `[ ]` のまま)。M4.5 は T64a〜T64c まで済み、次は T65a(`toml 1.2.1` の公開が 2026-11-06 で 2 週間未満のため止めた。本人が例外を認めるか、2026-11-20 以降に着手。下調べ: 解析は `toml::de::DeTable::parse` で serde なしに書ける・表は名前順なので位置で並べ直す・計画のテスト名「読む権限が無いと入出力の失敗を返す」は arin-core の `PermissionDenied` に合わせて直す・UTF-8 の確かめは `SettingsLoad::from_file` の側)(この Mac が固まったので、並行できるタスクも 1 件ずつ進めている)**。以下 2 項は T50b の記録: 中身は `PLAN_multi-terminal.md` の T50b の項。本人の決定は「描画方式は DOM のまま」(ADR-012 の末尾の表)。DOM 描画と `unicode11` に固定し、`ARIN_RENDERER`・`ARIN_UNICODE`・`get_launch_options`・`RendererLabel`・`@xterm/addon-webgl`・`@xterm/addon-unicode-graphemes`・`e2e/terminal-webgl.spec.ts` を外し、ADR-001 に決定を書き、`docs/` と `project-config.md` §2・§3 を M4 に合わせる。サブエージェントに任せて実行中だった。作業ツリーに途中の変更があれば、`npx tsc -b` と `cargo check --workspace` で状態を確かめ、足りない分を続ける
    - T50b のあとの検証(司令塔が **1 つずつ** 回す。並行にしない): `npm run lint` → `npm test` → `npm run e2e` → `npm run app` → `npm run smoke` → `node scripts/smoke.mjs --tiles` → `npm run test:coverage` → `npm run perf`。通ったら計画の T50b を `[x]` にしてコミットし、`output/reports/test/M4_acceptance.md` の検証の表と「判断が要る点」(描画方式は決定済み)を直す
    - **M4.5(ショートカットの設定)**: 計画の M4.5 の節(Phase 31.5b から。T64a ∥ T64b → T64c ∥ T65a → T65b → T65c ∥ T65e → T65d → T66a ∥ T66b → T66c → T66d)。方式は `output/design/ADR_012_keybindings.md`(末尾に本人の決定)。ブランチは `feat/m4-tiles` から `feat/m4.5-keybindings` を切る
@@ -149,6 +150,18 @@
 ---
 
 ## 4. セッションログ(新しいものを上に)
+
+### 2026-11-16 — M4.5(ショートカットの設定)の実装(T64a〜T66b)と完了確認の AI の分(T66c)
+
+- **本人の指示**: 「M4.5 を進めて」。外出中(iPhone から指示)。実機の確認は帰宅後。`toml 1.2.1`(公開から 10 日)は「例外として今使う」
+- **進め方**: ブランチ `feat/m4.5-keybindings`。Opus のサブエージェントに 1 タスクずつ任せ(T66a と文書だけの T66b だけ同時)、司令塔が検証を再実行してからコミットした。push していない
+- **済んだタスク**: T64a・T64b・T64c・T65a・T65b・T65c・T65e・T65d・T66a・T66b、T66c の AI の分
+- **検証(最後のコードのコミットの内容。1 つずつ)**: `npm run build`・`npm run lint`・`npm test`(Vitest 526、cargo 1036、node 103)・`npm run e2e`(225 件)・`npm run app`・`npm run smoke`・`--tiles`・`--settings`・`npm run test:coverage`(`src/logic` 99.72%、`arin-core` 97.60%)が終了コード 0
+- **計画と違えたこと**: (1) T64c で行が 23 になった影響で、計画の範囲外の `shortcutTable.ts` の型と行数のテスト 2 つを直し、メニューのテストは T65d まで一時的に除外した。(2) メニューの項目から実際のキーを読み戻す API が無く、テストは表とキーの文字列で確かめた。(3) T65d に「ふつうのファイルでない・実行できる設定ファイルは開かずに Finder で表示」を足した。(4) T65a の権限のテスト名を arin-core の `PermissionDenied` に合わせた
+- **レビューで見つけて直した不具合**: 知らない ID が大量にある設定で起動が止まりうる(重複の判定を集合に)、知らせと標準エラーの件数の上限、知らせから文字の向きを変える文字を除く
+- **直していないもの・本人の判断が要る点**: `M4.5_acceptance.md` の「判断が要る点・残っている問題」
+- **つまずいたこと**: 仕様照合のサブエージェントが 30 ターンの上限で報告の前に止まった(続きを頼んで報告を受けた。照合の範囲は狭く頼む)
+
 
 ### 2026-11-16 — Mac のハングからの復帰と T50b の仕上げ
 

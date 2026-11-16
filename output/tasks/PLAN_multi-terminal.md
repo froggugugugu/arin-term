@@ -1565,13 +1565,13 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 31.5g(並行可能。T65d 完了後)
 
-- [ ] T66a — M4.5 のシナリオの画面の自動テストと、設定ファイルを置いたスモーク(変更ファイル: e2e/m45-scenario.spec.ts, e2e/fixtures/tauriMock.ts, scripts/smoke.mjs, scripts/smoke.test.mjs | 依存: T65d)
+- [x] T66a — M4.5 のシナリオの画面の自動テストと、設定ファイルを置いたスモーク(変更ファイル: e2e/m45-scenario.spec.ts, e2e/fixtures/tauriMock.ts, scripts/smoke.mjs, scripts/smoke.test.mjs | 依存: T65d)
   - 対応: AC-K01〜K07・K09 の通し、【要件の追加】
   - 置くもの: スモークに `--settings`(一時の状態フォルダに、正しい変更の行と問題のある行を 1 つずつ含む `settings.toml` を置いて起動する)。準備完了とターミナルの出力を確かめ、標準エラーの `[arin:settings]` の行がコマンドの ID とキーの文字列だけであること、`[arin:frontend-error]` が無いこと、終わったあと設定ファイルの中身(ハッシュ)と更新日時が同じで `settings.toml` の名前の付いた別のファイルができていないことを確かめる
   - 先に書くテスト(このタスク自体がテスト): Playwright: `替えた表で起動し_メニューのキーの表示とツリーのキーとタブのツールチップがそろう`、`設定が変わったと届くと全部が新しい表に追従する`、`問題のある行の知らせが_1_行出て閉じられる`。`scripts/smoke.test.mjs`: `設定の指定で一時の状態フォルダに_settings_toml_を置く`、`終わったあと設定ファイルの中身と更新日時が同じか確かめる`、`設定の診断の行に設定の行の全文が無いか確かめる`
   - 並行: 可(T66b とファイルが重ならない)
   - 検証: `npx playwright test e2e/m45-scenario.spec.ts`(3 回続けて合格)`&& node --test scripts/smoke.test.mjs && npm run app && node scripts/smoke.mjs --settings && npm run smoke`
-- [ ] T66b — 文書の同期と設定の書き方の説明(変更ファイル: docs/data-model.md, docs/development-patterns.md, docs/project.md, docs/architecture.md, project-config.md, output/design/ARCH_multi-terminal.md, output/design/ADR_005_settings-format.md, output/design/ADR_012_keybindings.md | 依存: T65d)
+- [x] T66b — 文書の同期と設定の書き方の説明(変更ファイル: docs/data-model.md, docs/development-patterns.md, docs/project.md, docs/architecture.md, project-config.md, output/design/ARCH_multi-terminal.md, output/design/ADR_005_settings-format.md, output/design/ADR_012_keybindings.md | 依存: T65d)
   - 対応: ADR-012 の 6(開発者向けの仕様の置き場所)、ドキュメント更新計画
   - 書くもの: `docs/data-model.md` に `settings.toml` の節(置き場所、`[shortcuts]` の書式、コマンドの ID の一覧は生成物 `defaultShortcuts.json` を正とする旨、検査の規則、ファイル全体の問題の扱い、読むだけ・見本は無いときだけ)。`docs/development-patterns.md` に標準エラーの頭 `[arin:settings]`、落とし穴(`set_accelerator(None)` は macOS でキーを消さない、引用符の無い点つきの ID は TOML では入れ子の表になる、リンクの先の変更は監視で拾えない)。`docs/project.md`・`project-config.md` §2 に TOML のクレートの版、`docs/architecture.md` に新しいファイル。設計書: §5.1(`SettingsFileStore` → `FsSettingsFile`、`SettingsStore` は M4.5)、§5.2(`get_settings_notice`・`settings-changed`)、§6.1、§6.2(設定ファイルのキーの表に `[shortcuts]`)、§7.1「起動」の 2(設定ファイルは M4.5)、§7.2、§9.1(アプリ名のメニューの「設定ファイルを開く…」)。ADR-005 の「未定の点」に ADR-012 で決めたと追記
   - 並行: 可(T66a とファイルが重ならない)
@@ -1579,7 +1579,7 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 31.5h(逐次。人間ゲート)
 
-- [ ] T66c — M4.5 の合否一覧と本人の確認(変更ファイル: output/reports/test/M4.5_acceptance.md, output/tasks/PROGRESS.md | 依存: T66a, T66b)
+- [ ] T66c — M4.5 の合否一覧と本人の確認(**AI の分は 2026-11-16 に済み**。残りは本人の (1)〜(10))(変更ファイル: output/reports/test/M4.5_acceptance.md, output/tasks/PROGRESS.md | 依存: T66a, T66b)
   - AI がやること: `npm run build && npm test && npm run lint && npm run test:coverage && npm run e2e && npm run app && npm run smoke && node scripts/smoke.mjs --tiles && node scripts/smoke.mjs --settings` を 1 件で通し、下の対応表に沿って AC-K の合否一覧を `output/reports/test/M4.5_acceptance.md` と `testreport/` に出す。本人に渡す確かめ方(設定ファイルの置き場所、見本の開き方、書き換えの例 3 つ)を書く。fresh context の `/code-review` と `verifier` を 1 回ずつ回す
   - **人間がやること**(`npm run app` で作った `.app` を Finder から開く): (1) ⌘, で見本が開き、書き方が読んで分かる(AC-K08)。(2) `"terminal.new-tab" = "Cmd+Shift+T"` を書いて保存すると、メニューバーの表示とキーが替わり、⌘T では開かない(AC-K01・K07)。(3) ツリーのキー(例 `"tree.new-file" = "Cmd+Alt+N"`)を替えると、ツリーのメニューの表示とキーが替わる(AC-K02)。(4) 保存しても動いているシェル(Claude Code など)が続いている(AC-K07)。(5) 読めない行・予約のキー(⌘H など)・重なりを書くと、その行だけ既定に戻り、知らせが 1 行で読める(AC-K04)。(6) 構文を壊して保存すると直前のキーのまま、行と列が出る(AC-K05)。(7) 行を消すと既定に戻る(AC-K03)。(8) 替えたキーが US と JIS の配列で効き、ターミナルに渡らない。替える前のキーはターミナルに渡る(AC-K06)。(9) 知らせの見た目(ライトとダーク、すりガラスの上。デザインの方針)。(10) ADR-012 の【要確認】の回答と、PRD への反映(FR の追加・AC-K の採否・M4.5 の区切り)の判断
   - 完了条件: AC-K の合否一覧ができ、本人が (1)〜(10) を確かめた

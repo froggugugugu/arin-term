@@ -872,11 +872,11 @@ Rust 側のエントリーポイントは `src-tauri/src/main.rs`。組み立て
 | -- | ------------ | ------ |
 | 1 | 置き場所の決定(`AppPaths`。環境変数での差し替えを含む) | 2、3 |
 | 2 | ポートの実装(`arin-platform` の各型) | 3、4 |
-| 3 | 設定と状態の読み込み(設定ファイル=M6、`state.json`、ブックマークの解決。`persistence.rs` の `load_startup`) | 4 |
+| 3 | 設定と状態の読み込み(設定ファイルは M4.5 で `[shortcuts]` だけ。`settings.rs` の `AppSettings::load` がメニューを作る前に読み、表に当てる。ほかの節は M6。`state.json`、ブックマークの解決は `persistence.rs` の `load_startup`) | 4、6 |
 | 4 | `Workspace`(読んだ状態とルートの解決の結果を受け取る)。Tauri の管理状態には直接登録せず、`SessionRegistry` の中の Mutex に持たせる | 7 |
 | 5 | コマンドの登録(Tauri のプラグインは使わない。フォルダ選択は `NSOpenPanel` を直接呼ぶ) | — |
 | 6 | メニューバー(`menu.rs`)と、項目が選ばれたときの処理 | — |
-| 7 | `SessionRegistry`(`Workspace` を持つ)、保存のスレッド(`Persistence`)、プロジェクトの操作(`Projects`)、見回りのスレッド(`PatrolThread`)。それぞれ Tauri の管理状態に登録する | — |
+| 7 | `SessionRegistry`(`Workspace` を持つ)、保存のスレッド(`Persistence`)、プロジェクトの操作(`Projects`)、見回りのスレッド(`PatrolThread`)、設定(`AppSettings`・`Shortcuts`)と設定ファイルの監視のスレッド(`SettingsWatch`。M4.5。終了のときに止める)。それぞれ Tauri の管理状態に登録する | — |
 | 8 | ウィンドウの表示、イベントループのイベントの監視(閉じる要求、前面でなくなった、ドロップ、終了。`lifecycle.rs`) | — |
 
 画面側のエントリーポイントは `src/main.tsx`。
@@ -884,7 +884,7 @@ Rust 側のエントリーポイントは `src-tauri/src/main.rs`。組み立て
 | 順 | 生成するもの | 渡す先 |
 | -- | ------------ | ------ |
 | 1 | 通信の包み(`src/ipc`) | 2、3 |
-| 2 | ストア(`appStore`、`treeStore`、`uiStore`)と `actions`。状態の写しを取得し、更新のイベントを購読する | 4 |
+| 2 | ストア(`appStore`、`treeStore`、`uiStore`)と `actions`。状態の写しを取得し、更新のイベントを購読する。ショートカットの表と設定の知らせも取得し、`settings-changed` が届くたびに両方を取り直して `uiStore` を置き換える(M4.5。`startApp.ts`) | 4 |
 | 3 | エンジン(`XtermEngine`)と `TerminalManager` | 4 |
 | 4 | React のルートを作り、`AppShell` を描く(ストア、`actions`、`TerminalManager` を props で受け取る) | — |
 | 5 | Rust へ準備完了を通知し、写しにあるターミナルを接続する | — |
