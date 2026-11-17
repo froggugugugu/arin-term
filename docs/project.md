@@ -27,6 +27,8 @@ npm run smoke          # .app を一時の状態フォルダで起動し準備�
                        #   -- --env=NAME=VALUE(繰り返し可)でアプリに環境変数を足す、-- --app=<パス> で .app を指定
 npm run perf           # 性能の計測(記録だけで失敗しない。結果は testreport/perf/。先に npm run app)
                        #   -- --tree-files=<数> でツリーの見本のファイル数(既定 100000、100 以上)
+npm run licenses       # 配布物に入る依存のライセンス全文 THIRD_PARTY_LICENSES.md を作り直す(依存を変えたら実行してコミット)
+npm run licenses:check # THIRD_PARTY_LICENSES.md が依存と合っているかだけ確かめる(違えば失敗。release.yml が実行)
 ```
 
 アプリ独自の環境変数は `ARIN_STATE_DIR`(状態フォルダの差し替え。絶対パス)と `ARIN_SMOKE`(`1` でスモークの印。差し替え時だけ)だけ。M1 の検証用の `ARIN_RENDERER`・`ARIN_UNICODE`・`ARIN_VERIFY_GRID` は M4 で外した(指定しても読まない)。

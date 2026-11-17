@@ -55,6 +55,7 @@
 
 - 版は正確に固定する(npm は `^` なし、Cargo は `=`)。新しく選ぶ版は公開から 2 週間未満のものを避ける(ADR-003)
 - OS 連携のクレート(objc2 系・libc・base64)は Tauri が引き込む版と同じにする。Tauri を上げたら `Cargo.lock` に 2 つの版が載っていないか確かめ、ずれたら合わせる(ADR-009)
+- 依存(本番の npm・Rust の通常の依存)を変えたら `npm run licenses` で `THIRD_PARTY_LICENSES.md` を作り直してコミットする(`release.yml` が `licenses:check` で止める)。MPL-2.0 のクレートの版が変わったら `THIRD_PARTY_NOTICES.md` の表も直す
 - `notify` は 8.2.1 に固定。推移的な `notify-types` は `Cargo.lock` で 2.1.0 に止めている(`cargo update` で上がりうる)
 - Biome は React のフックの 2 規則だけを見る。わざと依存を外すときは `biome-ignore` に理由を書く。後片付けで `ref.current` を読む誤りは検出されないのでレビューで見る(ADR-008)
 

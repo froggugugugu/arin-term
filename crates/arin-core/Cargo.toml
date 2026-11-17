@@ -5,6 +5,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
+license.workspace = true
 
 # 許可する依存はここに書いたものだけ(設計書 §3.1)。scripts/check-boundaries.mjs が検査する。
 [dependencies]

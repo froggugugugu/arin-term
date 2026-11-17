@@ -2,6 +2,7 @@
   "name": "arin",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -19,7 +20,9 @@
     "dev:web": "vite",
     "e2e": "playwright test",
     "smoke": "node scripts/smoke.mjs",
-    "perf": "node scripts/perf/run.mjs"
+    "perf": "node scripts/perf/run.mjs",
+    "licenses": "node scripts/gen-third-party-licenses.mjs",
+    "licenses:check": "node scripts/gen-third-party-licenses.mjs --check"
   },
   "dependencies": {
     "@codemirror/commands": "6.11.0",

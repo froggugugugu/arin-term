@@ -120,6 +120,8 @@ npm run dev            # 開発用に起動（tauri dev。人間が体感確認�
 npm run e2e            # Playwright（ブラウザ方式。出力先 testreport/e2e/）
 npm run smoke          # 実アプリの起動スモーク（-- --tiles で 9 プロジェクトのタイル表示。-- --settings で、設定ファイルを置いた一時の状態フォルダで 1 回起動し、設定の診断の行と、設定ファイルが変わっていないことを確かめる。-- --fonts で、文字の大きさを入れた state.json で 1 回起動する。-- --env=NAME=VALUE、-- --app=<パス> を付けられる）
 npm run perf           # 性能の計測（出力先 testreport/perf/。合否にしない。-- --tree-files=<数> でツリーの見本の数）
+npm run licenses       # 配布物に入る依存のライセンス全文 THIRD_PARTY_LICENSES.md を作り直す（依存を変えたら実行してコミット）
+npm run licenses:check # THIRD_PARTY_LICENSES.md が依存と合っているかだけ確かめる（違えば失敗）
 # npm run dist:mac     # 署名・公証。人間のみ実行（秘密情報を扱うため AI は実行しない）
 ```
 
