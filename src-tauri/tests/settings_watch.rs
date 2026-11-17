@@ -582,23 +582,32 @@ fn 一時ファイルに書いて改名して保存しても読み直す() {
         }),
     )
     .expect("監視のスレッドを起動できなかった");
-    // FSEvents の流れが動き出すまでの変更を拾わないことがあるので、落ち着いてから保存する。
-    thread::sleep(Duration::from_millis(500));
-
     // エディタの保存の形: 同じフォルダの一時ファイルに書いてから、設定ファイルの名前へ改名する。
+    // FSEvents の流れが動き出す前の変更は届かない(立ち上がりの時間は Mac の状態で変わる)ので、
+    // 届くまで同じ保存を繰り返す。
     let tmp = dir.path().join(".settings.toml.swp");
-    fs::write(
-        &tmp,
-        "[shortcuts]\n\"terminal.new-tab\" = \"Cmd+Shift+T\"\n",
-    )
-    .expect("一時ファイルを書けなかった");
-    let saved = Instant::now();
-    fs::rename(&tmp, dir.path().join(SETTINGS)).expect("改名できなかった");
-    let reloaded = wait_until(|| {
+    let seen_new_key = || {
         lock(&tables)
             .iter()
             .any(|t| menu::accelerator(t, C::TerminalNewTab).as_deref() == Some("Cmd+Shift+T"))
-    });
+    };
+    let deadline = Instant::now() + WAIT;
+    let mut saved = Instant::now();
+    let mut reloaded = false;
+    while !reloaded && Instant::now() < deadline {
+        fs::write(
+            &tmp,
+            "[shortcuts]\n\"terminal.new-tab\" = \"Cmd+Shift+T\"\n",
+        )
+        .expect("一時ファイルを書けなかった");
+        saved = Instant::now();
+        fs::rename(&tmp, dir.path().join(SETTINGS)).expect("改名できなかった");
+        let retry_at = saved + Duration::from_millis(500);
+        while !reloaded && Instant::now() < retry_at {
+            reloaded = seen_new_key();
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
     let took = saved.elapsed();
     watch.stop();
     assert!(reloaded, "改名での保存で読み直さなかった");
