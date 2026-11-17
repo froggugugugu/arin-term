@@ -1,0 +1,17 @@
+# GitHub Pages のサイトの Jekyll の設定。pages.yml がサイトの元を組み立てる: index.html(紹介ページ。front matter が無いので
+# そのまま出る)、README.md(→ README.html)、docs/media/、LICENSE・THIRD_PARTY_NOTICES.md・THIRD_PARTY_LICENSES.md と
+# scripts/install.sh(そのままのファイルとして配る)。jekyll-readme-index は index.html が無いときだけ効くので、README は
+# ふつうのページのまま。tadcap の .github/pages/_config.yml を移したもの。
+title: Arin
+description: ターミナルとツリーだけを、プロジェクトの数だけ。macOS 向けの軽いマルチターミナル
+lang: ja
+baseurl: /arin-term
+theme: jekyll-theme-primer
+plugins:
+  - jekyll-optional-front-matter   # front matter の無い .md も描く
+  - jekyll-readme-index            # index.html が無いときだけ README.md を index.html にする
+  - jekyll-relative-links          # *.md へのリンクを描いたページへ向ける
+  - jekyll-titles-from-headings
+defaults:
+  - scope: { path: "" }
+    values: { layout: default }
