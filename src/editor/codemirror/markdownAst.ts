@@ -6,7 +6,9 @@
 //   - 画像は代わりの文字だけ(URL は捨てる)。リンクは URL の文字だけを持つ(開く情報を持たない)
 //   - 文字参照は数値と 6 つの名前(amp・lt・gt・quot・apos・nbsp)だけを直し、ほかは書かれたまま(HTML の名前の表を持ち込まない)
 //   - 入れ子(引用・リスト・強調・リンク・画像)は MD_MAX_DEPTH 段で打ち切り、それより深い中身は書かれた文字のまま `truncated`
-//     (lezer は再帰しないが、この変換と React の描画は再帰するので)
+//     (この変換と React の描画は再帰するので)
+//   - lezer の木の組み立ても入れ子の深さだけ再帰する。極端に深い入れ子でスタックがあふれたら(RangeError)、
+//     文書を丸ごと書かれた文字のまま `truncated` 1 つにする(あふれる深さは実行環境で違う)
 
 import type { SyntaxNode } from "@lezer/common";
 import { GFM, parser as commonMarkParser } from "@lezer/markdown";
@@ -17,7 +19,12 @@ const parser = commonMarkParser.configure(GFM);
 
 /** Markdown の文書を自前の木にする。空の文書は空の並び。 */
 export function parseMarkdown(source: string): MdBlock[] {
-  return new Converter(source).blocks(parser.parse(source).topNode, 0);
+  try {
+    return new Converter(source).blocks(parser.parse(source).topNode, 0);
+  } catch (error) {
+    if (error instanceof RangeError) return [{ kind: "truncated", text: source }];
+    throw error;
+  }
 }
 
 /** 直に名前で直す文字参照(ADR-015 の 2 の 1)。 */
