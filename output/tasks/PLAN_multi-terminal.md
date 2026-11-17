@@ -2040,12 +2040,13 @@ T64〜T66 は親として残し、作業は子タスクで行う。親は子が�
 
 #### Phase 32(並行可能。M4.5 完了後)
 
-- [ ] T51 — 署名・公証のスクリプトと手順書を書く(AI。実行はしない)(変更ファイル: scripts/package-mac.sh, package.json, src-tauri/tauri.conf.json, docs/release-notarization.md | 依存: T66)
+- [x] T51 — 署名・公証のスクリプトと手順書を書く(AI。実行はしない)(変更ファイル: scripts/package-mac.sh, package.json, src-tauri/tauri.conf.json, docs/release-notarization.md | 依存: T66)
   - 対応: G5、PRD §7 C1・C2。tadcap の `scripts/package-mac.sh` と `docs/release-notarization.md` を下敷きにする(Tauri が `.app` を署名・公証し、スクリプトが `.dmg` を署名・公証・staple して検証する)。`npm run dist:mac` を足す
   - 着手時に決める【要確認】: エンタイトルメント(設計書 §15.3 #2。M3 のゴミ箱で Finder に頼む方式を採った場合は Apple Events のエンタイトルメントが要る。ADR-007 の (a))、配布物の置き場所(同 #11)
   - 秘密情報(証明書、API キー、パスワード)は読まない・書かない。スクリプトは環境変数の名前だけを参照する
   - 検証: `bash -n scripts/package-mac.sh`(構文だけ)。`npm run lint`
-- [ ] T52 — tag のときの公証のワークフローを書く(AI)(変更ファイル: .github/workflows/release.yml | 依存: T66)
+  - 結果(2026-11-17): tadcap から移した。`scripts/install.sh` も足した(リポジトリは仮に `froggugugugu/arin-term`)。エンタイトルメントは A(付けない)。ad-hoc で Hardened Runtime の印の付いた app でスモーク(通常・タイル)が通った。B を採るかは T54 で本人が決める(`docs/release-notarization.md` §4)。配布物の置き場所(#11)は GitHub Releases の想定で、公開する場所は未定
+- [x] T52 — tag のときの公証のワークフローを書く(AI)(変更ファイル: .github/workflows/release.yml | 依存: T66)
   - 対応: 設計書 §13.3。ビルドは読み取り権限だけ、使い捨てのキーチェーン、公証後の検証。Secrets は名前だけを参照する
   - 検証: 手元では構文の確認だけ。動作の確認は T54
 

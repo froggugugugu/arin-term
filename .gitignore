@@ -14,3 +14,6 @@ dist/
 
 # テスト実行ツールが作る一時の出力
 .vitest/
+
+# scripts/package-mac.sh が作る配布物
+/release/

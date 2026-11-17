@@ -122,7 +122,7 @@ npm run smoke          # 実アプリの起動スモーク（-- --tiles で 9 �
 npm run perf           # 性能の計測（出力先 testreport/perf/。合否にしない。-- --tree-files=<数> でツリーの見本の数）
 npm run licenses       # 配布物に入る依存のライセンス全文 THIRD_PARTY_LICENSES.md を作り直す（依存を変えたら実行してコミット）
 npm run licenses:check # THIRD_PARTY_LICENSES.md が依存と合っているかだけ確かめる（違えば失敗）
-# npm run dist:mac     # 署名・公証。人間のみ実行（秘密情報を扱うため AI は実行しない）
+npm run dist:mac       # 配布物 release/Arin-<版>-arm64.dmg・.zip を作る（署名の環境変数が無ければ ad-hoc。Developer ID の署名・公証は人間のみ実行。docs/release-notarization.md）
 ```
 
 ---

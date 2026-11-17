@@ -1,5 +1,5 @@
 # push と pull request のたびに、lint・テスト・ビルド・画面の自動テストを実行する。
-# 署名と公証はここでは行わない(M5 で release.yml を足す)。
+# 署名と公証はここでは行わない(v* の tag で release.yml が行う)。
 name: CI
 
 on:

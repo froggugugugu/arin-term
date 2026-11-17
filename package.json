@@ -21,6 +21,7 @@
     "e2e": "playwright test",
     "smoke": "node scripts/smoke.mjs",
     "perf": "node scripts/perf/run.mjs",
+    "dist:mac": "bash scripts/package-mac.sh",
     "licenses": "node scripts/gen-third-party-licenses.mjs",
     "licenses:check": "node scripts/gen-third-party-licenses.mjs --check"
   },

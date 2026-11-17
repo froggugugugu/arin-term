@@ -27,6 +27,8 @@ npm run smoke          # .app を一時の状態フォルダで起動し準備�
                        #   -- --env=NAME=VALUE(繰り返し可)でアプリに環境変数を足す、-- --app=<パス> で .app を指定
 npm run perf           # 性能の計測(記録だけで失敗しない。結果は testreport/perf/。先に npm run app)
                        #   -- --tree-files=<数> でツリーの見本のファイル数(既定 100000、100 以上)
+npm run dist:mac       # 配布物 release/Arin-<版>-arm64.dmg・.zip(署名の環境変数が無ければ ad-hoc で最後まで作る。
+                       #   Developer ID の署名・公証は本人だけが実行する。docs/release-notarization.md)
 npm run licenses       # 配布物に入る依存のライセンス全文 THIRD_PARTY_LICENSES.md を作り直す(依存を変えたら実行してコミット)
 npm run licenses:check # THIRD_PARTY_LICENSES.md が依存と合っているかだけ確かめる(違えば失敗。release.yml が実行)
 ```
