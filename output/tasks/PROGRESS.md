@@ -154,6 +154,13 @@
 
 ## 4. セッションログ(新しいものを上に)
 
+### 2026-11-17〜18 — 公開の準備(ブランチ `chore/public-release`、pull request #2)
+
+- 本人の決定: 履歴ごと公開(いまのリポジトリを公開に切り替える)、ライセンスは MIT、名前は「Arin」のまま(大文字の「ARIN」を使わない、README に無関係の 1 文)、`input/`・`output/` も公開する
+- 済み: `LICENSE`、依存のライセンスの一覧(`npm run licenses`)と `.app` への同梱、`npm run dist:mac`、`release.yml`(`v*` の tag)、`scripts/install.sh`、`README.md`、紹介ページ(`.github/pages/`、`pages.yml`)、スクリーンショット(`npm run screenshots`)、アイコン(元の絵は `src-tauri/icons/icon.svg`)。点検の記録は `output/reports/legal/LEGAL_public-release.md`
+- 再開の手順: (1) #2 の CI を見る (2) 本人の確認を取ってから、リポジトリを公開に切り替え → Pages の元を GitHub Actions に → #2 を squash せずに取り込む (3) 本人が Environment `release` に Secrets を 6 つ入れたら(`docs/release-notarization.md`)tag を打つ
+- 確かめていないこと: Developer ID の署名・公証、`release.yml`・`pages.yml` の実行、商標の原本(本人が USPTO・J-PlatPat を引く)
+
 ### 2026-11-16 — M4.5(ショートカットの設定)の実装(T64a〜T66b)と完了確認の AI の分(T66c)
 
 - **本人の指示**: 「M4.5 を進めて」。外出中(iPhone から指示)。実機の確認は帰宅後。`toml 1.2.1`(公開から 10 日)は「例外として今使う」
