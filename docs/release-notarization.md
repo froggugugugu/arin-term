@@ -106,7 +106,7 @@ npm run dist:mac
 【ターミナル】
 
 ```bash
-dmg=release/Arin-0.1.0-arm64.dmg
+dmg=release/Arin-0.2.0-arm64.dmg
 spctl -a -vvv -t install "$dmg"          # → accepted / source=Notarized Developer ID
 xcrun stapler validate "$dmg"            # → The validate action worked!
 

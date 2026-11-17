@@ -63,9 +63,9 @@ const MARSH: SampleProject = { id: "p-marsh", name: "marsh-infra", color: "teal"
 
 const ALL = [LILYPAD, RIBBIT, POND, TADPOLE, CROAK, MARSH] as const;
 
-/** 写しの共通の手直し(版の表示を 0.1.0 に、ターミナルの文字を 13 に)。 */
+/** 写しの共通の手直し(版の表示を 0.2.0 に、ターミナルの文字を 13 に)。 */
 function finish(snapshot: AppSnapshot): AppSnapshot {
-  return withFontSizes({ ...snapshot, appVersion: "0.1.0" }, { terminal: 13 });
+  return withFontSizes({ ...snapshot, appVersion: "0.2.0" }, { terminal: 13 });
 }
 
 /** ツリーの見本(フォルダごと)。並びは Rust と同じく、フォルダが先で名前の順。 */
