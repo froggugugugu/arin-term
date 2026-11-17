@@ -18,6 +18,8 @@ npm run lint           # tsc -b + biome lint(フックの 2 規則)+ clippy -D w
 npm run test:coverage  # 行 80% を src/logic と arin-core に課す(testreport/coverage/)
 npm run gen:types      # Rust の型から src/ipc/generated/ を再生成
 npm run e2e            # Playwright(WebKit、Vite の画面に対して)
+npm run screenshots    # README と紹介ページの画像を docs/media/ に撮り直す(e2e/screenshots/。npm run e2e には入らない)
+npm run screenshots:pages  # 紹介ページ(.github/pages/index.html)を幅 390・1280、ライト・ダークで開き、横にはみ出さないかを見て testreport/pages/ に撮る
 npm run app            # 配布用 .app(tauri build --target aarch64-apple-darwin)
 npm run app:debug      # デバッグ版の .app(target/aarch64-apple-darwin/debug/bundle/macos/。[arin:verify] が出る)
 npm run smoke          # .app を一時の状態フォルダで起動し準備完了とターミナルの出力を確認、続けて壊れた state.json で起動(先に npm run app)

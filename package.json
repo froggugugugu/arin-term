@@ -19,6 +19,8 @@
     "dev": "tauri dev",
     "dev:web": "vite",
     "e2e": "playwright test",
+    "screenshots": "playwright test --config=e2e/screenshots/playwright.config.ts media",
+    "screenshots:pages": "playwright test --config=e2e/screenshots/playwright.config.ts pages",
     "smoke": "node scripts/smoke.mjs",
     "perf": "node scripts/perf/run.mjs",
     "dist:mac": "bash scripts/package-mac.sh",
