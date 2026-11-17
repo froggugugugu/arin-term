@@ -1,0 +1,322 @@
+/*
+ * ファイルツリー(設計書 §9.1)。macOS のサイドバー(Finder・Xcode のナビゲータ)の作法に寄せる: システムフォント 13px、
+ * 高さの固定された行、角の丸い淡い選択、小さな山形の開閉の印、単色の小さなアイコン、深さごとに一定幅の字下げ。
+ * 色・寸法は src/ui/design/tokens.css のトークンを使う。
+ */
+
+.file-tree {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  outline: none;
+}
+
+/* ツリーのヘッダ(ルートの行)。形は AppShell.css の .tree-header(プロジェクト色の印と名前。地は塗らない)。 */
+.tree-header--root {
+  position: relative;
+  cursor: default;
+  user-select: none;
+}
+
+/* 印と名前は選択の塗り(::before)の上に重ねる。 */
+.tree-header--root > * {
+  position: relative;
+}
+
+/* ルートの選択は、ツリーの行と同じ内側の角の丸い塗りで示す。 */
+.tree-header--selected::before {
+  position: absolute;
+  inset: 2px var(--space-1);
+  border-radius: var(--radius-s);
+  background: var(--color-selection-inactive);
+  content: "";
+}
+
+.file-tree[data-focused="true"] .tree-header--selected::before {
+  background: var(--color-selection-active);
+}
+
+.file-tree[data-focused="true"] .tree-header--selected {
+  color: var(--color-selection-active-fg);
+}
+
+/* アクセント色の塗りの上では、プロジェクト色の印に白い細い輪を付けて見分けられるようにする。 */
+.file-tree[data-focused="true"] .tree-header--selected .project-dot {
+  box-shadow: 0 0 0 1px var(--color-selection-active-fg);
+}
+
+.file-tree__scroller {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* 選択の無いツリーにキーボードで入ったときは、領域の内側にフォーカスの輪を出す(選択があれば塗りの色で分かる)。 */
+.file-tree:focus-visible[data-has-selection="false"] .file-tree__scroller {
+  box-shadow: inset 0 0 0 2px var(--color-focus-ring);
+}
+
+.file-tree__rows {
+  box-sizing: border-box;
+}
+
+/* 1 行。高さは固定(仮想スクロールの窓の計算と同じ値)。左右に少し余白を取り、選択の塗りを角の丸い形にする。 */
+.tree-row {
+  box-sizing: border-box;
+  height: var(--tree-row-height);
+  padding: 0 var(--space-1);
+  color: var(--color-fg);
+  font-size: var(--font-size-l);
+  line-height: var(--tree-row-height);
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.tree-row__inner {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  box-sizing: border-box;
+  height: 100%;
+  padding-right: var(--space-2);
+  padding-left: calc(var(--space-1) + var(--tree-indent) * var(--tree-depth, 0));
+  border-radius: var(--radius-s);
+}
+
+.tree-row--selected .tree-row__inner {
+  background: var(--color-selection-inactive);
+}
+
+.file-tree[data-focused="true"] .tree-row--selected .tree-row__inner {
+  background: var(--color-selection-active);
+  color: var(--color-selection-active-fg);
+}
+
+/* 開閉の印の置き場所。印の無い行(ファイル・リンク)も同じ幅を空け、名前の位置をそろえる。 */
+.tree-row__chevron-slot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 100%;
+}
+
+.tree-row__chevron {
+  display: flex;
+  color: var(--color-muted);
+  transition: transform 120ms ease-out;
+}
+
+.tree-row__chevron svg {
+  width: 12px;
+  height: 12px;
+}
+
+.tree-row__chevron--open {
+  transform: rotate(90deg);
+}
+
+.tree-icon {
+  position: relative;
+  display: flex;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-right: 3px;
+}
+
+.tree-icon--file {
+  color: var(--color-tree-icon);
+}
+
+.tree-icon--folder {
+  color: var(--color-tree-folder);
+}
+
+.tree-icon__badge {
+  position: absolute;
+  inset: 0;
+  color: var(--color-fg);
+}
+
+.tree-icon__badge-bg {
+  fill: var(--color-pane);
+}
+
+/* フォーカスのある選択(アクセント色の地)では、印とアイコンも白にする。 */
+.file-tree[data-focused="true"] .tree-row--selected :is(.tree-row__chevron, .tree-icon, .tree-icon__badge) {
+  color: var(--color-selection-active-fg);
+}
+
+.file-tree[data-focused="true"] .tree-row--selected .tree-icon__badge-bg {
+  fill: var(--color-selection-active);
+}
+
+.tree-row__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * 名前の入力欄(インライン編集。Finder の名称変更にならう)。名前と同じ位置・同じ文字の大きさで行の中に置き、行の高さは変えない。
+ * 地は入力欄の色、輪はアクセント色の細い輪(1px と淡いにじみ)。
+ */
+.tree-name-input {
+  /* 幅は名前に合わせる(Finder と同じ。field-sizing の無い環境では入力欄の既定の幅)。 */
+  flex: 0 1 auto;
+  field-sizing: content;
+  min-width: 6em;
+  max-width: 100%;
+  box-sizing: border-box;
+  height: var(--tree-input-height);
+  margin: 0 0 0 -3px;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 3px;
+  background: var(--color-field-bg);
+  color: var(--color-field-fg);
+  caret-color: var(--color-focus);
+  font: inherit;
+  font-size: var(--font-size-l);
+  line-height: var(--tree-input-height);
+  outline: none;
+  box-shadow:
+    0 0 0 1px var(--color-focus),
+    0 0 0 3px var(--color-focus-ring-soft);
+}
+
+.tree-name-input::selection {
+  background: var(--color-text-selection);
+}
+
+/* メニューを開いている間は、右クリックした行(選択)をアクセント色の輪で示す(Finder と同じ)。 */
+.file-tree[data-menu-open="true"] .tree-row--selected .tree-row__inner,
+.file-tree[data-menu-open="true"] .tree-header--selected::before {
+  box-shadow: inset 0 0 0 2px var(--color-selection-active);
+}
+
+/* 入力中の行は、選択の塗りを淡いままにする(入力欄が目立つように)。 */
+.file-tree .tree-row--editing .tree-row__inner {
+  background: var(--color-selection-inactive);
+  color: var(--color-fg);
+}
+
+.file-tree .tree-row--editing :is(.tree-row__chevron, .tree-icon--file) {
+  color: var(--color-tree-icon);
+}
+
+.file-tree .tree-row--editing .tree-icon--folder {
+  color: var(--color-tree-folder);
+}
+
+/* 読み込み中の印(フォルダの行の右端の小さな輪)。 */
+.tree-spinner {
+  flex: none;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  opacity: 0.5;
+  animation: tree-spin 0.8s linear infinite;
+}
+
+@keyframes tree-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tree-spinner {
+    animation: none;
+  }
+
+  .tree-row__chevron {
+    transition: none;
+  }
+}
+
+/* 読み込み中・空のフォルダ(カード一覧の「プロジェクトがありません」と同じ控えめな文字)。 */
+.tree-placeholder {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-muted);
+  font-size: var(--font-size-m);
+}
+
+/* ツリーの知らせ(1 行)。 */
+.tree-notice {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-1) 2px var(--space-3);
+  border-top: 1px solid var(--color-separator);
+  background: var(--color-notice);
+  color: var(--color-notice-fg);
+  font-size: var(--font-size-m);
+}
+
+.tree-notice__text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 下端の道具の帯(Xcode のナビゲータの下端にならう)。小さな単色のアイコンのボタンだけを置く。 */
+.tree-toolbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  box-sizing: border-box;
+  height: var(--tree-toolbar-height);
+  padding: 0 var(--space-1);
+  border-top: 1px solid var(--color-separator);
+}
+
+.tree-toolbar__button,
+.tree-notice__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-button-width);
+  height: var(--icon-button-height);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--color-muted);
+}
+
+.tree-notice__close {
+  color: inherit;
+}
+
+.tree-toolbar__button:hover,
+.tree-notice__close:hover {
+  background: var(--color-control-hover);
+}
+
+.tree-toolbar__button[aria-pressed="true"] {
+  color: var(--color-selection-active);
+}
+
+.tree-toolbar__button:focus-visible,
+.tree-notice__close:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -1px;
+}

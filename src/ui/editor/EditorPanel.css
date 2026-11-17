@@ -1,0 +1,110 @@
+/*
+ * エディタのタブの中身(M4.8。ADR-015 の 8)。上端の細い帯、帯の知らせ、本文(エディタとプレビュー)。
+ * 色は既存のトークンだけ。地は不透明(--color-editor-bg。ターミナルの透過を当てない)。影・グラデーション・大きな角丸を使わない。
+ * 帯の文字は画面の文字の大きさ(--font-size-*)、本文はターミナルの文字の大きさ(部品とプレビューが自分で持つ)。
+ */
+.editor-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--color-editor-bg);
+  color: var(--color-fg);
+}
+
+.editor-panel__bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  height: var(--tab-bar-height);
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-bottom: 1px solid var(--color-separator);
+}
+
+.editor-panel__path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: var(--font-size-m);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 文字の区切りのボタン(表示モードの切替と同じセグメント。幅は文字に合わせる)。 */
+.editor-view-switch__item {
+  width: auto;
+  padding: 0 var(--space-2);
+  font: inherit;
+  font-size: var(--font-size-m);
+}
+
+.editor-panel__save {
+  flex: none;
+}
+
+/* 帯の知らせ(読み取り専用・外の変更・保存できなかった)。1 行ずつ、控えめな文字で。 */
+.editor-panel__banner {
+  flex: none;
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border-bottom: 1px solid var(--color-separator);
+  color: var(--color-muted);
+  font-size: var(--font-size-m);
+}
+
+.editor-panel__banner--notice {
+  background: var(--color-notice);
+  color: var(--color-notice-fg);
+}
+
+/* 本文。並べたときは左右半分で、境は細い線 1 本(寸法は変えられない)。 */
+.editor-panel__body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.editor-host {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.editor-host[hidden] {
+  display: none;
+}
+
+/* CodeMirror の部品の要素(src/editor/codemirror/CodeMirrorEngine.ts が作る)に高さを与える。 */
+.editor-host > .editor-surface {
+  height: 100%;
+}
+
+.editor-host .cm-content {
+  padding: var(--space-3) 0;
+}
+
+.editor-host .cm-line {
+  padding: 0 var(--space-3) 0 var(--space-1);
+}
+
+.editor-panel__preview {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  overflow-y: auto;
+}
+
+.editor-host + .editor-panel__preview {
+  border-left: 1px solid var(--color-separator);
+}
+
+.editor-host[hidden] + .editor-panel__preview {
+  border-left: 0;
+}

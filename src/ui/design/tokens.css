@@ -1,0 +1,285 @@
+/*
+ * 画面の色・余白・文字サイズのトークン(設計書 §9.2・§9.3)。部品の CSS はここのカスタムプロパティを使い、値を直接書かない。
+ * OS のライト・ダークに追従する(prefers-color-scheme。アプリ独自の切替は持たない)。
+ * プロジェクト色の値は palette.ts が持ち、部品が要素に CSS の変数として付ける(.project-colored が外観で使い分ける)。
+ *
+ * ウィンドウの地はすりガラス(ADR-010): 実アプリではウィンドウを透明にし、macOS の vibrancy(サイドバーの素材)を
+ * 窓の全面に敷く。画面は --color-window-bg(半透明の淡い色)を重ねるだけ。ターミナルの置き場所は半透明の黒(M4.7。ADR-014)。
+ * ブラウザ(Playwright)では窓の向こうが無く、半透明の色がページの地(白・黒)に重なって不透明の淡いグレーに見える
+ * (どちらでも破綻しない色にしてある。Tauri の中かどうかで分けない)。
+ */
+:root {
+  color-scheme: light dark;
+
+  /* 左ペインの見かけの地(ブラウザで .app-shell の半透明の色が白に重なった色)。小さな印の下地(リンクの印)に使う。 */
+  --color-pane: #f6f6f7;
+  /*
+   * ウィンドウの地(左ペインと上部の帯。半透明)。すりガラスの上で文字のコントラストを保つため、淡い色を半分ほど重ねる。
+   * ブラウザでは白に重なって #f6f6f7 ほどに見える。
+   */
+  --color-window-bg: rgba(238, 238, 240, var(--window-bg-alpha-light));
+  /*
+   * 地の不透明度(M4.7。ADR-014 の 2)。設定画面の「透過」から src/logic/appearance/translucency.ts が値を決め、
+   * src/ui/design/applyTranslucency.ts が :root に上書きする。ここの値は既定(ウィンドウ 45・ターミナル 20)のときの値。
+   * ウィンドウの地はライトとダークで色と不透明度が違うので、不透明度を 2 つ持ち、色の側(外観ごと)がどちらかを受ける。
+   */
+  --window-bg-alpha-light: 0.55;
+  --window-bg-alpha-dark: 0.5;
+  --terminal-bg-alpha: 0.8;
+  /* 細い区切り線(ペインの境目、帯の下端)。すりガラスの上でも馴染む半透明の黒。 */
+  --color-separator: rgba(0, 0, 0, 0.11);
+  /* タブバーの地(すりガラスの上に少しだけ影を落とす)と、表示中のタブの地(明るく浮かせる)。 */
+  --color-tabbar-bg: rgba(0, 0, 0, 0.05);
+  --color-tab-selected-bg: rgba(255, 255, 255, 0.78);
+  /* 押しボタン(macOS のボタンにならう。白い地に細い輪郭と控えめな影)。 */
+  --color-button-bg: #ffffff;
+  --shadow-control: 0 0 0 0.5px rgba(0, 0, 0, 0.16), 0 0.5px 1.5px rgba(0, 0, 0, 0.12);
+  /* 小見出し(サイドバーの「プロジェクト」。Finder のサイドバーの見出しにならう)。 */
+  --color-section-title: rgba(0, 0, 0, 0.45);
+  --color-fg: #1d1d1f;
+  --color-muted: #6e6e73;
+  --color-focus: #0a64d8;
+  --color-surface: #ffffff;
+  --color-highlight: #0a64d8;
+  --color-highlight-fg: #ffffff;
+  --color-danger: #c4001a;
+  --color-danger-fg: #ffffff;
+  --color-backdrop: rgba(0, 0, 0, 0.3);
+  --color-notice: #fdf3d0;
+  --color-notice-fg: #3d2e00;
+  --shadow-popup: 0 6px 24px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.08);
+  /* 一覧の選択(Finder のサイドバーにならう): フォーカスがあるときはアクセント色、無いときは淡いグレー。 */
+  --color-selection-active: #0a64d8;
+  --color-selection-active-fg: #ffffff;
+  --color-selection-inactive: rgba(0, 0, 0, 0.09);
+  /* 小さな道具のボタン(ツリーの下端の帯)の押したとき・押した状態の地。 */
+  --color-control-hover: rgba(0, 0, 0, 0.06);
+  /* フォーカスの輪(選択の無いツリーにキーボードで入ったとき)。 */
+  --color-focus-ring: rgba(10, 100, 216, 0.45);
+  /* ツリーのアイコン(単色で控えめに。フォルダだけ淡い青で見分ける)。 */
+  --color-tree-icon: #8a8a8f;
+  --color-tree-folder: #4a8bd4;
+  /* コンテキストメニュー(macOS のメニューにならう半透明の地・細い区切り線・薄いキーの表示・無効の項目)。 */
+  --color-menu-bg: rgba(246, 246, 246, 0.94);
+  --color-menu-separator: rgba(0, 0, 0, 0.1);
+  --color-menu-shortcut: rgba(0, 0, 0, 0.45);
+  --color-menu-disabled: rgba(0, 0, 0, 0.26);
+  --shadow-menu: 0 8px 28px rgba(0, 0, 0, 0.16), 0 0 0 0.5px rgba(0, 0, 0, 0.16);
+  /* ツリーの名前の入力欄(Finder の名称変更にならう。地は白、輪はアクセント色の細い輪)。 */
+  --color-field-bg: #ffffff;
+  --color-field-fg: #1d1d1f;
+  --color-focus-ring-soft: rgba(10, 100, 216, 0.22);
+  --color-text-selection: rgba(10, 100, 216, 0.25);
+  /*
+   * ツリーのドラッグ(Finder にならう)。落とせる先はアクセント色の淡い塗りと細い輪、掴んだ項目の写しは半透明の札と
+   * 控えめな影、⌥ のコピーの印は小さな緑の丸に白い「+」。
+   */
+  --color-drop-target-bg: rgba(10, 100, 216, 0.1);
+  --color-drop-target-ring: rgba(10, 100, 216, 0.75);
+  --color-drag-ghost-bg: rgba(255, 255, 255, 0.82);
+  --color-drag-ghost-fg: #1d1d1f;
+  --shadow-drag-ghost: 0 3px 10px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.14);
+  --color-copy-badge: #2fb350;
+  --color-copy-badge-fg: #ffffff;
+  /*
+   * ターミナルの置き場所の地(黒を透過の設定ぶん透かす。ADR-014 の 2)。xterm.js の地は透明にしてあり、この地が見える。
+   * 塗るのは置き場所を囲む 1 段(.terminal-area__panel・.tile__body)だけにする(重ねると濃くなる)。
+   * 外観で変えない(xterm.js の配色は外観に追従しない。配色の設定は M6 の FR-049 で、そのときここも合わせる)。
+   */
+  --color-terminal-bg: rgba(0, 0, 0, var(--terminal-bg-alpha));
+  --color-terminal-fg: #ffffff;
+  /* ターミナルの置き場所へ落とせるときの重ね(地が外観によらず黒なので、外観で変えない明るめのアクセント色)。 */
+  --color-terminal-drop-overlay: rgba(76, 155, 255, 0.1);
+  --color-terminal-drop-ring: rgba(76, 155, 255, 0.7);
+  /*
+   * タイル表示(M4)。タイトルバーの地はタブバーと同じ控えめな影で、フォーカス中のタイルだけ表示中のタブと同じ明るい地に浮かせる
+   * (プロジェクト色では塗らない。色は印だけ)。フォーカス中のタイルの細い輪は、地が黒のターミナルの上でも見える強調色。
+   */
+  --color-tile-title-bg: var(--color-tabbar-bg);
+  --color-tile-title-focused-bg: var(--color-tab-selected-bg);
+  --color-tile-focus-ring: rgba(10, 100, 216, 0.9);
+  /*
+   * タイルの番号の札(M4.7。ADR-014 の 4)。ターミナルの黒い地の上に重ねる半透明の白(地が外観によらず黒なので、外観で変えない)。
+   * フォーカス中のタイルだけ少し濃くする。
+   */
+  --color-tile-number: rgba(255, 255, 255, 0.38);
+  --color-tile-number-focused: rgba(255, 255, 255, 0.62);
+  /*
+   * アテンションの印(FR-055。タイトルバーの右端と、ページ送りのボタンの右上)。システムの強調色(systemBlue)の小さな塗りの丸に
+   * 淡い輪を添え、プロジェクト色の印(輪の無い丸。名前の前)と位置と形で見分ける。点滅させない。
+   */
+  --color-attention: #007aff;
+  --color-attention-halo: rgba(0, 122, 255, 0.2);
+  /* タイトルバーにマウスを載せたときの重ね(ダブルクリックで拡大できる場所だと控えめに示す)。 */
+  --color-tile-title-hover: rgba(0, 0, 0, 0.05);
+  /* 区分けのボタン(表示モードの切替。macOS のセグメントのコントロールにならう: 淡い溝と、選んだ区分けだけ白く浮かせる)。 */
+  --color-segmented-bg: rgba(0, 0, 0, 0.06);
+  --color-segmented-selected-bg: #ffffff;
+  --color-segmented-selected-fg: #1d1d1f;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --radius-s: 4px;
+  --radius-m: 6px;
+  --radius-menu: 7px;
+  /* 画面の文字の大きさ(M4.6)で追従させるのは、文字の 4 つと、文字を入れる行の高さ(--*-height のうち
+     src/logic/appearance/interfaceMetrics.ts に挙げたもの)だけ。ここの値は基準値 13 のときの値で、
+     写しが届いたら src/ui/design/applyInterfaceMetrics.ts が :root に上書きする。 */
+  --font-size-s: 11px;
+  --font-size-m: 12px;
+  --font-size-l: 13px;
+  --font-size-xl: 15px;
+  --font-family: system-ui, -apple-system, sans-serif;
+  --font-weight-strong: 600;
+
+  --divider-hit: 6px;
+
+  /* 上部の帯とタブバーの高さ。 */
+  --header-height: 30px;
+  --tab-bar-height: 28px;
+  /* タイルのタイトルバーの高さ(macOS の小さなパネルのタイトルにならう)と、区分けのボタンの 1 区分けの幅・高さ。 */
+  --tile-title-height: 24px;
+  --segmented-width: 28px;
+  --segmented-height: 20px;
+  /* アテンションの印の大きさ(タイトルバー)と、ページ送りのボタンに重ねる小さな印の大きさ。 */
+  --attention-dot-size: 6px;
+  --attention-dot-size-s: 5px;
+  /* 小さなアイコンのボタン(サイドバーの開閉、フォルダを追加、ツリーの下端の帯。Xcode の帯のボタンにならう)。 */
+  --icon-button-width: 24px;
+  --icon-button-height: 20px;
+  /* サイドバーの項目(プロジェクト)。macOS のサイドバーの行に近い高さと、小見出しの高さ。 */
+  --sidebar-item-height: 28px;
+  --sidebar-section-height: 26px;
+  /* プロジェクト色の印(丸)。サイドバーとツリーのヘッダは 8px、タブは少し小さく。 */
+  --project-dot-size: 8px;
+  --project-dot-size-s: 7px;
+  /* 押しボタンの高さ(macOS の標準の大きさ)。 */
+  --button-height: 22px;
+
+  /* ツリー(ADR-007 の (c)、計画【仮定】5)。行の高さは仮想スクロールの窓の計算にも使う(FileTreeView は同じ値を
+     src/logic/appearance/interfaceMetrics.ts から受け取る)。名前の入力欄の高さは行の中に収める。 */
+  --tree-row-height: 22px;
+  --tree-indent: 16px;
+  --tree-toolbar-height: 26px;
+  --tree-input-height: 18px;
+
+  /* コンテキストメニュー(行の高さは macOS のメニューと同じ 22px)。 */
+  --menu-padding: 5px;
+  --menu-item-height: 22px;
+
+  /* Markdown のプレビュー(M4.8。ADR-015 の 7・8)。本文の大きさはターミナルの文字の大きさ(部品の props)で、
+     ここの値はすべて本文に対する比(em か単位なし)。等幅の書体はコードと生の HTML に使う。 */
+  --font-family-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --md-line-height: 1.6;
+  --md-heading-line-height: 1.3;
+  --md-heading-gap: 1.2em;
+  --md-block-gap: 0.8em;
+  --md-indent: 1.6em;
+  --md-code-size: 0.9em;
+  --md-code-padding: 0.15em 0.35em;
+  --md-code-block-padding: 0.7em 0.9em;
+  --md-cell-padding: 0.35em 0.75em;
+  --md-quote-rule: 2px;
+  --md-heading-1: 1.6em;
+  --md-heading-2: 1.35em;
+  --md-heading-3: 1.15em;
+  --md-heading-4: 1em;
+  --md-heading-5: 0.92em;
+  --md-heading-6: 0.85em;
+
+  /* エディタとプレビューの地(M4.8。ADR-015 の 8)。不透明。ライトは面の白、ダークは左ペインの見かけの地。 */
+  --color-editor-bg: var(--color-surface);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-pane: #1f1f21;
+    --color-window-bg: rgba(30, 30, 32, var(--window-bg-alpha-dark));
+    --color-separator: rgba(255, 255, 255, 0.1);
+    --color-tabbar-bg: rgba(0, 0, 0, 0.28);
+    --color-tab-selected-bg: rgba(255, 255, 255, 0.12);
+    --color-button-bg: rgba(255, 255, 255, 0.12);
+    --shadow-control: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 0.5px 1.5px rgba(0, 0, 0, 0.4);
+    --color-section-title: rgba(255, 255, 255, 0.45);
+    --color-fg: #f5f5f7;
+    --color-muted: #a1a1a6;
+    --color-focus: #4c9bff;
+    --color-surface: #2c2c2e;
+    --color-highlight: #2f6fde;
+    --color-highlight-fg: #ffffff;
+    --color-danger: #ff6961;
+    --color-danger-fg: #1d1d1f;
+    --color-backdrop: rgba(0, 0, 0, 0.5);
+    --color-notice: #4a3b0c;
+    --color-notice-fg: #fbefc4;
+    --shadow-popup: 0 6px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1);
+    --color-selection-active: #2f6fde;
+    --color-selection-active-fg: #ffffff;
+    --color-selection-inactive: rgba(255, 255, 255, 0.11);
+    --color-control-hover: rgba(255, 255, 255, 0.08);
+    --color-focus-ring: rgba(76, 155, 255, 0.5);
+    --color-tree-icon: #98989d;
+    --color-tree-folder: #64a5ec;
+    --color-menu-bg: rgba(40, 40, 42, 0.94);
+    --color-menu-separator: rgba(255, 255, 255, 0.12);
+    --color-menu-shortcut: rgba(255, 255, 255, 0.5);
+    --color-menu-disabled: rgba(255, 255, 255, 0.28);
+    --shadow-menu: 0 8px 28px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.16);
+    --color-field-bg: #1e1e1e;
+    --color-field-fg: #f5f5f7;
+    --color-focus-ring-soft: rgba(76, 155, 255, 0.28);
+    --color-text-selection: rgba(76, 155, 255, 0.4);
+    --color-drop-target-bg: rgba(76, 155, 255, 0.16);
+    --color-drop-target-ring: rgba(76, 155, 255, 0.8);
+    --color-drag-ghost-bg: rgba(58, 58, 62, 0.82);
+    --color-drag-ghost-fg: #f5f5f7;
+    --shadow-drag-ghost: 0 3px 12px rgba(0, 0, 0, 0.45), 0 0 0 0.5px rgba(255, 255, 255, 0.16);
+    --color-copy-badge: #30d158;
+    --color-copy-badge-fg: #ffffff;
+    --color-tile-focus-ring: rgba(76, 155, 255, 0.9);
+    --color-attention: #0a84ff;
+    --color-attention-halo: rgba(10, 132, 255, 0.3);
+    --color-tile-title-hover: rgba(255, 255, 255, 0.05);
+    --color-segmented-bg: rgba(255, 255, 255, 0.07);
+    --color-segmented-selected-bg: rgba(255, 255, 255, 0.2);
+    --color-segmented-selected-fg: #f5f5f7;
+    --color-editor-bg: var(--color-pane);
+  }
+}
+
+/*
+ * プロジェクト色を持つ要素(カード、ツリーのヘッダ、タブ)。値は palette.ts の CSS の変数で、外観で使い分ける。
+ * 色は小さな丸い印(.project-dot)だけに使い、地は塗らない(FR-060 の「同じ色相で分かる」は印の色でそろえる)。
+ */
+.project-colored {
+  --project-accent: var(--project-accent-light);
+}
+
+@media (prefers-color-scheme: dark) {
+  .project-colored {
+    --project-accent: var(--project-accent-dark);
+  }
+}
+
+/* プロジェクト色の印(飾り。名前と同じ情報を持つので読み上げない)。 */
+.project-dot {
+  flex: none;
+  box-sizing: border-box;
+  width: var(--project-dot-size);
+  height: var(--project-dot-size);
+  border-radius: 50%;
+  background-color: var(--project-accent);
+}
+
+/* アテンションの印(小さな丸と淡い輪。TileTitleBar・PageControl)。 */
+.attention-dot {
+  flex: none;
+  box-sizing: border-box;
+  width: var(--attention-dot-size);
+  height: var(--attention-dot-size);
+  border-radius: 50%;
+  background-color: var(--color-attention);
+  box-shadow: 0 0 0 2px var(--color-attention-halo);
+}

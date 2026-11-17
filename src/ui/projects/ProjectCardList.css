@@ -1,0 +1,122 @@
+/*
+ * 左ペイン上段: 小見出し「プロジェクト」と +(フォルダを追加)、カードの一覧。一覧だけがスクロールする(FR-008)。
+ * macOS のサイドバー(Finder)の作法に寄せる: 地は塗らず(ウィンドウのすりガラス)、項目は行に近い高さ、
+ * プロジェクト色は小さな丸い印、選択は角の丸い淡い塗り、名前は 13px。色・寸法は src/ui/design/tokens.css のトークンを使う。
+ */
+.card-list-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* 小見出しの行(Finder のサイドバーの「よく使う項目」にならう小さな灰色の文字)。右端に道具のボタン。 */
+.sidebar-section {
+  display: flex;
+  flex: none;
+  align-items: center;
+  box-sizing: border-box;
+  height: var(--sidebar-section-height);
+  padding: 0 var(--space-1) 0 var(--space-3);
+}
+
+.sidebar-section__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-section-title);
+  font-size: var(--font-size-s);
+  font-weight: var(--font-weight-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0 var(--space-2) var(--space-2);
+  overflow-y: auto;
+  list-style: none;
+}
+
+/* 1 項目。高さは行に近い値に固定し、間は空けない(選択の塗りが隣と接しないよう上下に 1px の余白を内側に持つ)。 */
+.project-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--sidebar-item-height);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-m);
+  background: transparent;
+  color: var(--color-fg);
+  font: inherit;
+  font-size: var(--font-size-l);
+  text-align: left;
+  cursor: default;
+}
+
+.project-card:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
+}
+
+/* 選択中: 角の丸い淡い塗りと太字(色だけに頼らない)。 */
+.project-card--selected {
+  background: var(--color-selection-inactive);
+  font-weight: var(--font-weight-strong);
+}
+
+.project-card__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 見つからない: 名前を斜体の控えめな色にし、印を薄くし、「見つかりません」の小さな文字を出す。 */
+.project-card--missing .project-card__name {
+  color: var(--color-muted);
+  font-style: italic;
+}
+
+.project-card--missing .project-dot {
+  opacity: 0.45;
+}
+
+.project-card__badge {
+  flex: none;
+  color: var(--color-muted);
+  font-size: var(--font-size-s);
+  font-weight: 400;
+}
+
+/* プロジェクト 0 件の案内(一覧の代わりに出す)。主操作の「フォルダを追加」だけは文言のあるボタン。 */
+.projects-empty {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-1) var(--space-3) var(--space-3);
+  overflow-y: auto;
+  color: var(--color-muted);
+  font-size: var(--font-size-m);
+}
+
+.projects-empty__title {
+  margin: 0 0 var(--space-1);
+  color: var(--color-fg);
+  font-size: var(--font-size-l);
+  font-weight: var(--font-weight-strong);
+}
+
+.projects-empty__hint {
+  margin: 0;
+}
+
+.projects-empty__action {
+  margin-top: var(--space-3);
+}

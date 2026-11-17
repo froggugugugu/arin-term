@@ -1,0 +1,360 @@
+/*
+ * ウィンドウ全体の枠。色・余白・文字サイズは src/ui/design/tokens.css のトークンを使う。
+ * html・body・#root は地を塗らない(実アプリではウィンドウが透明で、向こうに macOS のすりガラスがある。ADR-010)。
+ * 地は .app-shell の半透明の淡い色と、ターミナルの置き場所を囲む 1 段(.terminal-area__panel・.tile__body)の半透明の黒
+ * (M4.7。ADR-014 の 2)。xterm.js の地は透明にしてあるので、その下の地が見える。
+ */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+}
+
+body {
+  overflow: hidden;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--color-window-bg);
+  color: var(--color-fg);
+  font-family: var(--font-family);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 上部の帯(macOS のツールバーにならう)。左に道具のボタン、右端にアプリ名・版・描画方式を小さく控えめに。 */
+.app-shell__header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  height: var(--header-height);
+  padding: 0 var(--space-3) 0 var(--space-2);
+  border-bottom: 1px solid var(--color-separator);
+}
+
+.app-shell__header p {
+  margin: 0;
+}
+
+/* 起動の失敗(帯の中で読めるように警告の色で 1 行。長い文は省略しない: 折り返して帯を広げる)。 */
+.app-shell__error {
+  min-width: 0;
+  color: var(--color-danger);
+  font-size: var(--font-size-m);
+}
+
+.app-shell__meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  margin-left: auto;
+  color: var(--color-muted);
+  font-size: var(--font-size-s);
+  white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.app-shell__name {
+  margin: 0;
+  font-size: var(--font-size-s);
+  font-weight: var(--font-weight-strong);
+}
+
+.app-shell__version {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 表示モードの切替は帯の右側(アプリ名の左)。アプリ名とのあいだは少しだけ空ける。 */
+.app-shell__display-mode {
+  margin-left: auto;
+}
+
+.app-shell__display-mode + .app-shell__meta {
+  margin-left: var(--space-2);
+}
+
+/*
+ * 区分けのボタン(macOS のセグメントのコントロールにならう)。淡い溝の中に区分けを並べ、選んだ区分けだけ明るい地と
+ * 控えめな影で浮かせる。区分けはアイコンだけ(意味は aria-label とツールチップ)。
+ */
+.segmented {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 1px;
+  padding: 1px;
+  border-radius: var(--radius-m);
+  background: var(--color-segmented-bg);
+}
+
+.segmented__item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--segmented-width);
+  height: var(--segmented-height);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--color-muted);
+}
+
+.segmented__item svg {
+  width: 14px;
+  height: 14px;
+}
+
+.segmented__item:hover:not(.segmented__item--selected) {
+  background: var(--color-control-hover);
+}
+
+.segmented__item--selected {
+  background: var(--color-segmented-selected-bg);
+  box-shadow: var(--shadow-control);
+  color: var(--color-segmented-selected-fg);
+}
+
+.segmented__item:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -1px;
+}
+
+/*
+ * 小さなアイコンのボタン(サイドバーの開閉、フォルダを追加。ツリーの下端の帯のボタンと同じ寸法と作法)。
+ * 地は塗らず、押せる場所は押したときの淡い塗りで示す。
+ */
+.icon-button {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-button-width);
+  height: var(--icon-button-height);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--color-muted);
+}
+
+.icon-button:hover {
+  background: var(--color-control-hover);
+}
+
+.icon-button:active {
+  background: var(--color-selection-inactive);
+}
+
+.icon-button:focus-visible,
+.button:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
+.icon-button:focus-visible {
+  outline-offset: -1px;
+}
+
+/* 押しボタン(ダイアログ、空の状態の主操作、見つからないときの案内)。macOS の標準のボタンにならう。 */
+.button {
+  box-sizing: border-box;
+  min-height: var(--button-height);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-m);
+  background: var(--color-button-bg);
+  box-shadow: var(--shadow-control);
+  color: var(--color-fg);
+  font: inherit;
+  font-size: var(--font-size-l);
+}
+
+.button--primary {
+  background: var(--color-highlight);
+  color: var(--color-highlight-fg);
+}
+
+.button--danger {
+  background: var(--color-danger);
+  color: var(--color-danger-fg);
+}
+
+/* 知らせ(1 行。長い文は省略し、全文はツールチップ)。 */
+.notice-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 2px var(--space-1) 2px var(--space-3);
+  border-bottom: 1px solid var(--color-separator);
+  background: var(--color-notice);
+  color: var(--color-notice-fg);
+  font-size: var(--font-size-m);
+}
+
+.notice-bar__text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notice-bar__close {
+  color: inherit;
+}
+
+/* ペインの分割。左ペインの幅とカード領域の高さは PaneSplit が表示値(computePaneLayout)を書き、残りは flex で埋める。 */
+.pane-split {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pane-sidebar {
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  box-sizing: border-box;
+  /* 地は塗らない(ウィンドウのすりガラスと .app-shell の淡い色がそのまま見える)。 */
+  border-right: 1px solid var(--color-separator);
+}
+
+.card-area {
+  flex: none;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tree-area {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-height: 0;
+  border-top: 1px solid var(--color-separator);
+}
+
+/*
+ * ツリーのヘッダ(選択中のプロジェクトの名前。ルートの行)。地は塗らず、カードと同じプロジェクト色の小さな丸い印を名前の前に置く。
+ * 印は下の行の開閉の印の列に、名前はアイコンの列にそろえる(TreeView.css の行の字下げと同じ幅)。
+ */
+.tree-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  height: var(--sidebar-item-height);
+  margin: 0;
+  padding: 0 var(--space-3) 0 11px;
+  overflow: hidden;
+  color: var(--color-fg);
+  font-size: var(--font-size-l);
+  font-weight: var(--font-weight-strong);
+  white-space: nowrap;
+}
+
+.tree-header__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-area__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.tree-missing {
+  padding: var(--space-3);
+  font-size: var(--font-size-m);
+}
+
+.tree-missing p {
+  margin: 0 0 var(--space-1);
+}
+
+.tree-missing__title {
+  font-weight: 600;
+}
+
+.tree-missing__path {
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+
+.tree-missing__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* 境界(当たり判定だけの細い帯。見た目の線はペインの枠線)。 */
+.divider {
+  position: absolute;
+  z-index: 10;
+  touch-action: none;
+}
+
+.divider--vertical {
+  top: 0;
+  bottom: 0;
+  width: var(--divider-hit);
+  margin-left: calc(var(--divider-hit) / -2);
+  cursor: col-resize;
+}
+
+.divider--horizontal {
+  right: 0;
+  left: 0;
+  height: var(--divider-hit);
+  margin-top: calc(var(--divider-hit) / -2);
+  cursor: row-resize;
+}
+
+.divider:hover,
+.divider:focus-visible {
+  outline: none;
+  background: var(--color-focus);
+  opacity: 0.5;
+}
+
+.pane-terminal {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.terminal-status {
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-size-m);
+}
+
+/*
+ * ターミナルの置き場所(タブ表示・タイル・拡大中)。地は塗らない: 囲む .terminal-area__panel・.tile__body が半透明の黒を
+ * 1 段だけ塗る(ここでも塗ると 2 段に重なって濃くなる。M4.7。ADR-014 の 2)。
+ */
+.terminal-host {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}

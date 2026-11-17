@@ -6,3 +6,14 @@ testreport/
 .agents/skills/*-workspace/
 .blueprint-migrate-backup/
 .claude/skills/*-workspace/
+
+# ビルドの生成物
+node_modules/
+target/
+dist/
+
+# テスト実行ツールが作る一時の出力
+.vitest/
+
+# scripts/package-mac.sh が作る配布物
+/release/

@@ -1,0 +1,52 @@
+/* 確認ダイアログ(モーダルの <dialog>)。 */
+.confirm-dialog {
+  box-sizing: border-box;
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: var(--space-4);
+  overflow-y: auto;
+  border: 0;
+  border-radius: var(--radius-m);
+  background: var(--color-surface);
+  color: var(--color-fg);
+  box-shadow: var(--shadow-popup);
+  font-size: var(--font-size-l);
+}
+
+.confirm-dialog::backdrop {
+  background: var(--color-backdrop);
+}
+
+.confirm-dialog__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-xl);
+  overflow-wrap: anywhere;
+}
+
+.confirm-dialog__body p {
+  margin: var(--space-2) 0;
+}
+
+.confirm-dialog__list {
+  max-height: 160px;
+  margin: var(--space-2) 0;
+  padding-left: var(--space-4);
+  overflow-y: auto;
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+/* 3 つ目のボタン(左端に離して置く)。 */
+.confirm-dialog__alternate {
+  margin-right: auto;
+}
+
+/* 取り返しはつくが既存を動かす操作(衝突の「置き換える」)。地は変えず、文字だけを警告の色にする。 */
+.button--destructive-text {
+  color: var(--color-danger);
+}

@@ -1,0 +1,102 @@
+/*
+ * ツリーのドラッグの見た目(T43d。Finder のドラッグにならう)。色は src/ui/design/tokens.css のトークン。
+ * - 写し: カーソルに付いて動く、アイコンと名前の小さな半透明の札(角丸・控えめな影)。⌥ のコピーでは左上に小さな「+」
+ * - 落とせる先: フォルダの行とヘッダ(ルート)はアクセント色の淡い塗りと細い輪、ターミナルの置き場所は内側の細い輪と淡い重ね
+ *   (落とせない先では何も付けない)
+ */
+
+/* ドラッグ中は、どこの上でもカーソルを矢印にし、文字の選択を起こさない(useTreeDrag が html 要素に付ける)。 */
+html.is-tree-dragging,
+html.is-tree-dragging * {
+  cursor: default !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+.tree-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  box-sizing: border-box;
+  max-width: 240px;
+  height: var(--tree-row-height);
+  padding: 0 var(--space-2) 0 6px;
+  border-radius: var(--radius-m);
+  background: var(--color-drag-ghost-bg);
+  box-shadow: var(--shadow-drag-ghost);
+  color: var(--color-drag-ghost-fg);
+  font-family: var(--font-family);
+  font-size: var(--font-size-l);
+  line-height: var(--tree-row-height);
+  opacity: 0.92;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  backdrop-filter: blur(12px) saturate(1.4);
+  will-change: transform;
+}
+
+.tree-drag-ghost__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-drag-ghost__badge {
+  position: absolute;
+  top: -5px;
+  left: -5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-copy-badge);
+  box-shadow: 0 0 0 1.5px var(--color-drag-ghost-bg), 0 1px 2px rgba(0, 0, 0, 0.2);
+  color: var(--color-copy-badge-fg);
+}
+
+/* フォルダの行(選択の塗りの代わりに、淡い塗りと細い輪)。 */
+.file-tree .tree-row--drop-target .tree-row__inner {
+  background: var(--color-drop-target-bg);
+  box-shadow: inset 0 0 0 1.5px var(--color-drop-target-ring);
+  color: var(--color-fg);
+}
+
+.file-tree .tree-row--drop-target :is(.tree-row__chevron, .tree-icon--file, .tree-icon__badge) {
+  color: var(--color-tree-icon);
+}
+
+.file-tree .tree-row--drop-target .tree-icon--folder {
+  color: var(--color-tree-folder);
+}
+
+/* ヘッダ(ルート)。地のプロジェクト色は変えず、内側の角の丸い形で示す(選択と同じ形)。 */
+.tree-header--drop-target::before {
+  position: absolute;
+  inset: 2px var(--space-1);
+  border-radius: var(--radius-s);
+  background: var(--color-drop-target-bg);
+  box-shadow: inset 0 0 0 1.5px var(--color-drop-target-ring);
+  content: "";
+}
+
+/* ターミナルの置き場所(xterm.js の要素の上に、操作を邪魔しない重ねを置く)。 */
+.terminal-host[data-drop-active="true"] {
+  position: relative;
+}
+
+.terminal-host[data-drop-active="true"]::after {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: var(--color-terminal-drop-overlay);
+  box-shadow: inset 0 0 0 2px var(--color-terminal-drop-ring);
+  content: "";
+  pointer-events: none;
+}

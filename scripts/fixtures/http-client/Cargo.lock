@@ -1,0 +1,51 @@
+version = 4
+
+# ワークスペースのメンバー(source が無い)から依存をたどる見本。
+# tauri → reqwest は例外(macOS では組み込まれない)として扱い、arin-platform → ureq を違反にする。
+
+[[package]]
+name = "arin"
+version = "0.1.0"
+dependencies = [
+ "arin-platform",
+ "tauri",
+]
+
+[[package]]
+name = "arin-platform"
+version = "0.1.0"
+dependencies = [
+ "ureq",
+]
+
+[[package]]
+name = "tauri"
+version = "2.12.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "http",
+ "reqwest",
+]
+
+[[package]]
+name = "http"
+version = "1.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "reqwest"
+version = "0.13.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "hyper",
+]
+
+[[package]]
+name = "hyper"
+version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "ureq"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"

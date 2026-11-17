@@ -1,0 +1,145 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+# v* の tag を push したときに、Apple silicon 向けの配布物を作り(Developer ID で署名・公証)、GitHub Releases に載せる:
+# Arin-<版>-arm64.dmg と Arin-<版>-arm64.zip(scripts/install.sh が入れるもの)。tadcap の release.yml を移したもの。
+# build はリポジトリを読むだけ(依存のコードを、書き込める token の隣で動かさない)。publish は contents: write を持つが
+# リポジトリのコードを動かさず、build が確かめたファイルを下書きに付けてから公開する(見えた時点で揃っている)。
+# 署名と公証の Secrets は Environment「release」にあり(docs/release-notarization.md §7)、キーチェーンと
+# 配布物を作るステップにだけ渡す。Environment は v* の tag だけに絞る。
+# Action はコミットの SHA で固定する(版はコメント)。ランナーのイメージも固定する。
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-26
+    environment: release
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version: 24, cache: npm }
+      - name: tag が package.json・tauri.conf.json・Cargo.toml(ワークスペース)の版と同じ
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          npm_v="$(node -p "require('./package.json').version")"
+          conf_v="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          cargo_v="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+          for v in "$npm_v" "$conf_v" "$cargo_v"; do
+            [ "$v" = "$want" ] || { echo "tag $GITHUB_REF_NAME does not match: package.json $npm_v, tauri.conf.json $conf_v, Cargo.toml $cargo_v"; exit 1; }
+          done
+      # ランナーには rustup が入っている。版と部品は rust-toolchain.toml のとおりに入る(ci.yml と同じ)。
+      - name: Rust のツールチェーン
+        run: |
+          rustup show
+          rustc --version
+      # 依存の install スクリプトは実行しない(必要とする依存が無い)。
+      - run: npm ci --ignore-scripts
+      - name: lint と単体・結合テスト
+        run: |
+          npm run lint
+          npm test
+      - name: THIRD_PARTY_LICENSES.md が依存と合っている(npm run licenses)
+        run: npm run licenses:check
+      # 署名の証明書を使い捨てのキーチェーンに入れて検索リストに加え、Tauri(app)と package-mac.sh(dmg)の
+      # 両方から見えるようにする。Tauri 自身の APPLE_CERTIFICATE の読み込みは使わない。.p12 とそのパスワードは
+      # このステップにだけ渡し、下のビルドには渡さない。
+      - name: 署名のキーチェーン
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD; do
+            [ -n "${!v}" ] || { echo "secret $v is missing in the release environment"; exit 1; }
+          done
+          kc="$RUNNER_TEMP/signing.keychain-db"
+          kc_pw="$(openssl rand -hex 24)"
+          security create-keychain -p "$kc_pw" "$kc"
+          security set-keychain-settings "$kc"   # 自動でロックしない(ビルドと 2 回の公証に時間がかかる)
+          security unlock-keychain -p "$kc_pw" "$kc"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -f pkcs12 -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          # Developer ID G2 の中間証明書が無いと証明書が信頼されず、codesign が署名 ID を見つけない。
+          # キーチェーンアクセスから書き出した .p12 にはふつう入っている。2 回読み込むと失敗する。
+          if ! security find-certificate -c "Developer ID Certification Authority" "$kc" > /dev/null 2>&1; then
+            g2="$RUNNER_TEMP/DeveloperIDG2CA.cer"
+            curl -fsSLo "$g2" https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
+            echo "f16cd3c54c7f83cea4bf1a3e6a0819c8aaa8e4a1528fd144715f350643d2df3a  $g2" | shasum -a 256 -c
+            security import "$g2" -k "$kc"
+          fi
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kc_pw" "$kc" > /dev/null
+          # shellcheck disable=SC2046  # いまの検索リストを 1 つずつの引数にする
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$kc"
+          security find-identity -v -p codesigning "$kc" | grep -qE '[1-9][0-9]* valid identities found' \
+            || { echo "no valid signing identity: the .p12 must hold the Developer ID Application certificate with its private key"; exit 1; }
+      # scripts/package-mac.sh は CI=true で tauri build を動かし(dmg は Finder の配置を飛ばす)、release/ に書く。
+      # APPLE_SIGNING_IDENTITY があれば app と dmg を署名・公証する。Tauri はビルドの途中で公証するので、
+      # API キーのファイルとロック解除したキーチェーンは依存のコードが動くあいだもある(docs/release-notarization.md §7)。
+      - name: 配布物を作り、署名・公証する
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          for v in APPLE_SIGNING_IDENTITY APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_P8; do
+            [ -n "${!v}" ] || { echo "secret $v is missing in the release environment"; exit 1; }
+          done
+          security find-identity -v -p codesigning | grep -qF "\"$APPLE_SIGNING_IDENTITY\"" \
+            || { echo "APPLE_SIGNING_IDENTITY does not match the imported certificate (no quotes or extra spaces around it)"; exit 1; }
+          export APPLE_API_KEY_PATH="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY.p8"
+          trap 'rm -f "$APPLE_API_KEY_PATH"' EXIT
+          printf '%s' "$APPLE_API_KEY_P8" > "$APPLE_API_KEY_PATH"
+          unset APPLE_API_KEY_P8
+          npm run dist:mac
+      - name: 署名のキーチェーンを消す
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+      - name: dmg と中の app が公証済みで壊れていない(署名が壊れると macOS は「壊れている」と出す)
+        run: |
+          dmg="$(ls release/Arin-*-arm64.dmg)"
+          xcrun stapler validate "$dmg"
+          out="$(spctl -a -vv -t install "$dmg" 2>&1 || true)"; echo "$out"; grep -q 'source=Notarized Developer ID' <<< "$out"
+          mnt="$(mktemp -d)"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "$dmg"
+          codesign --verify --deep --strict --verbose=2 "$mnt/Arin.app"
+          out="$(spctl -a -vv "$mnt/Arin.app" 2>&1 || true)"; echo "$out"; grep -q 'source=Notarized Developer ID' <<< "$out"
+          hdiutil detach "$mnt"
+      - name: インストーラが、作った app を署名を保ったまま置く
+        run: |
+          dir="$(mktemp -d)"
+          ARIN_INSTALL_ZIP="$(ls release/Arin-*-arm64.zip)" ARIN_INSTALL_APP_DIR="$dir" ARIN_INSTALL_NO_OPEN=1 bash scripts/install.sh
+          codesign --verify --deep --strict "$dir/Arin.app"
+          xcrun stapler validate "$dir/Arin.app"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$dir/Arin.app/Contents/Info.plist")" = "${GITHUB_REF_NAME#v}"
+      - name: app にライセンスの表示が入っている
+        run: |
+          res="target/aarch64-apple-darwin/release/bundle/macos/Arin.app/Contents/Resources"
+          for f in LICENSE.txt THIRD_PARTY_NOTICES.md THIRD_PARTY_LICENSES.md; do test -s "$res/licenses/$f"; done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mac
+          if-no-files-found: error
+          path: |
+            release/*.dmg
+            release/*.zip
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: { name: mac, path: release }
+      - name: dmg と zip を付けた下書きを作ってから公開する
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/*.dmg release/*.zip --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "$GITHUB_REF_NAME" --generate-notes
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+        env: { GH_TOKEN: "${{ github.token }}" }

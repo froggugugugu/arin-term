@@ -1,0 +1,148 @@
+# ADR-007: M3 のゴミ箱の方式、アプリ内のドラッグ、ツリーの仮想スクロール、M3 で足す依存
+
+- ステータス: Proposed((a) は方式 1 で実装したが「戻す」の目視は本人の確認待ち【仮定】。(b)・(c) は【仮定】で進め、本人の了承は M3 の完了確認 T45 で求める)
+- 日付: 2026-11-15
+- 決定者: AI(司令塔とサブエージェント。計画 T37)。(a) の結果の記入と (b) の実機の確認は司令塔と本人
+- 関連: `ARCH_multi-terminal.md` §1.3 #7・#11・#13、§1.4 #8・#14・#15・#19、§5.4、§7.1「外部でのファイル変更」「ファイル操作」、§7.3、§9.1、§10.2、§12、§15.2 #8、§15.3 #3・#4。PRD FR-013〜018、024〜030、035〜037、NFR-005、C6・C7。ADR-002・003・006・009。計画 T37
+
+## コンテキスト
+
+M3 ではツリーとファイル操作を作る。設計書は次の 3 つを「M3 の最初に確かめる・決める」としていた。
+
+1. ゴミ箱に入れた項目を Finder の「戻す」で戻せるか(FR-028 の AC。§15.3 #3)。標準の API(`NSFileManager` の `trashItemAtURL`)は、一部の環境で「戻す」が出ないと `trash` クレート 5.3.0 の文書が書いている(§1.4 #15)
+2. アプリ内のドラッグ(ツリーからターミナルへの挿入=FR-016、ツリー内の移動とコピー=FR-029)をどう作るか(§15.3 #4)
+3. ツリーの仮想スクロールを自作するか、React 用のライブラリを使うか(§9.1)
+
+あわせて、M3 で足す Rust の依存(ファイル監視の `notify`)を記録する。
+
+守る決まり:
+
+- 依存は最小限にし、理由を ADR に残す(PRD C6)。版は正確に固定する(npm は `^` なし、Cargo は `=`)。新しく選ぶ版は公開から 2 週間未満のものを避ける(ADR-003、`docs/development-patterns.md` §4)
+- 純粋なロジックは `src/logic`(DOM も React も使わない)に置き、カバレッジ 80% を課す(ADR-002・006)。React の部品の単体テストは書かない(ADR-003)
+- ファイルを失わない。上書きしない API だけを使い、削除はゴミ箱だけ(§1.3 #11、FR-028・030)
+
+## 判断
+
+### (a) ゴミ箱に入れる方式と Finder の「戻す」
+
+**方式 1 で実装した【仮定】。** 司令塔が実機で方式 1・2 を試し、どちらも成功した(2026-11-15)。Finder の「戻す」の目視は本人の確認待ち。あとで方式を差し替えられるよう、OS に頼む部分は `arin-platform/src/fs/trash.rs` の `request_trash` の 1 つの関数に閉じ込めた(計画 T40c)。
+
+試す順(§15.3 #3):
+
+| 順 | 方式 | 見込み | 結果 |
+| -- | ---- | ------ | ---- |
+| 1 | `NSFileManager` の `trashItemAtURL:resultingItemURL:error:`(`objc2-foundation`) | 権限の確認が要らない。ゴミ箱の中の移動先(`resultingItemURL`)が返る(取り消し=FR-032 を作りやすい)。「戻す」が出ない環境がある(§1.4 #15) | 成功。一時フォルダのファイルが `~/.Trash/` の下へ移り、行き先の URL が返った(司令塔)。T40c の `#[ignore]` のテストでもファイル・フォルダ・リンクで成功 |
+| 2 | `NSWorkspace` の `recycleURLs:completionHandler:`(`objc2-app-kit`) | 権限の確認が要らない見込み。完了は非同期で返る。移動先が返るかは未確認 | 成功。`~/.Trash/` の下の行き先の URL が返った(司令塔) |
+| 3 | Finder に頼む(Apple Events で Finder の `delete`) | 「戻す」が出る。初回に自動操作の許可の確認が出る。署名済みの `.app` ではエンタイトルメント(`com.apple.security.automation.apple-events`)が要る見込み(§15.3 #2 の B。M5 に影響する) | 試していない(方式 1・2 が成功したため) |
+
+結果を書く欄(司令塔が記入する):
+
+- 採る方式: 方式 1(`NSFileManager` の `trashItemAtURL:resultingItemURL:error:`)【仮定】。「戻す」が出ないと分かったら方式 2・3 と比べ直す
+- 確かめた環境(macOS の版、ボリュームの種類): macOS 26.5.2、起動ボリューム(APFS)の一時フォルダ(`/private/var/folders/…`)。外付けのボリューム(`.Trashes`)は確かめていない
+- 「戻す」が出たか(人間が Finder で目で見た): 未(本人の確認待ち。`~/.Trash` はシステムの保護でプロセスから一覧を読めず、自動では確かめられない)
+- ゴミ箱の中の移動先が分かるか(FR-032 の取り消しに使う。M6): 分かる(方式 1・2 とも `~/.Trash/<名前>` が返る)
+- 片付け: 検証とテストはゴミ箱の中のものを消さない(`~/.Trash` は保護されていて、ほかの項目を巻き込む危険がある)。入れた項目は名前を報告し、本人が片付ける。計画 T40c の「テストが入れた項目だけを片付ける」はこの理由で行わない
+
+どの方式でも変わらないこと:
+
+- ゴミ箱は `arin-core/ports` の `FileSystemPort` の 1 つの操作(`trash`)にし、実装は `arin-platform/src/fs/` に閉じる(§5.4)。`arin-core` は方式を知らない
+- ツリーの操作に、ゴミ箱を経由しない削除を作らない(FR-028)。「置き換える」(FR-030)も既存をゴミ箱に入れてから置く(§1.3 #11)
+- 自動テストで本物のゴミ箱を使うテストは、テスト自身が入れた項目だけを片付ける(§10.2)。片付けに失敗したら、残った項目の名前を標準エラーに出して失敗にする(黙って残さない)
+- 方式 3 を採る場合は、Finder が動いていないとき・許可が拒否されたときの失敗を「ゴミ箱に入れられませんでした」として画面に出し、ほかの方式で消すことはしない(勝手に別の方式へ切り替えない)【仮定】
+
+### (b) アプリ内のドラッグ: pointer のイベントで自前に作る【仮定】
+
+ツリー内の移動・コピー(FR-029)と、ツリーからターミナルへのパスの挿入(FR-016)は、pointer のイベント(`pointerdown`・`pointermove`・`pointerup`、`pointercancel`)で自前に作る。HTML 標準のドラッグ&ドロップ(`draggable`、`dragstart`・`dragover`・`drop`)は使わない。
+
+理由:
+
+- Tauri が Finder からのドロップを受ける設定(既定。M2 で Finder からのフォルダの登録に使っている)のとき、macOS ではドラッグの受け口が WebKit の既定処理を呼ばずに戻る。HTML 標準のドロップは画面に届かない見込み(§1.4 #8。wry 0.57.2 `src/wkwebview/drag_drop.rs` と tauri-runtime-wry 2.12.3 のソースで確認。実機では未実行)
+- Finder からのドロップを受ける設定を切ると、M2 の FR-001(Finder からのドロップで登録)が壊れる
+- 自前なら、ドラッグの状態(開始のしきい値、ドロップ先の判定、⌥ でコピー)を `src/logic/dnd` の純粋な関数にでき、Vitest で網羅できる(ADR-002)。ドラッグ中の更新の保留(FR-037)も同じ状態から決められる
+
+作り方の要点(計画 T41b・T43d):
+
+- 開始のしきい値を超えて動いたらドラッグを始める(しきい値は 4px【仮定】)。それまではクリックとして扱う
+- 押した行に `setPointerCapture` を付け、離した位置の要素(`document.elementFromPoint`)からドロップ先を決める。ドロップ先の目印は `data-` 属性(ツリーのフォルダ行、ツリーのヘッダ=ルート、ターミナルの置き場所)【仮定】
+- ⌥ は離したときの `altKey` で決める(FR-029)。Esc で取り消す
+- xterm.js の要素は React の管理の外にある(ADR-003)。ターミナルの置き場所(`TerminalHost`)の要素をドロップ先にし、xterm.js の要素には手を入れない
+
+確かめる範囲:
+
+| 範囲 | どこで | 何を |
+| ---- | ------ | ---- |
+| ドラッグの状態の規則 | Vitest(`src/logic/dnd`) | しきい値、ドロップ先の判定(フォルダ・ファイルの親・ルート・ターミナル・自分自身と子孫は不可)、⌥ でコピー、Esc |
+| 画面の操作 | Playwright(WebKit。`page.mouse` の down・move・up) | ツリー内で移動の確認が出る、⌥ でコピーのコマンドが呼ばれる、ターミナルの置き場所に落とすと挿入のコマンドが呼ばれる、ドラッグ中に届いた変更が離すまで行に反映されない(AC-T25) |
+| 実機の WKWebView | 本人(M3 の完了確認 T45) | ツリーからターミナルへ、ツリー内で、実際のマウスとトラックパッドで成り立つ。HTML 標準のドロップが届かないこと(§1.4 #8)は、自前の実装を採るので確かめなくてもよいが、気づいたことがあれば書く |
+
+Playwright の WebKit は macOS 標準の WKWebView とは別のビルドで、Tauri のドラッグの受け口も通らない(§10.3)。自動テストが通っても実機で崩れることがあるので、実機の確認を T45 の人間の項目に入れる。
+
+### (c) ツリーの仮想スクロール: 依存を足さずに自作する(固定の行の高さでの窓掛け)【仮定】
+
+比べたもの:
+
+| 観点 | 自作(固定の行の高さでの窓掛け) | React 用のライブラリ(例: `@tanstack/react-virtual`) |
+| ---- | -------------------------------- | ---------------------------------------------------- |
+| 行の高さ | ツリーの行は 1 行で、高さを 1 つに固定できる(PRD §6.1 の図、§6.2 のカードと同じく 1 行)。固定なら、見える範囲は `scrollTop ÷ 行の高さ` の割り算だけで決まる | 可変の高さと計測に対応する。固定の高さでは、その機能を使わない |
+| NFR-005(10 万ファイル) | 計算は表示中の行の数(数十)に比例し、全体の行数に比例しない。行の並び(展開中のフォルダを平らにしたもの)は `src/logic/tree` が持つ | 同じく見える行だけを描く。性能の差は出ない見込み(未計測) |
+| 依存の決まり(版の正確な固定、公開から 2 週間未満を避ける、ADR-003) | 依存が増えない。確かめ直す手間が無い | 依存が 1 つ以上増える。版と公開日、推移的な依存を、入れるときと上げるたびに確かめる。**この ADR を書いた環境では版も公開日も確かめていない** |
+| ライセンス | 問題なし(自作) | 入れるときに `/legal-check` で確かめる(この ADR では確かめていない) |
+| テストのしやすさ | 窓の計算(見える範囲、上下の余白、余分に描く行の数、選択した行を見える位置へ動かす量)を `src/logic/tree` の純粋な関数に置け、Vitest とカバレッジ 80% の対象になる | 計算がライブラリの中にあり、React の部品の中で動くので、`src/logic` に置けない。部品の単体テストは書かない決まり(ADR-003)なので、確かめるのは Playwright だけになる |
+| 書く量 | 窓の計算と、上下の余白を持つ 1 つの部品。数十行の見込み | 少ない |
+
+判断: **自作する。** 行の高さを 1 つに固定し(値は `src/ui/design/tokens.css` に置く。22px を初期値とする【仮定】)、見える範囲の計算を `src/logic/tree` の純粋な関数にする。React の部品(`src/ui/tree`)は、計算の結果の範囲の行と、上下の余白だけを描く。
+
+これが【仮定】である点: 行の高さを固定にできる前提で決めた。インライン編集の入力欄も同じ高さに収める。将来、行の高さを可変にする要望(複数行の表示など)が出たら見直す。NFR-005 の計測(計画 T44a)で展開が目安を大きく超えたら、原因(Rust でのフォルダの読み込み、通信、平らにする処理、描画)を切り分けてから、ライブラリを含めて考え直す。
+
+### M3 で足す依存
+
+| 依存 | 使うところ | 方針 | 版 |
+| ---- | ---------- | ---- | -- |
+| `notify`(FSEvents。PRD C7) | `arin-platform/src/watch/`(計画 T40b) | 設計書は「8.2 系」と書いている(§2、§5.4)。**正確な版は実装のときに `cargo search notify` と crates.io の公開日で確かめ、公開から 2 週間未満の版を避けて `=` で固定する。** 推移的に増えるクレートを `git diff Cargo.lock` で数え、`cargo tree -i reqwest --target aarch64-apple-darwin` で通信のクレートが増えていないことを確かめて、下の「追記」に書く。既定の feature のうち FSEvents 以外(`kqueue` など)を切れるかも確かめる | 実装のときに記入 |
+| `objc2-foundation`・`objc2-app-kit` の feature の追加 | ゴミ箱(方式 1・2)、Finder で表示・既定のアプリで開く(`NSWorkspace`)、ファイルの URL のペーストボード(FR-027) | 版は変えない(=0.3.2。ADR-009)。足す feature を Tauri がすでに有効にしているか `cargo tree -e features -i <クレート> --target aarch64-apple-darwin` で確かめ、下の「追記」に書く | 変えない |
+| `libc` | 上書きしない移動・コピー(`renamex_np` の `RENAME_EXCL`、`copyfile` の `COPYFILE_EXCL`) | 版は変えない(=0.2.191。§1.4 #14 で定義を確認済み) | 変えない |
+
+画面側(npm)には依存を足さない((c) の判断)。
+
+`notify` の依存が多すぎる(推移的に増えるクレートが多い、通信やビルド時のコード生成を含む)と分かったら、`notify` を入れずに FSEvents を `objc2` 系から直接呼ぶ案と比べ、本人に選んでもらう(計画 T40b)。
+
+## 検討した代替案
+
+| 案 | 採らなかった理由 |
+| -- | ---------------- |
+| (b) HTML 標準のドラッグ&ドロップ | Tauri が Finder からのドロップを受ける設定では、画面に届かない見込み(§1.4 #8)。受ける設定を切ると FR-001 のドロップでの登録が壊れる |
+| (b) ツリーのドラッグをすべて macOS のドラッグで始める | Finder・他アプリへのドラッグ(FR-031。M6)のための案(§15.3 #5 の B)。M3 では要らず、Rust から始める仕組み(`tauri-plugin-drag` か `objc2-app-kit`)が未検証 |
+| (c) React 用の仮想スクロールのライブラリ | 上の表。固定の行の高さでは利点が少なく、依存と確かめる手間が増え、計算を `src/logic` に置けない |
+| (c) 仮想スクロールをしない(全行を描く) | 10 万ファイルを展開すると行の数に比例して重くなる(NFR-005、§7.3) |
+| ゴミ箱に `trash` クレートを使う | クレートが増える。中で呼ぶのは同じ API で、方式 1〜3 を `objc2` 系で直接書けば足りる(ADR-009 と同じ考え方)。(a) の結果で方式 3 を採る場合も、Apple Events を直接送る |
+
+## 影響
+
+- (a) の結果が出るまで、計画の T40c(ゴミ箱)とそれに依存するタスク(T42c 以降)は始めない。方式 3 を採ると、エンタイトルメント(§15.3 #2)が M5 の T51 で要る
+- (b) の作り方は、M4 のタイル表示(別のプロジェクトのターミナルへのドロップ。§15.2 #6)と M6 の Finder・他アプリへのドラッグ(FR-031、§15.3 #5)の土台になる。M6 では、ウィンドウの外へ出たときに macOS のドラッグへ切り替える案(§15.3 #5 の A)と組み合わせられる
+- (c) により、ツリーの行の高さは 1 つに固定される。表示の密度を変える設定は作らない
+- 見直す条件: (a) は OS の更新で「戻す」の出方が変わったとき。(b) は実機の確認(T45)で pointer のイベントがターミナルの上で途切れるなどの不具合が出たとき。(c) は NFR-005 の計測が目安を大きく超えたとき、行の高さを可変にする要望が出たとき
+
+## 追記(実装のときに書く)
+
+- T40b(2026-11-15):
+  - 版: `notify` =8.2.1(2026-10-25 公開、CC0-1.0)。最新の 8.2.2 は 2026-11-08 公開で 2 週間未満のため避けた。9.0.0 は rc のため使わない
+  - feature: `default-features = false`、`macos_fsevent` だけ(既定と同じ。`kqueue`・`mio`・`crossbeam-channel`・`flume`・`serde` は入れない)
+  - 推移的な `notify-types`(要求 `^2.0.0`)は、最新の 2.3.0 が 2026-11-09 公開で 2 週間未満のため、`cargo update -p notify-types --precise 2.1.0` で 2.1.0(2026-01-25 公開、MIT OR Apache-2.0)に止めた。Cargo.toml では固定できないので、`cargo update` のときに上がらないか確かめる【仮定】
+  - `Cargo.lock` に増えたクレート: 7 個(`notify` 8.2.1、`notify-types` 2.1.0、`objc2-core-services` 0.3.2(2025-10-04、Zlib OR Apache-2.0 OR MIT)、`inotify` 0.11.5(ISC)、`inotify-sys` 0.1.8(ISC)、`kqueue` 1.2.1(MIT)、`kqueue-sys` 1.1.2(MIT))。aarch64-apple-darwin で組み込まれるのは前の 3 個だけ(`inotify` 系は Linux・Android、`kqueue` 系は BSD・iOS のときだけ。Lock は全 OS の依存を載せる)。ほかの依存(`objc2-core-foundation` 0.3.2、`bitflags` 2.13.2、`libc` 0.2.191、`log`、`walkdir`、`mio`、`windows-sys` 0.61.2)は既に Lock にある版にそろい、二重にならない。`objc2-core-services` は Tauri は使っていない(新規)
+  - 通信: `cargo tree -i reqwest --target aarch64-apple-darwin` は「nothing to print」(空)。`node scripts/check-boundaries.mjs` の http-client-crate は OK。ビルド時のコード生成(build.rs・proc-macro)は増えていない
+  - 作り方: `notify` の FSEvents は待ち時間 0・ファイル単位のイベント(`kFSEventStreamCreateFlagFileEvents | NoDefer`)で張るので、`arin-platform/src/watch/fsevents.rs` の束ねるスレッドで 0.2 秒まとめて受け口へ渡す。届くパスは変わった項目そのものの実パス(`/var/...` で張っても `/private/var/...` で届く)
+  - FSEvents を `objc2-core-services` で直接呼ぶ案は採らなかった(どちらでも `objc2-core-services` は増える。`notify` で増えて組み込まれるのは 2 個だけで、止める処理(run loop の停止と join)を自前で書かずに済む)
+- T40d(2026-11-15):
+  - feature: `objc2-app-kit` =0.3.2 に `NSWorkspace`(Finder で表示・既定のアプリで開く)と `NSPasteboardItem`(ペーストボードの項目ごとの読み取り)を足した。版は変えていない。`objc2-foundation` の宣言は変えていない(`NSWorkspace` が `NSAppleEventDescriptor`・`NSFileManager` などの feature を推移的に有効にする)
+  - Tauri がすでに有効にしていたか: どちらも**有効にしていなかった**(`cargo tree -e features -i objc2-app-kit --target aarch64-apple-darwin` に `NSWorkspace`・`NSPasteboardItem` が無い。`NSPasteboard` はある)。`objc2-foundation` の `NSAppleEventDescriptor`・`NSFileManager` も新しく有効になった
+  - `Cargo.lock` は変わらない(クレートは増えない)。`cargo tree -i reqwest --target aarch64-apple-darwin` は「nothing to print」(空)。`node scripts/check-boundaries.mjs` は違反なし
+  - 作り方: `arin-platform/src/desktop/workspace.rs`(`MacDesktop`。`activateFileViewerSelectingURLs:`・`openURL:`)、`desktop/file_pasteboard.rs`(`MacFilePasteboard`。`writeObjects:` に `NSURL` を 1 つずつ、読むときは項目ごとの `public.file-url`)。どちらもメインスレッドを求めない
+  - 落とし穴: `NSURL::fileURLWithPath` は名前を NFD に変える(`ダ` → `タ` + 濁点)。そのままペーストボードに書くと、貼り付け先で名前の違うファイルができる。URL はパスのバイト列を百分率符号化して `URLWithString` で作る(フォルダは Finder と同じく末尾に `/`)
+  - 無いパスと相対パスは OS に渡す前に失敗にする。`activateFileViewerSelectingURLs:` は戻り値が無く、Finder が受け付けなかったことを知れない
+- T40c(2026-11-15):
+  - feature: `objc2-foundation` =0.3.2 の宣言に `NSFileManager` を足した(版は変えていない)。T40d の `objc2-app-kit` の `NSWorkspace` がすでに推移的に有効にしていた(`cargo tree -e features -i objc2-foundation --target aarch64-apple-darwin` で `NSFileManager` ← `objc2-app-kit feature "NSWorkspace"`)が、直接使うので明示した。Tauri 自身は有効にしていなかった(T40d の追記)。`Cargo.lock` は変わらない
+  - 作り方: `arin-platform/src/fs/trash.rs`。OS に頼む前に、絶対パス・`..` を含まない・名前がある・UTF-8・項目そのものがある(リンクはたどらない)を確かめる。パスは要素から組み直して末尾の `/` を落とす(残すとリンクの先のフォルダを指す)。シンボリックリンクはリンク自体を入れる(URL の末尾に `/` を付けない)。URL は `desktop::file_url_from_str`(パスのバイト列を百分率符号化)で作る。入れられなかったら失敗をそのまま返し、削除や別の方式に切り替えない。調べたあとに消されていた(`NSCocoaErrorDomain` の 4)ときは「見つからない」
+  - 日本語の名前: `arin-test-trash-<pid>-<n>-ダミー.txt`(NFC)を入れると、返った行き先の名前はバイト列で元と同じ(NFD に変わらない)
+  - スレッド: どのスレッドからでも呼べる(`MainThreadMarker` を求めない)。同期の処理なのでメインスレッドの外から呼ぶ
+  - 本物のゴミ箱のテスト: `crates/arin-platform/tests/trash.rs` の `#[ignore]` の 3 つ(`cargo test -p arin-platform --test trash -- --ignored --nocapture`)。入れた項目と行き先を `[arin:test-trash]` で標準エラーに出す。ゴミ箱の中は消さない

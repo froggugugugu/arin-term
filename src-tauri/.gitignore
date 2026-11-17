@@ -1,0 +1,2 @@
+# Tauri がビルドのたびに生成する、capabilities の補完用スキーマ
+/gen/schemas

@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Arin — ターミナルとツリーだけを、プロジェクトの数だけ。</title>
+    <meta name="description" content="Arin は macOS 向けの軽いマルチターミナルです。プロジェクトごとのターミナルとファイルツリーを 1 つのウィンドウにまとめ、タイル表示で並べて見られます。外部と通信しません。MIT ライセンス。" />
+    <meta property="og:title" content="Arin — ターミナルとツリーだけを、プロジェクトの数だけ。" />
+    <meta property="og:description" content="プロジェクトごとのターミナルとファイルツリーを 1 つのウィンドウに。macOS 向けの軽いマルチターミナル。" />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="https://froggugugugu.github.io/arin-term/docs/media/tabs-light.png" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="docs/media/icon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="docs/media/icon.png" />
+    <!--
+      スクリプト・外部のフォント・外部のスタイルシートを使わない、素の HTML と CSS だけのページ。
+      色はアプリの src/ui/design/tokens.css と同じ値(文字 #1d1d1f / #f5f5f7、補助の文字 #6e6e73 / #a1a1a6、
+      アクセント #0a64d8 / #4c9bff)。アクセントは 1 色だけ。
+    -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --bg-soft: #f6f6f7;
+        --fg: #1d1d1f;
+        --muted: #6e6e73;
+        --rule: rgba(0, 0, 0, 0.1);
+        --accent: #0a64d8;
+        --code-bg: #f6f6f7;
+        --shot-ring: rgba(0, 0, 0, 0.12);
+        --shot-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.25);
+        --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro JP", "Hiragino Sans",
+          "Hiragino Kaku Gothic ProN", "Helvetica Neue", sans-serif;
+        --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro JP", "Hiragino Sans",
+          "Hiragino Kaku Gothic ProN", "Helvetica Neue", sans-serif;
+        --mono: ui-monospace, "SF Mono", Menlo, monospace;
+        --gutter: clamp(20px, 5vw, 48px);
+        --wide: 1120px;
+        --text: 34rem;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #000000;
+          --bg-soft: #161617;
+          --fg: #f5f5f7;
+          --muted: #a1a1a6;
+          --rule: rgba(255, 255, 255, 0.14);
+          --accent: #4c9bff;
+          --code-bg: #1c1c1e;
+          --shot-ring: rgba(255, 255, 255, 0.14);
+          --shot-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
+        }
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      html {
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: var(--font);
+        font-size: 17px;
+        line-height: 1.8;
+        letter-spacing: 0.01em;
+        -webkit-font-smoothing: antialiased;
+        line-break: strict;
+        overflow-wrap: anywhere;
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+        text-underline-offset: 0.2em;
+      }
+      a:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+        border-radius: 4px;
+      }
+      img {
+        display: block;
+        max-width: 100%;
+        height: auto;
+      }
+      h1,
+      h2,
+      h3 {
+        font-family: var(--font-display);
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        text-wrap: balance;
+        margin: 0;
+      }
+      p {
+        margin: 0;
+        text-wrap: pretty;
+      }
+      /* 見出しは文節(.ph)の切れ目でだけ折り返す(日本語の語の途中で行を割らない)。 */
+      .ph {
+        display: inline-block;
+      }
+
+      .wrap {
+        width: 100%;
+        max-width: calc(var(--wide) + var(--gutter) * 2);
+        margin: 0 auto;
+        padding: 0 var(--gutter);
+      }
+
+      /* 上の帯 */
+      .bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        height: 52px;
+        border-bottom: 1px solid var(--rule);
+        font-size: 14px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--fg);
+        font-weight: 600;
+      }
+      .brand img {
+        width: 22px;
+        height: 22px;
+        border-radius: 5px;
+      }
+      .bar nav {
+        display: flex;
+        gap: 24px;
+      }
+      .bar nav a {
+        color: var(--muted);
+      }
+      .bar nav a:hover {
+        color: var(--fg);
+        text-decoration: none;
+      }
+
+      /* 冒頭 */
+      .hero {
+        padding-top: clamp(72px, 12vw, 136px);
+        padding-bottom: clamp(48px, 7vw, 72px);
+        text-align: center;
+      }
+      .hero h1 {
+        font-size: clamp(56px, 11vw, 112px);
+        line-height: 1;
+        letter-spacing: -0.035em;
+      }
+      .hero .lead {
+        margin: 28px auto 0;
+        max-width: 22em;
+        font-family: var(--font-display);
+        font-size: clamp(22px, 3.4vw, 32px);
+        line-height: 1.45;
+        font-weight: 600;
+        letter-spacing: 0;
+      }
+      .hero .sub {
+        margin: 20px auto 0;
+        max-width: var(--text);
+        color: var(--muted);
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 12px 32px;
+        margin-top: 36px;
+        font-size: 17px;
+      }
+      .actions a::after {
+        content: " ›";
+      }
+
+      /* スクリーンショット */
+      .shot {
+        margin: 0;
+      }
+      .shot img {
+        width: 100%;
+        border-radius: 12px;
+        box-shadow: 0 0 0 1px var(--shot-ring), var(--shot-shadow);
+      }
+      .shot figcaption {
+        margin-top: 16px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+        text-align: center;
+      }
+
+      /* 機能の節 */
+      /* .wrap の左右の余白を消さないよう、上だけを指定する。 */
+      .feature {
+        padding-top: clamp(88px, 12vw, 160px);
+      }
+      .feature header {
+        max-width: 44rem;
+        margin: 0 auto clamp(36px, 5vw, 56px);
+        text-align: center;
+      }
+      .eyebrow {
+        display: block;
+        margin-bottom: 12px;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+      }
+      .feature h2 {
+        font-size: clamp(30px, 5vw, 48px);
+        line-height: 1.25;
+      }
+      .feature header p {
+        max-width: var(--text);
+        margin: 20px auto 0;
+        color: var(--muted);
+      }
+      kbd {
+        font-family: var(--font);
+        font-size: 0.92em;
+        color: var(--fg);
+        white-space: nowrap;
+      }
+
+      /* 項目の並び(罫線で区切るだけ。箱にしない) */
+      .points {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 0 48px;
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 0;
+        list-style: none;
+      }
+      .points li {
+        padding: 22px 0;
+        border-top: 1px solid var(--rule);
+      }
+      .points h3 {
+        font-size: 17px;
+        line-height: 1.5;
+      }
+      .points p {
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.75;
+      }
+
+      /* 帯(地の色を変える節) */
+      .band {
+        margin-top: clamp(88px, 12vw, 160px);
+        padding: clamp(72px, 10vw, 120px) 0;
+        background: var(--bg-soft);
+      }
+      .band .feature {
+        padding-top: 0;
+      }
+
+      /* インストール */
+      .install {
+        max-width: 720px;
+        margin: 0 auto;
+      }
+      .install pre {
+        margin: 0;
+        padding: 18px 22px;
+        overflow-x: auto;
+        background: var(--code-bg);
+        border-radius: 10px;
+        box-shadow: 0 0 0 1px var(--rule);
+        font-family: var(--mono);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      .install pre code {
+        user-select: all;
+        -webkit-user-select: all;
+      }
+      .install .note {
+        margin-top: 14px;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+      .install dl {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 10px 28px;
+        margin: 40px 0 0;
+        font-size: 15px;
+      }
+      .install dt {
+        color: var(--muted);
+      }
+      .install dd {
+        margin: 0;
+      }
+
+      /* 作られ方 */
+      .made {
+        max-width: var(--text);
+        margin: 0 auto;
+      }
+      .made p + p {
+        margin-top: 16px;
+      }
+      .made ol {
+        margin: 32px 0 0;
+        padding: 0;
+        list-style: none;
+        counter-reset: step;
+        font-size: 15px;
+      }
+      .made li {
+        display: grid;
+        grid-template-columns: 2em 1fr;
+        padding: 12px 0;
+        border-top: 1px solid var(--rule);
+        counter-increment: step;
+      }
+      .made li::before {
+        content: counter(step);
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .made li span {
+        color: var(--muted);
+      }
+      .made code {
+        font-family: var(--mono);
+        font-size: 0.88em;
+      }
+
+      footer {
+        margin-top: clamp(88px, 12vw, 160px);
+        padding: 32px 0 48px;
+        border-top: 1px solid var(--rule);
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.8;
+      }
+      footer p + p {
+        margin-top: 6px;
+      }
+      footer a {
+        color: var(--muted);
+        text-decoration: underline;
+        text-underline-offset: 0.2em;
+      }
+
+      @media (max-width: 600px) {
+        body {
+          font-size: 16px;
+        }
+        .bar nav {
+          gap: 16px;
+        }
+        .shot img {
+          border-radius: 8px;
+        }
+        .install dl {
+          grid-template-columns: 1fr;
+          gap: 2px;
+        }
+        .install dd + dt {
+          margin-top: 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="bar">
+        <a class="brand" href="./"><img src="docs/media/icon.png" alt="" width="22" height="22" />Arin</a>
+        <nav aria-label="リンク">
+          <a href="#install">インストール</a>
+          <a href="README.html">使い方</a>
+          <a href="https://github.com/froggugugugu/arin-term">GitHub</a>
+        </nav>
+      </div>
+    </div>
+
+    <main>
+      <section class="hero wrap">
+        <h1>Arin</h1>
+        <p class="lead"><span class="ph">ターミナルとツリーだけを、</span><span class="ph">プロジェクトの数だけ。</span></p>
+        <p class="sub">
+          プロジェクトごとのターミナルとファイルツリーを、1 つのウィンドウにまとめる macOS 向けの軽いマルチターミナル。AI エージェントを並べて動かすために作りました。
+        </p>
+        <div class="actions">
+          <a href="#install">インストール</a>
+          <a href="https://github.com/froggugugugu/arin-term/releases/latest">ダウンロード</a>
+        </div>
+      </section>
+
+      <div class="wrap">
+        <figure class="shot">
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="docs/media/tabs-dark.png" />
+            <img
+              src="docs/media/tabs-light.png"
+              width="2560"
+              height="1600"
+              alt="Arin のタブ表示。左のサイドバーに 6 つのプロジェクトと、選んだプロジェクトのファイルツリー。右のターミナルにテストの結果と git status の出力"
+            />
+          </picture>
+        </figure>
+      </div>
+
+      <section class="feature wrap" aria-labelledby="f-tree">
+        <header>
+          <span class="eyebrow">カードとツリー</span>
+          <h2 id="f-tree"><span class="ph">ツリーとターミナルは、</span><span class="ph">いつも同じプロジェクト。</span></h2>
+          <p>カードで切り替えると、ツリーもターミナルのタブも一緒に替わります。ファイルをターミナルへドラッグすれば、パスがそのまま入ります。</p>
+        </header>
+        <ul class="points">
+          <li>
+            <h3>パスを最短で渡す</h3>
+            <p>ドラッグか <kbd>⌘↩</kbd> でターミナルへ。相対パス・絶対パスのコピーも。</p>
+          </li>
+          <li>
+            <h3>ファイルの操作</h3>
+            <p>新規作成・名前の変更・コピー・移動・ゴミ箱。外での変更もすぐに映ります。</p>
+          </li>
+          <li>
+            <h3>プロジェクトの色</h3>
+            <p>カードとタブに同じ色の印。どのターミナルがどこのものか一目で分かります。</p>
+          </li>
+        </ul>
+      </section>
+
+      <section class="feature wrap" aria-labelledby="f-tiles">
+        <header>
+          <span class="eyebrow">タイル表示</span>
+          <h2 id="f-tiles"><span class="ph">全部のターミナルを、</span><span class="ph">一度に見る。</span></h2>
+          <p><kbd>⇧⌘G</kbd> で、すべてのプロジェクトのターミナルを自動のグリッドに並べます。右上の番号を見て <kbd>⌘1</kbd>〜<kbd>⌘9</kbd> で移れます。</p>
+        </header>
+        <figure class="shot">
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="docs/media/tiles-dark.png" />
+            <img
+              src="docs/media/tiles-light.png"
+              width="2560"
+              height="1600"
+              loading="lazy"
+              alt="タイル表示。6 つのプロジェクトのターミナルが 3 列 2 行に並び、右上に #1〜#6 の番号"
+            />
+          </picture>
+        </figure>
+      </section>
+
+      <section class="feature wrap" aria-labelledby="f-editor">
+        <header>
+          <span class="eyebrow">Markdown</span>
+          <h2 id="f-editor"><span class="ph">書くのは、</span><span class="ph">Markdown だけ。</span></h2>
+          <p>エディタは持たない方針の、ただ 1 つの例外。<code>.md</code> のファイルを、編集とプレビューを並べて書けます。Vim のキー操作にも切り替えられます。</p>
+        </header>
+        <figure class="shot">
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="docs/media/editor-dark.png" />
+            <img
+              src="docs/media/editor-light.png"
+              width="2560"
+              height="1600"
+              loading="lazy"
+              alt="Markdown のエディタ。左に原文、右に見出し・手順・表・チェックリストのプレビュー"
+            />
+          </picture>
+        </figure>
+      </section>
+
+      <section class="feature wrap" aria-labelledby="f-settings">
+        <header>
+          <span class="eyebrow">設定</span>
+          <h2 id="f-settings"><span class="ph">文字の大きさと</span><span class="ph">透け具合を、</span><span class="ph">手元に合わせて。</span></h2>
+          <p><kbd>⌘,</kbd> で、文字の大きさとウィンドウ・ターミナルの透過を変えられます。ショートカットのキーは <code>settings.toml</code> に書けば、動かしたまますぐに効きます。</p>
+        </header>
+        <figure class="shot">
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="docs/media/settings-dark.png" />
+            <img
+              src="docs/media/settings-light.png"
+              width="2560"
+              height="1600"
+              loading="lazy"
+              alt="設定画面。文字の大きさ、透過、エディタの Vim のキー操作、ショートカットの設定ファイルを開くボタン"
+            />
+          </picture>
+          <figcaption>画面と出力はすべて架空のものです。画像はブラウザで撮ったもので、実際のウィンドウの透け感は写っていません。</figcaption>
+        </figure>
+      </section>
+
+      <div class="band">
+        <section class="feature wrap" aria-labelledby="f-quiet">
+          <header>
+            <span class="eyebrow">プライバシー</span>
+            <h2 id="f-quiet"><span class="ph">外とは、</span><span class="ph">通信しない。</span></h2>
+            <p>画面の通信先はアプリの内側だけに絞り、その規則を検査で確かめています。利用状況の収集も、自動更新もありません。</p>
+          </header>
+          <ul class="points">
+            <li>
+              <h3>やること</h3>
+              <p>ターミナル、ファイルツリー、Markdown の編集。ほかのファイルの中身には触れません。</p>
+            </li>
+            <li>
+              <h3>やらないこと</h3>
+              <p>コードの編集、差分、全文検索、内蔵ブラウザ、リモート接続、自由なペインの分割。</p>
+            </li>
+            <li>
+              <h3>残すもの</h3>
+              <p>プロジェクトの一覧と見た目の設定だけを、Mac の中の 1 つのファイルに保存します。</p>
+            </li>
+          </ul>
+        </section>
+      </div>
+
+      <section class="feature wrap" id="install" aria-labelledby="f-install">
+        <header>
+          <span class="eyebrow">インストール</span>
+          <h2 id="f-install">1 行で入ります。</h2>
+        </header>
+        <div class="install">
+          <pre><code>curl -fsSL https://froggugugugu.github.io/arin-term/install.sh | bash</code></pre>
+          <p class="note">
+            最新のリリースを取得し、sha256 と署名を確かめてから「アプリケーション」フォルダに入れます。更新も同じ 1 行です。
+            DMG は <a href="https://github.com/froggugugugu/arin-term/releases/latest">GitHub のリリース</a>から、スクリプトの中身は <a href="install.sh">install.sh</a> で読めます。
+          </p>
+          <dl>
+            <dt>動作環境</dt>
+            <dd>macOS 15 以降、Apple silicon の Mac</dd>
+            <dt>ライセンス</dt>
+            <dd><a href="LICENSE">MIT</a></dd>
+            <dt>ソース</dt>
+            <dd><a href="https://github.com/froggugugugu/arin-term">github.com/froggugugugu/arin-term</a></dd>
+          </dl>
+        </div>
+      </section>
+
+      <section class="feature wrap" aria-labelledby="f-made">
+        <header>
+          <span class="eyebrow">作られ方</span>
+          <h2 id="f-made"><span class="ph">AI が書き、</span><span class="ph">人が決めた。</span></h2>
+        </header>
+        <div class="made">
+          <p>
+            Arin は、AI のコーディングエージェントが <a href="https://github.com/froggugugugu/project-blueprints">project-blueprints</a> の進め方に沿って作りました。要求・設計の判断・合否の記録を、消さずにリポジトリに入れています。
+          </p>
+          <p>
+            何を作るか、各段階の関門を通すか、実機で確かめるかは人が決め、文書・実装・テストは AI が書きます。
+          </p>
+          <ol>
+            <li><div>要求メモ <span><code>input/requirements/</code></span></div></li>
+            <li><div>製品要求仕様(PRD) <span><code>output/prd/</code></span></div></li>
+            <li><div>設計と設計判断の記録 <span><code>output/design/</code></span></div></li>
+            <li><div>実装の計画と進捗 <span><code>output/tasks/</code></span></div></li>
+            <li><div>マイルストーンごとの合否一覧 <span><code>output/reports/test/</code></span></div></li>
+          </ol>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <p>
+          Arin は MIT ライセンスのオープンソースです。依存のライセンスは <a href="https://github.com/froggugugugu/arin-term/blob/main/THIRD_PARTY_NOTICES.md">THIRD_PARTY_NOTICES.md</a> にあります。
+        </p>
+        <p>Arin は American Registry for Internet Numbers(ARIN)とは関係がありません。macOS は Apple Inc. の商標です。</p>
+      </div>
+    </footer>
+  </body>
+</html>

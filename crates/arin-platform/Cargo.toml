@@ -1,0 +1,20 @@
+[package]
+name = "arin-platform"
+description = "arin-core のポートの実装。OS への入出力をここに集める"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+arin-core = { workspace = true }
+portable-pty = { workspace = true }
+objc2 = { workspace = true }
+objc2-foundation = { workspace = true }
+base64 = { workspace = true }
+libc = { workspace = true }
+objc2-app-kit = { workspace = true }
+thiserror = { workspace = true }
+notify = { workspace = true }
+toml = { workspace = true }

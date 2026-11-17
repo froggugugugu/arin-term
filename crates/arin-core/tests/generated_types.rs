@@ -1,0 +1,233 @@
+//! Rust の型から生成した TypeScript の型(`src/ipc/generated/`)が最新であることを確かめる。
+//!
+//! 生成物はコミットする。このテストは、いまの Rust の型から作り直した内容と、
+//! コミットされているファイルが 1 文字も違わないことを見る(古い生成物のコミットを防ぐ)。
+//!
+//! 再生成するときは、環境変数 `ARIN_UPDATE_GENERATED=1` を付けて実行する:
+//!
+//! ```sh
+//! ARIN_UPDATE_GENERATED=1 cargo test -p arin-core --test generated_types
+//! ```
+//!
+//! ファイルへの書き出しはこのテストだけが行う。`arin-core` の製品コードは入出力をしない。
+
+use std::any::TypeId;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use arin_core::editor::{
+    CheckDocumentOutcome, CheckText, EditorCloseRequest, OpenDocumentOutcome, SaveDocumentOutcome,
+    SaveMode,
+};
+use arin_core::fileops::{ConflictResolution, FileOpOutcome, NewEntryKind};
+use arin_core::layout::font_sizes::FontSizeTarget;
+use arin_core::layout::tiles::{DisplayMode, TileGrid};
+use arin_core::layout::translucency::TranslucencyTarget;
+use arin_core::paths::{PathKind, RelPath};
+use arin_core::project::ProjectColor;
+use arin_core::shortcuts::table::ShortcutTable;
+use arin_core::tree::{DirListing, TreeChange};
+use arin_core::workspace::{
+    AddProjectOutcome, AppSnapshot, CloseEditorOutcome, ConnectOutcome, DisplaySnapshot,
+    FontSizesSnapshot, MenuCommand, QuitRequest, RemoveProjectOutcome, TranslucencySnapshot,
+};
+use ts_rs::{Config, TS, TypeVisitor};
+
+/// 画面とやり取りする型の入口。ここから参照している型は、たどって全部生成する。
+fn collect_generated(cfg: &Config) -> BTreeMap<PathBuf, String> {
+    let mut collector = Collector {
+        cfg,
+        seen: HashSet::new(),
+        files: BTreeMap::new(),
+    };
+    collector.visit::<AppSnapshot>();
+    collector.visit::<ConnectOutcome>();
+    collector.visit::<AddProjectOutcome>();
+    collector.visit::<RemoveProjectOutcome>();
+    collector.visit::<ProjectColor>();
+    collector.visit::<MenuCommand>();
+    collector.visit::<QuitRequest>();
+    // M3 のツリーとファイル操作(計画書 T38a)。
+    collector.visit::<RelPath>();
+    collector.visit::<PathKind>();
+    collector.visit::<DirListing>();
+    collector.visit::<TreeChange>();
+    collector.visit::<FileOpOutcome>();
+    collector.visit::<ConflictResolution>();
+    collector.visit::<NewEntryKind>();
+    // ショートカットの表(計画書 T38d)。行・コマンドの ID・受け口もたどって生成する。
+    collector.visit::<ShortcutTable>();
+    // タイル表示の表示モードとグリッド(計画書 T46a)。
+    collector.visit::<DisplayMode>();
+    collector.visit::<TileGrid>();
+    // 写しの表示の状態(計画書 T46b。`AppSnapshot` からもたどれる)。
+    collector.visit::<DisplaySnapshot>();
+    // 文字の大きさの対象(コマンドの引数)と写し(計画書 T68a。写しは `AppSnapshot` からもたどれる)。
+    collector.visit::<FontSizeTarget>();
+    collector.visit::<FontSizesSnapshot>();
+    // 透過の対象(コマンドの引数)と写し(ADR-014 の 1。写しは `AppSnapshot` からもたどれる)。
+    collector.visit::<TranslucencyTarget>();
+    collector.visit::<TranslucencySnapshot>();
+    // エディタのタブ(ADR-015 の 3・4、計画書 T81b)。写しの `editors`・`editor` は `AppSnapshot` から、
+    // 未保存の一覧は `QuitRequest`・`RemoveProjectOutcome` からたどれる。閉じる応答はここから。
+    collector.visit::<CloseEditorOutcome>();
+    // 文書のコマンドの応答と ⌘W の確認のイベント(ADR-015 の 4、計画書 T81d)。
+    collector.visit::<OpenDocumentOutcome>();
+    collector.visit::<SaveDocumentOutcome>();
+    collector.visit::<CheckDocumentOutcome>();
+    // 保存のしかたと、確認で本文を受け取るか(コマンドの引数)。
+    collector.visit::<SaveMode>();
+    collector.visit::<CheckText>();
+    collector.visit::<EditorCloseRequest>();
+    collector.files
+}
+
+/// 型とその依存をたどり、出力先の相対パスと中身を集める。
+struct Collector<'a> {
+    cfg: &'a Config,
+    seen: HashSet<TypeId>,
+    files: BTreeMap<PathBuf, String>,
+}
+
+impl TypeVisitor for Collector<'_> {
+    fn visit<T: TS + 'static + ?Sized>(&mut self) {
+        // 数値や文字列などの組み込みの型は出力先を持たないので、ファイルにしない。
+        let Some(path) = T::output_path() else {
+            return;
+        };
+        if !self.seen.insert(TypeId::of::<T>()) {
+            return;
+        }
+        let text = T::export_to_string(self.cfg).unwrap_or_else(|e| {
+            panic!("{} の型を生成できなかった: {e}", std::any::type_name::<T>())
+        });
+        self.files.insert(path, text);
+        T::visit_dependencies(self);
+    }
+}
+
+/// 既定のショートカットの表の JSON の置き場所(生成先からの相対パス。計画書 T38d)。
+///
+/// 画面の自動テストの偽物と Vitest が、Rust と同じ既定の表を使うために置く。
+const DEFAULT_SHORTCUTS_JSON: &str = "defaultShortcuts.json";
+
+fn generated_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src/ipc/generated")
+}
+
+/// 生成先にいまある `.ts` のファイル(生成先からの相対パス)。
+fn existing_ts_files(dir: &Path) -> BTreeSet<PathBuf> {
+    let mut found = BTreeSet::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        let entries = fs::read_dir(&current)
+            .unwrap_or_else(|e| panic!("{} を読めなかった: {e}", current.display()));
+        for entry in entries {
+            let path = entry.expect("フォルダの項目を読めなかった").path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "ts") {
+                let rel = path
+                    .strip_prefix(dir)
+                    .expect("生成先の外のファイルが見つかった");
+                found.insert(rel.to_path_buf());
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn 生成した_type_script_の型が最新である() {
+    let cfg = Config::new();
+    let expected = collect_generated(&cfg);
+    assert!(!expected.is_empty(), "生成する型が 1 つも無い");
+
+    let dir = generated_dir();
+    let update = std::env::var_os("ARIN_UPDATE_GENERATED").is_some_and(|v| v == "1");
+
+    if update {
+        for (rel, text) in &expected {
+            let path = dir.join(rel);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)
+                    .unwrap_or_else(|e| panic!("{} を作れなかった: {e}", parent.display()));
+            }
+            fs::write(&path, text)
+                .unwrap_or_else(|e| panic!("{} に書けなかった: {e}", path.display()));
+        }
+    }
+
+    let hint = "再生成: ARIN_UPDATE_GENERATED=1 cargo test -p arin-core --test generated_types";
+
+    for (rel, text) in &expected {
+        let path = dir.join(rel);
+        let actual = fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("生成物 {} が無い({e})。{hint}", path.display()));
+        assert_eq!(
+            &actual,
+            text,
+            "生成物 {} が Rust の型と合っていない。{hint}",
+            path.display()
+        );
+    }
+
+    // Rust の型を消したり名前を変えたりしたときに、古いファイルが残っていないこと。
+    // 消すのは人の判断に任せる(このテストはファイルを消さない)。
+    let expected_paths: BTreeSet<PathBuf> = expected.keys().cloned().collect();
+    let stale: Vec<_> = existing_ts_files(&dir)
+        .difference(&expected_paths)
+        .map(|p| p.display().to_string())
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "生成先に、どの Rust の型からも作られないファイルがある: {stale:?}。不要なら消す"
+    );
+}
+
+#[test]
+fn 既定のショートカットの表の_json_が最新である() {
+    let expected = ShortcutTable::default_table().to_json();
+    let path = generated_dir().join(DEFAULT_SHORTCUTS_JSON);
+    let update = std::env::var_os("ARIN_UPDATE_GENERATED").is_some_and(|v| v == "1");
+
+    if update {
+        fs::write(&path, &expected)
+            .unwrap_or_else(|e| panic!("{} に書けなかった: {e}", path.display()));
+    }
+
+    let hint = "再生成: ARIN_UPDATE_GENERATED=1 cargo test -p arin-core --test generated_types";
+    let actual = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("生成物 {} が無い({e})。{hint}", path.display()));
+    assert_eq!(
+        actual,
+        expected,
+        "生成物 {} が Rust の既定の表と合っていない。{hint}",
+        path.display()
+    );
+
+    // 計画書 T64c: 表は 23 行(M4.7 の ADR-014 の 4 でタイルの番号キー 9 行を足して 32 行、M4.8 の ADR-015 の 6 で
+    // エディタの保存を足して 33 行)で、`app.open-settings` = `Cmd+,`(受け口はメニューの項目)を持つ。
+    // M4.6(T68d。ADR-013 の 6)でこの行の意味を「設定…」(設定画面)に替えたが、行・キー・受け口は変えないので期待も同じ。
+    // 書き出しと同じテストの中で読む(別のテストにすると、再生成のときに書き出しと並んで走り古い中身を読む)。
+    let rows: serde_json::Value = serde_json::from_str(&actual).expect("JSON でない");
+    let rows = rows.as_array().expect("配列でない");
+    assert_eq!(rows.len(), 33);
+    assert!(
+        rows.contains(&serde_json::json!({
+            "command": "editor.save",
+            "accelerator": "Cmd+S",
+            "receiver": "screen"
+        })),
+        "エディタの保存の行が無い"
+    );
+    assert!(
+        rows.contains(&serde_json::json!({
+            "command": "app.open-settings",
+            "accelerator": "Cmd+,",
+            "receiver": "menu-item"
+        })),
+        "設定の行が無い"
+    );
+}

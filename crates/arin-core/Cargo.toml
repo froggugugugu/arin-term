@@ -1,0 +1,16 @@
+[package]
+name = "arin-core"
+description = "Arin の状態・規則・ポート定義。OS への入出力を持たない"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+# 許可する依存はここに書いたものだけ(設計書 §3.1)。scripts/check-boundaries.mjs が検査する。
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+# 型の生成だけに使う。ファイルへの書き出しはテスト(tests/generated_types.rs)から行い、製品コードは入出力をしない。
+ts-rs = { workspace = true }

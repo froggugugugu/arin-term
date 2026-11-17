@@ -1,0 +1,117 @@
+/*
+ * 画面内のコンテキストメニュー。macOS のメニューの作法に寄せる: 半透明の地にぼかし、角の丸い小さな箱、細い区切り線、
+ * 13px の文字と控えめな行の高さ、強調はアクセント色の角の丸い塗り、右端に薄い色でキーの表示、無効の項目は薄く。
+ * 色・寸法は src/ui/design/tokens.css のトークンを使う。
+ */
+.context-menu {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-width: 200px;
+  max-width: 320px;
+  padding: var(--menu-padding);
+  border-radius: var(--radius-menu);
+  background: var(--color-menu-bg);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  backdrop-filter: blur(24px) saturate(1.8);
+  color: var(--color-fg);
+  box-shadow: var(--shadow-menu);
+  font-family: var(--font-family);
+  font-size: var(--font-size-l);
+  line-height: 1;
+  outline: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.context-menu--submenu {
+  min-width: 140px;
+}
+
+.context-menu__item {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  height: var(--menu-item-height);
+  padding: 0 var(--space-2) 0 10px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.context-menu__item:focus {
+  outline: none;
+  background: var(--color-highlight);
+  color: var(--color-highlight-fg);
+}
+
+/* キーボードで移ったときも、輪は出さず塗りだけで示す(macOS のメニューと同じ)。 */
+.context-menu__item:focus-visible {
+  outline: none;
+}
+
+.context-menu__item[aria-disabled="true"] {
+  color: var(--color-menu-disabled);
+}
+
+.context-menu__item[aria-disabled="true"]:focus {
+  background: transparent;
+  color: var(--color-menu-disabled);
+}
+
+.context-menu__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.context-menu__check {
+  flex: none;
+  width: 12px;
+  margin-right: -2px;
+  font-size: var(--font-size-m);
+  text-align: center;
+}
+
+/* キーの表示(右端。薄い色、記号の幅をそろえる)。 */
+.context-menu__shortcut {
+  flex: none;
+  padding-left: var(--space-4);
+  color: var(--color-menu-shortcut);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+.context-menu__item:focus .context-menu__shortcut {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.context-menu__item[aria-disabled="true"] .context-menu__shortcut {
+  color: var(--color-menu-disabled);
+  opacity: 1;
+}
+
+/* 下の階層がある項目の印(文字にしない。読み上げは aria-haspopup が伝える)。 */
+.context-menu__item--submenu::after {
+  content: "▸";
+  font-size: var(--font-size-s);
+  opacity: 0.7;
+}
+
+.context-menu__separator {
+  flex: none;
+  height: 1px;
+  margin: 5px 10px;
+  background: var(--color-menu-separator);
+}

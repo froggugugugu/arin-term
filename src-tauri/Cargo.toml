@@ -1,0 +1,159 @@
+[package]
+name = "arin"
+description = "Arin のアプリ本体。ポートの実装と Workspace を組み立てて Tauri に渡す"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lib]
+# バイナリ名と衝突しないよう、ライブラリ名を変える。
+name = "arin_lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "arin"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+arin-core = { workspace = true }
+arin-platform = { workspace = true }
+# macos-private-api: ウィンドウの透明(すりガラス。ADR-010)。tauri.conf.json の app.macOSPrivateApi と組で要る
+# (tauri-build が設定と機能の一致を検査する)。Tauri 2.12.1 以降は機能の中身が空で、足すクレートは無い。
+tauri = { workspace = true, features = ["macos-private-api"] }
+
+[dev-dependencies]
+# Tauri の模擬ランタイム(tauri::test)を使うため、テストのときだけ test の機能を有効にする。
+tauri = { workspace = true, features = ["test"] }
+# コマンドの引数(JSON)を組み立てる。arin-core が既に使っている版と同じ。
+serde_json = { workspace = true }
+# コマンドの戻り値を型で読み戻す(DeserializeOwned)。arin-core が既に使っている版と同じ。
+serde = { workspace = true }
+# メニューのアクセラレータの文字列を、Tauri が使う muda の読み方で確かめる(app_menu。T42e)。Tauri が既に引き込んでいる版と同じ。
+# 機能は Tauri が有効にしたものに任せる(足さない)。
+muda = { version = "=0.20.0", default-features = false }
+
+# macOS ではメニューの部品をメインスレッドでしか作れない。標準のテストハーネスは
+# テストを別スレッドで走らせるため、このテストは自前の main で(メインスレッドで)走らせる。
+[[test]]
+name = "app_builder"
+harness = false
+
+# コマンドを模擬ランタイムで画面から呼ぶテスト。理由は app_builder と同じ。
+[[test]]
+name = "app_commands"
+harness = false
+
+# スモークの印を有効にして組み立てたときの準備完了の通知。設定ごとに模擬のアプリを 1 つにするため分ける。
+[[test]]
+name = "app_ready_marker"
+harness = false
+
+# ターミナルのコマンドを、偽の PTY と模擬ランタイムで画面から呼ぶテスト。理由は app_builder と同じ。
+[[test]]
+name = "terminal_commands"
+harness = false
+
+# セッション管理を実 PTY(/bin/zsh)で動かす結合テスト。Tauri のアプリは作らないので標準のハーネスで走らせる。
+[[test]]
+name = "session_pty"
+
+# スモークの印を有効にして組み立てたときの、最初の処理済みの通知でのターミナルの印。理由は app_ready_marker と同じ。
+[[test]]
+name = "app_terminal_marker"
+harness = false
+
+# メニューバーの組み立てと、項目が選ばれたときの動き(T33e)。理由は app_builder と同じ。
+[[test]]
+name = "app_menu"
+harness = false
+
+# 性能の計測(T24)。セッション管理を実 PTY で動かす。Tauri のアプリは作らないので標準のハーネスで走らせる。
+# テストはすべて #[ignore] で、普段の cargo test では動かさない(npm run perf が --release -- --ignored で動かす)。
+[[test]]
+name = "perf_sessions"
+
+# 起動時の状態ファイルの読み込み、保存、退避の知らせ(T33a)。理由は app_builder と同じ。
+# 1 つのプロセスで模擬のアプリを順に組み立てて走らせる(テストごとに一時の状態フォルダを分ける)。
+[[test]]
+name = "app_persistence"
+harness = false
+
+# プロジェクトのコマンド(登録・選択・削除・色・再リンク・パスのコピー、ドロップ。T33c)。理由は app_builder と同じ。
+# ダイアログは偽物、ペーストボードは名前付きのもの(ユーザーのクリップボードに触れない)を使う。
+[[test]]
+name = "project_commands"
+harness = false
+
+# ルートへの追従の見回りとペインの寸法のコマンド(T33d)。見回りの 1 回分は偽のフォルダで直接呼び、
+# 最後に模擬のアプリで寸法のコマンドと終了時に見回りのスレッドが止まることを確かめる。理由は app_builder と同じ。
+[[test]]
+name = "root_follow"
+harness = false
+
+# 終了の確認(FR-063)と終了時の後片付け(T33e)。閉じる要求とメニューの「終了」を模擬のアプリで起こす。理由は app_builder と同じ。
+[[test]]
+name = "app_quit"
+harness = false
+
+# ツリーのコマンド(フォルダの中身・隠しファイル表示。T42a)。プロジェクトのフォルダは一時フォルダに作り、
+# 本物のファイルシステムを記録の包みで囲んで読んだ場所を確かめる。理由は app_builder と同じ。
+[[test]]
+name = "tree_commands"
+harness = false
+
+# ツリーの監視の張り替えと tree-changed(T42b)。監視は偽物(実物の FSEvents は一時フォルダで 1 件)で、
+# 張り替えはセッション管理を直接操作して確かめ、最後に模擬のアプリで画面へ届くことと終了を確かめる。理由は app_builder と同じ。
+[[test]]
+name = "tree_watch"
+harness = false
+
+# ファイル操作のコマンド(作成・名称変更・移動・コピー・ゴミ箱・コピーと切り取りとペースト。T42c)。プロジェクトのフォルダは一時フォルダに作り、
+# 本物のファイルシステムを記録の包みで囲む。ゴミ箱だけは一時フォルダの中の偽のゴミ箱への移動に、ペーストボードは名前付きのものに差し替える
+# (本物のゴミ箱と利用者のクリップボードに触れない)。理由は app_builder と同じ。
+[[test]]
+name = "fileops_commands"
+harness = false
+
+# デスクトップとパスのコマンド(Finder で表示・開く・パスのコピー・ターミナルへの挿入。T42d)。Finder とアプリは偽のデスクトップのポートに、
+# ペーストボードは名前付きのものに、PTY は書かれたバイト列を記録する偽物に差し替える(本物の Finder・アプリ・利用者のクリップボードに触れない)。
+# プロジェクトのフォルダは一時フォルダに作る。理由は app_builder と同じ。
+[[test]]
+name = "desktop_commands"
+harness = false
+
+# 表示のコマンド(表示モードの切替・タイルへのフォーカス・ページ送り・拡大。T47b)。状態フォルダに 2 プロジェクトの state.json を置き、
+# 監視は偽物にして、写しの送り・状態ファイルの表示モード・ツリーの監視の張り替えを模擬のアプリで確かめる。理由は app_builder と同じ。
+[[test]]
+name = "display_commands"
+harness = false
+
+# 起動時の設定ファイル(settings.toml)の読み込みと、メニュー・get_shortcuts・知らせへの反映(T65b。ADR-012 の 3・5)。
+# 状態フォルダは一時フォルダに差し替え、本物の設定ファイルを読まない。理由は app_builder と同じ。
+[[test]]
+name = "app_settings"
+harness = false
+
+# 設定ファイルの保存の検知と即時の反映(T65c。ADR-012 の 5)。監視は偽物(実物の FSEvents は一時フォルダで 1 件)で、
+# 読み直しの手順(表の差し替え・メニューの作り直し・settings-changed)は模擬のアプリで確かめる。理由は app_builder と同じ。
+[[test]]
+name = "settings_watch"
+harness = false
+
+# 文字の大きさのコマンド(刻む・既定に戻す。T68c。ADR-013 の 2)。状態フォルダに 1 プロジェクトの state.json を置き、
+# PTY は偽物にして、写しの送り・状態ファイルの ui.terminalFontSize / ui.interfaceFontSize・シェルが続くことを模擬のアプリで確かめる。
+# 理由は app_builder と同じ。
+[[test]]
+name = "font_commands"
+harness = false
+
+# エディタのコマンド(開く・保存・外の変更の確認・閉じる・未保存の印・Vim)と ⌘W・前後のタブ・終了とプロジェクトを外すときの確認
+# (T81d・T81e。ADR-015 の 4・5・6)。プロジェクトのフォルダは canonicalize した一時フォルダに作り、文書は本物の読み書きで扱う。
+# PTY は偽物。理由は app_builder と同じ。
+[[test]]
+name = "editor_commands"
+harness = false

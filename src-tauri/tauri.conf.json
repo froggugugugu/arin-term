@@ -1,0 +1,71 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Arin",
+  "version": "0.2.0",
+  "identifier": "com.froggugugugu.arin",
+  "build": {
+    "beforeDevCommand": "npm run dev:web",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build:web",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Arin",
+        "width": 1280,
+        "height": 800,
+        "backgroundThrottling": "disabled",
+        "transparent": true
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "connect-src": "'self' ipc: http://ipc.localhost",
+        "img-src": "'self' blob:",
+        "style-src": "'self'",
+        "style-src-elem": "'self' 'unsafe-inline'",
+        "style-src-attr": "'unsafe-inline'",
+        "object-src": "'none'",
+        "base-uri": "'none'",
+        "form-action": "'none'"
+      },
+      "devCsp": {
+        "default-src": "'self'",
+        "connect-src": "'self' ipc: http://ipc.localhost http://localhost:1420 ws://localhost:1420",
+        "img-src": "'self' blob:",
+        "style-src": "'self'",
+        "style-src-elem": "'self' 'unsafe-inline'",
+        "style-src-attr": "'unsafe-inline'",
+        "object-src": "'none'",
+        "base-uri": "'none'",
+        "form-action": "'none'"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.png"
+    ],
+    "resources": {
+      "../LICENSE": "licenses/LICENSE.txt",
+      "../THIRD_PARTY_NOTICES.md": "licenses/THIRD_PARTY_NOTICES.md",
+      "../THIRD_PARTY_LICENSES.md": "licenses/THIRD_PARTY_LICENSES.md"
+    },
+    "macOS": {
+      "minimumSystemVersion": "15.0"
+    }
+  }
+}

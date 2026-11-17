@@ -69,10 +69,10 @@ flowchart LR
 | 項目           | 値                                   |
 | -------------- | ------------------------------------ |
 | プロジェクト名 | Arin（アリン。リポジトリ名 arin-term） |
-| 概要           | 「プロジェクトのフォルダツリー」と「そのプロジェクトのターミナル」だけを、1 ウィンドウで複数プロジェクト分持てる macOS ネイティブアプリ。エディタは持たない。利用者は本人のみ。要求の正本は `input/requirements/REQ_001_multi-terminal.md` |
+| 概要           | 「プロジェクトのフォルダツリー」と「そのプロジェクトのターミナル」だけを、1 ウィンドウで複数プロジェクト分持てる macOS アプリ（Tauri）。エディタは持たない。利用者は本人のみ。要求の正本は `input/requirements/REQ_001_multi-terminal.md` |
 | 対応言語       | ja                                   |
-| 対応環境       | macOS 15 以降 / Apple Silicon（仮定。REQ_001 §11 Q2） |
-| Node.js要件    | なし（Node.js は使用しない）         |
+| 対応環境       | macOS 15 以降 / Apple Silicon        |
+| Node.js要件    | 24 系（開発時のみ。配布する .app には含めない） |
 
 ---
 
@@ -82,36 +82,49 @@ flowchart LR
 
 | カテゴリ         | 技術                                          |
 | ---------------- | --------------------------------------------- |
-| フレームワーク   | Swift 6、SwiftUI + AppKit（macOS ネイティブ。Electron / Tauri は不採用） |
-| ビルド           | Swift Package Manager。ロジックは GUI 非依存の SPM ターゲットに分離し、アプリターゲットは薄く保つ |
-| ターミナルエンジン | **未確定（ADR-001 で決定）**。第一候補 SwiftTerm、代替 libghostty。`TerminalEngine` プロトコルの裏に隠して差し替え可能にする |
-| スタイリング     | SwiftUI 標準（システムのライト／ダークに追従） |
-| 状態管理         | Swift Observation（`@Observable`）。永続化は JSON ファイル |
+| フレームワーク   | Tauri 2.12 系（Rust 1.98.1 + TypeScript 6.0 系）。画面は React 19.3.1 + zustand 5.0.16。Electron は不採用 |
+| ビルド           | Cargo ワークスペース（`arin-core` / `arin-platform` / `src-tauri`）と Vite 8 系。パッケージ管理は npm |
+| ターミナルエンジン | xterm.js 6.0.0（M1 の Go/No-Go で採用。ADR-001）。描画は DOM、全角幅は `unicode11` に固定（M4 の実測のあと本人が決定。2026-11-16。`@xterm/addon-webgl`・`@xterm/addon-unicode-graphemes` は外した）。アドオンは `addon-fit` 0.11.0、`addon-unicode11` 0.9.0。PTY は Rust 側の `portable-pty` 0.9.0 |
+| Markdown エディタ | `src/editor/codemirror/` だけが使う（境界検査で強制。M4.8。ADR-015）: `codemirror` 6.0.2、`@codemirror/state` 6.7.2、`@codemirror/view` 6.43.10、`@codemirror/lang-markdown` 6.5.2、`@codemirror/language` 6.12.4、`@codemirror/commands` 6.11.0、`@codemirror/search` 6.7.2、`@lezer/highlight` 1.2.3、`@lezer/markdown` 1.7.2、`@lezer/common` 1.5.2、`@replit/codemirror-vim` 6.4.0。推移的な `@codemirror/lint` は `overrides` で 6.9.7 に固定（公開から 2 週間を過ぎた版）。プレビューは lezer の構文木から React の要素を組む（HTML の文字列を作らない） |
+| ファイルの監視   | `notify` 8.2.1（`arin-platform` だけが使う） |
+| 設定ファイルの解析 | `toml` 1.2.1（`arin-platform` だけが使う。`default-features = false`、`std`・`parse`。Tauri と同じ版。公開から 2 週間未満の例外を本人が 2026-11-16 に認めた。ADR-012） |
+| macOS の API     | `arin-platform` だけが使う: `objc2` 0.6.5、`objc2-foundation` 0.3.2、`objc2-app-kit` 0.3.2、`libc` 0.2.191、`base64` 0.23.1（どれも Tauri と同じ版。ADR-009）。フォルダ選択は `NSOpenPanel` を直接呼ぶ（`tauri-plugin-dialog` は使わない） |
+| スタイリング     | 素の CSS とカスタムプロパティ（システムのライト／ダークに追従） |
+| 状態管理         | Rust の `arin-core` が正本。画面側は zustand のストアに写しを持つ。永続化は JSON ファイル、設定ファイルは TOML |
 | バリデーション   | なし                                           |
 | ルーティング     | なし（単一ウィンドウ）                         |
-| アイコン         | SF Symbols                                     |
-| コード品質       | SwiftLint、swift-format                        |
-| 依存方向チェック | SPM のターゲット依存で強制（UI → ロジック の一方向） |
+| アイコン         | 自作の少数の SVG（仮定）                       |
+| コード品質       | `tsc` の厳格オプション、`cargo clippy -- -D warnings`、`cargo fmt --check`、境界検査スクリプト、Biome 2.6.4（React のフックの 2 規則だけ。ADR-008） |
+| 依存方向チェック | Cargo のクレート依存と TypeScript のプロジェクト参照で強制（UI → ロジック の一方向） |
 | Git Hooks        | なし                                           |
-| テスト           | Swift Testing または XCTest（単体・結合）。XCUITest はスモークのみ |
+| テスト           | `cargo test` と Vitest（単体・結合）。画面は Playwright のブラウザ方式（WebKit）と実アプリの起動スモーク |
 | 配布             | Developer ID 署名 + Hardened Runtime + notarytool + staple。App Sandbox は無効。Mac App Store 非対応 |
 
-> 上記は REQ_001 §8 の推奨案に基づく初期値。確定は `/architecture` の設計ゲートで行い、ADR に残す。
+> 2026-11-14 の設計ゲートで確定（実装技術を Swift ネイティブから Tauri に変更。本人決定）。詳細と根拠は `output/design/ARCH_multi-terminal.md` §2・§15.1。
 
 ---
 
 ## 3. コマンド <!-- 必須 -->
 
-本プロジェクトは Node.js を使わない。コマンドは Makefile に集約する（M0 で用意する。現時点では未実装）。
+コマンドは npm のスクリプトに集約する（正本は `package.json`）。
 
 ```bash
-make build            # ビルド（swift build）
-make test             # 単体・結合テスト（swift test）
-make test-coverage    # カバレッジ付きテスト（出力先 testreport/coverage/）
-make lint             # SwiftLint + swift-format のチェック
-make app              # .app バンドルを生成
-make run              # .app を起動（人間が体感確認するとき）
-# make notarize       # 署名・公証。人間のみ実行（秘密情報を扱うため AI は実行しない）
+npm run build          # 画面の型検査とビルド + Rust のビルド
+npm test               # 単体・結合テスト（vitest run + cargo test + node --test）
+npm run test:coverage  # カバレッジ付きテスト（出力先 testreport/coverage/）
+npm run lint           # tsc + biome lint + cargo clippy + cargo fmt --check + 境界検査
+npm run gen:types      # Rust の型から src/ipc/generated/ を再生成
+npm run app            # .app バンドルを生成（tauri build。署名なし）
+npm run app:debug      # デバッグ版の .app（検証用の記録 [arin:verify] が出る）
+npm run dev            # 開発用に起動（tauri dev。人間が体感確認するとき）
+npm run e2e            # Playwright（ブラウザ方式。出力先 testreport/e2e/）
+npm run screenshots    # README と紹介ページの画像を docs/media/ に撮り直す（e2e/screenshots/。npm run e2e には入らない）
+npm run screenshots:pages # 紹介ページを幅 390・1280、ライト・ダークで開いて確かめ、testreport/pages/ に撮る
+npm run smoke          # 実アプリの起動スモーク（-- --tiles で 9 プロジェクトのタイル表示。-- --settings で、設定ファイルを置いた一時の状態フォルダで 1 回起動し、設定の診断の行と、設定ファイルが変わっていないことを確かめる。-- --fonts で、文字の大きさを入れた state.json で 1 回起動する。-- --env=NAME=VALUE、-- --app=<パス> を付けられる）
+npm run perf           # 性能の計測（出力先 testreport/perf/。合否にしない。-- --tree-files=<数> でツリーの見本の数）
+npm run licenses       # 配布物に入る依存のライセンス全文 THIRD_PARTY_LICENSES.md を作り直す（依存を変えたら実行してコミット）
+npm run licenses:check # THIRD_PARTY_LICENSES.md が依存と合っているかだけ確かめる（違えば失敗）
+npm run dist:mac       # 配布物 release/Arin-<版>-arm64.dmg・.zip を作る（署名の環境変数が無ければ ad-hoc。Developer ID の署名・公証は人間のみ実行。docs/release-notarization.md）
 ```
 
 ---
@@ -274,7 +287,7 @@ src/  # または app/（Next.js App Router）
 
 | 項目                 | 値         |
 | -------------------- | ---------- |
-| テストカバレッジ目標 | 80%（ロジック層の SPM ターゲットが対象。GUI 層は対象外）※仮定。PRD ゲートで確認 |
+| テストカバレッジ目標 | 80%（`arin-core` と `src/logic` のそれぞれが対象。画面の部品は対象外） |
 | TDD                  | yes |
 | 品質ゲート           | yes |
 | ツール出力先         | `testreport/` |
@@ -318,10 +331,10 @@ output/reports/                ← 人間向けサマリー（Git管理）
 
 | 項目                 | 値                              |
 | -------------------- | ------------------------------- |
-| ブラウザ             | <!-- 例: Chromium -->           |
-| ベースURL            | <!-- 例: http://localhost:5173 -->|
-| テストファイル配置   | <!-- 例: e2e/ -->               |
-| テストデータ注入方式 | <!-- 例: localStorage直接注入 -->|
+| ブラウザ             | WebKit（Playwright のブラウザ方式。実アプリは操作しない） |
+| ベースURL            | http://localhost:1420           |
+| テストファイル配置   | e2e/                            |
+| テストデータ注入方式 | Rust との通信を偽物に差し替える（`e2e/fixtures/tauriMock.ts`） |
 
 ---
 

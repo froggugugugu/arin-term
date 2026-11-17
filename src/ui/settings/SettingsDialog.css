@@ -1,0 +1,214 @@
+/*
+ * 設定画面(M4.6。ADR-013 の 5)。macOS の設定のシートにならい、上部の帯の下に横の中央に付けて出す。
+ * 色は既存のトークンだけ。組は箱で囲まず、細い区切り線と余白で分ける。文字と行の高さはトークン(画面の大きさに追従する)、
+ * 線・余白・幅・ステッパーの山形は固定。
+ */
+.settings-sheet {
+  box-sizing: border-box;
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100vh - var(--header-height) - var(--space-4) - var(--space-2));
+  margin: calc(var(--header-height) + var(--space-2)) auto auto;
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  overflow-y: auto;
+  border: 0;
+  border-radius: var(--radius-m);
+  background: var(--color-surface);
+  color: var(--color-fg);
+  box-shadow: var(--shadow-popup);
+  font-family: var(--font-family);
+  font-size: var(--font-size-l);
+}
+
+/* 背景は暗くしない(変えた大きさを後ろのターミナルとツリーで見ながら選べる。【要確認】4)。外の操作はモーダルなので効かない。 */
+.settings-sheet::backdrop {
+  background: transparent;
+}
+
+.settings-sheet__title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-l);
+  font-weight: var(--font-weight-strong);
+  text-align: center;
+}
+
+.settings-sheet__group + .settings-sheet__group {
+  margin-top: var(--space-4);
+}
+
+.settings-sheet__group-title {
+  margin: 0 0 var(--space-1);
+  color: var(--color-muted);
+  font-size: var(--font-size-m);
+  font-weight: var(--font-weight-strong);
+}
+
+/* 組の行。上下と行の間だけに細い区切り線を引く(箱では囲まない)。 */
+.settings-sheet__rows {
+  border-top: 1px solid var(--color-separator);
+  border-bottom: 1px solid var(--color-separator);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  min-height: var(--sidebar-item-height);
+  padding: var(--space-2) 0;
+}
+
+.settings-row + .settings-row {
+  border-top: 1px solid var(--color-separator);
+}
+
+.settings-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-row__hint {
+  color: var(--color-muted);
+  font-size: var(--font-size-s);
+}
+
+/* 組の本文として出す説明(行の名前が無い行)。 */
+.settings-row__hint--body {
+  font-size: var(--font-size-m);
+}
+
+.settings-row .button {
+  flex: none;
+}
+
+.settings-sheet__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+/* 「既定に戻す」は左端に離して置く(「完了」と取り違えない)。 */
+.settings-sheet__reset {
+  margin-right: auto;
+}
+
+.settings-sheet .button:disabled {
+  color: var(--color-menu-disabled);
+}
+
+/* ── ステッパー(NSStepper にならう: 値の欄と、右に ▲▼ を縦に重ねた細い部品) ── */
+.value-stepper {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.value-stepper__value {
+  box-sizing: border-box;
+  min-width: 4.5em;
+  height: var(--button-height);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-s);
+  background: var(--color-field-bg);
+  box-shadow: var(--shadow-control);
+  color: var(--color-field-fg);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--button-height);
+  text-align: right;
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+}
+
+/* 値の欄は文字の入力欄と同じく、フォーカスがあれば常に輪を出す。 */
+.value-stepper__value:focus {
+  outline: 0;
+  box-shadow: var(--shadow-control), 0 0 0 3px var(--color-focus-ring-soft);
+}
+
+.value-stepper__unit {
+  color: var(--color-muted);
+}
+
+.value-stepper__arrows {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 15px;
+  height: var(--button-height);
+  overflow: hidden;
+  border-radius: var(--radius-s);
+  background: var(--color-button-bg);
+  box-shadow: var(--shadow-control);
+}
+
+.value-stepper__arrow {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-fg);
+}
+
+.value-stepper__arrow + .value-stepper__arrow {
+  border-top: 1px solid var(--color-separator);
+}
+
+.value-stepper__arrow:active:not(:disabled) {
+  background: var(--color-selection-inactive);
+}
+
+.value-stepper__arrow:disabled {
+  color: var(--color-menu-disabled);
+}
+
+/*
+ * 切替(M4.8。Vim のキー操作)。macOS の小さなスイッチにならう: 切っているときは淡い地、入れているときは強調の色、
+ * つまみは白に細い縁取り。動きは位置だけを短く替える。
+ */
+.settings-switch {
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  width: 26px;
+  height: 15px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-segmented-bg);
+  box-shadow: inset 0 0 0 0.5px var(--color-separator);
+  transition: background-color 120ms ease;
+}
+
+.settings-switch[aria-checked="true"] {
+  background: var(--color-highlight);
+}
+
+.settings-switch__thumb {
+  position: absolute;
+  top: 1.5px;
+  left: 1.5px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-highlight-fg);
+  box-shadow: var(--shadow-control);
+  transition: transform 120ms ease;
+}
+
+.settings-switch[aria-checked="true"] .settings-switch__thumb {
+  transform: translateX(11px);
+}
+
+.settings-switch:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}

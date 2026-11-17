@@ -1,0 +1,258 @@
+/*
+ * タイル表示(M4)。タブバーの位置に同じ高さの帯、その下に表示中のページのタイルのグリッド。
+ * タイルの間は細い区切り線(右端の列・下端の行の外周には引かない)。ターミナルの本文は半透明の黒(M4.7。ADR-014 の 2)。
+ */
+.tile-strip {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  /* タブ表示のタブバーと同じ高さ・地・下端の線(切り替えでターミナルの上端が跳ねない)。 */
+  height: var(--tab-bar-height);
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-bottom: 1px solid var(--color-separator);
+  background: var(--color-tabbar-bg);
+}
+
+.tile-strip__summary {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: var(--font-size-m);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ページ表示(‹ 1/2 ›)。数字は等幅の数字で、桁が変わっても位置が揺れない。 */
+.page-control {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.page-control__label {
+  min-width: 28px;
+  color: var(--color-muted);
+  font-size: var(--font-size-m);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* その方向のページにアテンションがあるときの小さな丸(ボタンの右上に重ねる。押下は通す)。 */
+.page-control__button {
+  position: relative;
+}
+
+.page-control__attention {
+  position: absolute;
+  top: 0;
+  right: 1px;
+  width: var(--attention-dot-size-s);
+  height: var(--attention-dot-size-s);
+  box-shadow: 0 0 0 1.5px var(--color-attention-halo);
+  pointer-events: none;
+}
+
+.page-control__button:disabled {
+  background: transparent;
+  opacity: 0.35;
+}
+
+/* グリッド。列×行は TileGrid が CSS の変数で渡す(写しの display.grid)。 */
+.tile-grid {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(var(--tile-cols), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--tile-rows), minmax(0, 1fr));
+  min-width: 0;
+  min-height: 0;
+}
+
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--color-separator);
+  border-bottom: 1px solid var(--color-separator);
+}
+
+.tile--last-col {
+  border-right: 0;
+}
+
+.tile--last-row {
+  border-bottom: 0;
+}
+
+/*
+ * フォーカス中のタイルの細い輪(色だけに頼らない: タイトルの文字も濃く太くなる)。ターミナルの上に重ねるが、押下は通す。
+ * タイルが 1 枚だけのときは、どれがフォーカス中か迷わないので輪を出さない。
+ */
+.tile--focused::after {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  box-shadow: inset 0 0 0 1px var(--color-tile-focus-ring);
+  content: "";
+  pointer-events: none;
+}
+
+.tile-grid--single .tile--focused::after {
+  content: none;
+}
+
+/* タイトルバー(タブバーのタブと同じ作法: 控えめな地と文字、フォーカス中だけ明るい地と濃い太字)。 */
+.tile-title {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  height: var(--tile-title-height);
+  padding: 0 var(--space-2) 0 var(--space-2);
+  background: var(--color-tile-title-bg);
+  color: var(--color-muted);
+  font-size: var(--font-size-m);
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* マウスを載せたとき(ダブルクリックで拡大できる場所だと控えめに示す。地に淡い重ねを足すだけ)。 */
+.tile-title:hover {
+  background-image: linear-gradient(var(--color-tile-title-hover), var(--color-tile-title-hover));
+}
+
+.tile-title--focused {
+  background: var(--color-tile-title-focused-bg);
+  color: var(--color-fg);
+}
+
+.tile-title__dot {
+  width: var(--project-dot-size-s);
+  height: var(--project-dot-size-s);
+}
+
+.tile-title__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* アテンションの印(右端。名前との間を少し空け、輪が右端で切れないよう余白を取る)。 */
+.tile-title__attention {
+  margin: 0 2px 0 var(--space-1);
+}
+
+.tile-title--focused .tile-title__label {
+  font-weight: var(--font-weight-strong);
+}
+
+/* 本文(状態の 1 行とターミナルの置き場所)。地はターミナルの背景色。 */
+.tile__body {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  /* 隣のタイルの区切り線に文字が貼り付かないよう、本文の内側に少しだけ余白(地はターミナルと同じ黒)。 */
+  padding: var(--space-1) 0 0 var(--space-2);
+  background: var(--color-terminal-bg);
+  color: var(--color-terminal-fg);
+}
+
+/*
+ * 番号の札(⌘1〜9。ADR-014 の 4)。ターミナルの右上に、地も影も付けない小さな等幅の数字を半透明で重ねる(フォーカス中だけ少し濃く)。
+ * xterm.js の補助の要素(z-index 5)より上、落とし先の重ね(10)より下。押下は通す。
+ */
+.tile__number {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-2);
+  z-index: 6;
+  color: var(--color-tile-number);
+  font-family: var(--font-family);
+  font-size: var(--font-size-s);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.tile--focused .tile__number {
+  color: var(--color-tile-number-focused);
+}
+
+.tile__status {
+  flex: none;
+  padding: 0 var(--space-2) 2px 0;
+  overflow: hidden;
+  font-size: var(--font-size-s);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.8;
+}
+
+/*
+ * 拡大中の帯(タイルの帯と同じ高さ・地・下端の線)。拡大しているタイルの色の印と名前(フォーカス中のタイルと同じく濃い太字)、
+ * 右端に元に戻すアイコンのボタン。
+ */
+.tile-strip--maximized {
+  gap: 6px;
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.tile-strip__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-fg);
+  font-size: var(--font-size-m);
+  font-weight: var(--font-weight-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile-strip__restore {
+  flex: none;
+}
+
+/*
+ * ツリーからの落とし先の強調(T43d の作法)をタイルでは本文全体に出す。置き場所は本文の内側の余白の分だけ小さいので、
+ * 置き場所の重ね(TreeDrag.css)のままでは輪がタイルの縁からずれて見える。
+ */
+.tile .terminal-host[data-drop-active="true"]::after {
+  content: none;
+}
+
+.tile__body:has(> .terminal-host[data-drop-active="true"]) {
+  position: relative;
+}
+
+.tile__body:has(> .terminal-host[data-drop-active="true"])::after {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: var(--color-terminal-drop-overlay);
+  box-shadow: inset 0 0 0 2px var(--color-terminal-drop-ring);
+  content: "";
+  pointer-events: none;
+}

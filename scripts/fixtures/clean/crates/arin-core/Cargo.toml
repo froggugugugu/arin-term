@@ -1,0 +1,15 @@
+[package]
+name = "arin-core"
+version = "0.1.0"
+edition = "2024"
+
+# 違反の無い見本。コメント中の reqwest = "1" や libc は依存として数えない。
+[dependencies]
+serde = { workspace = true }
+serde_json.workspace = true
+"thiserror" = "2"
+ts-rs = { version = "12", features = ["serde-compat"] } # 型の生成だけ
+
+# dev-dependencies は検査の対象外(製品に組み込まれない)
+[dev-dependencies]
+tempfile = "3"
