@@ -58,6 +58,11 @@ for (const scheme of ["light", "dark"] as const) {
 
       expect(outside, "外の場所へ読みに行った").toEqual([]);
       await expect(page.getByRole("heading", { level: 1 })).toHaveText("Arin");
+      // ダウンロードのボタンは、版に左右されない名前の dmg を直接指す(release.yml が毎回この名前でも付ける)
+      await expect(page.getByRole("link", { name: "Arin をダウンロード" })).toHaveAttribute(
+        "href",
+        "https://github.com/froggugugugu/arin-term/releases/latest/download/Arin-arm64.dmg",
+      );
       // 画像はすべて読めて、外観に合った方が出ている
       const images = await page.evaluate(() =>
         [...document.images].map((img) => ({ src: img.currentSrc, ok: img.complete && img.naturalWidth > 0 })),

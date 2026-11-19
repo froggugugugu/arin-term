@@ -293,6 +293,29 @@
         user-select: all;
         -webkit-user-select: all;
       }
+      .install h3 {
+        margin: 56px 0 18px;
+        font-size: 19px;
+        font-weight: 600;
+        line-height: 1.4;
+      }
+      .install h3:first-child {
+        margin-top: 0;
+      }
+      /* このページでただ 1 つの塗りのボタン(DMG のダウンロード)。 */
+      .install .download {
+        display: inline-block;
+        padding: 12px 26px;
+        border-radius: 980px;
+        background: var(--accent);
+        color: var(--bg);
+        font-size: 17px;
+        font-weight: 600;
+      }
+      .install .download:hover {
+        text-decoration: none;
+        opacity: 0.88;
+      }
       .install .note {
         margin-top: 14px;
         color: var(--muted);
@@ -406,7 +429,7 @@
         </p>
         <div class="actions">
           <a href="#install">インストール</a>
-          <a href="https://github.com/froggugugugu/arin-term/releases/latest">ダウンロード</a>
+          <a href="https://github.com/froggugugugu/arin-term/releases/latest/download/Arin-arm64.dmg">ダウンロード</a>
         </div>
       </section>
 
@@ -534,13 +557,20 @@
       <section class="feature wrap" id="install" aria-labelledby="f-install">
         <header>
           <span class="eyebrow">インストール</span>
-          <h2 id="f-install">1 行で入ります。</h2>
+          <h2 id="f-install">入れ方は 2 つ。</h2>
         </header>
         <div class="install">
+          <h3>DMG をダウンロードする</h3>
+          <p><a class="download" href="https://github.com/froggugugugu/arin-term/releases/latest/download/Arin-arm64.dmg">Arin をダウンロード</a></p>
+          <p class="note">
+            ダウンロードした DMG を開き、Arin.app を「アプリケーション」フォルダへドラッグします。Developer ID で署名し、Apple の公証を受けているので、そのまま開けます。
+            以前の版と zip は <a href="https://github.com/froggugugugu/arin-term/releases">GitHub のリリース</a>にあります。
+          </p>
+          <h3>ターミナルで 1 行</h3>
           <pre><code>curl -fsSL https://froggugugugu.github.io/arin-term/install.sh | bash</code></pre>
           <p class="note">
             最新のリリースを取得し、sha256 と署名を確かめてから「アプリケーション」フォルダに入れます。更新も同じ 1 行です。
-            DMG は <a href="https://github.com/froggugugugu/arin-term/releases/latest">GitHub のリリース</a>から、スクリプトの中身は <a href="install.sh">install.sh</a> で読めます。
+            スクリプトの中身は <a href="install.sh">install.sh</a> で読めます。
           </p>
           <dl>
             <dt>動作環境</dt>
