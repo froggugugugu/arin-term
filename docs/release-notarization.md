@@ -121,7 +121,7 @@ hdiutil detach "$mnt"
 
 ## 7. CI(GitHub の Environment と Secrets)
 
-【Web】リポジトリ(以下 `<owner>/<repo>`。公開する場所が決まったら置き換える)に Environment `release` を作り、その Environment secrets に下の 6 つを入れる(`release.yml` の build ジョブは `environment: release` が前提):
+【Web】リポジトリ(以下 `<owner>/<repo>`。いまは `froggugugugu/arin-term`。2026-11-19 に設定済み)に Environment `release` を作り、その Environment secrets に下の 6 つを入れる(`release.yml` の build ジョブは `environment: release` が前提):
 
 1. `https://github.com/<owner>/<repo>/settings/environments` → **New environment** → 名前 `release`
 2. 「Deployment branches and tags」を **Selected branches and tags** にし、tag のパターン `v*` だけを許可する

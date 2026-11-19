@@ -107,9 +107,9 @@
 
 | ID | 機能 | 受け入れ条件(確認できる粒度) | passes |
 | -- | ---- | ---------------------------- | ------ |
-| T51 | 署名・公証のスクリプトと手順書(AI。実行しない) | `scripts/package-mac.sh` と `docs/release-notarization.md` がある。秘密情報がリポジトリに無い | ❌ |
-| T52 | tag のときの公証のワークフロー(AI) | `.github/workflows/release.yml` がある。Secrets は名前だけを参照している | ❌ |
-| T53 | 証明書と API キーの用意、手元での署名・公証(人間) | 本人が `npm run dist:mac` を実行し、公証済みの `.dmg` ができた | ❌ |
+| T51 | 署名・公証のスクリプトと手順書(AI。実行しない) | `scripts/package-mac.sh` と `docs/release-notarization.md` がある。秘密情報がリポジトリに無い | ✅ |
+| T52 | tag のときの公証のワークフロー(AI) | `.github/workflows/release.yml` がある。Secrets は名前だけを参照している | ✅ |
+| T53 | 証明書と API キーの用意、手元での署名・公証(人間) | 本人が `npm run dist:mac` を実行し、公証済みの `.dmg` ができた | ✅(2026-11-19。`release.yml` が署名・公証した。手元の `dist:mac` での署名は実行していない) |
 | T54 | 別アカウントでの起動確認(人間) | 別ユーザーアカウントで Gatekeeper の警告なく起動した | ❌ |
 
 ### M6 日常の磨き(粗い。T55 で分解し直して行を追加する)
@@ -153,6 +153,14 @@
 ---
 
 ## 4. セッションログ(新しいものを上に)
+
+### 2026-11-18〜19 — 公開と最初のリリース(v0.2.0)
+
+- 版を 0.2.0 に上げ、pull request #2 で M0〜M4.8 と公開の準備を `main` に取り込んだ(squash なし)。リポジトリを公開に切り替え、紹介ページ(GitHub Pages)を出した
+- tag `v0.2.0` で `release.yml` が署名・公証し、Release に dmg と zip を出した。公開された dmg と中の app は `source=Notarized Developer ID`、公証のチケットあり。`install.sh` で一時フォルダに入れた app も同じ判定で、`node scripts/smoke.mjs --app=<入れた app>` が通った(シェルが起動する)。半透過(ADR-010)のままで公証が通った
+- 途中で直したもの: 深い入れ子の Markdown で解析器のスタックがあふれる(CI で発覚)、設定ファイルの監視のテストが FSEvents の立ち上がりの時間に頼っていた
+- GitHub の設定: Environment `release` は `v*` の tag だけ、ruleset「release tags」で `v*` の tag の作成・更新・削除を管理者だけに制限
+- 残り: T54(別アカウントでの起動確認)、公証済みの版でターミナルの中の `osascript`・カメラ・マイクが動くか、J-PlatPat の商標の確認、実機のスクリーンショットへの差し替え、M2〜M4.8 の本人の確認
 
 ### 2026-11-17〜18 — 公開の準備(ブランチ `chore/public-release`、pull request #2)
 

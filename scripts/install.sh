@@ -2,7 +2,7 @@
 # Installs Arin on a Mac (Apple silicon) into /Applications.
 #
 #   curl -fsSL https://raw.githubusercontent.com/froggugugugu/arin-term/main/scripts/install.sh | bash
-#   (the URL follows REPO below; where the repository is published is not decided yet)
+#   (the URL follows REPO below)
 #
 # Ported from tadcap's scripts/install.sh. Releases are meant to be Developer ID signed and notarized
 # (.github/workflows/release.yml), so Gatekeeper accepts them. curl does not mark what it downloads with
