@@ -342,13 +342,34 @@ test.describe("矢印キーの操作(WAI-ARIA の tree の作法)", () => {
     await row(page, "src").click();
     await page.keyboard.press("Shift+ArrowDown");
     await page.keyboard.press("Alt+ArrowDown");
+    await page.keyboard.press("Meta+ArrowDown");
+    await page.keyboard.press("Meta+ArrowRight");
     await expect.poll(() => selectedPath(page)).toBe("src");
+    await expect(row(page, "src")).toHaveAttribute("aria-expanded", "false");
 
     await page.getByTestId("project-card").first().focus();
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("ArrowRight");
     await expect.poll(() => selectedPath(page)).toBe("src");
     await expect(row(page, "src")).toHaveAttribute("aria-expanded", "false");
+  });
+});
+
+test.describe("矢印キーと名前の入力", () => {
+  test("名前の入力中の矢印は入力欄のもので_選択は動かない", async ({ page }) => {
+    await open(page);
+    await row(page, "README.md").click();
+    await page.keyboard.press("Enter");
+    const input = page.getByTestId("tree-name-input");
+    await expect(input).toBeFocused();
+
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowLeft");
+    await expect(input).toBeFocused();
+    await expect(page.locator('[data-testid="tree-row"][aria-selected="true"]')).toHaveAttribute("data-path", "README.md");
+    await page.keyboard.press("Escape");
+    await expect(input).toHaveCount(0);
   });
 });
 
