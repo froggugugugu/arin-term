@@ -5,11 +5,13 @@ import type { Actions } from "../../state/actions";
 import type { ProjectId } from "../snapshotTypes";
 
 /** メニューが使う操作(Actions の一部)。 */
-export type CardMenuActions = Pick<Actions, "copyProjectPath" | "setProjectColor" | "relinkProject" | "removeProject">;
+export type CardMenuActions = Pick<Actions, "newTerminal" | "copyProjectPath" | "setProjectColor" | "relinkProject" | "removeProject">;
 
 /** 項目の操作を呼ぶ。対象はメニューを開いたカードのプロジェクト。どの操作も失敗しない(actions が報告する)。 */
 export function runCardMenuCommand(actions: CardMenuActions, projectId: ProjectId, command: CardMenuCommand): Promise<void> {
   switch (command.type) {
+    case "new-terminal":
+      return actions.newTerminal(projectId);
     case "copy-path":
       return actions.copyProjectPath(projectId);
     case "set-color":

@@ -82,7 +82,7 @@ Rust から画面へ渡す状態の写し。画面は届いたもので丸ごと
 正本は `src-tauri/src/lib.rs` の `generate_handler!`、画面側の型は `src/ipc/client.ts` の `CommandMap`・`EventMap`。
 
 - アプリ: `get_app_snapshot`、`notify_app_ready`、`report_frontend_error`、`confirm_quit`、`open_settings_file`(引数なし。無いときだけ見本を作って既定のアプリで開く。メニューの「設定ファイルを開く…」と同じ処理)
-- ターミナル: `connect_terminal`(応答 `ConnectOutcome` の `sizeApplied`)、`write_terminal`、`write_terminal_bytes`、`ack_terminal_output`、`resize_terminal`、`new_terminal`(選択中のプロジェクトに足し、ID を返す)、`close_terminal`、`select_terminal`
+- ターミナル: `connect_terminal`(応答 `ConnectOutcome` の `sizeApplied`)、`write_terminal`、`write_terminal_bytes`、`ack_terminal_output`、`resize_terminal`、`new_terminal`(選択中のプロジェクトに足し、ID を返す。`projectId` を渡すと、そのプロジェクトを選んでから足す)、`close_terminal`、`select_terminal`
 - プロジェクト: `add_project_by_dialog`(応答 `added` / `alreadyRegistered` / `cancelled`。パスは画面を経由しない)、`select_project`、`remove_project`(`confirmed` が偽で動作中があれば `needsConfirmation` と動作中の一覧、ほかは `removed`)、`relink_project`(真偽)、`set_project_color`、`copy_project_path`(Rust がペーストボードに書く)
 - ペイン: `set_pane_sizes`、`set_sidebar_collapsed`
 - 表示(M4): `set_display_mode`、`focus_terminal`(閉じたタイルの ID なら何もしない)、`next_tile_page`・`previous_tile_page`(タブ表示・拡大中・端のページでは何もしない)、`toggle_tile_maximize`(`terminalId` は任意。渡せばそのタイルにフォーカスしてから拡大、無ければフォーカス中のタイル。タブ表示では何もしない)

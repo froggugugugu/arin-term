@@ -168,6 +168,11 @@ fn 見つからないプロジェクトにはタブを作らず_新しいタブ�
     let err = ws.open_terminal(&id(2)).unwrap_err();
 
     assert_eq!(err, WorkspaceError::RootMissing(id(2)));
+    // 選んでから開く経路(カードのメニュー)でも開けず、選択は変わらない。
+    let selected = ws.snapshot().selected_project_id;
+    let err = ws.open_terminal_selecting(&id(2)).unwrap_err();
+    assert_eq!(err, WorkspaceError::RootMissing(id(2)));
+    assert_eq!(ws.snapshot().selected_project_id, selected);
     assert!(tabs_of(&ws, &id(2)).is_empty());
     let card = &ws.snapshot().projects[1];
     assert!(card.missing);

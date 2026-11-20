@@ -272,12 +272,26 @@ test.describe("タイルのグリッド(FR-051)", () => {
     expect(await label.evaluate((el) => getComputedStyle(el).textOverflow)).toBe("ellipsis");
   });
 
-  test("タイル表示で_0_枚ならターミナルがありませんだけを出す", async ({ page }) => {
+  test("タイル表示で_0_枚ならターミナルがありませんと新規ターミナルのボタンを出す", async ({ page }) => {
     const empty: SampleProject = { id: "p-e", name: "empty", tabs: [] };
     await open(page, withTileDisplay(projectsSnapshot([empty])));
-    await expect(page.getByTestId("terminals-empty")).toContainText("ターミナルがありません");
+    const area = page.getByTestId("terminals-empty");
+    await expect(area).toContainText("ターミナルがありません");
     await expect(grid(page)).toHaveCount(0);
     await expect(page.getByTestId("terminal-host")).toHaveCount(0);
+
+    // 選択中のプロジェクトに開く(⌘T と同じ。引数なし)。
+    await area.getByRole("button", { name: /新規ターミナル/ }).click();
+    await expect.poll(() => readCallArgs(page, "new_terminal")).toEqual([{}]);
+  });
+
+  test("タイル表示で_0_枚で選択中が見つからないなら_ボタンの代わりにカードのメニューの案内を出す", async ({ page }) => {
+    const gone: SampleProject = { id: "p-g", name: "gone", missing: true };
+    const empty: SampleProject = { id: "p-e", name: "empty", tabs: [] };
+    await open(page, withTileDisplay(projectsSnapshot([gone, empty])));
+    const area = page.getByTestId("terminals-empty");
+    await expect(area).toContainText("左のプロジェクトを右クリックして「新規ターミナル」を選ぶと開けます。");
+    await expect(area.getByRole("button")).toHaveCount(0);
   });
 
   test("ウィンドウの大きさを変えると各タイルの寸法が送られる", async ({ page }) => {

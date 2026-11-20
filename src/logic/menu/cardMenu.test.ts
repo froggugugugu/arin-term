@@ -22,24 +22,27 @@ describe("PROJECT_COLOR_IDS(プロジェクト色の識別子)", () => {
 });
 
 describe("buildCardMenu(カードの右クリックのメニュー)", () => {
-  it("カードのメニューに絶対パスをコピーと色と一覧から削除がある", () => {
+  it("カードのメニューに新規ターミナルと絶対パスをコピーと色と一覧から削除がある", () => {
     const menu = buildCardMenu({ missing: false, color: "green" });
 
-    expect(labels(menu)).toEqual(["絶対パスをコピー", "色", "一覧から削除"]);
+    expect(labels(menu)).toEqual(["新規ターミナル", "絶対パスをコピー", "色", "一覧から削除"]);
     expect(menu.map((entry) => entry.kind)).toEqual([
+      "command",
+      "separator",
       "command",
       "separator",
       "submenu",
       "separator",
       "command",
     ]);
-    expect(menu[0]).toEqual({ kind: "command", label: "絶対パスをコピー", command: { type: "copy-path" } });
-    expect(menu[4]).toEqual({ kind: "command", label: "一覧から削除", command: { type: "remove" } });
+    expect(menu[0]).toEqual({ kind: "command", label: "新規ターミナル", command: { type: "new-terminal" } });
+    expect(menu[2]).toEqual({ kind: "command", label: "絶対パスをコピー", command: { type: "copy-path" } });
+    expect(menu[6]).toEqual({ kind: "command", label: "一覧から削除", command: { type: "remove" } });
   });
 
   it("色の下に 8 色がパレットの順に並び、いまの色に印が付く", () => {
     const menu = buildCardMenu({ missing: false, color: "blue" });
-    const submenu = menu[2];
+    const submenu = menu[4];
     if (submenu?.kind !== "submenu") throw new Error("色の項目が無い");
 
     expect(submenu.items.map((item) => item.command)).toEqual(

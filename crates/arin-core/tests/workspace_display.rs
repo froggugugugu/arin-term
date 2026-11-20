@@ -492,6 +492,57 @@ fn 新しいタブを開くとそのタイルのページへ移る() {
 }
 
 #[test]
+fn 選んでいないプロジェクトに開くとそのプロジェクトが選ばれ新しいタイルにフォーカスが移る() {
+    // カードのメニューの「新規ターミナル」。プロジェクト 2 は exit などで 0 枚になっている。
+    let mut ws = workspace(&[9, 0]);
+    ws.set_display_mode(DisplayMode::Tiles);
+    assert_eq!(selected(&ws), Some(pid(1)));
+    assert_eq!(page(&ws), 0);
+
+    let new = ws.open_terminal_selecting(&pid(2)).unwrap();
+
+    assert_eq!(selected(&ws), Some(pid(2)));
+    assert_eq!(tabs_of(&ws, &pid(2)), vec![new.clone()]);
+    assert_eq!(ws.active_terminal(), Some(new.clone()));
+    assert_eq!(page(&ws), 1, "新しいタイルのページへ移る");
+    assert_eq!(ws.snapshot().display.tile_ids, vec![new]);
+    check_invariants(&ws);
+}
+
+#[test]
+fn タブ表示でも選んでいないプロジェクトに開くとそのプロジェクトが選ばれる() {
+    let mut ws = workspace(&[1, 2]);
+    let before = tabs_of(&ws, &pid(2));
+
+    let new = ws.open_terminal_selecting(&pid(2)).unwrap();
+
+    assert_eq!(selected(&ws), Some(pid(2)));
+    assert_eq!(
+        tabs_of(&ws, &pid(2)),
+        vec![before[0].clone(), before[1].clone(), new.clone()],
+        "末尾に足す"
+    );
+    assert_eq!(active_of(&ws, &pid(2)), Some(new));
+    assert_eq!(
+        tabs_of(&ws, &pid(1)).len(),
+        1,
+        "ほかのプロジェクトは変わらない"
+    );
+    check_invariants(&ws);
+}
+
+#[test]
+fn 無いプロジェクトには開けず選択も変わらない() {
+    let mut ws = workspace(&[1, 1]);
+    let before = ws.snapshot();
+
+    let err = ws.open_terminal_selecting(&pid(9)).unwrap_err();
+
+    assert!(err.to_string().contains("見つからない"), "{err}");
+    assert_eq!(ws.snapshot(), before);
+}
+
+#[test]
 fn タブを閉じてページが減るとページを丸める() {
     let mut ws = workspace(&[10]);
     ws.set_display_mode(DisplayMode::Tiles);

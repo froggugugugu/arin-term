@@ -5,6 +5,7 @@ import { type CardMenuActions, runCardMenuCommand } from "./runCardMenuCommand";
 function fakeActions() {
   const calls: unknown[][] = [];
   const actions: CardMenuActions = {
+    newTerminal: async (id) => void calls.push(["newTerminal", id]),
     copyProjectPath: async (id) => void calls.push(["copyProjectPath", id]),
     setProjectColor: async (id, color) => void calls.push(["setProjectColor", id, color]),
     relinkProject: async (id) => void calls.push(["relinkProject", id]),
@@ -14,6 +15,12 @@ function fakeActions() {
 }
 
 describe("runCardMenuCommand(カードのメニューで選ばれた項目を操作に渡す)", () => {
+  it("新規ターミナルは、メニューを開いたカードのプロジェクトを渡して開く", async () => {
+    const { actions, calls } = fakeActions();
+    await runCardMenuCommand(actions, "p2", { type: "new-terminal" });
+    expect(calls).toEqual([["newTerminal", "p2"]]);
+  });
+
   it("絶対パスをコピーはパスのコピーを呼ぶ(選択の操作は呼ばない)", async () => {
     const { actions, calls } = fakeActions();
     await runCardMenuCommand(actions, "p1", { type: "copy-path" });

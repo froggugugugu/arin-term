@@ -1,10 +1,10 @@
 import "./TerminalArea.css";
 
-import { type ReactNode, useEffect, useId, useRef } from "react";
+import { type ReactNode, type Ref, useEffect, useId, useRef } from "react";
 import { useStore } from "zustand";
 
 import type { EditorManager } from "../../editor/EditorManager";
-import { shortcutLabel } from "../../logic/keys/shortcutTable";
+import { type ShortcutTable, shortcutLabel } from "../../logic/keys/shortcutTable";
 import type { Actions } from "../../state/actions";
 import type { AppStore } from "../../state/appStore";
 import type { EditorController } from "../../state/editorController";
@@ -50,7 +50,8 @@ interface TerminalAreaProps {
  * 右ペインのターミナル領域(設計書 §8「タブ表示」「タブ 0 枚」「タイル表示」、§9.1 の Container)。
  * 写しの表示モード(display.mode)で出し分ける。
  * - タブ表示: 選択中のプロジェクトのタブバーと、表示中のタブのターミナルの置き場所を 1 つだけ描く
- * - タイル表示: TileGrid(帯とページ表示、表示中のページのタイル)。0 枚なら「ターミナルがありません」だけ(【仮定】2)
+ * - タイル表示: TileGrid(帯とページ表示、表示中のページのタイル)。0 枚なら「ターミナルがありません」と、選択中の
+ *   プロジェクトに開く「新規ターミナル」(選択が無い・見つからないなら、カードのメニューの案内)
  * - タイル表示の拡大中: MaximizedTile(拡大しているタイルの名前と元に戻すボタンの帯と、そのターミナル 1 枚。前提 (d))
  *
  * - 他のタブ・他のプロジェクトのターミナルは描かない。TerminalManager が写しのたびに隠したまま出力の取り込みを続け
@@ -85,7 +86,7 @@ export function TerminalArea({ store, ui, actions, terminals, editor, editors }:
   // 宛先が変わったら、置き場所への要素の移し替え(子の TerminalHost の effect)が済んだあと、次の描画のフレームで
   // フォーカスを移す。WebKit は、フォーカスのあった要素(前のターミナルの入力欄)を外すと、次の描画の更新でフォーカスを
   // 外し直す(blur のイベントは出ない)ので、同じ処理の中で移したフォーカスは消える。
-  // 宛先が無くなった(最後の 1 枚を閉じた)ときは、「新規ターミナル」のボタンへ移す(body に落とさない。タブ表示だけにある)。
+  // 宛先が無くなった(最後の 1 枚を閉じた)ときは、「新規ターミナル」のボタンへ移す(body に落とさない)。
   // 写しが変わっただけ(宛先・モード・拡大が同じ)なら、この effect は動かない。
   // 移す直前に、いまの写しの宛先がまだ同じかを確かめる(描画のフレームを待つあいだに新しい写しが届いていたら、古い宛先へ
   // 移さない。タイルは入力のフォーカスが入るとフォーカスのコマンドを送るので、古い宛先へ移すと Rust のフォーカス中の
@@ -125,7 +126,17 @@ export function TerminalArea({ store, ui, actions, terminals, editor, editors }:
         {none ? (
           <NoProjects />
         ) : view.tiles.length === 0 ? (
-          <EmptyState title="ターミナルがありません" />
+          <EmptyState title="ターミナルがありません">
+            {project !== null && !project.missing ? (
+              <NewTerminalButton
+                ref={newTerminalButton}
+                shortcuts={shortcuts}
+                onNew={() => void actions.newTerminal()}
+              />
+            ) : (
+              <p>左のプロジェクトを右クリックして「新規ターミナル」を選ぶと開けます。</p>
+            )}
+          </EmptyState>
         ) : (
           <TileGrid view={view} store={store} ui={ui} actions={actions} terminals={terminals} />
         )}
@@ -152,7 +163,6 @@ export function TerminalArea({ store, ui, actions, terminals, editor, editors }:
   const editorTabs = projectEditorTabs(snapshot, project.id);
   const status = terminal === null ? null : describeTerminalStatus(terminal.status);
   const canAdd = !project.missing;
-  const newTabKey = shortcutLabel(shortcuts, "terminal.new-tab");
 
   return (
     <div className="terminal-area">
@@ -187,14 +197,11 @@ export function TerminalArea({ store, ui, actions, terminals, editor, editors }:
       ) : terminal === null ? (
         <EmptyState title="ターミナルがありません">
           {canAdd ? (
-            <button
+            <NewTerminalButton
               ref={newTerminalButton}
-              type="button"
-              className="button button--primary"
-              onClick={() => void actions.newTerminal()}
-            >
-              {newTabKey === null ? "新規ターミナル" : `新規ターミナル(${newTabKey})`}
-            </button>
+              shortcuts={shortcuts}
+              onNew={() => void actions.newTerminal()}
+            />
           ) : (
             <p>フォルダが見つからないため、新しいターミナルを開けません。左の「再リンク…」でつなぎ直してください。</p>
           )}
@@ -216,6 +223,24 @@ export function TerminalArea({ store, ui, actions, terminals, editor, editors }:
         </div>
       )}
     </div>
+  );
+}
+
+/** 空の案内の「新規ターミナル」のボタン(選択中のプロジェクトに開く。キーの表示は表から引く)。 */
+function NewTerminalButton({
+  ref,
+  shortcuts,
+  onNew,
+}: {
+  ref: Ref<HTMLButtonElement>;
+  shortcuts: ShortcutTable;
+  onNew: () => void;
+}) {
+  const key = shortcutLabel(shortcuts, "terminal.new-tab");
+  return (
+    <button ref={ref} type="button" className="button button--primary" onClick={onNew}>
+      {key === null ? "新規ターミナル" : `新規ターミナル(${key})`}
+    </button>
   );
 }
 

@@ -468,6 +468,62 @@ fn 選択を変えてもターミナルの状態は変わらない(
     assert!(unknown.contains("見つからない"), "{unknown}");
 }
 
+fn プロジェクトを指定して新しいタブを開くとそのプロジェクトが選ばれる(
+    handle: &AppHandle<MockRuntime>,
+    window: &WebviewWindow<MockRuntime>,
+    _ctx: &Ctx,
+) {
+    let before = snapshot(handle, window);
+    let selected_before = selected(&before);
+    let target = before
+        .projects
+        .iter()
+        .find(|p| !p.missing && Some(p.id.as_str()) != selected_before.as_deref())
+        .unwrap_or_else(|| panic!("選んでいないプロジェクトが無い"))
+        .clone();
+
+    let opened: String = call_ok(
+        handle,
+        window,
+        "new_terminal",
+        json!({ "projectId": target.id }),
+    );
+
+    let s = snapshot(handle, window);
+    assert_eq!(selected(&s).as_deref(), Some(target.id.as_str()));
+    let card = s
+        .projects
+        .iter()
+        .find(|p| p.id == target.id)
+        .unwrap_or_else(|| panic!("カードが無くなった"));
+    assert_eq!(card.terminal_ids.len(), target.terminal_ids.len() + 1);
+    assert_eq!(
+        card.active_terminal_id.as_ref().map(|id| id.as_str()),
+        Some(opened.as_str())
+    );
+    assert_eq!(s.terminals.len(), before.terminals.len() + 1);
+
+    // 無い ID には開けず、選択も変わらない。
+    let unknown = error_text(call(
+        handle,
+        window,
+        "new_terminal",
+        json!({ "projectId": "00000000-0000-4000-8000-000000000000" }),
+    ));
+    assert!(unknown.contains("見つからない"), "{unknown}");
+    let after = snapshot(handle, window);
+    assert_eq!(selected(&after), selected(&s));
+    assert_eq!(after.terminals.len(), s.terminals.len());
+
+    // あとの確認は元の選択を前提にしているので戻す。
+    call_ok::<()>(
+        handle,
+        window,
+        "select_project",
+        json!({ "projectId": selected_before }),
+    );
+}
+
 fn 色を変えられる(
     handle: &AppHandle<MockRuntime>,
     window: &WebviewWindow<MockRuntime>,
@@ -708,6 +764,10 @@ const CHECKS: &[(&str, Check)] = &[
     (
         "選択を変えてもターミナルの状態は変わらない",
         選択を変えてもターミナルの状態は変わらない,
+    ),
+    (
+        "プロジェクトを指定して新しいタブを開くとそのプロジェクトが選ばれる",
+        プロジェクトを指定して新しいタブを開くとそのプロジェクトが選ばれる,
     ),
     ("色を変えられる", 色を変えられる),
     (
