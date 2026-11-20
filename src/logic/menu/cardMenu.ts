@@ -40,6 +40,7 @@ export interface CardMenuInput {
 
 /** 選ばれたときの操作。対象のプロジェクトは、メニューを開いたカードのもの。 */
 export type CardMenuCommand =
+  | { readonly type: "new-terminal" }
   | { readonly type: "copy-path" }
   | { readonly type: "set-color"; readonly color: ProjectColorId }
   | { readonly type: "relink" }
@@ -63,8 +64,8 @@ const SEPARATOR: CardMenuEntry = { kind: "separator" };
 
 /**
  * カードの右クリックのメニューを組み立てる。
- * - ふつうのカード: 絶対パスをコピー / 色 ▸ 8 色 / 一覧から削除
- * - 見つからないカード: 再リンク… / 一覧から削除
+ * - ふつうのカード: 新規ターミナル / 絶対パスをコピー / 色 ▸ 8 色 / 一覧から削除
+ * - 見つからないカード: 再リンク… / 一覧から削除(フォルダが無いのでターミナルは開けない)
  */
 export function buildCardMenu(card: CardMenuInput): CardMenuEntry[] {
   if (card.missing) {
@@ -76,6 +77,8 @@ export function buildCardMenu(card: CardMenuInput): CardMenuEntry[] {
     command: { type: "set-color", color },
   }));
   return [
+    { kind: "command", label: "新規ターミナル", command: { type: "new-terminal" } },
+    SEPARATOR,
     { kind: "command", label: "絶対パスをコピー", command: { type: "copy-path" } },
     SEPARATOR,
     { kind: "submenu", label: "色", items: colors },

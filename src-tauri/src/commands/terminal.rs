@@ -10,6 +10,7 @@
 
 use std::sync::Arc;
 
+use arin_core::project::ProjectId;
 use arin_core::terminal::TerminalId;
 use arin_core::workspace::ConnectOutcome;
 use tauri::State;
@@ -85,11 +86,19 @@ pub async fn write_terminal_bytes(
     blocking(move || sessions.write(&terminal_id, &data)).await
 }
 
-/// 選択中のプロジェクトの末尾に新しいタブを開いて表示中にし、その ID を返す(FR-039・FR-044)。
+/// 新しいタブを末尾に開いて表示中にし、その ID を返す(FR-039・FR-044)。`project_id` が無ければ選択中の
+/// プロジェクトに開く。あればそのプロジェクトを選んでから開く(カードのメニューの「新規ターミナル」)。
 /// シェルは画面が `connect_terminal` を呼んだときに起動する。変わった状態は写しのイベントでも届く。
 #[tauri::command]
-pub fn new_terminal(sessions: State<'_, SessionRegistry>) -> Result<TerminalId, String> {
-    sessions.new_terminal().map_err(|e| e.to_string())
+pub fn new_terminal(
+    sessions: State<'_, SessionRegistry>,
+    project_id: Option<ProjectId>,
+) -> Result<TerminalId, String> {
+    match project_id {
+        Some(project) => sessions.new_terminal_in(&project),
+        None => sessions.new_terminal(),
+    }
+    .map_err(|e| e.to_string())
 }
 
 /// タブを閉じ、そのシェルを終わらせる(FR-044)。動作中のプロセスがあっても確認しない。

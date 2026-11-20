@@ -518,6 +518,18 @@ impl SessionRegistry {
         Ok(id)
     }
 
+    /// プロジェクトを選んでから、その末尾に新しいタブを開く(カードのメニューの「新規ターミナル」)。
+    /// 選んでいないプロジェクトにも開ける。開けないときは選択も変えない。ほかは `new_terminal` と同じ。
+    ///
+    /// # Errors
+    ///
+    /// その ID のプロジェクトが無いとき、ルートが見つからないとき。
+    pub fn new_terminal_in(&self, project: &ProjectId) -> Result<TerminalId, SessionError> {
+        let id = lock(&self.inner.workspace).open_terminal_selecting(project)?;
+        self.notify();
+        Ok(id)
+    }
+
     /// タブを閉じ、そのセッションを終わらせる(FR-044)。動作中のプロセスがあっても確認しない(計画書 M2 の【仮定】14)。
     /// 表示中だったなら右隣(無ければ左)が表示中になる。
     ///
