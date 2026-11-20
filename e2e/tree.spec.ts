@@ -272,6 +272,86 @@ test.describe("選択と開閉の操作(FR-018、【仮定】1・6)", () => {
   });
 });
 
+test.describe("矢印キーの操作(WAI-ARIA の tree の作法)", () => {
+  const selectedPath = (page: Page) =>
+    page.locator('[data-testid="tree-row"][aria-selected="true"]').getAttribute("data-path");
+
+  test("上下で選択が動き_右で開いて子へ_左で親へ戻って閉じる", async ({ page }) => {
+    const errors = collectPageErrors(page);
+    await open(page);
+    await row(page, "docs").click();
+    await expect(fileTree(page)).toBeFocused();
+
+    // ↓ / ↑ で次・前の行。先頭では止まる。
+    await page.keyboard.press("ArrowDown");
+    await expect.poll(() => selectedPath(page)).toBe("src");
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowUp");
+    await expect.poll(() => selectedPath(page)).toBe("docs");
+    await page.keyboard.press("ArrowDown");
+
+    // → で閉じたフォルダが開き(選択は動かない)、もう一度 → で最初の子へ。
+    await page.keyboard.press("ArrowRight");
+    await expect(row(page, "src")).toHaveAttribute("aria-expanded", "true");
+    await expect(row(page, "src/main.ts")).toBeVisible();
+    await expect.poll(() => selectedPath(page)).toBe("src");
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(() => selectedPath(page)).toBe("src/lib");
+
+    // 開いたフォルダの中も ↓ で続けて動ける。ファイルの → は何もしない。
+    await page.keyboard.press("ArrowDown");
+    await expect.poll(() => selectedPath(page)).toBe("src/main.ts");
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(() => selectedPath(page)).toBe("src/main.ts");
+
+    // ← で親へ移り(親は開いたまま)、もう一度 ← で閉じる。
+    await page.keyboard.press("ArrowLeft");
+    await expect.poll(() => selectedPath(page)).toBe("src");
+    await expect(row(page, "src")).toHaveAttribute("aria-expanded", "true");
+    await page.keyboard.press("ArrowLeft");
+    await expect(row(page, "src")).toHaveAttribute("aria-expanded", "false");
+    await expect(row(page, "src/main.ts")).toHaveCount(0);
+    await expect.poll(() => selectedPath(page)).toBe("src");
+    // いちばん上の階層の閉じたフォルダの ← は何もしない。
+    await page.keyboard.press("ArrowLeft");
+    await expect.poll(() => selectedPath(page)).toBe("src");
+
+    // 末尾では止まる。
+    for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowDown");
+    await expect.poll(() => selectedPath(page)).toBe("a b.ts");
+    expect(errors).toEqual([]);
+  });
+
+  test("何も選んでいなければ下で先頭_上で末尾が選ばれる", async ({ page }) => {
+    await open(page);
+    await expect(row(page, "docs")).toBeVisible();
+    await fileTree(page).focus();
+    await page.keyboard.press("ArrowDown");
+    await expect.poll(() => selectedPath(page)).toBe("docs");
+
+    // 余白のクリックで選択を外してから ↑。
+    await scroller(page).click({ position: { x: 20, y: 400 } });
+    await expect(page.locator('[data-testid="tree-row"][aria-selected="true"]')).toHaveCount(0);
+    await fileTree(page).focus();
+    await page.keyboard.press("ArrowUp");
+    await expect.poll(() => selectedPath(page)).toBe("a b.ts");
+  });
+
+  test("修飾キー付きの矢印とツリーの外のフォーカスでは選択が動かない", async ({ page }) => {
+    await open(page);
+    await row(page, "src").click();
+    await page.keyboard.press("Shift+ArrowDown");
+    await page.keyboard.press("Alt+ArrowDown");
+    await expect.poll(() => selectedPath(page)).toBe("src");
+
+    await page.getByTestId("project-card").first().focus();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(() => selectedPath(page)).toBe("src");
+    await expect(row(page, "src")).toHaveAttribute("aria-expanded", "false");
+  });
+});
+
 test.describe("監視の反映(FR-014、AC-T02)", () => {
   test("tree-changed_で_src_に_new.txt_が現れる", async ({ page }) => {
     await open(page);

@@ -23,6 +23,8 @@ interface TreePaneProps {
       | "removeProject"
       | "selectTreePath"
       | "toggleDir"
+      | "expandDir"
+      | "collapseDir"
       | "commitInlineEdit"
       | "resolveConflict"
       | "cancelConflict"
