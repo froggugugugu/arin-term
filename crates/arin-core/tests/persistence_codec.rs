@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 
 use arin_core::layout::font_sizes::{FontSizeTarget, FontSizes};
+use arin_core::layout::theme::ThemeMode;
 use arin_core::layout::tiles::DisplayMode;
 use arin_core::layout::translucency::{Translucency, TranslucencyTarget};
 use arin_core::persistence::codec::{
@@ -66,6 +67,7 @@ fn sample_state() -> PersistedState {
             font_sizes: FontSizes::default(),
             translucency: Translucency::default(),
             editor_vim: false,
+            theme: ThemeMode::System,
         },
     }
 }
@@ -245,6 +247,7 @@ fn 欠けたキーは既定値で補う() {
                 font_sizes: FontSizes::default(),
                 translucency: Translucency::default(),
                 editor_vim: false,
+                theme: ThemeMode::System,
             },
         }
     );
@@ -384,6 +387,7 @@ fn tree_キーの無い状態ファイルも読める() {
                 font_sizes: FontSizes::default(),
                 translucency: Translucency::default(),
                 editor_vim: false,
+                theme: ThemeMode::System,
             },
         }
     );
@@ -513,6 +517,7 @@ fn m3_state() -> PersistedState {
             font_sizes: FontSizes::default(),
             translucency: Translucency::default(),
             editor_vim: false,
+            theme: ThemeMode::System,
         },
     }
 }
@@ -1123,4 +1128,61 @@ fn 真偽値でない値は退避せず偽() {
     let mut value: Value = serde_json::from_str(M3_STATE_JSON).unwrap();
     value["ui"]["editorVim"] = json!(false);
     assert!(!loaded(decode_value(&value)).state.layout.editor_vim);
+}
+
+// ---- テーマの選び方(ADR-016、`ui.theme`) ----
+
+#[test]
+fn theme_が無い版_1_をそのまま読みシステムになる() {
+    let m3 = loaded(decode_str(M3_STATE_JSON));
+    assert_eq!(m3.state, m3_state());
+    assert_eq!(m3.state.layout.theme, ThemeMode::System);
+}
+
+#[test]
+fn システムは書かない() {
+    let state = m3_state();
+    let value: Value = serde_json::from_str(&encode(&state).expect("書ける")).unwrap();
+    assert!(value["ui"].get("theme").is_none(), "{value}");
+    let original: Value = serde_json::from_str(M3_STATE_JSON).unwrap();
+    assert_eq!(value, original);
+}
+
+#[test]
+fn ライトとダークを書いて読み戻せる() {
+    for (theme, text) in [(ThemeMode::Light, "light"), (ThemeMode::Dark, "dark")] {
+        let mut state = m3_state();
+        state.layout.theme = theme;
+        let encoded = encode(&state).expect("書ける");
+        let value: Value = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(value["schemaVersion"], json!(1));
+        assert_eq!(value["ui"]["theme"], json!(text));
+        let back = loaded(decode_str(&encoded));
+        assert_eq!(back.state, state);
+    }
+}
+
+#[test]
+fn 知らない値と型の違う値は退避せずシステム() {
+    for bad in [
+        json!(null),
+        json!("Dark"),
+        json!("auto"),
+        json!(""),
+        json!(1),
+        json!(true),
+        json!([]),
+        json!({}),
+    ] {
+        let mut value: Value = serde_json::from_str(M3_STATE_JSON).unwrap();
+        value["ui"]["theme"] = bad.clone();
+        let outcome = loaded(decode_value(&value));
+        assert_eq!(outcome.state, m3_state(), "{bad}");
+    }
+    let mut value: Value = serde_json::from_str(M3_STATE_JSON).unwrap();
+    value["ui"]["theme"] = json!("system");
+    assert_eq!(
+        loaded(decode_value(&value)).state.layout.theme,
+        ThemeMode::System
+    );
 }

@@ -22,6 +22,7 @@ use arin_core::editor::{
 };
 use arin_core::fileops::{ConflictResolution, FileOpOutcome, NewEntryKind};
 use arin_core::layout::font_sizes::FontSizeTarget;
+use arin_core::layout::theme::ThemeMode;
 use arin_core::layout::tiles::{DisplayMode, TileGrid};
 use arin_core::layout::translucency::TranslucencyTarget;
 use arin_core::paths::{PathKind, RelPath};
@@ -60,6 +61,7 @@ fn collect_generated(cfg: &Config) -> BTreeMap<PathBuf, String> {
     collector.visit::<ShortcutTable>();
     // タイル表示の表示モードとグリッド(計画書 T46a)。
     collector.visit::<DisplayMode>();
+    collector.visit::<ThemeMode>();
     collector.visit::<TileGrid>();
     // 写しの表示の状態(計画書 T46b。`AppSnapshot` からもたどれる)。
     collector.visit::<DisplaySnapshot>();

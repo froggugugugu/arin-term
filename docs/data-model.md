@@ -28,6 +28,7 @@
 | `ui.terminalFontSize` / `ui.interfaceFontSize` | 整数(CSS ピクセル) | ターミナルの文字(既定 15、9〜28)と画面の文字の基準値(既定 13、11〜18)。既定のあいだはキーごとに書かない。無い・数でないときは既定、整数でない数は四捨五入、範囲の外は端に留める。どれも退避しない(版は 1 のまま。規則は `layout/font_sizes.rs`) |
 | `ui.windowTranslucency` / `ui.terminalTranslucency` | 整数(%) | ウィンドウの地(既定 45、0〜100)とターミナルの背景(既定 20、0〜80)の透過の度合い。5 刻み。既定のあいだはキーごとに書かない。無い・数でないときは既定、5 の倍数でない値は近い 5 の倍数に丸め、範囲の外は端に留める。どれも退避しない(M4.7。ADR-014。規則は `layout/translucency.rs`) |
 | `ui.editorVim` | 真偽 | エディタの Vim のキー操作(M4.8。ADR-015 の 6)。真のときだけ書く。無い・真偽値でないときは偽(退避しない。版は 1 のまま)。「既定に戻す」(`reset_appearance`)では戻さない |
+| `ui.theme` | 文字列 | テーマの選び方(ADR-016)。`"light"`・`"dark"` のときだけ書く。無い・知らない値はシステム(OS に追従。退避しない。版は 1 のまま)。「既定に戻す」(`reset_appearance`)では戻さない |
 
 「見つからない」と表示用のパスは保存しない。エディタのタブも保存しない(再起動で開き直さない。ADR-015 の【要確認】2 の A)。
 
@@ -67,6 +68,7 @@ Rust から画面へ渡す状態の写し。画面は届いたもので丸ごと
 | `translucency` | `TranslucencySnapshot` | `window`・`terminal` のそれぞれに `value`・`min`・`max`・`defaultValue`・`step`(M4.7) |
 | `editors` | `EditorTabSnapshot[]` | エディタのタブ(M4.8。プロジェクトの並び順、その中は開いた順)。文書の本文と版は載せない(コマンドの応答で渡す) |
 | `editor` | `EditorSettingsSnapshot` | `vim`(`ui.editorVim`) |
+| `theme` | `ThemeMode` | `system`・`light`・`dark`(`ui.theme`。ADR-016) |
 
 - `ProjectCardSnapshot`: `id`、`name`(表示名)、`color`、`displayPath`(ホームの中は `~` で始める)、`missing`、`showHidden`、`terminalIds`(タブの順)、`activeTerminalId`(0 枚なら `null`)、`editorIds`(開いた順)、`shownEditorId`(タブ表示でターミナルの代わりに出すエディタ。ターミナルのタブを選ぶ・作ると `null`)
 - `EditorTabSnapshot`(タブと版の型は `crates/arin-core/src/editor/`): `id`(`"editor-<n>"`)、`projectId`、`path`(`RelPath`)、`label`(ファイル名)、`dirty`(未保存。画面が `set_document_dirty` で送る。Rust は保存でも消さない)、`readOnly`(`hard-link`・`not-owner`・`not-writable`・`folder-not-writable` / `null`)
@@ -86,6 +88,7 @@ Rust から画面へ渡す状態の写し。画面は届いたもので丸ごと
 - 表示(M4): `set_display_mode`、`focus_terminal`(閉じたタイルの ID なら何もしない)、`next_tile_page`・`previous_tile_page`(タブ表示・拡大中・端のページでは何もしない)、`toggle_tile_maximize`(`terminalId` は任意。渡せばそのタイルにフォーカスしてから拡大、無ければフォーカス中のタイル。タブ表示では何もしない)
 - 文字の大きさ(M4.6): `step_font_size`(`target` は `terminal`/`interface`、`delta` だけ動かす。端で留め、変わったときだけ写しを送る)、`reset_appearance`(文字の大きさ 2 つと透過 2 つを既定に。M4.7 で `reset_font_sizes` から替えた)
 - 透過(M4.7): `step_translucency`(`target` は `window`/`terminal`、`delta` は % の差分。5 の倍数に丸めて端で留める)。タイルの番号キーにコマンドは無い(メニューの項目が `focus_tile_at` を呼ぶ)
+- テーマ(ADR-016): `set_theme({theme})`(`system`・`light`・`dark`。変わったら写しを送り、Rust がアプリの外観に当てる。知らない文字列は引数の読み取りで失敗する)
 - ツリー: `list_directory`(応答 `DirListing`)、`set_show_hidden`
 - ファイル操作(応答 `FileOpOutcome`): `create_entry`、`rename_entry`、`move_entry`、`copy_entry`、`trash_entry`、`copy_entries`、`cut_entries`、`paste_entries`
 - デスクトップ: `reveal_entry`、`open_entry`(ふつうのファイルだけ。実行の権限があるもの・`UNOPENABLE_EXTENSIONS` の拡張子は開かない。`src-tauri/src/commands/desktop.rs`)、`copy_entry_path`、`insert_entry_path`(ターミナルへ書く文字列は Rust の `insertion_text` が作る)

@@ -17,6 +17,7 @@ use super::snapshot::{
 use crate::editor::EditorStore;
 use crate::layout::font_sizes::{FontSizeTarget, FontSizes};
 use crate::layout::panes::PaneSizes;
+use crate::layout::theme::ThemeMode;
 use crate::layout::translucency::{Translucency, TranslucencyTarget};
 use crate::persistence::codec::{PersistedLayout, PersistedState};
 use crate::project::{Project, ProjectError, ProjectId, ProjectStore};
@@ -51,6 +52,8 @@ pub struct Workspace {
     pub(super) translucency: Translucency,
     /// エディタの Vim のキー操作(`state.json` の `ui.editorVim`。ADR-015 の 6)。「既定に戻す」では変えない。
     pub(super) editor_vim: bool,
+    /// テーマの選び方(`state.json` の `ui.theme`。ADR-016)。「既定に戻す」では変えない。
+    pub(super) theme: ThemeMode,
     pub(super) notice: Option<String>,
 }
 
@@ -98,6 +101,7 @@ impl Workspace {
                 state.layout.translucency.terminal,
             );
         ws.editor_vim = state.layout.editor_vim;
+        ws.theme = state.layout.theme;
         ws.notice = notice;
 
         let ids: Vec<ProjectId> = ws
@@ -151,6 +155,7 @@ impl Workspace {
             font_sizes: FontSizes::default(),
             translucency: Translucency::default(),
             editor_vim: false,
+            theme: ThemeMode::default(),
             notice: None,
         }
     }
@@ -264,8 +269,24 @@ impl Workspace {
                 font_sizes: self.font_sizes,
                 translucency: self.translucency,
                 editor_vim: self.editor_vim,
+                theme: self.theme,
             },
         }
+    }
+
+    /// いまのテーマの選び方。
+    #[must_use]
+    pub fn theme(&self) -> ThemeMode {
+        self.theme
+    }
+
+    /// テーマの選び方を替える(ADR-016)。変わったら `true`(このときだけ写しを送る。写しを送ると保存が予約され、
+    /// システム以外のときだけ `ui.theme` が書かれる)。「既定に戻す」(`reset_appearance`)はこれを変えない
+    /// (数値の調整を戻すボタンで、選んだテーマまでは戻さない)。
+    pub fn set_theme(&mut self, theme: ThemeMode) -> bool {
+        let changed = self.theme != theme;
+        self.theme = theme;
+        changed
     }
 
     /// エディタの Vim のキー操作を切り替える(ADR-015 の 6、計画書 T81e)。変わったら `true`(このときだけ写しを送る。
@@ -348,6 +369,7 @@ impl Workspace {
             editor: EditorSettingsSnapshot {
                 vim: self.editor_vim,
             },
+            theme: self.theme,
         }
     }
 

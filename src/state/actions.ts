@@ -30,6 +30,7 @@ import type { ProjectColor } from "../ipc/generated/ProjectColor";
 import type { ProjectId } from "../ipc/generated/ProjectId";
 import type { RelPath } from "../ipc/generated/RelPath";
 import type { TerminalId } from "../ipc/generated/TerminalId";
+import type { ThemeMode } from "../ipc/generated/ThemeMode";
 import type { TranslucencyTarget } from "../ipc/generated/TranslucencyTarget";
 import { describeError } from "../logic/describeError";
 import { isMarkdownPath } from "../logic/editor/documentPath";
@@ -59,6 +60,7 @@ export type ActionsBackend = Pick<
   | "toggleTileMaximize"
   | "stepFontSize"
   | "stepTranslucency"
+  | "setTheme"
   | "resetAppearance"
   | "openSettingsFile"
   | "confirmQuit"
@@ -152,6 +154,8 @@ export interface Actions {
   stepFontSize(target: FontSizeTarget, delta: number): Promise<void>;
   /** 透過を delta(% の差分)だけ動かす(ステッパー。今の値を足した数ではなく差分を送る)。 */
   stepTranslucency(target: TranslucencyTarget, delta: number): Promise<void>;
+  /** テーマの選び方(システム・ライト・ダーク)を替える(ADR-016)。結果は写しの theme で届く。 */
+  setTheme(theme: ThemeMode): Promise<void>;
   /** 文字の大きさ 2 つと透過 2 つを既定に戻す(確認を挟まない)。 */
   resetAppearance(): Promise<void>;
   /** 設定ファイルを開く(設定画面のボタン。メニューの項目は Rust が直接開く)。 */
@@ -407,6 +411,7 @@ export function createActions({ ipc, ui, app, tree, treeController, reportError,
 
     stepFontSize: (target, delta) => run("文字の大きさを変えられなかった", () => ipc.stepFontSize(target, delta)),
     stepTranslucency: (target, delta) => run("透過を変えられなかった", () => ipc.stepTranslucency(target, delta)),
+    setTheme: (theme) => run("テーマを変えられなかった", () => ipc.setTheme(theme)),
     resetAppearance: () => run("見た目を既定に戻せなかった", () => ipc.resetAppearance()),
     openSettingsFile: () => run("設定ファイルを開けなかった", () => ipc.openSettingsFile()),
 

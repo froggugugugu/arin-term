@@ -18,6 +18,7 @@
 //! - `ui.windowTranslucency`・`ui.terminalTranslucency` も同じ扱い。数は近い 5 の倍数に丸めて端に留める
 //!   (規則は `layout::translucency`)。既定のあいだはキーごとに書かない
 //! - `ui.editorVim` は真のときだけ書く。無い・真偽値でないときは退避せずに偽
+//! - `ui.theme`(ADR-016)は `"light"`・`"dark"` のときだけ書く。無い・知らない値は退避せずにシステム
 //! - JSON として読めない・版が正しくない・新しすぎる・形が違うときは「退避する」を返す(決定 (d))。
 //!   退避の名前は [`broken_file_name`] が時計の値から作る(【仮定】3)
 //! - ブックマークは base64 の文字列のまま扱い、中身は解釈しない(【仮定】2)。null のものは作り直しの指示にする(【仮定】13)
@@ -30,6 +31,7 @@ use serde_json::Value;
 use thiserror::Error;
 
 use crate::layout::font_sizes::{FontSizeTarget, FontSizes};
+use crate::layout::theme::ThemeMode;
 use crate::layout::tiles::DisplayMode;
 use crate::layout::translucency::{Translucency, TranslucencyTarget};
 use crate::project::{Project, ProjectId};
@@ -61,6 +63,8 @@ pub struct PersistedLayout {
     pub translucency: Translucency,
     /// エディタの Vim のキー操作(`ui.editorVim`)。無い・真偽値でなければ偽。
     pub editor_vim: bool,
+    /// テーマの選び方(`ui.theme`。ADR-016)。無い・知らない値ならシステム。
+    pub theme: ThemeMode,
 }
 
 /// `state.json` に保存する内容。表示値(見つからない・表示用のパス)を持たない。
@@ -184,6 +188,12 @@ struct UiSection {
         skip_serializing_if = "is_false"
     )]
     editor_vim: bool,
+    #[serde(
+        default,
+        deserialize_with = "lenient_theme",
+        skip_serializing_if = "is_system_theme"
+    )]
+    theme: ThemeMode,
 }
 
 impl Default for UiSection {
@@ -199,6 +209,7 @@ impl Default for UiSection {
             window_translucency: default_window_translucency(),
             terminal_translucency: default_terminal_translucency(),
             editor_vim: false,
+            theme: ThemeMode::default(),
         }
     }
 }
@@ -226,6 +237,21 @@ where
 {
     let value = Value::deserialize(deserializer)?;
     Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
+/// `ui.theme` を読む。知らない値・型の違う値(null を含む)は、状態ファイルを退避せずにシステムにする(ADR-016)。
+fn lenient_theme<'de, D>(deserializer: D) -> Result<ThemeMode, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
+/// システム(既定)なら書かない。
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde の `skip_serializing_if` は参照を渡す。
+fn is_system_theme(theme: &ThemeMode) -> bool {
+    *theme == ThemeMode::System
 }
 
 /// タブ表示(既定)なら書かない(serde の `skip_serializing_if` は参照を渡す)。
@@ -343,6 +369,7 @@ pub fn encode(state: &PersistedState) -> Result<String, EncodeError> {
             window_translucency: state.layout.translucency.window,
             terminal_translucency: state.layout.translucency.terminal,
             editor_vim: state.layout.editor_vim,
+            theme: state.layout.theme,
         },
     };
     let mut text = serde_json::to_string_pretty(&file)
@@ -427,6 +454,7 @@ fn tidy(file: StateFile) -> LoadedState {
                     terminal: file.ui.terminal_translucency,
                 },
                 editor_vim: file.ui.editor_vim,
+                theme: file.ui.theme,
             },
         },
         rebuild_bookmarks,

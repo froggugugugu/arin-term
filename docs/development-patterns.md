@@ -43,6 +43,7 @@
 - エディタの本文とプレビューはターミナルの文字の大きさに追従し、枠は画面の文字の大きさ(ADR-015 の 7)
 - ⌘,(`app.open-settings`)は画面に `menu-command` の `open-settings` を送って設定画面を開く。「設定ファイルを開く…」は表の外のメニューの項目(`menu::OPEN_SETTINGS_FILE_ID`。キーなし)で、表には載らない(表の行数は生成物 `defaultShortcuts.json` が正)
 - 透過(M4.7。ADR-014)は `src/logic/appearance/translucency.ts` が値から不透明度を作り、`src/ui/design/applyTranslucency.ts` が `:root` にライト用・ダーク用の両方を当てる(どちらを使うかは `tokens.css` の media query)。ターミナルの地を塗るのは囲みの 1 段(`.terminal-area__panel`・`.tile__body`)だけで、`.terminal-host` と xterm.js の要素は透明にする(重ねて塗ると濃くなる)
+- テーマ(システム・ライト・ダーク。ADR-016)は Rust がアプリの外観を替えて効かせる(`ThemeApplier`。`tokens.css` の `prefers-color-scheme` がそのまま追従する)。画面の CSS・JS に切替を書かない(`data-theme`・クラス・`matchMedia` で分けない)。模擬ランタイムは外観の切替を実装していない(呼ぶと panic する)ので、`AppHandle::set_theme` を直接呼ばず `ThemeApplier` を通す
 - タイルの番号キー(`view.focus-tile-1`〜`-9`)は Rust がメニューで受けて `focus_tile_at` を呼ぶ。番号は表示中のページの並び順で、画面の札「#n」は写しの `tileIds` の位置から出す(キーの表示ではないので表から引かない)
 - ターミナルの Shift+Enter は `ESC`+`CR` を送る(`src/logic/keys/newline.ts`。表より先に判定する。表には載せない)
 - 設定の知らせは写しの `notice` と別に持つ(Rust は `AppSettings`、画面は `uiStore` の `settingsNotice`)。中身は設定ファイルの問題と「設定ファイルを開く…」の結果(開けなかった・見本を作れなかった)の 2 つを 1 行にまとめたもの。開く結果の知らせは、次に開けたときと、読み直しで表か設定ファイルの問題の知らせが変わったときに消える。画面で閉じても、違う文の知らせが届けば出し直す

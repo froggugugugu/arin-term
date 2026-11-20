@@ -59,6 +59,30 @@ describe("actions(文字の大きさ・透過と設定ファイル。M4.6・M4.7
     expect(errors).toEqual([]);
   });
 
+  it("テーマを選ぶと_set_theme_を選んだ値で呼ぶ", async () => {
+    const { fake, errors, actions } = setup();
+
+    await actions.setTheme("dark");
+    await actions.setTheme("system");
+
+    expect(fake.calls).toEqual([
+      { command: "set_theme", args: { theme: "dark" } },
+      { command: "set_theme", args: { theme: "system" } },
+    ]);
+    expect(errors).toEqual([]);
+  });
+
+  it("テーマを替えられなくても報告だけで、Promise は失敗しない", async () => {
+    const { errors, actions } = setup({
+      set_theme: () => {
+        throw "壊れた";
+      },
+    });
+
+    await expect(actions.setTheme("light")).resolves.toBeUndefined();
+    expect(errors).toHaveLength(1);
+  });
+
   it("既定に戻すで_reset_appearance_を呼ぶ", async () => {
     const { fake, errors, actions } = setup();
 

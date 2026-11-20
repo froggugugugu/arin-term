@@ -8,6 +8,7 @@ import type { Actions } from "../../state/actions";
 import type { AppStore } from "../../state/appStore";
 import type { EditorController } from "../../state/editorController";
 import type { UiStore } from "../../state/uiStore";
+import { type SegmentedOption, SegmentedRadio } from "../design/SegmentedRadio";
 import type { Snapshot } from "../snapshotTypes";
 import { type StepperUnit, ValueStepper } from "./ValueStepper";
 
@@ -15,7 +16,7 @@ interface SettingsDialogProps {
   store: AppStore;
   /** 開閉(settingsOpen)とショートカットの表(⌘W のキーを引く)。 */
   ui: UiStore;
-  actions: Pick<Actions, "stepFontSize" | "stepTranslucency" | "resetAppearance" | "openSettingsFile">;
+  actions: Pick<Actions, "stepFontSize" | "stepTranslucency" | "setTheme" | "resetAppearance" | "openSettingsFile">;
   /** Vim のキー操作の切替(M4.8。ADR-015 の 6)。 */
   editor: Pick<EditorController, "setVim">;
 }
@@ -23,6 +24,13 @@ interface SettingsDialogProps {
 /** 文字の大きさと透過の単位。 */
 const POINTS: StepperUnit = { suffix: " pt", spoken: "ポイント" };
 const PERCENT: StepperUnit = { suffix: "%", spoken: "パーセント" };
+
+/** テーマの選び方(ADR-016。並びは macOS の設定の「外観」にならう)。 */
+const THEME_OPTIONS: readonly SegmentedOption<Snapshot["theme"]>[] = [
+  { value: "system", label: "システム" },
+  { value: "light", label: "ライト" },
+  { value: "dark", label: "ダーク" },
+];
 
 /** Tab で回る要素(▲▼ のボタンは tabindex="-1" なので入らない。無効のボタンも入らない)。 */
 const FOCUSABLE = "button:not([disabled]):not([tabindex='-1']), [tabindex]:not([tabindex='-1'])";
@@ -38,6 +46,8 @@ const MENU_RECEIVERS = ["menu-item"] as const;
  * 開くとターミナルのステッパーにフォーカスし、Tab・Shift+Tab は中を回る。Esc・Return(ボタン以外の上)・「完了」・
  * ⌘W(表の terminal.close-tab のキー。画面の keydown は取り消す)で閉じ、開く前のフォーカスへ戻す。
  * M4.8: 「エディタ」の組に「Vim のキー操作」の切替(role="switch")。押すと set_editor_vim を送り、写しの editor.vim で表示が替わる。
+ * 「外観」の組(ADR-016。M4.7 の「透過」の組にテーマを足して名前を替えた): テーマを「システム・ライト・ダーク」から選ぶ。押すと set_theme を送り、写しの theme で表示が替わる
+ * (色を替えるのは Rust。アプリの外観が替わり、画面の prefers-color-scheme が追従する)。「既定に戻す」はテーマを戻さない。
  * 「既定に戻す」は Vim を戻さない(見た目ではなく操作の選択なので。ADR-015 の 6)。ターミナルの文字の大きさの行は
  * エディタの本文にも効くので「ターミナルとエディタ」と呼ぶ(ADR-015 の 7)。
  */
@@ -46,12 +56,14 @@ export function SettingsDialog({ store, ui, actions, editor }: SettingsDialogPro
   const fontSizes = useStore(store, (s) => s.snapshot?.fontSizes ?? null);
   const translucency = useStore(store, (s) => s.snapshot?.translucency ?? null);
   const vim = useStore(store, (s) => s.snapshot?.editor.vim ?? false);
+  const theme = useStore(store, (s) => s.snapshot?.theme ?? "system");
   if (!open || fontSizes === null || translucency === null) return null;
   return (
     <SettingsSheet
       fontSizes={fontSizes}
       translucency={translucency}
       vim={vim}
+      theme={theme}
       ui={ui}
       actions={actions}
       editor={editor}
@@ -63,6 +75,7 @@ interface SettingsSheetProps {
   fontSizes: Snapshot["fontSizes"];
   translucency: Snapshot["translucency"];
   vim: boolean;
+  theme: Snapshot["theme"];
   ui: UiStore;
   actions: SettingsDialogProps["actions"];
   editor: SettingsDialogProps["editor"];
@@ -71,12 +84,12 @@ interface SettingsSheetProps {
 /** 写しの値が既定か。 */
 const isDefault = (entry: { value: number; defaultValue: number }) => entry.value === entry.defaultValue;
 
-function SettingsSheet({ fontSizes, translucency, vim, ui, actions, editor }: SettingsSheetProps) {
+function SettingsSheet({ fontSizes, translucency, vim, theme, ui, actions, editor }: SettingsSheetProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const doneRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
   const fontGroupId = useId();
-  const translucencyGroupId = useId();
+  const appearanceGroupId = useId();
   const shortcutGroupId = useId();
   const editorGroupId = useId();
   const vimLabelId = useId();
@@ -196,14 +209,27 @@ function SettingsSheet({ fontSizes, translucency, vim, ui, actions, editor }: Se
         </div>
       </section>
 
-      <section className="settings-sheet__group" aria-labelledby={translucencyGroupId}>
-        <h3 id={translucencyGroupId} className="settings-sheet__group-title">
-          透過
+      <section className="settings-sheet__group" aria-labelledby={appearanceGroupId}>
+        <h3 id={appearanceGroupId} className="settings-sheet__group-title">
+          外観
         </h3>
         <div className="settings-sheet__rows">
+          <div className="settings-row" data-testid="theme-row">
+            <div className="settings-row__text">
+              <span className="settings-row__label">テーマ</span>
+            </div>
+            <SegmentedRadio
+              label="テーマ"
+              options={THEME_OPTIONS}
+              value={theme}
+              onChange={(next) => void actions.setTheme(next)}
+              itemClassName="settings-segmented__item"
+              testId="theme-switch"
+            />
+          </div>
           <div className="settings-row" data-testid="translucency-row-window">
             <div className="settings-row__text">
-              <span className="settings-row__label">ウィンドウ</span>
+              <span className="settings-row__label">ウィンドウの透過</span>
               <span className="settings-row__hint">サイドバーと上部の帯</span>
             </div>
             <ValueStepper
@@ -218,7 +244,7 @@ function SettingsSheet({ fontSizes, translucency, vim, ui, actions, editor }: Se
           </div>
           <div className="settings-row" data-testid="translucency-row-terminal">
             <div className="settings-row__text">
-              <span className="settings-row__label">ターミナルの背景</span>
+              <span className="settings-row__label">ターミナルの背景の透過</span>
             </div>
             <ValueStepper
               label="ターミナルの背景の透過"
