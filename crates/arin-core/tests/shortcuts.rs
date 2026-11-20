@@ -36,7 +36,7 @@ const EXPECTED_DEFAULTS: [(&str, &str, ShortcutReceiver); 33] = [
     ("tree.insert-path", "Cmd+Enter", Screen),
     ("tree.copy-relative-path", "Cmd+Shift+Alt+C", Screen),
     ("tree.copy-absolute-path", "Cmd+Alt+C", Screen),
-    ("tree.rename", "Enter", Screen),
+    ("tree.rename", "F2", Screen),
     ("tree.trash", "Cmd+Backspace", Screen),
     ("tree.new-file", "Cmd+N", Screen),
     ("tree.new-folder", "Cmd+Shift+N", Screen),
@@ -817,4 +817,39 @@ fn 設定ファイルで_editor_save_のキーを替えられる() {
     let binding = table.get(ShortcutCommandId::EditorSave);
     assert_eq!(binding.accelerator(), chord("Cmd+Shift+S"));
     assert_eq!(binding.receiver(), Screen);
+}
+
+// ---- ファンクションキー(2026-11-21 に足した。ADR-012 の追記) ----
+
+#[test]
+fn f1_から_f12_を読み_正規の綴りで書き出す() {
+    for n in 1..=12 {
+        let name = format!("F{n}");
+        let parsed = chord(&name);
+        assert!(parsed.modifiers().is_empty(), "{name}");
+        assert!(parsed.key().is_function(), "{name}");
+        assert_eq!(parsed.key().as_str(), name);
+        assert_eq!(parsed.to_string(), name);
+        // 小文字でも同じキー。修飾キーも付けられる。
+        assert_eq!(chord(&name.to_lowercase()), parsed);
+        assert_eq!(
+            chord(&format!("shift+cmd+f{n}")).to_string(),
+            format!("Cmd+Shift+F{n}")
+        );
+    }
+    assert!(!chord("Enter").key().is_function());
+    assert!(
+        !chord("F").key().is_function(),
+        "英字の F はファンクションキーではない"
+    );
+}
+
+#[test]
+fn f13_以上と_f0_は読めない() {
+    for bad in ["F13", "F0", "F24", "F01", "F1a", "Cmd+F13"] {
+        assert!(
+            matches!(KeyChord::parse(bad), Err(KeyParseError::UnknownPart { .. })),
+            "{bad}"
+        );
+    }
 }

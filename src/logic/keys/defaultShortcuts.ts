@@ -27,7 +27,7 @@ export const DEFAULT_SHORTCUT_TABLE: ShortcutTable = [
   { command: "tree.insert-path", accelerator: "Cmd+Enter", receiver: "screen" },
   { command: "tree.copy-relative-path", accelerator: "Cmd+Shift+Alt+C", receiver: "screen" },
   { command: "tree.copy-absolute-path", accelerator: "Cmd+Alt+C", receiver: "screen" },
-  { command: "tree.rename", accelerator: "Enter", receiver: "screen" },
+  { command: "tree.rename", accelerator: "F2", receiver: "screen" },
   { command: "tree.trash", accelerator: "Cmd+Backspace", receiver: "screen" },
   { command: "tree.new-file", accelerator: "Cmd+N", receiver: "screen" },
   { command: "tree.new-folder", accelerator: "Cmd+Shift+N", receiver: "screen" },

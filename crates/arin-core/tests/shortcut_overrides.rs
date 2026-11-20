@@ -292,12 +292,38 @@ fn メニューの項目の行で_cmd_を含まないキーは既定に戻す() 
 #[test]
 fn 画面の行は修飾キーの無い_enter_space_backspace_delete_を許す() {
     for key in ["Enter", "Space", "Backspace", "Delete", "enter"] {
-        // 既定の tree.rename(Enter)と重ならないよう、tree.rename を別のキーにする。
+        // tree.rename の既定は F2(以前は Enter だった)。別のキーにしておく。
         let (table, problems) =
             apply(&[text("tree.trash", key), text("tree.rename", "Cmd+Shift+R")]);
         assert!(problems.is_empty(), "{key}: {problems:?}");
         assert_eq!(table.get(C::TreeTrash).accelerator(), chord(key));
     }
+}
+
+#[test]
+fn 画面の行は修飾キーの無いファンクションキーを許す() {
+    for key in ["F1", "F5", "F12", "f3"] {
+        let (table, problems) = apply(&[text("tree.trash", key)]);
+        assert!(problems.is_empty(), "{key}: {problems:?}");
+        assert_eq!(table.get(C::TreeTrash).accelerator(), chord(key));
+    }
+    // 既定の tree.rename(F2)と同じキーは重なりになる。
+    assert!(matches!(
+        single_rejection(C::TreeTrash, "F2"),
+        ShortcutSettingReason::Conflict { .. }
+    ));
+    // ⌘ を含まない修飾キー付きは許さない。メニューの項目の行は ⌘ が要る。
+    assert_eq!(
+        single_rejection(C::TreeNewFile, "Shift+F5"),
+        ShortcutSettingReason::ScreenKeyNotAllowed
+    );
+    assert_eq!(
+        single_rejection(C::TerminalNewTab, "F5"),
+        ShortcutSettingReason::MenuKeyNeedsCmd
+    );
+    let (table, problems) = apply(&[text("terminal.new-tab", "Cmd+F5")]);
+    assert!(problems.is_empty(), "{problems:?}");
+    assert_eq!(table.get(C::TerminalNewTab).accelerator(), chord("Cmd+F5"));
 }
 
 #[test]

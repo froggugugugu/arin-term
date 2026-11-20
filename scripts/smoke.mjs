@@ -96,7 +96,7 @@ export const SETTINGS_COMMENT_MARK = "arin-smoke-settings-comment";
 /** --settings の正しい変更の行(既定の Cmd+T を替える。標準エラーには出ないはず)。 */
 export const SETTINGS_GOOD_ROW = { id: "terminal.new-tab", key: "Cmd+Shift+Y" };
 /** --settings の問題のある行(F キーは KeyChord の書式に無く読めないキー。既定に戻り、標準エラーに 1 行出るはず)。 */
-export const SETTINGS_BAD_ROW = { id: "tree.rename", key: "F2" };
+export const SETTINGS_BAD_ROW = { id: "tree.rename", key: "F13" };
 /** --settings で置く settings.toml の中身。 */
 export const SETTINGS_FIXTURE = [
   `# スモークの設定(scripts/smoke.mjs --settings)。${SETTINGS_COMMENT_MARK}`,

@@ -43,6 +43,7 @@
 - エディタの本文とプレビューはターミナルの文字の大きさに追従し、枠は画面の文字の大きさ(ADR-015 の 7)
 - ⌘,(`app.open-settings`)は画面に `menu-command` の `open-settings` を送って設定画面を開く。「設定ファイルを開く…」は表の外のメニューの項目(`menu::OPEN_SETTINGS_FILE_ID`。キーなし)で、表には載らない(表の行数は生成物 `defaultShortcuts.json` が正)
 - 透過(M4.7。ADR-014)は `src/logic/appearance/translucency.ts` が値から不透明度を作り、`src/ui/design/applyTranslucency.ts` が `:root` にライト用・ダーク用の両方を当てる(どちらを使うかは `tokens.css` の media query)。ターミナルの地を塗るのは囲みの 1 段(`.terminal-area__panel`・`.tile__body`)だけで、`.terminal-host` と xterm.js の要素は透明にする(重ねて塗ると濃くなる)
+- ツリーの矢印キー(`src/logic/tree/treeKeys.ts`)と Enter(開く。ダブルクリックと同じ)は表に載せない。Enter は表に割り当てが無いときだけ効く(`FileTreeView.tsx` の `onKeyDown`。表が先)。名称変更の既定は F2(キーの書式は `F1`〜`F12` まで。ADR-012 の末尾の追記)
 - テーマ(システム・ライト・ダーク。ADR-016)は Rust がアプリの外観を替えて効かせる(`ThemeApplier`。`tokens.css` の `prefers-color-scheme` がそのまま追従する)。画面の CSS・JS に切替を書かない(`data-theme`・クラス・`matchMedia` で分けない)。模擬ランタイムは外観の切替を実装していない(呼ぶと panic する)ので、`AppHandle::set_theme` を直接呼ばず `ThemeApplier` を通す
 - タイルの番号キー(`view.focus-tile-1`〜`-9`)は Rust がメニューで受けて `focus_tile_at` を呼ぶ。番号は表示中のページの並び順で、画面の札「#n」は写しの `tileIds` の位置から出す(キーの表示ではないので表から引かない)
 - ターミナルの Shift+Enter は `ESC`+`CR` を送る(`src/logic/keys/newline.ts`。表より先に判定する。表には載せない)

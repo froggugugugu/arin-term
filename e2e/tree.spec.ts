@@ -16,6 +16,7 @@ import {
   type MockListing,
   projectsSnapshot,
   readCallArgs,
+  shortcutTableWith,
   readRecordedCalls,
   type SampleProject,
   setMockListing,
@@ -355,11 +356,69 @@ test.describe("矢印キーの操作(WAI-ARIA の tree の作法)", () => {
   });
 });
 
+test.describe("Enter で開く(ダブルクリックと同じ)", () => {
+  test("フォルダは開閉し_Markdown_はエディタで開き_ほかのファイルは既定のアプリで開く", async ({ page }) => {
+    const errors = collectPageErrors(page);
+    await open(page);
+
+    // フォルダ: Enter で開き、もう一度で閉じる。名前の入力は始まらない。
+    await row(page, "src").click();
+    await page.keyboard.press("Enter");
+    await expect(row(page, "src")).toHaveAttribute("aria-expanded", "true");
+    await expect(row(page, "src/main.ts")).toBeVisible();
+    await expect(page.getByTestId("tree-name-input")).toHaveCount(0);
+    await page.keyboard.press("Enter");
+    await expect(row(page, "src")).toHaveAttribute("aria-expanded", "false");
+
+    // Markdown: エディタで開くコマンド(既定のアプリでは開かない)。
+    await row(page, "README.md").click();
+    await page.keyboard.press("Enter");
+    await expect.poll(() => readCallArgs(page, "open_document")).toEqual([{ projectId: APP.id, path: "README.md" }]);
+    expect(await readCallArgs(page, "open_entry")).toEqual([]);
+
+    // ほかのファイル: 既定のアプリで開くコマンド。
+    await row(page, "a b.ts").click();
+    await page.keyboard.press("Enter");
+    await expect.poll(() => readCallArgs(page, "open_entry")).toEqual([{ projectId: APP.id, path: "a b.ts" }]);
+    await expect(page.getByTestId("tree-name-input")).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
+
+  test("何も選んでいない_ルートを選んでいる_修飾キー付きの_Enter_は開かない", async ({ page }) => {
+    await open(page);
+    await expect(row(page, "docs")).toBeVisible();
+    await fileTree(page).focus();
+    await page.keyboard.press("Enter");
+    await page.getByTestId("tree-header").click();
+    await page.keyboard.press("Enter");
+    await row(page, "README.md").click();
+    await page.keyboard.press("Shift+Enter");
+    expect(await readCallArgs(page, "open_document")).toEqual([]);
+    expect(await readCallArgs(page, "open_entry")).toEqual([]);
+  });
+
+  test("設定で_Enter_をコマンドに割り当てていれば_そちらが先に効く", async ({ page }) => {
+    await installTauriMock(
+      page,
+      {
+        get_app_snapshot: { ok: projectsSnapshot([APP]) },
+        get_shortcuts: { ok: shortcutTableWith({ "tree.rename": "Enter" }) },
+      },
+      appListings(),
+    );
+    await page.goto("/");
+    await row(page, "src").click();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("tree-name-input")).toBeFocused();
+    await expect(row(page, "src")).toHaveAttribute("aria-expanded", "false");
+  });
+});
+
 test.describe("矢印キーと名前の入力", () => {
   test("名前の入力中の矢印は入力欄のもので_選択は動かない", async ({ page }) => {
     await open(page);
     await row(page, "README.md").click();
-    await page.keyboard.press("Enter");
+    await page.keyboard.press("F2");
     const input = page.getByTestId("tree-name-input");
     await expect(input).toBeFocused();
 
@@ -671,7 +730,7 @@ test.describe("画面の文字の大きさの画像(M4.6 の T69b。人が目で
 
       // 名前の入力欄(--tree-input-height)も行の中に収まるか見る。
       await fileTree(page).focus();
-      await page.keyboard.press("Enter");
+      await page.keyboard.press("F2");
       const input = page.locator("[data-tree-name-input]");
       await expect(input).toBeVisible();
       const [rowBox, inputBox] = await Promise.all([row(page, "src/main.ts").boundingBox(), input.boundingBox()]);

@@ -70,6 +70,45 @@ describe("parseAccelerator(キーの文字列を修飾キーとキーに分け�
   });
 });
 
+describe("ファンクションキー(F1〜F12。Rust の KeyChord::parse と同じ範囲)", () => {
+  const press = (key: string, mods: Partial<Record<"metaKey" | "ctrlKey" | "altKey" | "shiftKey", boolean>> = {}) => ({
+    key,
+    code: key,
+    metaKey: false,
+    ctrlKey: false,
+    altKey: false,
+    shiftKey: false,
+    ...mods,
+  });
+
+  it("F1〜F12 を読み、大文字・小文字を区別しない", () => {
+    for (let n = 1; n <= 12; n++) {
+      expect(parseAccelerator(`F${n}`)?.key).toBe(`F${n}`);
+      expect(parseAccelerator(`cmd+f${n}`)).toMatchObject({ meta: true, key: `F${n}` });
+    }
+  });
+
+  it("F13 以上と F0 は読めない", () => {
+    for (const bad of ["F13", "F0", "F24", "F01", "Cmd+F13"]) expect(parseAccelerator(bad)).toBeNull();
+  });
+
+  it("押されたキーと修飾キーが過不足なく合うときだけ一致する", () => {
+    const f2 = parseAccelerator("F2");
+    if (f2 === null) throw new Error("F2 が読めない");
+    expect(matchesAccelerator(f2, press("F2"))).toBe(true);
+    expect(matchesAccelerator(f2, press("F3"))).toBe(false);
+    expect(matchesAccelerator(f2, press("F2", { shiftKey: true }))).toBe(false);
+    const altF5 = parseAccelerator("Cmd+Alt+F5");
+    if (altF5 === null) throw new Error("Cmd+Alt+F5 が読めない");
+    expect(matchesAccelerator(altF5, press("F5", { metaKey: true, altKey: true }))).toBe(true);
+  });
+
+  it("表示はキーの名前のまま", () => {
+    expect(formatAccelerator("F2")).toBe("F2");
+    expect(formatAccelerator("Cmd+Shift+F5")).toBe("⇧⌘F5");
+  });
+});
+
 describe("matchesAccelerator(押されたキーと表のキーを比べる)", () => {
   it("文字のキーは大文字小文字によらず一致し、修飾キーは過不足なく一致する", () => {
     const cmdN = parseAccelerator("Cmd+N");

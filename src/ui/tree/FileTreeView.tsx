@@ -123,11 +123,12 @@ function menuLabel(target: TreeMenuTarget, projectName: string): string {
  * - 行の高さは画面の文字の大きさから決まる値を文脈(InterfaceMetricsContext)で受け取る。CSS の --tree-row-height と
  *   同じ関数の同じ値なので、窓の計算と見た目がずれない。変わったら窓を計算し直し、選択中の行が見えるようにする(M4.6)
  * - WAI-ARIA の tree。フォーカスはツリーの要素 1 つが持ち(Tab で入れる)、選んだ行を aria-activedescendant で指す
- *   (矢印キーでの移動は M3 では入れない。計画【仮定】6)
+ *   (修飾キーの無い矢印で選択の移動と開閉。src/logic/tree/treeKeys.ts)
  * - フォーカスの出入りを uiStore.setTreeFocused で伝える(キーとコピー・ペーストの振り分けが使う)。名前の入力欄に
  *   フォーカスがあるときはツリーのフォーカスにしない。選択の塗りの色(アクセント色かグレーか)は data-focused で CSS が決める
  * - 選択が変わったら、その行が見えるようにスクロールする(revealRowOffset。作った項目を選んだときなど)
- * - クリックで選択、開閉の印で開閉、ダブルクリックでフォルダは開閉・それ以外は既定のアプリで開く(計画【仮定】6)。
+ * - クリックで選択、開閉の印で開閉、ダブルクリックと Enter でフォルダは開閉・Markdown はエディタ・それ以外は既定のアプリで開く
+ *   (Enter は表に割り当てが無いときだけ。ADR-012 の末尾の追記)。
  *   行の無い余白のクリックで選択を外す
  * - 右クリック(行・ヘッダ・余白。T43c): 右クリックした場所を選び、src/logic/menu の buildTreeMenu の項目をメニューに出す。
  *   メニューは Esc・外側のクリック・項目の実行で閉じ、閉じたらツリーにフォーカスを戻す。Shift+F10 と
@@ -369,7 +370,18 @@ export function FileTreeView({ project, tree, ui, actions }: FileTreeViewProps) 
       return;
     }
     const id = routeShortcutKey(ui.getState().shortcuts, event, "tree");
-    if (id === null) return;
+    if (id === null) {
+      // 表に割り当てが無いときの Enter は、選んでいる行を開く(ダブルクリックと同じ: フォルダは開閉、Markdown は
+      // エディタ、ほかは既定のアプリ)。設定で Enter をコマンドに割り当てていれば、そちらが先に効く。
+      if (event.key === "Enter" && !event.metaKey && !event.altKey && !event.ctrlKey && !event.shiftKey) {
+        const row = rows.find((r) => r.path === selected);
+        if (row !== undefined) {
+          event.preventDefault();
+          onActivate(row);
+        }
+      }
+      return;
+    }
     event.preventDefault();
     runTreeShortcut({ actions, ui, tree }, project, id);
   };
