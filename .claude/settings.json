@@ -1,11 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "language": "ja",
-  "statusLine": {
-    "type": "command",
-    "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/statusline.sh",
-    "padding": 0
-  },
   "plansDirectory": "./output/plans",
   "fileCheckpointingEnabled": true,
   "isolatePeerMachines": true,

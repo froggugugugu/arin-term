@@ -63,7 +63,7 @@ team は起動時に `.claude/teams/README.md` と `.claude/agents/README.md` �
 ## フェーズ別出力スタイル
 
 `.claude/output-styles/` に 4 種同梱し `/output-style <名>` で切替(いずれも `keep-coding-instructions: true`): 要件定義 `phase-prd` / 設計 `phase-design` /
-実装 `phase-implementation` / レビュー `phase-review`。`statusLine`(`.claude/statusline.sh`)が現在のスタイルとフェーズを自動表示。
+実装 `phase-implementation` / レビュー `phase-review`。
 
 ## ワークフロー制御
 
