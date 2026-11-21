@@ -51,7 +51,7 @@ curl -fsSL https://froggugugugu.github.io/arin-term/install.sh | bash
 
 | 環境変数 | 意味 |
 | -------- | ---- |
-| `ARIN_INSTALL_VERSION=0.2.0` | 最新版の代わりにこの版を入れる |
+| `ARIN_INSTALL_VERSION=0.3.0` | 最新版の代わりにこの版を入れる |
 | `ARIN_INSTALL_APP_DIR=DIR` | `DIR` に入れる |
 | `ARIN_INSTALL_ZIP=FILE` | ダウンロード済みの `Arin-<版>-arm64.zip` から入れる |
 | `ARIN_INSTALL_NO_OPEN=1` | 入れたあと起動しない |
