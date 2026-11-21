@@ -12,6 +12,7 @@
 - 画面のソースに通信の API(`fetch(` など)と HTML の差し込み(`innerHTML`・`dangerouslySetInnerHTML` など)を書かない
 - CSP(`tauri.conf.json` の `csp`・`devCsp`): `connect-src` は IPC と自アプリだけ、スクリプトは `'self'`/`'none'` だけ、スタイルは `'self'`/`'none'`/`'unsafe-inline'` だけ
 - xterm.js と CodeMirror の要素は React の管理の外に置く(ADR-003。エディタは `EditorManager` が持ち、タブを替えても取り消しの履歴とカーソルが残る)。CodeMirror は初めてエディタを開くときに動的 import で読む(静的に import しない)
+- WebKit の標準の右クリックのメニューは出さない(「再読み込み」で画面が読み込み直され、ターミナルの表示が消える)。`src/ui/shell/contextMenuGuard.ts` が文書全体で止め、文字の入力欄(input・textarea・contenteditable。ターミナルの中は除く)だけ残す。右クリックのメニューが要る場所は、部品が `ContextMenu` を開いて `preventDefault` する
 - プレビューは HTML の文字列を作らない。`markdownAst.ts` が自前の木(`markdownTypes.ts`)にし、`MarkdownPreview.tsx` が React の要素にする。`a[href]`・`img`・`input` を作らない。`style` 属性はプレビューの外側の要素 1 つ(文字の大きさ)だけ
 - 画面から絶対パスを受け取らない・返さない(引数はプロジェクトの ID と相対パス)。ターミナルへ書く文字列は Rust が作る(`insertion_text`)
 - ファイルシステムの書き込みには実パスを渡す(途中にシンボリックリンクがあると失敗する)。削除と上書きの経路を作らない(置き換えはゴミ箱へ入れてから)。**例外は文書の保存 `save_document` の 1 つだけ**(ADR-015 の 5): 開いた `.md`・`.markdown` のふつうのファイルを、本人の保存の操作のときだけ、同じフォルダの新しい一時ファイル(`.arin-save-…`)に書き終えてから改名で置き換える。外で変わっていれば本人が「上書き保存」を選ばない限り置き換えない。ハードリンク・書けない・持ち主が違うファイルは読み取り専用で開く。「作る」は `RENAME_EXCL`(同じ名前ができていたら置き換えない)。消すのは、その保存が作って使わなかった一時ファイルだけ(`TempFile::discard`。押さえたままの fd と同じ項目がその名前にあるときだけ。本人が 2026-11-17 に了承)。ほかの項目を消す経路は作らない

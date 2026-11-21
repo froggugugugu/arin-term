@@ -1,17 +1,22 @@
 import "./ProjectCardList.css";
 
-import { type KeyboardEvent, useRef } from "react";
+import { type KeyboardEvent, type MouseEvent, useRef, useState } from "react";
 import { useStore } from "zustand";
 
 import { buildCardMenu } from "../../logic/menu/cardMenu";
 import type { Actions } from "../../state/actions";
 import type { AppStore } from "../../state/appStore";
 import type { UiStore } from "../../state/uiStore";
-import { ContextMenu } from "../menu/ContextMenu";
+import { ContextMenu, type ContextMenuEntry } from "../menu/ContextMenu";
 import { PlusIcon } from "../tree/icons";
 import { runCardMenuCommand } from "../menu/runCardMenuCommand";
 import type { ProjectId } from "../snapshotTypes";
 import { ProjectCard } from "./ProjectCard";
+
+/** カード以外の場所の右クリックのメニュー。見出しの + と同じ操作だけを出す。 */
+const AREA_MENU: readonly ContextMenuEntry<"add-project">[] = [
+  { kind: "command", label: "フォルダを追加…", command: "add-project" },
+];
 
 interface ProjectCardListProps {
   store: AppStore;
@@ -25,12 +30,15 @@ interface ProjectCardListProps {
  * プロジェクトが 0 件なら、一覧の代わりに案内と文言のある「フォルダを追加」のボタンを出す(空の状態の主操作。
  * 設計書 §8「プロジェクト 0 件」)。そのときは見出しの + を出さない(同じ名前のボタンを 2 つにしない)。
  * カードは上下の矢印でも移れる。カードの右クリック(または Shift+F10)で、src/logic/menu の buildCardMenu の項目をそのままメニューに出す。
+ * カード以外の場所(見出し・一覧の余白・0 件の案内)の右クリックでは「フォルダを追加…」だけのメニューを出す。
  */
 export function ProjectCardList({ store, ui, actions }: ProjectCardListProps) {
   const projects = useStore(store, (s) => s.snapshot?.projects ?? null);
   const selectedId = useStore(store, (s) => s.snapshot?.selectedProjectId ?? null);
   const cardMenu = useStore(ui, (s) => s.cardMenu);
   const cardRefs = useRef(new Map<ProjectId, HTMLButtonElement>());
+  // カード以外の場所の右クリックのメニュー(開いた位置)。表示だけの状態なので部品の中に持つ。
+  const [areaMenu, setAreaMenu] = useState<{ x: number; y: number } | null>(null);
 
   const list = projects ?? [];
   const menuProject = cardMenu === null ? undefined : list.find((p) => p.id === cardMenu.projectId);
@@ -55,8 +63,17 @@ export function ProjectCardList({ store, ui, actions }: ProjectCardListProps) {
 
   const addProject = () => void actions.addProjectByDialog();
 
+  // カード以外の場所(見出し・一覧の余白・0 件の案内)の右クリック。カードは自分のメニューを開いて既定の動作を止めるので、
+  // 止められていなければここで開く。
+  const onPaneContextMenu = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented) return;
+    event.preventDefault();
+    if (ui.getState().cardMenu !== null) ui.getState().closeCardMenu();
+    setAreaMenu({ x: event.clientX, y: event.clientY });
+  };
+
   return (
-    <div className="card-list-pane">
+    <div className="card-list-pane" onContextMenu={onPaneContextMenu}>
       <div className="sidebar-section">
         <h2 className="sidebar-section__title">プロジェクト</h2>
         {list.length > 0 && (
@@ -113,6 +130,20 @@ export function ProjectCardList({ store, ui, actions }: ProjectCardListProps) {
           onSelect={(command) => {
             closeMenu(true);
             void runCardMenuCommand(actions, menuProject.id, command);
+          }}
+        />
+      )}
+      {areaMenu !== null && (
+        <ContextMenu
+          key={`area:${areaMenu.x}:${areaMenu.y}`}
+          label="プロジェクト"
+          entries={AREA_MENU}
+          x={areaMenu.x}
+          y={areaMenu.y}
+          onClose={() => setAreaMenu(null)}
+          onSelect={() => {
+            setAreaMenu(null);
+            addProject();
           }}
         />
       )}
