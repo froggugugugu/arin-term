@@ -56,7 +56,7 @@ export interface CommandMap {
   write_terminal: { args: { terminalId: TerminalId; data: string }; result: null };
   /** data は 0〜255 の数の配列(Rust の Vec<u8>)。 */
   write_terminal_bytes: { args: { terminalId: TerminalId; data: number[] }; result: null };
-  new_terminal: { args: undefined; result: TerminalId };
+  new_terminal: { args: { projectId: ProjectId } | undefined; result: TerminalId };
   close_terminal: { args: { terminalId: TerminalId }; result: null };
   select_terminal: { args: { terminalId: TerminalId }; result: null };
   ack_terminal_output: { args: { terminalId: TerminalId; bytes: number }; result: null };
@@ -251,8 +251,11 @@ export interface ArinIpc {
    * 同じターミナルへの writeTerminal と合わせて、前の応答を待ってから次を送る(順序は送る側が保つ)。
    */
   writeTerminalBytes(id: TerminalId, data: Uint8Array): Promise<void>;
-  /** 選択中のプロジェクトに新しいタブを開いて表示中にし、その ID を返す。シェルは接続で起動する。 */
-  newTerminal(): Promise<TerminalId>;
+  /**
+   * 新しいタブを開いて表示中にし、その ID を返す。シェルは接続で起動する。
+   * プロジェクトを渡さなければ選択中のプロジェクトに開く。渡せば、そのプロジェクトを選んでから開く。
+   */
+  newTerminal(projectId?: ProjectId): Promise<TerminalId>;
   /** タブを閉じ、そのシェルを終わらせる。 */
   closeTerminal(id: TerminalId): Promise<void>;
   /** そのタブを表示中にする。 */
@@ -501,7 +504,7 @@ export function createIpc(transport: IpcTransport): ArinIpc {
     writeTerminal: (terminalId, data) => done(invoke("write_terminal", { terminalId, data })),
     writeTerminalBytes: (terminalId, data) =>
       done(invoke("write_terminal_bytes", { terminalId, data: Array.from(data) })),
-    newTerminal: () => invoke("new_terminal", undefined),
+    newTerminal: (projectId) => invoke("new_terminal", projectId === undefined ? undefined : { projectId }),
     closeTerminal: (terminalId) => done(invoke("close_terminal", { terminalId })),
     selectTerminal: (terminalId) => done(invoke("select_terminal", { terminalId })),
     ackTerminalOutput: (terminalId, bytes) =>

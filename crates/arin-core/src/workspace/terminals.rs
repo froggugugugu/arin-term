@@ -186,6 +186,29 @@ impl Workspace {
         self.open_terminal(&project)
     }
 
+    /// プロジェクトを選んでから、そこに新しいタブを開く(カードのメニューの「新規ターミナル」)。選んでいない
+    /// プロジェクトにも開け、開いたタブがすぐ見える(タイル表示ではそのタイルにフォーカスが移る)。
+    /// 開けないときは選択も変えない。
+    ///
+    /// # Errors
+    ///
+    /// プロジェクトが無いとき(`WorkspaceError::Project`)、ルートが見つからないとき(`WorkspaceError::RootMissing`)。
+    pub fn open_terminal_selecting(
+        &mut self,
+        project: &ProjectId,
+    ) -> Result<TerminalId, WorkspaceError> {
+        let found = self
+            .projects
+            .get(project)
+            .ok_or_else(|| ProjectError::NotFound(project.clone()))?;
+        if found.is_missing() {
+            return Err(WorkspaceError::RootMissing(project.clone()));
+        }
+        self.projects.select(project)?;
+        self.add_tab(project)
+            .ok_or_else(|| ProjectError::NotFound(project.clone()).into())
+    }
+
     /// 選択中のプロジェクトの表示中のターミナルのタブ。選んでいない・0 枚なら `None`。
     /// 表示中がエディタのときもターミナルを返す(⌘W の対象は `active_tab`。ADR-015 の 3)。
     #[must_use]

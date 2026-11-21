@@ -169,7 +169,7 @@ test.describe("カードの右クリックのメニュー", () => {
     await card(page, "ribbitlog").click({ button: "right" });
     const menu = page.getByRole("menu", { name: "ribbitlog" });
     await expect(menu).toBeVisible();
-    await expect(menu.getByRole("menuitem")).toHaveText(["絶対パスをコピー", "色", "一覧から削除"]);
+    await expect(menu.getByRole("menuitem")).toHaveText(["新規ターミナル", "絶対パスをコピー", "色", "一覧から削除"]);
 
     await menu.getByRole("menuitem", { name: "絶対パスをコピー" }).click();
 
@@ -177,6 +177,20 @@ test.describe("カードの右クリックのメニュー", () => {
     await expect(menu).toHaveCount(0);
     expect(await readCallArgs(page, "select_project")).toEqual([]);
     await expect(card(page, "app")).toHaveAttribute("aria-current", "true");
+  });
+
+  test("選んでいないカードの新規ターミナルは_そのプロジェクトを渡して新しいタブのコマンドを呼ぶ", async ({ page }) => {
+    // ribbitlog は exit などで 0 枚になっている(選択中は app)。
+    await open(page, projectsSnapshot([APP, { ...LOG, tabs: [] }]));
+
+    await card(page, "ribbitlog").click({ button: "right" });
+    const menu = page.getByRole("menu", { name: "ribbitlog" });
+    await menu.getByRole("menuitem", { name: "新規ターミナル" }).click();
+
+    await expect.poll(() => readCallArgs(page, "new_terminal")).toEqual([{ projectId: LOG.id }]);
+    await expect(menu).toHaveCount(0);
+    // 選ぶのは Rust(同じコマンドの中で選んでから開く)。画面は選択のコマンドを別に送らない。
+    expect(await readCallArgs(page, "select_project")).toEqual([]);
   });
 
   test("色を選ぶと色の変更のコマンドが呼ばれる", async ({ page }) => {
@@ -605,6 +619,8 @@ test.describe("キーボード", () => {
 
     const menu = page.getByRole("menu", { name: "ribbitlog" });
     await expect(menu).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: "新規ターミナル" })).toBeFocused();
+    await page.keyboard.press("ArrowDown");
     await expect(menu.getByRole("menuitem", { name: "絶対パスをコピー" })).toBeFocused();
     await page.keyboard.press("ArrowDown");
     await expect(menu.getByRole("menuitem", { name: "色" })).toBeFocused();
@@ -618,10 +634,14 @@ test.describe("キーボード", () => {
     await page.keyboard.press("Escape");
     await expect(colors).toHaveCount(0);
     await expect(menu.getByRole("menuitem", { name: "色" })).toBeFocused();
+    // 先頭(新規ターミナル)からさらに上で、末尾へ回る。
+    await page.keyboard.press("ArrowUp");
     await page.keyboard.press("ArrowUp");
     await page.keyboard.press("ArrowUp");
     await expect(menu.getByRole("menuitem", { name: "一覧から削除" })).toBeFocused();
     await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await expect(menu.getByRole("menuitem", { name: "絶対パスをコピー" })).toBeFocused();
     await page.keyboard.press("Enter");
     await expect.poll(() => readCallArgs(page, "copy_project_path")).toEqual([{ projectId: LOG.id }]);
     await expect(menu).toHaveCount(0);
@@ -639,6 +659,7 @@ test.describe("キーボード", () => {
     await open(page, projectsSnapshot([APP]));
     await card(page, "app").focus();
     await page.keyboard.press("Shift+F10");
+    await page.keyboard.press("ArrowDown");
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     const colors = page.getByRole("menu", { name: "色" });

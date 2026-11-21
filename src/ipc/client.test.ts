@@ -225,6 +225,15 @@ describe("タブの操作とバイト列の入力(T33b)", () => {
     expect(fake.calls).toEqual([{ command: "new_terminal", args: undefined }]);
   });
 
+  it("プロジェクトを渡した新しいタブは new_terminal に projectId で届く", async () => {
+    const fake = createFakeIpc({ new_terminal: () => "terminal-8" });
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.newTerminal("p2")).resolves.toBe("terminal-8");
+
+    expect(fake.calls).toEqual([{ command: "new_terminal", args: { projectId: "p2" } }]);
+  });
+
   it("タブを閉じる・選ぶは close_terminal・select_terminal に camelCase の引数で届く", async () => {
     const fake = createFakeIpc();
     const ipc = createIpc(fake.transport);

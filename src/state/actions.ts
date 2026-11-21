@@ -114,7 +114,7 @@ export interface Actions {
   /** ルートの絶対パスをクリップボードに入れる(FR-064。選択は変えない)。 */
   copyProjectPath(id: ProjectId): Promise<void>;
   /** 選択中のプロジェクトに新しいタブを開く(FR-044。タブ 0 枚の「新規ターミナル」)。 */
-  newTerminal(): Promise<void>;
+  newTerminal(projectId?: ProjectId): Promise<void>;
   /** タブを閉じる。 */
   closeTerminal(id: TerminalId): Promise<void>;
   /** タブを表示中にする。 */
@@ -368,7 +368,7 @@ export function createActions({ ipc, ui, app, tree, treeController, reportError,
     relinkProject: (id) => run("フォルダをつなぎ直せなかった", () => ipc.relinkProject(id)),
     setProjectColor: (id, color) => run("プロジェクトの色を変えられなかった", () => ipc.setProjectColor(id, color)),
     copyProjectPath: (id) => run("パスをコピーできなかった", () => ipc.copyProjectPath(id)),
-    newTerminal: () => run("新しいターミナルを開けなかった", () => ipc.newTerminal()),
+    newTerminal: (projectId) => run("新しいターミナルを開けなかった", () => ipc.newTerminal(projectId)),
     closeTerminal: (id) => run("ターミナルを閉じられなかった", () => ipc.closeTerminal(id)),
     selectTerminal: (id) => run("ターミナルを選べなかった", () => ipc.selectTerminal(id)),
     setPaneSizes: (sidebarWidth, cardAreaHeight) =>
