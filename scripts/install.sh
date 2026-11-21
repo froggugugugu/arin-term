@@ -13,7 +13,7 @@
 # Nothing runs until the last line calls main, so a download cut off halfway does nothing.
 #
 # Options (environment variables, e.g. `... | ARIN_INSTALL_NO_OPEN=1 bash`):
-#   ARIN_INSTALL_VERSION=0.2.0  install this release instead of the latest
+#   ARIN_INSTALL_VERSION=0.3.0  install this release instead of the latest
 #   ARIN_INSTALL_APP_DIR=DIR    install into DIR (default /Applications, or ~/Applications when that is not writable)
 #   ARIN_INSTALL_ZIP=FILE       install from a downloaded Arin-<version>-arm64.zip instead of GitHub
 #   ARIN_INSTALL_NO_OPEN=1      do not open the app at the end
