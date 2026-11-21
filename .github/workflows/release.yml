@@ -140,6 +140,11 @@ jobs:
         with: { name: mac, path: release }
       - name: dmg と zip を付けた下書きを作ってから公開する
         run: |
+          # 紹介ページのボタンが版に左右されずに最新の dmg を指せるよう、同じ dmg を版の無い名前でも付ける
+          # (https://github.com/<owner>/<repo>/releases/latest/download/Arin-arm64.dmg)。
+          dmgs=(release/Arin-*-arm64.dmg)
+          [ "${#dmgs[@]}" = 1 ] && [ -f "${dmgs[0]}" ] || { echo "dmg が 1 つでない"; exit 1; }
+          cp "${dmgs[0]}" release/Arin-arm64.dmg
           gh release create "$GITHUB_REF_NAME" release/*.dmg release/*.zip --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "$GITHUB_REF_NAME" --generate-notes
           gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
         env: { GH_TOKEN: "${{ github.token }}" }
