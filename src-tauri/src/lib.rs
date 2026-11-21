@@ -31,6 +31,7 @@ pub mod verify_log;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
+use arin_core::layout::theme::ThemeMode;
 use arin_core::persistence::codec::encode;
 use arin_core::ports::PtyPort;
 use arin_core::ports::desktop::DesktopPort;
@@ -252,6 +253,7 @@ pub fn builder_with_settings_watcher<R: Runtime>(
         .manage(ready)
         .manage(first_output)
         .manage(QuitGate::default())
+        .manage(ThemeApplier::default())
         // ショートカットの表(T42e)。メニュー(`menu::build`)と `get_shortcuts` がこれを見る。
         // 設定ファイルの値を当てた表(T65b)。動作中の差し替えは `Shortcuts::replace` と `menu::rebuild`(T65c)。
         .manage(Shortcuts::new(resolved.table))
@@ -298,6 +300,8 @@ pub fn builder_with_settings_watcher<R: Runtime>(
                 SessionConfig::default(),
                 verify_log::default_verify(),
             );
+            // 保存してあるテーマをアプリの外観に当てる(画面が描かれる前。ADR-016)。
+            app.state::<ThemeApplier>().apply(sessions.theme());
             let source = sessions.clone();
             persistence.start(
                 Arc::clone(&ports.state_file),
@@ -410,6 +414,7 @@ pub fn builder_with_settings_watcher<R: Runtime>(
             commands::layout::step_font_size,
             commands::layout::step_translucency,
             commands::layout::reset_appearance,
+            commands::layout::set_theme,
             commands::tree::list_directory,
             commands::tree::set_show_hidden,
             commands::fileops::create_entry,
@@ -448,12 +453,51 @@ pub fn run() {
     let app = builder::<tauri::Wry>(launch)
         .build(tauri::generate_context!())
         .expect("Tauri のアプリを組み立てられなかった");
+    // 起動時の反映は setup の中(`run` が始まってから)なので、その前に入れておく。
+    install_theme_applier(&app);
     apply_window_effects(&app);
     app.run(lifecycle::on_run_event);
 }
 
 /// ウィンドウのラベル(`tauri.conf.json` の `app.windows[0].label`)。
 const MAIN_WINDOW_LABEL: &str = "main";
+
+/// テーマの選び方をアプリの外観に当てる口(ADR-016)。
+///
+/// 中身は、本物のランタイムで起動したときだけ `run` が入れる(`install_theme_applier`)。模擬ランタイム
+/// (`src-tauri/tests/`)は外観の切替を実装していない(呼ぶと panic する)ので、入れなければ何もしない。
+/// テストは記録するだけの中身を入れて、呼ばれた値を確かめられる。
+#[derive(Default)]
+pub struct ThemeApplier(OnceLock<Box<dyn Fn(ThemeMode) + Send + Sync>>);
+
+impl ThemeApplier {
+    /// 当てる処理を入れる。入れられるのは 1 回だけ(2 回目は何もしない)。
+    pub fn install(&self, apply: impl Fn(ThemeMode) + Send + Sync + 'static) {
+        let _ = self.0.set(Box::new(apply));
+    }
+
+    /// テーマを当てる。処理が入っていなければ何もしない。
+    pub fn apply(&self, theme: ThemeMode) {
+        if let Some(apply) = self.0.get() {
+            apply(theme);
+        }
+    }
+}
+
+/// アプリの外観を替える処理を `ThemeApplier` に入れる。システムなら OS の設定に追従させる。
+///
+/// macOS ではアプリ全体の外観が替わり、画面(WebView)の `prefers-color-scheme`・ウィンドウのすりガラス・メニューが
+/// 一緒に替わる。画面の CSS には切替を書かない(`tokens.css` の media query がそのまま効く)。
+fn install_theme_applier(app: &tauri::App) {
+    let handle = app.handle().clone();
+    app.state::<ThemeApplier>().install(move |theme| {
+        handle.set_theme(match theme {
+            ThemeMode::System => None,
+            ThemeMode::Light => Some(tauri::Theme::Light),
+            ThemeMode::Dark => Some(tauri::Theme::Dark),
+        });
+    });
+}
 
 /// ウィンドウの背景に macOS のサイドバーの素材(すりガラス)を重ねる(ADR-010)。
 ///

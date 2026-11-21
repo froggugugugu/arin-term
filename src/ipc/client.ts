@@ -27,6 +27,7 @@ import type { SaveDocumentOutcome } from "./generated/SaveDocumentOutcome";
 import type { SaveMode } from "./generated/SaveMode";
 import type { ShortcutTable } from "./generated/ShortcutTable";
 import type { TerminalId } from "./generated/TerminalId";
+import type { ThemeMode } from "./generated/ThemeMode";
 import type { TranslucencyTarget } from "./generated/TranslucencyTarget";
 import type { TreeChange } from "./generated/TreeChange";
 
@@ -82,6 +83,7 @@ export interface CommandMap {
    * 変わったときだけ写しの translucency が届き、保存が予約される(state.json の ui)。
    */
   step_translucency: { args: { target: TranslucencyTarget; delta: number }; result: null };
+  set_theme: { args: { theme: ThemeMode }; result: null };
   /** 文字の大きさ 2 つと透過 2 つを既定に戻す(ADR-014 の 1)。変わったときだけ写しが届く。 */
   reset_appearance: { args: undefined; result: null };
   /** 設定ファイルを開く(無いときだけ見本を作る。ADR-012 の 6)。パスは画面を通らない。 */
@@ -316,6 +318,8 @@ export interface ArinIpc {
   stepFontSize(target: FontSizeTarget, delta: number): Promise<void>;
   /** target の透過を delta(% の差分)だけ動かす。結果は写しの translucency で届く(M4.7。ADR-014 の 1)。 */
   stepTranslucency(target: TranslucencyTarget, delta: number): Promise<void>;
+  /** テーマの選び方(システム・ライト・ダーク)を替える。結果は写しの theme で届き、Rust がアプリの外観に当てる(ADR-016)。 */
+  setTheme(theme: ThemeMode): Promise<void>;
   /** 文字の大きさ(ターミナル・画面)と透過(ウィンドウ・ターミナル)を既定に戻す。 */
   resetAppearance(): Promise<void>;
   /** 設定ファイル(settings.toml)を既定のアプリで開く。無いときだけ見本を作る。 */
@@ -528,6 +532,7 @@ export function createIpc(transport: IpcTransport): ArinIpc {
       done(invoke("toggle_tile_maximize", terminalId === undefined ? undefined : { terminalId })),
     stepFontSize: (target, delta) => done(invoke("step_font_size", { target, delta })),
     stepTranslucency: (target, delta) => done(invoke("step_translucency", { target, delta })),
+    setTheme: (theme) => done(invoke("set_theme", { theme })),
     resetAppearance: () => done(invoke("reset_appearance", undefined)),
     openSettingsFile: () => done(invoke("open_settings_file", undefined)),
     listDirectory: (projectId, path) => invoke("list_directory", { projectId, path }),

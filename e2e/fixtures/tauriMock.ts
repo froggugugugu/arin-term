@@ -100,6 +100,7 @@ export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapsho
     // エディタのタブは 0 枚、Vim は既定の偽(ADR-015 の 3・6)
     editors: [],
     editor: { vim: false },
+    theme: "system",
     ...overrides,
   };
 }
@@ -439,6 +440,7 @@ const DEFAULT_REPLIES: TauriMockConfig = {
   step_font_size: { ok: null },
   // 透過(M4.7)。同じく、テストが withTranslucency で作った写しを流す
   step_translucency: { ok: null },
+  set_theme: { ok: null },
   reset_appearance: { ok: null },
   open_settings_file: { ok: null },
   list_directory: { ok: { kind: "listed", entries: [] } },

@@ -88,11 +88,11 @@ const CHANGED_LABELS: ExpectedKeys = {
 };
 
 /**
- * 問題のある行 1 つ(tree.rename = F2)の知らせ(arin-core の notice_line と同じ形。F キーは KeyChord の書式に無いので
+ * 問題のある行 1 つ(tree.rename = F13)の知らせ(arin-core の notice_line と同じ形。F13 は KeyChord の書式に無いので(F キーは F1〜F12 まで)
  * 「読めないキー」になる。node scripts/smoke.mjs --settings で実アプリが出す標準エラーの行と同じ理由)。
  */
 const ONE_PROBLEM_NOTICE =
-  "ショートカットの設定の 1 行を使わず、既定のキーのままにしました: tree.rename = F2(キーを読めません: 修飾キーでもキーでもない部分があります)";
+  "ショートカットの設定の 1 行を使わず、既定のキーのままにしました: tree.rename = F13(キーを読めません: 修飾キーでもキーでもない部分があります)";
 
 const newTabButton = (page: Page) => page.getByRole("button", { name: "新規ターミナル", exact: true });
 const closeTabButton = (page: Page) => page.getByRole("button", { name: "「ターミナル 1」を閉じる" });
@@ -161,7 +161,7 @@ async function expectKeysShown(page: Page, expected: ExpectedKeys): Promise<void
   expect(menu).toMatchObject({
     開く: "⌘O",
     "相対パスをコピー": expected.copyRelative,
-    "名称変更…": "↩",
+    "名称変更…": "F2",
     "新規ファイル…": expected.newFile,
     "新規フォルダ…": "⇧⌘N",
   });
@@ -266,8 +266,8 @@ test.describe("M4.5 のシナリオ(ショートカットの設定)", () => {
   });
 
   test("問題のある行の知らせが_1_行出て閉じられる", async ({ page }) => {
-    // 設定ファイルに正しい行(terminal.new-tab = Cmd+Shift+Y)と問題のある行(tree.rename = F2)を 1 つずつ書いた形:
-    // 正しい行だけが効き、問題のある行は既定(↩)のまま、知らせが 1 行(AC-K04)
+    // 設定ファイルに正しい行(terminal.new-tab = Cmd+Shift+Y)と問題のある行(tree.rename = F13)を 1 つずつ書いた形:
+    // 正しい行だけが効き、問題のある行は既定(F2)のまま、知らせが 1 行(AC-K04)
     await open(page, {
       get_shortcuts: { ok: shortcutTableWith({ "terminal.new-tab": "Cmd+Shift+Y" }) },
       get_settings_notice: { ok: ONE_PROBLEM_NOTICE },
@@ -277,12 +277,12 @@ test.describe("M4.5 のシナリオ(ショートカットの設定)", () => {
     await expect(settingsNotice(page)).toBeVisible();
     await expect(text).toHaveText(ONE_PROBLEM_NOTICE);
     await expect(newTabButton(page)).toHaveAttribute("title", "新規ターミナル(⇧⌘Y)");
-    expect(await treeMenuShortcuts(page)).toMatchObject({ "名称変更…": "↩", "新規ファイル…": "⌘N" });
+    expect(await treeMenuShortcuts(page)).toMatchObject({ "名称変更…": "F2", "新規ファイル…": "⌘N" });
 
-    // 既定に戻した行は既定のキーで効く(↩ で名称変更の入力が開く)
+    // 既定に戻した行は既定のキーで効く(F2 で名称変更の入力が開く)
     await row(page, "README.md").click();
     await expect(fileTree(page)).toBeFocused();
-    await page.keyboard.press("Enter");
+    await page.keyboard.press("F2");
     await expect(nameInput(page)).toBeFocused();
     await expect(nameInput(page)).toHaveValue("README.md");
     await nameInput(page).press("Escape");

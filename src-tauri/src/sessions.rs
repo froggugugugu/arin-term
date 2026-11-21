@@ -36,6 +36,7 @@ use std::time::{Duration, Instant};
 
 use arin_core::editor::{EditorError, EditorId, EditorTab, FileStamp, ReadOnlyReason};
 use arin_core::layout::font_sizes::FontSizeTarget;
+use arin_core::layout::theme::ThemeMode;
 use arin_core::layout::tiles::DisplayMode;
 use arin_core::layout::translucency::TranslucencyTarget;
 use arin_core::paths::RelPath;
@@ -1016,6 +1017,22 @@ impl SessionRegistry {
     /// (写しを送ると保存が予約され、真のときだけ `ui.editorVim` が書かれる)。
     pub fn set_editor_vim(&self, enabled: bool) -> bool {
         let changed = lock(&self.inner.workspace).set_editor_vim(enabled);
+        if changed {
+            self.notify();
+        }
+        changed
+    }
+
+    /// いまのテーマの選び方(起動時にアプリの外観へ当てるのに使う。ADR-016)。
+    #[must_use]
+    pub fn theme(&self) -> ThemeMode {
+        lock(&self.inner.workspace).theme()
+    }
+
+    /// テーマの選び方を替える(ADR-016)。変わったときだけ写しを送り `true` を返す
+    /// (写しを送ると保存が予約され、システム以外のときだけ `ui.theme` が書かれる)。アプリの外観に当てるのは呼び出し側。
+    pub fn set_theme(&self, theme: ThemeMode) -> bool {
+        let changed = lock(&self.inner.workspace).set_theme(theme);
         if changed {
             self.notify();
         }

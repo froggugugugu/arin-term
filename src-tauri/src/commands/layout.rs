@@ -9,11 +9,13 @@
 //! どれも待たない(ロックを短く取り、送るのはロックの外)ので、ほかの寸法のコマンドと同じく同期のコマンドにする。
 
 use arin_core::layout::font_sizes::FontSizeTarget;
+use arin_core::layout::theme::ThemeMode;
 use arin_core::layout::tiles::DisplayMode;
 use arin_core::layout::translucency::TranslucencyTarget;
 use arin_core::terminal::TerminalId;
 use tauri::State;
 
+use crate::ThemeApplier;
 use crate::sessions::SessionRegistry;
 
 /// 左ペインの幅とカード領域(左ペインの上段)の高さを受け取る(単位は CSS ピクセル)。
@@ -58,6 +60,19 @@ pub fn step_translucency(
     delta: i32,
 ) {
     sessions.step_translucency(target, delta);
+}
+
+/// テーマの選び方(システム・ライト・ダーク)を替える(設定画面の「外観」。ADR-016)。変わったら写しを送り、保存が予約され
+/// (状態ファイルの `ui.theme`)、アプリの外観に当てる。知らない文字列は引数の読み取りで失敗し、何も変えない。
+#[tauri::command]
+pub fn set_theme(
+    sessions: State<'_, SessionRegistry>,
+    applier: State<'_, ThemeApplier>,
+    theme: ThemeMode,
+) {
+    if sessions.set_theme(theme) {
+        applier.apply(theme);
+    }
 }
 
 /// 文字の大きさ 2 つと透過 2 つを既定に戻す(設定画面の「既定に戻す」。ADR-014 の 1・AC-G05。ADR-013 の

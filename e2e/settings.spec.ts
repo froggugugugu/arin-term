@@ -36,7 +36,7 @@ const LISTINGS: Record<string, MockListing> = {
 
 const STATE_NOTICE = "状態ファイルを読めなかったため state.json.broken-20261115T093000Z に退避し、空の状態で起動しました";
 const SETTINGS_NOTICE =
-  "ショートカットの設定の 2 行を使わず、既定のキーのままにしました: terminal.new-tab = Cmd+W(Cmd+W は terminal.close-tab が使っています)、tree.rename = F2(⌘ を含むキーか、修飾キーの無い Enter・Space・Backspace・Delete にしてください)";
+  "ショートカットの設定の 2 行を使わず、既定のキーのままにしました: terminal.new-tab = Cmd+W(Cmd+W は terminal.close-tab が使っています)、tree.rename = Shift+R(⌘ を含むキーか、修飾キーの無い Enter・Space・Backspace・Delete・F1〜F12 にしてください)";
 
 /** 既定の表の一部の行のキーを替えた表。 */
 function withKeys(keys: Readonly<Record<string, string>>): ShortcutTable {

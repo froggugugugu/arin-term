@@ -24,6 +24,7 @@ use arin_core::editor::{
     CheckDocumentOutcome, DocumentNotAllowedReason, EditorCloseRequest, EditorId, LineEnding,
     OpenDocumentOutcome, ReadOnlyReason, SaveDocumentOutcome,
 };
+use arin_core::layout::theme::ThemeMode;
 use arin_core::paths::RelPath;
 use arin_core::ports::fs::{DirEntry, EntryKind};
 use arin_core::ports::watch::WatchBatch;
@@ -345,6 +346,10 @@ const CHECKS: &[(&str, Check)] = &[
     (
         "set_editor_vim_で写しが届き保存される",
         set_editor_vim_で写しが届き保存される,
+    ),
+    (
+        "set_theme_で写しが届き保存される",
+        set_theme_で写しが届き保存される,
     ),
     ("無いエディタの_id_は失敗する", 無いエディタの_id_は失敗する),
 ];
@@ -869,6 +874,46 @@ fn set_editor_vim_で写しが届き保存される(ctx: &Ctx<'_>) {
     // 保存する内容にエディタのタブは入らない(再起動で開き直さない)。
     let text = fs::read_to_string(ctx.state_dir.join(support::STATE_FILE_NAME)).unwrap();
     assert!(!text.contains("a.md"), "{text}");
+}
+
+/// 前提: `ui.theme` は無い(システム)。
+fn set_theme_で写しが届き保存される(ctx: &Ctx<'_>) {
+    let theme = || serde_json::to_value(ctx.snapshot()).unwrap()["theme"].clone();
+    // アプリの外観へ当てる口に、記録するだけの中身を入れる(模擬ランタイムでは本物は入らない)。
+    let applied: Arc<Mutex<Vec<ThemeMode>>> = Arc::default();
+    let record = Arc::clone(&applied);
+    ctx.handle
+        .state::<arin_lib::ThemeApplier>()
+        .install(move |theme| record.lock().unwrap().push(theme));
+
+    assert_eq!(theme(), json!("system"));
+    ctx.call::<()>("set_theme", json!({ "theme": "dark" }));
+    // 同じ値をもう一度送っても、当て直さない。
+    ctx.call::<()>("set_theme", json!({ "theme": "dark" }));
+    assert_eq!(theme(), json!("dark"));
+    arin_lib::lifecycle::on_window_focus_changed(ctx.handle, false);
+    assert!(
+        wait_until(|| ctx.state_json()["ui"]["theme"] == json!("dark")),
+        "ui.theme が書かれない: {}",
+        ctx.state_json()
+    );
+    // 「既定に戻す」では変わらない。
+    ctx.call::<()>("reset_appearance", json!({}));
+    assert_eq!(theme(), json!("dark"));
+
+    ctx.call::<()>("set_theme", json!({ "theme": "system" }));
+    assert_eq!(theme(), json!("system"));
+    arin_lib::lifecycle::on_window_focus_changed(ctx.handle, false);
+    assert!(
+        wait_until(|| ctx.state_json()["ui"].get("theme").is_none()),
+        "システムを書いた: {}",
+        ctx.state_json()
+    );
+    assert_eq!(
+        *applied.lock().unwrap(),
+        vec![ThemeMode::Dark, ThemeMode::System],
+        "変わったときだけ外観に当てる"
+    );
 }
 
 fn 無いエディタの_id_は失敗する(ctx: &Ctx<'_>) {

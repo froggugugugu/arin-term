@@ -533,7 +533,7 @@ describe("runSmoke と状態ファイル", () => {
   });
 });
 
-/** 本物のアプリが問題のある行(tree.rename = F2)に出す設定の行(src-tauri/src/settings.rs・arin-core の overrides.rs の形)。 */
+/** 本物のアプリが問題のある行(tree.rename = F13)に出す設定の行(src-tauri/src/settings.rs・arin-core の overrides.rs の形)。 */
 const BAD_ROW_LINE = `${SETTINGS_DIAGNOSTIC_PREFIX} ショートカットの設定: ${SETTINGS_BAD_ROW.id} = ${SETTINGS_BAD_ROW.key}(キーを読めません: 修飾キーでもキーでもない部分があります)`;
 
 /** 標準エラーに行を書く偽のアプリの本体の一部。 */
@@ -582,7 +582,7 @@ describe("設定ファイルを置いた起動(--settings)", () => {
     assert.equal(await check(), null);
 
     // 中身が変わった(大きさが同じでも)
-    await writeFile(file, SETTINGS_FIXTURE.replace("F2", "F3"));
+    await writeFile(file, SETTINGS_FIXTURE.replace("F13", "F14"));
     assert.match(await check(), /中身が変わった/);
 
     // 中身は同じで更新日時だけが変わった(書き直した)

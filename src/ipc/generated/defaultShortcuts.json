@@ -76,7 +76,7 @@
   },
   {
     "command": "tree.rename",
-    "accelerator": "Enter",
+    "accelerator": "F2",
     "receiver": "screen"
   },
   {

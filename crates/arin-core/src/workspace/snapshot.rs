@@ -12,6 +12,7 @@ use ts_rs::TS;
 use crate::editor::{EditorId, ReadOnlyReason};
 use crate::layout::font_sizes::{FontSizeTarget, FontSizes};
 use crate::layout::panes::PaneSizes;
+use crate::layout::theme::ThemeMode;
 use crate::layout::tiles::{DisplayMode, TileGrid};
 use crate::layout::translucency::{Translucency, TranslucencyTarget};
 use crate::paths::RelPath;
@@ -49,6 +50,8 @@ pub struct AppSnapshot {
     pub editors: Vec<EditorTabSnapshot>,
     /// エディタの設定(ADR-015 の 6)。
     pub editor: EditorSettingsSnapshot,
+    /// テーマの選び方(`state.json` の `ui.theme`。無ければシステム。切替は `set_theme`。ADR-016)。
+    pub theme: ThemeMode,
 }
 
 /// 写しに載せるエディタのタブ 1 つ(ADR-015 の 3)。版と絶対パスは載せない。

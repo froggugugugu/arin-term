@@ -99,6 +99,8 @@ const NAMED_KEYS: Readonly<Record<string, string>> = {
   arrowdown: "ArrowDown",
   arrowleft: "ArrowLeft",
   arrowright: "ArrowRight",
+  // ファンクションキー(F1〜F12。KeyboardEvent の key も同じ綴り)
+  ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`f${i + 1}`, `F${i + 1}`])),
 };
 
 /** 記号のキー → 物理的な位置(KeyboardEvent の code)と、US 配列で ⇧ を押したときの文字。 */

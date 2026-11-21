@@ -105,7 +105,7 @@ pub enum ShortcutSettingReason {
     Reserved,
     /// #7 メニューの項目の行で `Cmd` を含まないキー。既定に戻した。
     MenuKeyNeedsCmd,
-    /// #8 画面の行で `Cmd` を含まず、修飾キーの無い `Enter`・`Space`・`Backspace`・`Delete` でもないキー。既定に戻した。
+    /// #8 画面の行で `Cmd` を含まず、修飾キーの無い `Enter`・`Space`・`Backspace`・`Delete`・`F1`〜`F12` でもないキー。既定に戻した。
     ScreenKeyNotAllowed,
     /// #9 ほかのコマンドと同じキー。既定に戻した。
     Conflict {
@@ -188,7 +188,7 @@ impl fmt::Display for ShortcutSettingProblem {
             ShortcutSettingReason::Reserved => f.write_str("macOS が使うキーです")?,
             ShortcutSettingReason::MenuKeyNeedsCmd => f.write_str("⌘ を含むキーにしてください")?,
             ShortcutSettingReason::ScreenKeyNotAllowed => f.write_str(
-                "⌘ を含むキーか、修飾キーの無い Enter・Space・Backspace・Delete にしてください",
+                "⌘ を含むキーか、修飾キーの無い Enter・Space・Backspace・Delete・F1〜F12 にしてください",
             )?,
             ShortcutSettingReason::Conflict { other } => match &self.key {
                 Some(key) => write!(f, "{key} は {other} が使っています")?,
@@ -248,11 +248,10 @@ fn modifier_problem(receiver: ShortcutReceiver, chord: KeyChord) -> Option<Short
     match receiver {
         ShortcutReceiver::MenuItem => Some(ShortcutSettingReason::MenuKeyNeedsCmd),
         ShortcutReceiver::Screen => {
+            let key = chord.key();
             let bare_allowed = chord.modifiers().is_empty()
-                && matches!(
-                    chord.key().as_str(),
-                    "Enter" | "Space" | "Backspace" | "Delete"
-                );
+                && (key.is_function()
+                    || matches!(key.as_str(), "Enter" | "Space" | "Backspace" | "Delete"));
             (!bare_allowed).then_some(ShortcutSettingReason::ScreenKeyNotAllowed)
         }
         // 編集の項目の行は、ここに来る前に「変えられない」で外している。

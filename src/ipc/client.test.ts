@@ -179,6 +179,15 @@ describe("src/ipc の包み", () => {
     ]);
   });
 
+  it("テーマは set_theme に theme で届く", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+
+    await expect(ipc.setTheme("light")).resolves.toBeUndefined();
+
+    expect(fake.calls).toEqual([{ command: "set_theme", args: { theme: "light" } }]);
+  });
+
   it("設定を開くのメニューの操作(open-settings)も menu-command で届く", async () => {
     const fake = createFakeIpc();
     const ipc = createIpc(fake.transport);

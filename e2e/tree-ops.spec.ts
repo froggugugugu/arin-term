@@ -228,7 +228,7 @@ test.describe("コンテキストメニュー(FR-024、FR-035)", () => {
       切り取り: "⌘X",
       コピー: "⌘C",
       ペースト: "⌘V",
-      "名称変更…": "↩",
+      "名称変更…": "F2",
       ゴミ箱に入れる: "⌘⌫",
       "新規ファイル…": "⌘N",
       "新規フォルダ…": "⇧⌘N",
@@ -508,9 +508,9 @@ test.describe("インライン編集(FR-025、FR-026、【仮定】9・10)", () 
     expect(await inputSelection(page)).toEqual({ value: "README.md", start: 0, end: 6 });
     await nameInput(page).press("Escape");
 
-    // フォルダは全体。Enter のキー(表の tree.rename)でも始まる。
+    // フォルダは全体。F2 のキー(表の tree.rename)でも始まる。
     await row(page, "docs").click();
-    await page.keyboard.press("Enter");
+    await page.keyboard.press("F2");
     expect(await inputSelection(page)).toEqual({ value: "docs", start: 0, end: 4 });
   });
 

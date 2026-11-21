@@ -16,6 +16,7 @@ import {
   type MockListing,
   projectsSnapshot,
   readCallArgs,
+  shortcutTableWith,
   readRecordedCalls,
   type SampleProject,
   setMockListing,
@@ -269,6 +270,165 @@ test.describe("選択と開閉の操作(FR-018、【仮定】1・6)", () => {
     await expect(fileTree(page)).toBeFocused();
     await expect(fileTree(page)).toHaveAttribute("data-focused", "true");
     expect(await selectionColor(row(page, "README.md"))).toBe(focusedColor);
+  });
+});
+
+test.describe("矢印キーの操作(WAI-ARIA の tree の作法)", () => {
+  const selectedPath = (page: Page) =>
+    page.locator('[data-testid="tree-row"][aria-selected="true"]').getAttribute("data-path");
+
+  test("上下で選択が動き_右で開いて子へ_左で親へ戻って閉じる", async ({ page }) => {
+    const errors = collectPageErrors(page);
+    await open(page);
+    await row(page, "docs").click();
+    await expect(fileTree(page)).toBeFocused();
+
+    // ↓ / ↑ で次・前の行。先頭では止まる。
+    await page.keyboard.press("ArrowDown");
+    await expect.poll(() => selectedPath(page)).toBe("src");
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowUp");
+    await expect.poll(() => selectedPath(page)).toBe("docs");
+    await page.keyboard.press("ArrowDown");
+
+    // → で閉じたフォルダが開き(選択は動かない)、もう一度 → で最初の子へ。
+    await page.keyboard.press("ArrowRight");
+    await expect(row(page, "src")).toHaveAttribute("aria-expanded", "true");
+    await expect(row(page, "src/main.ts")).toBeVisible();
+    await expect.poll(() => selectedPath(page)).toBe("src");
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(() => selectedPath(page)).toBe("src/lib");
+
+    // 開いたフォルダの中も ↓ で続けて動ける。ファイルの → は何もしない。
+    await page.keyboard.press("ArrowDown");
+    await expect.poll(() => selectedPath(page)).toBe("src/main.ts");
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(() => selectedPath(page)).toBe("src/main.ts");
+
+    // ← で親へ移り(親は開いたまま)、もう一度 ← で閉じる。
+    await page.keyboard.press("ArrowLeft");
+    await expect.poll(() => selectedPath(page)).toBe("src");
+    await expect(row(page, "src")).toHaveAttribute("aria-expanded", "true");
+    await page.keyboard.press("ArrowLeft");
+    await expect(row(page, "src")).toHaveAttribute("aria-expanded", "false");
+    await expect(row(page, "src/main.ts")).toHaveCount(0);
+    await expect.poll(() => selectedPath(page)).toBe("src");
+    // いちばん上の階層の閉じたフォルダの ← は何もしない。
+    await page.keyboard.press("ArrowLeft");
+    await expect.poll(() => selectedPath(page)).toBe("src");
+
+    // 末尾では止まる。
+    for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowDown");
+    await expect.poll(() => selectedPath(page)).toBe("a b.ts");
+    expect(errors).toEqual([]);
+  });
+
+  test("何も選んでいなければ下で先頭_上で末尾が選ばれる", async ({ page }) => {
+    await open(page);
+    await expect(row(page, "docs")).toBeVisible();
+    await fileTree(page).focus();
+    await page.keyboard.press("ArrowDown");
+    await expect.poll(() => selectedPath(page)).toBe("docs");
+
+    // 余白のクリックで選択を外してから ↑。
+    await scroller(page).click({ position: { x: 20, y: 400 } });
+    await expect(page.locator('[data-testid="tree-row"][aria-selected="true"]')).toHaveCount(0);
+    await fileTree(page).focus();
+    await page.keyboard.press("ArrowUp");
+    await expect.poll(() => selectedPath(page)).toBe("a b.ts");
+  });
+
+  test("修飾キー付きの矢印とツリーの外のフォーカスでは選択が動かない", async ({ page }) => {
+    await open(page);
+    await row(page, "src").click();
+    await page.keyboard.press("Shift+ArrowDown");
+    await page.keyboard.press("Alt+ArrowDown");
+    await page.keyboard.press("Meta+ArrowDown");
+    await page.keyboard.press("Meta+ArrowRight");
+    await expect.poll(() => selectedPath(page)).toBe("src");
+    await expect(row(page, "src")).toHaveAttribute("aria-expanded", "false");
+
+    await page.getByTestId("project-card").first().focus();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(() => selectedPath(page)).toBe("src");
+    await expect(row(page, "src")).toHaveAttribute("aria-expanded", "false");
+  });
+});
+
+test.describe("Enter で開く(ダブルクリックと同じ)", () => {
+  test("フォルダは開閉し_Markdown_はエディタで開き_ほかのファイルは既定のアプリで開く", async ({ page }) => {
+    const errors = collectPageErrors(page);
+    await open(page);
+
+    // フォルダ: Enter で開き、もう一度で閉じる。名前の入力は始まらない。
+    await row(page, "src").click();
+    await page.keyboard.press("Enter");
+    await expect(row(page, "src")).toHaveAttribute("aria-expanded", "true");
+    await expect(row(page, "src/main.ts")).toBeVisible();
+    await expect(page.getByTestId("tree-name-input")).toHaveCount(0);
+    await page.keyboard.press("Enter");
+    await expect(row(page, "src")).toHaveAttribute("aria-expanded", "false");
+
+    // Markdown: エディタで開くコマンド(既定のアプリでは開かない)。
+    await row(page, "README.md").click();
+    await page.keyboard.press("Enter");
+    await expect.poll(() => readCallArgs(page, "open_document")).toEqual([{ projectId: APP.id, path: "README.md" }]);
+    expect(await readCallArgs(page, "open_entry")).toEqual([]);
+
+    // ほかのファイル: 既定のアプリで開くコマンド。
+    await row(page, "a b.ts").click();
+    await page.keyboard.press("Enter");
+    await expect.poll(() => readCallArgs(page, "open_entry")).toEqual([{ projectId: APP.id, path: "a b.ts" }]);
+    await expect(page.getByTestId("tree-name-input")).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
+
+  test("何も選んでいない_ルートを選んでいる_修飾キー付きの_Enter_は開かない", async ({ page }) => {
+    await open(page);
+    await expect(row(page, "docs")).toBeVisible();
+    await fileTree(page).focus();
+    await page.keyboard.press("Enter");
+    await page.getByTestId("tree-header").click();
+    await page.keyboard.press("Enter");
+    await row(page, "README.md").click();
+    await page.keyboard.press("Shift+Enter");
+    expect(await readCallArgs(page, "open_document")).toEqual([]);
+    expect(await readCallArgs(page, "open_entry")).toEqual([]);
+  });
+
+  test("設定で_Enter_をコマンドに割り当てていれば_そちらが先に効く", async ({ page }) => {
+    await installTauriMock(
+      page,
+      {
+        get_app_snapshot: { ok: projectsSnapshot([APP]) },
+        get_shortcuts: { ok: shortcutTableWith({ "tree.rename": "Enter" }) },
+      },
+      appListings(),
+    );
+    await page.goto("/");
+    await row(page, "src").click();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("tree-name-input")).toBeFocused();
+    await expect(row(page, "src")).toHaveAttribute("aria-expanded", "false");
+  });
+});
+
+test.describe("矢印キーと名前の入力", () => {
+  test("名前の入力中の矢印は入力欄のもので_選択は動かない", async ({ page }) => {
+    await open(page);
+    await row(page, "README.md").click();
+    await page.keyboard.press("F2");
+    const input = page.getByTestId("tree-name-input");
+    await expect(input).toBeFocused();
+
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowLeft");
+    await expect(input).toBeFocused();
+    await expect(page.locator('[data-testid="tree-row"][aria-selected="true"]')).toHaveAttribute("data-path", "README.md");
+    await page.keyboard.press("Escape");
+    await expect(input).toHaveCount(0);
   });
 });
 
@@ -570,7 +730,7 @@ test.describe("画面の文字の大きさの画像(M4.6 の T69b。人が目で
 
       // 名前の入力欄(--tree-input-height)も行の中に収まるか見る。
       await fileTree(page).focus();
-      await page.keyboard.press("Enter");
+      await page.keyboard.press("F2");
       const input = page.locator("[data-tree-name-input]");
       await expect(input).toBeVisible();
       const [rowBox, inputBox] = await Promise.all([row(page, "src/main.ts").boundingBox(), input.boundingBox()]);

@@ -2,5 +2,6 @@
 
 pub mod font_sizes;
 pub mod panes;
+pub mod theme;
 pub mod tiles;
 pub mod translucency;

@@ -347,7 +347,7 @@ impl ShortcutTable {
             (C::TreeInsertPath, "Cmd+Enter", Screen),
             (C::TreeCopyRelativePath, "Cmd+Shift+Alt+C", Screen),
             (C::TreeCopyAbsolutePath, "Cmd+Alt+C", Screen),
-            (C::TreeRename, "Enter", Screen),
+            (C::TreeRename, "F2", Screen),
             (C::TreeTrash, "Cmd+Backspace", Screen),
             (C::TreeNewFile, "Cmd+N", Screen),
             (C::TreeNewFolder, "Cmd+Shift+N", Screen),

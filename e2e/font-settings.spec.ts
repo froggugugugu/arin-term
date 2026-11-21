@@ -164,6 +164,8 @@ test.describe("開閉とキーボード(AC-F01・AC-F12)", () => {
     const order = [
       terminalStepper(page),
       interfaceStepper(page),
+      // テーマの切替(選ばれている 1 つだけが Tab に止まる。ADR-016)
+      dialog(page).getByRole("radio", { name: "システム", exact: true }),
       page.getByRole("spinbutton", { name: "ウィンドウの透過" }),
       page.getByRole("spinbutton", { name: "ターミナルの背景の透過" }),
       // M4.8 で Vim のキー操作の切替が透過の下に入った(ADR-015 の 6)
@@ -256,6 +258,54 @@ test.describe("開閉とキーボード(AC-F01・AC-F12)", () => {
       await expect(downButton(page, target)).toHaveAttribute("tabindex", "-1");
     }
     await expect(stepperRow(page, "interface")).toContainText("サイドバー・タブ・ツリー・メニューの文字");
+  });
+});
+
+test.describe("テーマの選び方(ADR-016)", () => {
+  const themeSwitch = (page: Page) => page.getByTestId("theme-switch");
+  const themeRadio = (page: Page, name: string) => themeSwitch(page).getByRole("radio", { name, exact: true });
+
+  test("システム_ライト_ダークが並び_選ぶと_set_theme_が呼ばれ届いた写しで選択が替わる", async ({ page }) => {
+    const base = projectsSnapshot([APP]);
+    await open(page, base);
+    await openSettings(page);
+
+    await expect(themeSwitch(page)).toHaveAccessibleName("テーマ");
+    await expect(themeSwitch(page).getByRole("radio")).toHaveText(["システム", "ライト", "ダーク"]);
+    await expect(themeRadio(page, "システム")).toHaveAttribute("aria-checked", "true");
+
+    await themeRadio(page, "ダーク").click();
+    await expect.poll(() => readCallArgs(page, "set_theme")).toEqual([{ theme: "dark" }]);
+    // 表示は写しに従う(偽の Rust は写しを送り返さないので、届くまでは替わらない)。
+    await expect(themeRadio(page, "システム")).toHaveAttribute("aria-checked", "true");
+    await emitEvent(page, "app-snapshot", { ...base, theme: "dark" });
+    await expect(themeRadio(page, "ダーク")).toHaveAttribute("aria-checked", "true");
+    await expect(themeRadio(page, "システム")).toHaveAttribute("aria-checked", "false");
+
+    // 選ばれているものをもう一度押しても送らない。
+    await themeRadio(page, "ダーク").click();
+    expect(await readCallArgs(page, "set_theme")).toHaveLength(1);
+  });
+
+  test("左右の矢印で選び替えられ_テーマだけが既定と違っても既定に戻すは無効のまま", async ({ page }) => {
+    const base = projectsSnapshot([APP]);
+    await open(page, { ...base, theme: "light" });
+    await openSettings(page);
+    await expect(themeRadio(page, "ライト")).toHaveAttribute("aria-checked", "true");
+    await expect(resetButton(page)).toBeDisabled();
+
+    await themeRadio(page, "ライト").focus();
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(() => readCallArgs(page, "set_theme")).toEqual([{ theme: "dark" }]);
+    await page.keyboard.press("ArrowLeft");
+    // 写しが届く前でも、フォーカスのある項目(ダーク)を基準に 1 つずつ動く。
+    await expect.poll(() => readCallArgs(page, "set_theme")).toEqual([{ theme: "dark" }, { theme: "light" }]);
+    await page.keyboard.press("ArrowLeft");
+    await expect
+      .poll(() => readCallArgs(page, "set_theme"))
+      .toEqual([{ theme: "dark" }, { theme: "light" }, { theme: "system" }]);
+    // 矢印では設定画面が閉じない。
+    await expect(dialog(page)).toBeVisible();
   });
 });
 

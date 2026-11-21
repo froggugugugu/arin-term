@@ -92,6 +92,7 @@ export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapsho
     // エディタのタブは 0 枚、Vim は既定の偽(ADR-015 の 3・6)
     editors: [],
     editor: { vim: false },
+    theme: "system",
     ...overrides,
   };
 }
@@ -154,6 +155,7 @@ export function createFakeIpc(handlers: Partial<FakeHandlers> = {}): FakeIpc {
     toggle_tile_maximize: () => null,
     step_font_size: () => null,
     step_translucency: () => null,
+    set_theme: () => null,
     reset_appearance: () => null,
     open_settings_file: () => null,
     list_directory: () => ({ kind: "listed", entries: [] }),

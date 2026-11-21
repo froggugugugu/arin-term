@@ -7,6 +7,7 @@ import type { PaneSizes } from "./PaneSizes";
 import type { ProjectCardSnapshot } from "./ProjectCardSnapshot";
 import type { ProjectId } from "./ProjectId";
 import type { TerminalTabSnapshot } from "./TerminalTabSnapshot";
+import type { ThemeMode } from "./ThemeMode";
 import type { TranslucencySnapshot } from "./TranslucencySnapshot";
 
 /**
@@ -60,4 +61,8 @@ editors: Array<EditorTabSnapshot>,
 /**
  * エディタの設定(ADR-015 の 6)。
  */
-editor: EditorSettingsSnapshot, };
+editor: EditorSettingsSnapshot, 
+/**
+ * テーマの選び方(`state.json` の `ui.theme`。無ければシステム。切替は `set_theme`。ADR-016)。
+ */
+theme: ThemeMode, };

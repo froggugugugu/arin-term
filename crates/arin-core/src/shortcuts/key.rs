@@ -7,7 +7,8 @@
 //! - 修飾キー: `Cmd`(別名 `Command`・`Super`)・`Shift`・`Alt`(別名 `Option`)・`Ctrl`(別名 `Control`)。
 //!   大文字・小文字を区別しない。同じ修飾キーを 2 度書くと拒否する(別名どうしも同じ)
 //! - キー: 英字 `A`〜`Z`・数字 `0`〜`9`・記号 `` [ ] - = , . / ; ' ` \ ``・名前のキー(`Enter`・`Backspace`・`Delete`・
-//!   `Escape`(別名 `Esc`)・`Tab`・`Space`・`ArrowUp`・`ArrowDown`・`ArrowLeft`・`ArrowRight`)。大文字・小文字を区別しない
+//!   `Escape`(別名 `Esc`)・`Tab`・`Space`・`ArrowUp`・`ArrowDown`・`ArrowLeft`・`ArrowRight`)・ファンクションキー `F1`〜`F12`
+//!   (2026-11-21 に足した。ADR-012 の追記)。大文字・小文字を区別しない
 //! - 書き出すときは正規の書式にする: 修飾キーは `Cmd`・`Shift`・`Alt`・`Ctrl` の順、英字は大文字、名前のキーは上の綴り
 //!   (`Shift+cmd+n` → `Cmd+Shift+N`)。修飾キーの順が違うだけの文字列は同じキーとみなす
 
@@ -172,7 +173,14 @@ enum KeyRepr {
     /// 英字(大文字)・数字・記号の 1 文字(ASCII)。綴りは `SYMBOL_KEYS` か英数字。
     Char(u8),
     Named(NamedKey),
+    /// ファンクションキー(1〜12)。
+    Function(u8),
 }
+
+/// ファンクションキーの綴り(`F1`〜`F12`。添字は番号 − 1)。
+const FUNCTION_KEYS: [&str; 12] = [
+    "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
+];
 
 /// キー(修飾キーを除いた部分)。読めた値だけを持つ。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -190,7 +198,22 @@ impl Key {
             }
             return None;
         }
+        if let Some(index) = FUNCTION_KEYS
+            .iter()
+            .position(|name| name.eq_ignore_ascii_case(part))
+        {
+            // 添字は 0〜11 なので u8 に収まる。
+            return u8::try_from(index + 1)
+                .ok()
+                .map(|n| Self(KeyRepr::Function(n)));
+        }
         NamedKey::from_part(part).map(|k| Self(KeyRepr::Named(k)))
+    }
+
+    /// ファンクションキー(`F1`〜`F12`)か。
+    #[must_use]
+    pub const fn is_function(&self) -> bool {
+        matches!(self.0, KeyRepr::Function(_))
     }
 
     /// 正規の書式の綴り(`N`・`[`・`Enter` など)。
@@ -200,6 +223,11 @@ impl Key {
             // 英数字と記号は ASCII の 1 バイトなので、必ず UTF-8 として読める。
             KeyRepr::Char(b) => std::str::from_utf8(std::slice::from_ref(b)).unwrap_or_default(),
             KeyRepr::Named(k) => k.as_str(),
+            // 作るのは `from_part` だけで、番号は 1〜12。
+            KeyRepr::Function(n) => FUNCTION_KEYS
+                .get(usize::from(*n).wrapping_sub(1))
+                .copied()
+                .unwrap_or_default(),
         }
     }
 }
