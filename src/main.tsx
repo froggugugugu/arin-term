@@ -26,6 +26,7 @@ import { routeMenuCommand } from "./logic/keys/menuCommand";
 import { TerminalManager } from "./terminal/TerminalManager";
 import { XtermEngine } from "./terminal/xterm/XtermEngine";
 import { AppShell } from "./ui/shell/AppShell";
+import { installContextMenuGuard } from "./ui/shell/contextMenuGuard";
 import { createTreeClipboard } from "./ui/menu/runTreeMenuCommand";
 import { installClipboardRouting } from "./ui/terminals/clipboardRouting";
 
@@ -40,6 +41,8 @@ export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartA
     document,
     report: (message) => ipc.reportFrontendError(message),
   });
+  // WebKit の標準の右クリックのメニュー(「再読み込み」でターミナルの表示が消える)を、文字の入力欄の外で止める。
+  installContextMenuGuard(document);
   const store = createAppStore();
   const ui = createUiStore();
   // ツリー(M3): 写しの選択中のプロジェクトのルートを読み、tree-changed と保留(uiStore)に合わせて読み直す。

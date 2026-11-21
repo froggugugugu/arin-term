@@ -240,6 +240,77 @@ test.describe("カードの右クリックのメニュー", () => {
   });
 });
 
+/** 要素に右クリックのイベントを送り、既定の動作(WebKit の標準のメニュー)が止められたかを返す。 */
+async function contextMenuPrevented(locator: Locator): Promise<boolean> {
+  return locator.evaluate(
+    (el) => !el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 })),
+  );
+}
+
+test.describe("プロジェクト欄の余白の右クリックのメニュー", () => {
+  test("一覧の余白を右クリックするとフォルダを追加…だけのメニューが出て_選ぶと登録のコマンドが呼ばれる", async ({
+    page,
+  }) => {
+    await open(page, projectsSnapshot([APP]));
+
+    const list = await box(page.getByTestId("card-list"));
+    await page.mouse.click(list.x + list.width / 2, list.y + list.height - 4, { button: "right" });
+    const menu = page.getByRole("menu", { name: "プロジェクト" });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole("menuitem")).toHaveText(["フォルダを追加…"]);
+
+    await menu.getByRole("menuitem", { name: "フォルダを追加…" }).click();
+
+    await expect.poll(() => readCallArgs(page, "add_project_by_dialog")).toHaveLength(1);
+    await expect(menu).toHaveCount(0);
+  });
+
+  test("見出しの右クリックでも同じメニューが出る_カードの右クリックはカードのメニューのまま", async ({ page }) => {
+    await open(page, projectsSnapshot([APP]));
+
+    await page.getByRole("heading", { name: "プロジェクト" }).click({ button: "right" });
+    await expect(page.getByRole("menu", { name: "プロジェクト" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu", { name: "プロジェクト" })).toHaveCount(0);
+
+    await card(page, "app").click({ button: "right" });
+    await expect(page.getByRole("menu", { name: "app" })).toBeVisible();
+    await expect(page.getByRole("menu", { name: "プロジェクト" })).toHaveCount(0);
+  });
+
+  test("プロジェクトが_0_件の案内の上でも出る", async ({ page }) => {
+    await open(page, projectsSnapshot([]));
+    await page.getByTestId("projects-empty").click({ button: "right", position: { x: 4, y: 4 } });
+    const menu = page.getByRole("menu", { name: "プロジェクト" });
+    await menu.getByRole("menuitem", { name: "フォルダを追加…" }).click();
+    await expect.poll(() => readCallArgs(page, "add_project_by_dialog")).toHaveLength(1);
+  });
+});
+
+test.describe("標準の右クリックのメニュー(再読み込みを出さない)", () => {
+  test("ターミナル・ツリーのヘッダ・画面の地では標準のメニューを止める", async ({ page }) => {
+    await open(page, projectsSnapshot([APP]));
+    await expect(page.getByTestId("terminal-host")).toBeVisible();
+
+    expect(await contextMenuPrevented(page.getByTestId("terminal-host"))).toBe(true);
+    expect(await contextMenuPrevented(page.getByTestId("tree-header"))).toBe(true);
+    expect(await contextMenuPrevented(page.locator("body"))).toBe(true);
+    // xterm.js は右クリックで入力用の textarea をポインタの下へ動かす。そこでも止める。
+    expect(await contextMenuPrevented(page.locator(".xterm-helper-textarea"))).toBe(true);
+  });
+
+  test("文字の入力欄では標準のメニューを残す(カット・コピー・ペーストのため)", async ({ page }) => {
+    await open(page, projectsSnapshot([APP]));
+    const input = await page.evaluate(() => {
+      const el = document.createElement("input");
+      el.id = "e2e-plain-input";
+      document.body.append(el);
+      return el.id;
+    });
+    expect(await contextMenuPrevented(page.locator(`#${input}`))).toBe(false);
+  });
+});
+
 test.describe("見つからないプロジェクト(FR-007)", () => {
   test("見つからないカードは表示が変わり再リンクと一覧から削除を選べる", async ({ page }) => {
     await open(page, projectsSnapshot([APP, GONE]));
