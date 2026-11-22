@@ -26,8 +26,9 @@ src/
 ├── state/             # appStore・uiStore・treeStore、actions(コマンドの呼び出し)、selectors、terminalSync、起動手順・エラー報告
 ├── terminal/          # エンジンの抽象(engine.ts)、TerminalManager(表示中の並び以外は DOM の外で取り込み続ける)、入力の列
 │   └── xterm/         # xterm.js の実装(XtermEngine。DOM 描画と unicode11 に固定)。@xterm/* はここだけ
-├── editor/            # エディタの口(engine.ts)、EditorManager(部品を React の外で持ち、置き場所へ付け外し。プレビューの解析の予定)、markdownTypes(プレビューの木の型)
-│   └── codemirror/    # CodeMirrorEngine(初めて開くときに動的 import)、markdownAst(lezer の木 → プレビューの木)。codemirror・@codemirror/*・@lezer/*・@replit/* はここだけ
+├── editor/            # エディタの口(engine.ts)、EditorManager(部品を React の外で持ち、置き場所へ付け外し。プレビューの解析の予定)、markdownTypes(プレビューの木の型)、diagram(図の描画の口。ADR-017)
+│   ├── codemirror/    # CodeMirrorEngine(初めて開くときに動的 import)、markdownAst(lezer の木 → プレビューの木)、slashCompletion(「/」コマンド)。codemirror・@codemirror/*・@lezer/*・@replit/* はここだけ
+│   └── mermaid/       # MermaidRenderer(初めて図を描くときに動的 import。SVG の文字列を返す)。mermaid・@mermaid-js/* はここだけ
 ├── ui/shell/          # AppShell、PaneSplit・Divider(ペインの分割)、NoticeBar、TreePane
 ├── ui/projects/       # カード一覧
 ├── ui/terminals/      # TerminalArea・TabBar・TerminalHost、TileGrid・TileTitleBar・PageControl(タイル表示)、コピー/ペーストの振り分け
@@ -36,14 +37,14 @@ src/
 ├── ui/tree/           # TreeHeader・FileTreeView・TreeRow・InlineNameInput・TreeDragGhost・icons
 ├── ui/design/         # tokens.css、palette.ts(プロジェクト色の値)、applyInterfaceMetrics(画面の文字の大きさを :root に当てる・InterfaceMetricsContext)
 ├── ui/settings/       # 設定画面(SettingsDialog・ValueStepper)
-├── ui/editor/         # EditorPanel(上端の帯)・EditorHost(置き場所)・ViewSwitch(編集・並べて・プレビュー)・MarkdownPreview(木を React の要素に)
-├── logic/             # 純粋ロジック(DOM・他の src/* に依存しない。別 tsconfig。keys/ = キーとメニュー・クリップボードの振り分けとショートカットの表、menu/(treeMenu を含む)、panes/、tree/ = ツリーのモデル・仮想スクロール、dnd/ = ドラッグ、appearance/ = 画面の文字の大きさから追従させるトークンの値、editor/ = 文書のパスの判定・プレビューの解析の予定。keys/editorKeyOwner = エディタの上のキーの受け手)
+├── ui/editor/         # EditorPanel(上端の帯)・EditorHost(置き場所)・ViewSwitch(編集・並べて・プレビュー)・MarkdownPreview(木を React の要素に)・MermaidBlock(図を blob: の <img> で出す)
+├── logic/             # 純粋ロジック(DOM・他の src/* に依存しない。別 tsconfig。keys/ = キーとメニュー・クリップボードの振り分けとショートカットの表、menu/(treeMenu を含む)、panes/、tree/ = ツリーのモデル・仮想スクロール、dnd/ = ドラッグ、appearance/ = 画面の文字の大きさから追従させるトークンの値、editor/ = 文書のパスの判定・プレビューの解析の予定・「/」コマンドの表(slashCommands)。keys/editorKeyOwner = エディタの上のキーの受け手)
 └── test/              # テスト補助(fakeIpc・fakeEditorEngine)
 e2e/                   # Playwright(fixtures/tauriMock.ts)
 scripts/               # 境界検査・カバレッジ・スモーク・perf/(fixtures/ は違反の見本)
 ```
 
-依存方向: `src/ui` → `src/state`・`src/terminal`・`src/editor`(`src/ipc`・`src/terminal/xterm`・`src/editor/codemirror` は直接 import しない)。`src/terminal/xterm`・`src/editor/codemirror` は `src/ipc` を import しない。`arin-platform` → `arin-core`、`src-tauri` → 両方。
+依存方向: `src/ui` → `src/state`・`src/terminal`・`src/editor`(`src/ipc`・`src/terminal/xterm`・`src/editor/codemirror`・`src/editor/mermaid` は直接 import しない)。`src/terminal/xterm`・`src/editor/codemirror`・`src/editor/mermaid` は `src/ipc` を import しない。`arin-platform` → `arin-core`、`src-tauri` → 両方。
 
 ## ターミナルの入出力の流れ
 
@@ -55,7 +56,7 @@ PTY → 読み取りスレッド(未処理の量が上限を超えたら読ま�
 | ---- | ------------ |
 | Cargo の依存宣言 | arin-platform の依存は arin-core・portable-pty・notify・objc2 系・libc・base64・thiserror・toml。arin-core は serde・serde_json・thiserror・ts-rs だけ |
 | TypeScript のプロジェクト参照(`tsconfig.json` → `src/logic`・`src`・`e2e`) | `src/logic` から他を import すると `tsc -b` が失敗 |
-| `scripts/check-boundaries.mjs`(`npm run lint`) | arin-core の依存と `std::fs`/`process`/`net` 禁止、`@tauri-apps/*` は `src/ipc` だけ、`@xterm/*` は `src/terminal/xterm` だけ、`codemirror`・`@codemirror/*`・`@lezer/*`・`@replit/*` は `src/editor/codemirror` だけ、`src/ui` → `src/ipc`・`src/editor/codemirror` 禁止、`src/editor/codemirror` → `src/ipc` 禁止、通信クレート・通信 API・HTML 差し込みの禁止、CSP の `connect-src` |
+| `scripts/check-boundaries.mjs`(`npm run lint`) | arin-core の依存と `std::fs`/`process`/`net` 禁止、`@tauri-apps/*` は `src/ipc` だけ、`@xterm/*` は `src/terminal/xterm` だけ、`codemirror`・`@codemirror/*`・`@lezer/*`・`@replit/*` は `src/editor/codemirror` だけ、`mermaid`・`@mermaid-js/*` は `src/editor/mermaid` だけ、`src/ui` → `src/ipc`・`src/editor/codemirror`・`src/editor/mermaid` 禁止、`src/editor/codemirror`・`src/editor/mermaid` → `src/ipc` 禁止、通信クレート・通信 API・HTML 差し込みの禁止、CSP の `connect-src` |
 
 ## テスト構成
 
@@ -69,7 +70,7 @@ PTY → 読み取りスレッド(未処理の量が上限を超えたら読ま�
 | ツリーとファイル操作の結合 | `crates/arin-core/tests/`(rel_path・tree_rules・fileops_name・fileops_scope・fileops_service・shortcuts・path_format・shell_escape)、`crates/arin-platform/tests/`(fs・fs_race・watch・desktop・shell_roundtrip、trash は `#[ignore]`)、`src-tauri/tests/`(tree_commands・tree_watch・fileops_commands・desktop_commands・app_menu) | cargo test |
 | 設定ファイル(M4.5) | `crates/arin-core/tests/`(settings_load・shortcut_overrides・app_paths)、`crates/arin-platform/tests/settings_file.rs`、`src-tauri/tests/`(app_settings・settings_watch。偽の監視と偽の `DesktopPort`) | cargo test |
 | 文字の大きさ(M4.6) | `crates/arin-core/tests/`(font_sizes・workspace_font_sizes)、`src-tauri/tests/font_commands.rs` | cargo test |
-| Markdown エディタ(M4.8) | `crates/arin-core/tests/`(editor_document・workspace_editors)、`crates/arin-platform/tests/document.rs`、`src-tauri/tests/editor_commands.rs`(`harness = false`)、画面は `src/editor/*.test.ts`・`src/editor/codemirror/markdownAst.test.ts`・`src/ui/editor/MarkdownPreview.test.ts`・`src/state/editorController.test.ts`(本物の `CodeMirrorEngine.ts` は E2E だけ) | cargo test / vitest |
+| Markdown エディタ(M4.8) | `crates/arin-core/tests/`(editor_document・workspace_editors)、`crates/arin-platform/tests/document.rs`、`src-tauri/tests/editor_commands.rs`(`harness = false`)、画面は `src/editor/*.test.ts`・`src/editor/codemirror/markdownAst.test.ts`・`src/ui/editor/MarkdownPreview.test.ts`・`src/state/editorController.test.ts`・`src/logic/editor/slashCommands.test.ts`(本物の `CodeMirrorEngine.ts` と mermaid は E2E だけ。`e2e/editor-mermaid-slash.spec.ts`) | cargo test / vitest |
 | 型の生成物の一致 | `crates/arin-core/tests/generated_types.rs` | cargo test |
 | スクリプト | `scripts/*.test.mjs`(default-shortcuts は見本の表と生成物の一致) | node --test |
 | 画面 E2E | `e2e/*.spec.ts`(app-shell、terminal、projects、tabs、m2-scenario、tree、tree-ops、tree-dnd、m3-scenario、tiles、m4-scenario、settings、m45-scenario、font-settings、m46-scenario、m47-scenario、editor、m48-scenario) | playwright(WebKit) |

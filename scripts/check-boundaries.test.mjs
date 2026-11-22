@@ -18,6 +18,8 @@ import {
   checkNoNetworkApi,
   checkCodeMirrorImports,
   checkCodeMirrorNoIpc,
+  checkMermaidImports,
+  checkMermaidNoIpc,
   checkTauriApiImports,
   checkUiImports,
   checkXtermImports,
@@ -39,8 +41,8 @@ describe("違反の無い見本", () => {
     assert.deepEqual(violations.map(formatViolation), []);
   });
 
-  it("13 項目すべてを走らせる", () => {
-    assert.equal(CHECKS.length, 13);
+  it("15 項目すべてを走らせる", () => {
+    assert.equal(CHECKS.length, 15);
   });
 
   it("CLI として実行すると終了コード 0 を返す", () => {
@@ -151,6 +153,33 @@ describe("3b. CodeMirror と lezer の隔離(ADR-015 の 1)", () => {
   it("抽象(src/editor)への import は違反でない", () => {
     assert.deepEqual(checkCodeMirrorNoIpc(fixture("clean")), []);
     assert.deepEqual(checkUiImports(fixture("clean")), []);
+  });
+});
+
+describe("3c. Mermaid の隔離(ADR-017)", () => {
+  it("src_editor_mermaid_の外からの_import(動的_import_を含む)は違反", () => {
+    const violations = checkMermaidImports(fixture("mermaid-outside"));
+    assert.deepEqual(places(violations), ["src/logic/editor/diagram.ts:2", "src/ui/editor/Diagram.tsx:2"]);
+    assert.match(violations[0].message, /src\/editor\/mermaid/);
+  });
+
+  it("src_editor_mermaid_の中は違反でない", () => {
+    assert.deepEqual(checkMermaidImports(fixture("clean")), []);
+  });
+
+  it("src_ui_から_src_editor_mermaid_を_import_すると違反", () => {
+    const violations = checkUiImports(fixture("mermaid-outside"));
+    assert.deepEqual(places(violations), ["src/ui/editor/Diagram.tsx:4"]);
+    assert.match(violations[0].message, /src\/editor\/mermaid/);
+  });
+
+  it("src_editor_mermaid_から_src_ipc_を_import_すると違反", () => {
+    const violations = checkMermaidNoIpc(fixture("mermaid-imports-ipc"));
+    assert.deepEqual(places(violations), ["src/editor/mermaid/MermaidRenderer.ts:3"]);
+  });
+
+  it("抽象(src/editor)への_import_は違反でない", () => {
+    assert.deepEqual(checkMermaidNoIpc(fixture("clean")), []);
   });
 });
 

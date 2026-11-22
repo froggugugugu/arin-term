@@ -147,3 +147,29 @@
 .md-preview .md-table .md-align-right {
   text-align: right;
 }
+
+/* Mermaid の図(ADR-017)。図は横幅に収め、地は透明のまま(SVG の地も透明)。 */
+.md-preview .md-diagram {
+  margin: 0 0 var(--md-block-gap);
+}
+
+.md-preview .md-diagram img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.md-preview .md-diagram-source {
+  margin: 0 0 var(--md-block-gap);
+}
+
+.md-preview .md-diagram-source > .md-code {
+  margin-bottom: 0;
+}
+
+.md-preview .md-diagram-error {
+  margin: 0.4em 0 0;
+  color: var(--color-muted);
+  font-size: 0.9em;
+  white-space: pre-wrap;
+}

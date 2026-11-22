@@ -8,12 +8,14 @@
 //   (Rust へは変わり目だけ送る。ADR-015 の 4 の set_document_dirty)。保存のキー・`:w` は onSave で知らせる
 // - プレビュー: 見えているエディタだけ、最後の変更から 150 ms 後に解析する(src/logic/editor/previewSchedule)
 // - 文字の大きさ・Vim は全部の部品へ当て、新しく作る部品もその値で作る
+// - プレビューの図(Mermaid。ADR-017)の描画も、初めて図を描くときに動的 import で読む
 //
 // 通信(保存・dirty の送信)は持たない。呼び出し側(T83a)が onDirtyChange・onSave で受けて src/ipc を呼ぶ。
 
 import { describeError } from "../logic/describeError";
 import { createPreviewSchedule, type PreviewSchedule, type PreviewTimer } from "../logic/editor/previewSchedule";
 import type { ShortcutTable } from "../logic/keys/shortcutTable";
+import type { DiagramRenderer, DiagramResult } from "./diagram";
 import type { EditorEngine, EditorId, EditorSlot, EditorSurface, LineEnding } from "./engine";
 import type { MdBlock } from "./markdownTypes";
 
@@ -39,6 +41,8 @@ export interface EditorManagerOptions {
   vim: boolean;
   /** エンジンを読む。既定は CodeMirror の動的 import。テストでは偽のエンジンを返す。 */
   loadEngine?: () => Promise<EditorEngine>;
+  /** 図の描画を読む。既定は Mermaid の動的 import。テストでは偽の描画を返す。 */
+  loadDiagrams?: () => Promise<DiagramRenderer>;
   /** プレビューの予約の時計。既定は setTimeout。 */
   timer?: PreviewTimer;
   /** 読み込みの失敗の報告先。既定は console.error。 */
@@ -48,6 +52,11 @@ export interface EditorManagerOptions {
 const defaultLoadEngine = async (): Promise<EditorEngine> => {
   const module = await import("./codemirror/CodeMirrorEngine");
   return module.createCodeMirrorEngine();
+};
+
+const defaultLoadDiagrams = async (): Promise<DiagramRenderer> => {
+  const module = await import("./mermaid/MermaidRenderer");
+  return module.createMermaidRenderer();
 };
 
 const defaultTimer: PreviewTimer = (run, ms) => {
@@ -77,6 +86,8 @@ export class EditorManager {
   readonly #preview: PreviewSchedule;
   #engine: Promise<EditorEngine> | null = null;
   #loadedEngine: EditorEngine | null = null;
+  readonly #loadDiagrams: () => Promise<DiagramRenderer>;
+  #diagrams: Promise<DiagramRenderer> | null = null;
   #fontSize: number;
   #vim: boolean;
   #disposed = false;
@@ -84,6 +95,7 @@ export class EditorManager {
   constructor(options: EditorManagerOptions) {
     this.#options = options;
     this.#loadEngine = options.loadEngine ?? defaultLoadEngine;
+    this.#loadDiagrams = options.loadDiagrams ?? defaultLoadDiagrams;
     this.#reportError = options.reportError ?? ((message) => console.error(message));
     this.#fontSize = options.fontSize;
     this.#vim = options.vim;
@@ -234,6 +246,25 @@ export class EditorManager {
   preview(id: EditorId): readonly MdBlock[] | null {
     return this.#entries.get(id)?.preview ?? null;
   }
+
+  /**
+   * プレビューの図を描く(ADR-017)。描画を読めなければ、その理由を失敗として返す(次の描画でもう一度読む)。
+   * React の部品から渡しやすいよう、矢印関数で持つ。
+   */
+  readonly renderDiagram = async (source: string): Promise<DiagramResult> => {
+    if (this.#diagrams === null) {
+      this.#diagrams = this.#loadDiagrams();
+      this.#diagrams.catch(() => {
+        this.#diagrams = null;
+      });
+    }
+    try {
+      const renderer = await this.#diagrams;
+      return await renderer.render(source);
+    } catch (error) {
+      return { ok: false, message: `図の部品を読み込めませんでした: ${describeError(error)}` };
+    }
+  };
 
   /** 部品を破棄して忘れる(タブを閉じた)。 */
   close(id: EditorId): void {

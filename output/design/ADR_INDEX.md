@@ -18,5 +18,6 @@
 | ADR-014 | [透過の設定(ウィンドウとターミナルの背景)、タイルの番号キー(⌘1〜9)、Shift+Enter の改行(M4.7)](ADR_014_translucency-tile-keys-newline.md) | Proposed(本人の確認待ち) | 2026-11-17 |
 | ADR-015 | [Markdown のファイルを、ターミナルのタブと並ぶエディタのタブで編集・プレビューする(M4.8)](ADR_015_markdown-editor.md) | Accepted(【要確認】3 点は本人が 2026-11-17 に了承。実機の確認は T86a) | 2026-11-17 |
 | ADR-016 | [テーマ(システム・ライト・ダーク)を設定画面で選び、アプリの外観で切り替える](ADR_016_theme-mode.md) | Accepted(実機の見た目は本人の確認待ち) | 2026-11-21 |
+| ADR-017 | [Markdown のプレビューで Mermaid の図を出し、エディタに「/」コマンドを足す](ADR_017_mermaid-slash.md) | Accepted(実機の見た目は本人の確認待ち) | 2026-11-22 |
 
 候補の出どころは `ARCH_multi-terminal.md` §14。
