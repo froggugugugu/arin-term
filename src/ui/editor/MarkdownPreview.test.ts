@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { parseMarkdown } from "../../editor/codemirror/markdownAst";
 import type { MdBlock } from "../../editor/markdownTypes";
 import { MarkdownPreview } from "./MarkdownPreview";
+import { MermaidFigure } from "./MermaidBlock";
 
 const render = (blocks: readonly MdBlock[], fontSize = 15) =>
   renderToStaticMarkup(createElement(MarkdownPreview, { blocks, fontSize }));
@@ -118,5 +119,53 @@ describe("MarkdownPreview(自前の木を React の要素にする)", () => {
 
   it("空の文書は空の外側だけ", () => {
     expect(renderSource("")).toBe('<div class="md-preview" style="font-size:15px"></div>');
+  });
+});
+
+describe("Mermaid の塊(ADR-017)", () => {
+  const source = "```mermaid\ngraph TD; A-->B\n```";
+  const never = () => new Promise<never>(() => undefined);
+
+  it("描画を渡さなければ、ふつうのコードの塊として出す", () => {
+    const html = renderSource(source);
+    expect(html).toContain('<pre class="md-code"><code>graph TD; A--&gt;B</code></pre>');
+    expect(html).not.toContain("md-diagram");
+  });
+
+  it("描けるまでは書かれた文をコードの塊のまま出す(<img> はまだ作らない)", () => {
+    const html = renderToStaticMarkup(
+      createElement(MarkdownPreview, { blocks: parseMarkdown(source), fontSize: 15, renderDiagram: never }),
+    );
+    expect(html).toContain('<div class="md-diagram-source"><pre class="md-code"><code>graph TD; A--&gt;B</code></pre></div>');
+    expect(tagsOf(html).map((t) => t.name)).not.toContain("img");
+  });
+
+  it("引用とリストの中の塊も図の扱いにする。言語名が違えばコードの塊", () => {
+    const html = renderToStaticMarkup(
+      createElement(MarkdownPreview, {
+        blocks: parseMarkdown("> ```mermaid\n> a\n> ```\n\n- ```Mermaid\n  b\n  ```\n\n```js\nc\n```"),
+        fontSize: 15,
+        renderDiagram: never,
+      }),
+    );
+    expect(html.match(/md-diagram-source/g)).toHaveLength(2);
+  });
+
+  it("描けたら、ライトの <img> とダークの <source> を blob: の URL で出す", () => {
+    const html = renderToStaticMarkup(
+      createElement(MermaidFigure, { source: "a", view: { kind: "ok", lightUrl: "blob:明", darkUrl: "blob:暗" } }),
+    );
+    expect(html).toBe(
+      '<figure class="md-diagram" data-testid="md-diagram"><picture><source media="(prefers-color-scheme: dark)" srcSet="blob:暗"/><img src="blob:明" alt="Mermaid の図"/></picture></figure>',
+    );
+  });
+
+  it("描けなければ、書かれた文と理由を文字で出す", () => {
+    const html = renderToStaticMarkup(
+      createElement(MermaidFigure, { source: "<b>x</b>", view: { kind: "error", message: "Parse error <i>" } }),
+    );
+    expect(html).toContain("<code>&lt;b&gt;x&lt;/b&gt;</code>");
+    expect(html).toContain("図を描けませんでした: Parse error &lt;i&gt;");
+    expect(tagsOf(html).map((t) => t.name)).not.toContain("img");
   });
 });

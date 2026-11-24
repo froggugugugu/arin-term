@@ -3,7 +3,7 @@
 ## 概要
 
 macOS 向けのライト・マルチターミナル「Arin」(Tauri 2、arm64、最低 OS 15.0)。M0(骨格)と M1(ターミナル 1 枚。ログインシェル・PTY・xterm.js・コピー/ペースト)の実装が済み、M1 は本人が Go と判定した(`output/design/ADR_001_terminal-engine.md`)。
-M2(プロジェクトの登録・カード一覧・タブ・ペインの分割・`state.json` の保存・ルートへの追従・終了の確認)、M3(ファイルツリー・ファイル操作・ドラッグ・ショートカット)、M4(タイル表示・ページ送り・拡大・アテンションの印)の実装が済み、M2〜M4 は本人の完了確認待ち。M4.5(ショートカットの設定)の実装が済み、本人の完了確認待ち(ADR-012)。M4.6(文字の大きさの設定画面。値は `state.json`)の実装が済み、本人の完了確認待ち(ADR-013)。M4.7(透過・タイルの番号キー・Shift+Enter の改行。ADR-014)と M4.8(`.md`・`.markdown` だけのエディタのタブ。編集・プレビュー・保存・Vim の切替。ADR-015)の実装が済み、本人の完了確認待ち。テーマの切替(システム・ライト・ダーク。値は `state.json`。ADR-016)とファイルツリーの矢印キーの実装が済み、本人の確認待ち。描画は DOM、全角幅は `unicode11` に固定(ADR-001)。設定ファイル `settings.toml` は M4.5 で `[shortcuts]` だけ読む(ほかの設定は未実装)。設計は `output/design/ARCH_multi-terminal.md`、進捗は `output/tasks/PROGRESS.md`。
+M2(プロジェクトの登録・カード一覧・タブ・ペインの分割・`state.json` の保存・ルートへの追従・終了の確認)、M3(ファイルツリー・ファイル操作・ドラッグ・ショートカット)、M4(タイル表示・ページ送り・拡大・アテンションの印)の実装が済み、M2〜M4 は本人の完了確認待ち。M4.5(ショートカットの設定)の実装が済み、本人の完了確認待ち(ADR-012)。M4.6(文字の大きさの設定画面。値は `state.json`)の実装が済み、本人の完了確認待ち(ADR-013)。M4.7(透過・タイルの番号キー・Shift+Enter の改行。ADR-014)と M4.8(`.md`・`.markdown` だけのエディタのタブ。編集・プレビュー・保存・Vim の切替。ADR-015)の実装が済み、本人の完了確認待ち。テーマの切替(システム・ライト・ダーク。値は `state.json`。ADR-016)とファイルツリーの矢印キーの実装が済み、本人の確認待ち。Markdown のプレビューの Mermaid の図とエディタの「/」コマンド(ADR-017)の実装が済み、本人の確認待ち。描画は DOM、全角幅は `unicode11` に固定(ADR-001)。設定ファイル `settings.toml` は M4.5 で `[shortcuts]` だけ読む(ほかの設定は未実装)。設計は `output/design/ARCH_multi-terminal.md`、進捗は `output/tasks/PROGRESS.md`。
 
 ## コマンド
 
@@ -44,7 +44,8 @@ npm run licenses:check # THIRD_PARTY_LICENSES.md が依存と合っているか�
 | アプリ基盤 | Tauri 2.12.5(Rust 1.98.1、edition 2024) |
 | 画面 | React 19.3.1、zustand 5.0.16(vanilla ストア)、Vite 8.3.5、TypeScript 6.0.3 |
 | ターミナル | @xterm/xterm 6.0.0(DOM 描画。addon-fit 0.11.0、addon-unicode11 0.9.0)、portable-pty 0.9.0 |
-| Markdown エディタ(`src/editor/codemirror/` だけ) | codemirror 6.0.2、@codemirror/state 6.7.2・view 6.43.10・lang-markdown 6.5.2・language 6.12.4・commands 6.11.0・search 6.7.2、@lezer/markdown 1.7.2・highlight 1.2.3・common 1.5.2、@replit/codemirror-vim 6.4.0(推移的な @codemirror/lint は `overrides` で 6.9.7。ADR-015) |
+| Markdown エディタ(`src/editor/codemirror/` だけ) | codemirror 6.0.2、@codemirror/autocomplete 6.20.4・state 6.7.2・view 6.43.10・lang-markdown 6.5.2・language 6.12.4・commands 6.11.0・search 6.7.2、@lezer/markdown 1.7.2・highlight 1.2.3・common 1.5.2、@replit/codemirror-vim 6.4.0(推移的な @codemirror/lint は `overrides` で 6.9.7。ADR-015) |
+| Markdown のプレビューの図(`src/editor/mermaid/` だけ) | mermaid 12.3.0(推移的な dompurify は 3.4.17、cytoscape は 3.34.4 に `overrides` で固定。ADR-017) |
 | ファイルの監視 | notify 8.2.1(FSEvents) |
 | 設定ファイルの解析(`arin-platform` だけ) | toml 1.2.1(`default-features = false`、`std`・`parse`。Tauri と同じ版。公開から 2 週間未満の例外を本人が認めた。ADR-012) |
 | macOS の API(`arin-platform` だけ) | objc2 0.6.5、objc2-foundation 0.3.2、objc2-app-kit 0.3.2、libc 0.2.191、base64 0.23.1(どれも Tauri と同じ版。ADR-009) |

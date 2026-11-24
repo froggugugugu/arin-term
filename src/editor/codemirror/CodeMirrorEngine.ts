@@ -8,6 +8,8 @@
 //   `editor.save` のキーは既定の動作を止めて保存を知らせる。それ以外は CodeMirror(通常の keymap か Vim)
 // - Vim: `@replit/codemirror-vim` を Compartment で付け外しする(作り直さない)。`:w` は保存
 // - 改行: 中では `\n` の 1 種類で持ち(読み込みでは `\r\n`・`\r`・`\n` のどれも改行にする)、text() で文書の改行に戻す
+// - 「/」コマンド(ADR-017): 行の先頭か空白のあとの「/」で書式の候補を出す(slashCompletion.ts)。候補の表示中の
+//   ↑↓・Enter・Esc は補完が受ける(editorKeyOwner はメニューのキーだけを外へ出すので、ぶつからない)
 // - 色と書体はトークン(tokens.css の CSS の変数)。本文の大きさは外側の要素の font-size(ターミナルの文字の大きさ)
 
 import { selectAll } from "@codemirror/commands";
@@ -22,6 +24,7 @@ import { editorKeyOwner } from "../../logic/keys/editorKeyOwner";
 import type { ShortcutTable } from "../../logic/keys/shortcutTable";
 import type { EditorEngine, EditorId, EditorSlot, EditorSurface, EditorSurfaceOptions, LineEnding } from "../engine";
 import { parseMarkdown } from "./markdownAst";
+import { slashCompletion } from "./slashCompletion";
 
 /** Markdown の色付け。色はトークンだけ(ライト・ダークに追従する)。 */
 const highlight = HighlightStyle.define([
@@ -46,6 +49,44 @@ const theme = EditorView.theme({
   ".cm-gutters": { backgroundColor: "transparent", color: "var(--color-muted)", border: "none" },
   ".cm-activeLine, .cm-activeLineGutter": { backgroundColor: "var(--color-control-hover)" },
   ".cm-panels": { backgroundColor: "var(--color-surface)", color: "var(--color-fg)" },
+  // 補完(「/」コマンド。ADR-017)は画面の右クリックのメニュー(ContextMenu.css)と同じ作法で見せる
+  ".cm-tooltip": { border: "none", backgroundColor: "transparent" },
+  ".cm-tooltip.cm-tooltip-autocomplete": {
+    padding: "var(--menu-padding)",
+    borderRadius: "var(--radius-menu)",
+    background: "var(--color-menu-bg)",
+    WebkitBackdropFilter: "blur(24px) saturate(1.8)",
+    backdropFilter: "blur(24px) saturate(1.8)",
+    boxShadow: "var(--shadow-menu)",
+    color: "var(--color-fg)",
+  },
+  ".cm-tooltip.cm-tooltip-autocomplete > ul": {
+    fontFamily: "var(--font-family)",
+    fontSize: "var(--font-size-l)",
+    minWidth: "200px",
+    maxHeight: "18em",
+  },
+  ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
+    display: "flex",
+    alignItems: "center",
+    gap: "var(--space-2)",
+    height: "var(--menu-item-height)",
+    padding: "0 var(--space-2) 0 10px",
+    borderRadius: "var(--radius-s)",
+    lineHeight: "1",
+  },
+  ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": {
+    background: "var(--color-highlight)",
+    color: "var(--color-highlight-fg)",
+  },
+  ".cm-completionIcon": { display: "none" },
+  ".cm-completionLabel": { flex: "1" },
+  ".cm-completionDetail": {
+    marginLeft: "0",
+    fontStyle: "normal",
+    color: "var(--color-menu-shortcut)",
+  },
+  ".cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionDetail": { color: "inherit", opacity: "0.8" },
 });
 
 /** 部品ごとの本物。Vim の `:w` から部品を引く。 */
@@ -96,6 +137,8 @@ class CodeMirrorSurface implements EditorSurface {
       syntaxHighlighting(highlight),
       basicSetup,
       markdown({ base: markdownLanguage }),
+      // 「/」コマンド(ADR-017)。basicSetup の補完が言語の autocomplete を集めて出す
+      markdownLanguage.data.of({ autocomplete: slashCompletion }),
       theme,
       EditorView.lineWrapping,
       this.#readOnly.of(EditorState.readOnly.of(this.#readOnlyEnabled)),
