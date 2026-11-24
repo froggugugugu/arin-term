@@ -47,6 +47,8 @@
 - ツリーの矢印キー(`src/logic/tree/treeKeys.ts`)と Enter(開く。ダブルクリックと同じ)は表に載せない。Enter は表に割り当てが無いときだけ効く(`FileTreeView.tsx` の `onKeyDown`。表が先)。名称変更の既定は F2(キーの書式は `F1`〜`F12` まで。ADR-012 の末尾の追記)
 - テーマ(システム・ライト・ダーク。ADR-016)は Rust がアプリの外観を替えて効かせる(`ThemeApplier`。`tokens.css` の `prefers-color-scheme` がそのまま追従する)。画面の CSS・JS に切替を書かない(`data-theme`・クラス・`matchMedia` で分けない)。模擬ランタイムは外観の切替を実装していない(呼ぶと panic する)ので、`AppHandle::set_theme` を直接呼ばず `ThemeApplier` を通す
 - タイルの番号キー(`view.focus-tile-1`〜`-9`)は Rust がメニューで受けて `focus_tile_at` を呼ぶ。番号は表示中のページの並び順で、画面の札「#n」は写しの `tileIds` の位置から出す(キーの表示ではないので表から引かない)
+- 並べ替え(ADR-019)の並びは Rust が持つ(`move_project`・`move_terminal_tab`・`move_editor_tab`。`toIndex` は動かしたあとの位置)。タブは同じプロジェクトの同じ種類の中だけで動き、種類をまたぐ口は作らない。画面のドラッグは `src/ui/shell/useReorderDrag.ts`(pointer のイベント。項目に `data-reorder-group`・`data-reorder-id`、始めない場所に `data-reorder-ignore`)、落とす位置の規則は `src/logic/dnd/reorder.ts`
+- タブをまとめて閉じるのは `close_tabs` の 1 回(画面から `close_terminal`・`close_editor` を並べて呼ばない)。動作中・未保存の確認は `remove_project` と同じく `needsConfirmation` を返して `confirmed: true` で呼び直す。メニューの項目と閉じるタブは `src/logic/menu/tabMenu.ts`
 - ターミナルの Shift+Enter は `ESC`+`CR` を送る(`src/logic/keys/newline.ts`。表より先に判定する。表には載せない)
 - 設定の知らせは写しの `notice` と別に持つ(Rust は `AppSettings`、画面は `uiStore` の `settingsNotice`)。中身は設定ファイルの問題と「設定ファイルを開く…」の結果(開けなかった・見本を作れなかった)の 2 つを 1 行にまとめたもの。開く結果の知らせは、次に開けたときと、読み直しで表か設定ファイルの問題の知らせが変わったときに消える。画面で閉じても、違う文の知らせが届けば出し直す
 
@@ -121,5 +123,8 @@
 | 書きかけで外の変更を見つけると `.arin-save-…` が残った | 削除の経路を作らない規則で、止めた保存の一時ファイルも残していた | 保存が自分で作った一時ファイルに限って片付ける(本人が了承)。名前が別のものに替わっていた・消せなかったときだけ残し、`[arin:editor]` に場所を出す。アプリが落ちたときの残りは片付けない(ツリーは隠しファイル表示が ON なら出す) |
 | stat が同じだと中身の変更を見落としうる | 版は stat の 4 つが同じなら中身を比べない | 大きさと mtime を保って書き換える道具の変更は拾えない(承知のうえ) |
 | エディタの塊が大きい | CodeMirror・lezer・Vim で `CodeMirrorEngine-*.js` が 737 kB(gzip 250 kB) | 動的 import で別の塊にし、最初に開くときだけ読む。本体は 693 → 719 kB |
+| 並べ替えのドラッグで、落とす位置の線が掴んだ項目と重なって取り消し線に見える | 掴んだ項目はポインタに付いて動くので、線のある境目の上に来る | 線を引かず、あいだの項目を滑らせて隙間を空ける。落とす位置はドラッグを始めたときの中心で決める(滑った位置で決めると行ったり来たりする。ADR-019) |
+| タブを右クリックするとタブ名の文字が選ばれる | WebKit は右クリックで語を選ぶ | `.tab-bar` に `user-select: none` |
+| E2E で隙間を空ける動きの途中が撮れる | 160ms の `transition` | 画像を撮るテストは `emulateMedia({ reducedMotion: "reduce" })`(動きを減らす設定では滑らせない) |
 | IME の変換中の ⌘S で保存が走る | 保存のキーは変換中かを見ない | 未対応(合否一覧の残り) |
 | 既定のショートカットが JIS 配列で打てない(⇧⌘\ など) | US 配列の記号のキーは JIS で別の位置・別の組み合わせになる | JIS 配列で打てない記号のキーを既定にしない(M4 は ⇧⌘G に替えた) |
