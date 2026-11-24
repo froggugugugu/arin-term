@@ -14,7 +14,7 @@
 | キー | 型 | 備考 |
 | ---- | -- | ---- |
 | `schemaVersion` | 整数 | `STATE_SCHEMA_VERSION`(1) |
-| `projects[]` | 配列 | 配列の順が並び順 |
+| `projects[]` | 配列 | 配列の順が並び順(カードのドラッグで変わる。`move_project`。ADR-019) |
 | `projects[].id` | 文字列 | UUID の形(`8-4-4-4-12` の 16 進。読むときに小文字にそろえる。版のビットは見ない) |
 | `projects[].bookmark` | base64 の文字列 / `null` | `arin-core` は中身を見ない。`null` なら起動時に `lastKnownPath` から作り直す |
 | `projects[].lastKnownPath` | 文字列 | 最後に分かっていた絶対パス |

@@ -49,6 +49,9 @@
 - テーマ(システム・ライト・ダーク。ADR-016)は Rust がアプリの外観を替えて効かせる(`ThemeApplier`。`tokens.css` の `prefers-color-scheme` がそのまま追従する)。画面の CSS・JS に切替を書かない(`data-theme`・クラス・`matchMedia` で分けない)。模擬ランタイムは外観の切替を実装していない(呼ぶと panic する)ので、`AppHandle::set_theme` を直接呼ばず `ThemeApplier` を通す
 - タイルの番号キー(`view.focus-tile-1`〜`-9`)は Rust がメニューで受けて `focus_tile_at` を呼ぶ。番号は表示中のページの並び順で、画面の札「#n」は写しの `tileIds` の位置から出す(キーの表示ではないので表から引かない)
 - エディタの「/」コマンド(ADR-017)は CodeMirror の補完(言語の `autocomplete`)として出す。候補の表と差し込む文の組み立ては `src/logic/editor/slashCommands.ts`(純粋)、取り付けは `src/editor/codemirror/slashCompletion.ts`。候補を足すときは表に 1 行足し、`slashCommands.test.ts` と E2E の候補の数(`e2e/editor-mermaid-slash.spec.ts`)を合わせる
+- 並べ替え(ADR-019)の並びは Rust が持つ(`move_project`・`move_terminal_tab`・`move_editor_tab`。`toIndex` は動かしたあとの位置)。タブは同じプロジェクトの同じ種類の中だけで動き、種類をまたぐ口は作らない。画面のドラッグは `src/ui/shell/useReorderDrag.ts`(pointer のイベント。項目に `data-reorder-group`・`data-reorder-id`、始めない場所に `data-reorder-ignore`)、落とす位置の規則は `src/logic/dnd/reorder.ts`
+- タブをまとめて閉じるのは `close_tabs` の 1 回(画面から `close_terminal`・`close_editor` を並べて呼ばない)。確認は真偽でなく、確認に出した ID の一覧(`confirmedTerminalIds`・`confirmedEditorIds`)を付けて呼び直す(確認のあいだに増えたら Rust がもう一度確認を求める)。画面が未保存と知っているエディタは `dirtyEditorIds` で送る(`set_document_dirty` は遅れて届く)。メニューの項目と閉じるタブは `src/logic/menu/tabMenu.ts`
+- 並べ替えのコマンドは対象が無いとき失敗にしない(`ignore_closed` と同じ)。ドラッグのあいだに写しで組の並びが変わったら、画面は離しても送らない
 - ターミナルの Shift+Enter は `ESC`+`CR` を送る(`src/logic/keys/newline.ts`。表より先に判定する。表には載せない)
 - 設定の知らせは写しの `notice` と別に持つ(Rust は `AppSettings`、画面は `uiStore` の `settingsNotice`)。中身は設定ファイルの問題と「設定ファイルを開く…」の結果(開けなかった・見本を作れなかった)の 2 つを 1 行にまとめたもの。開く結果の知らせは、次に開けたときと、読み直しで表か設定ファイルの問題の知らせが変わったときに消える。画面で閉じても、違う文の知らせが届けば出し直す
 
@@ -128,5 +131,8 @@
 | Mermaid の小さな図が横いっぱいに拡大される | mermaid は既定で SVG の `width` を `100%` にする(図の種類ごとの `useMaxWidth`)。`<img>` では元の大きさが無くなる | 図の種類ごとに `useMaxWidth: false` を渡す(`MermaidRenderer.ts`)。広すぎる図だけ CSS の `max-width: 100%` で縮める |
 | Mermaid の塊が大きい | elk・cytoscape・katex を含め、mermaid の塊は合わせて約 5 MB | 図の種類ごとの別の塊で、初めて描くときに要るものだけ読む。本体は 724.8 kB |
 | エディタの塊が大きい | CodeMirror・lezer・Vim で `CodeMirrorEngine-*.js` が 737 kB(gzip 250 kB) | 動的 import で別の塊にし、最初に開くときだけ読む。本体は 693 → 719 kB |
+| 並べ替えのドラッグで、落とす位置の線が掴んだ項目と重なって取り消し線に見える | 掴んだ項目はポインタに付いて動くので、線のある境目の上に来る | 線を引かず、あいだの項目を滑らせて隙間を空ける。落とす位置はドラッグを始めたときの中心で決める(滑った位置で決めると行ったり来たりする。ADR-019) |
+| タブを右クリックするとタブ名の文字が選ばれる | WebKit は右クリックで語を選ぶ | `.tab-bar` に `user-select: none` |
+| E2E で隙間を空ける動きの途中が撮れる | 160ms の `transition` | 画像を撮るテストは `emulateMedia({ reducedMotion: "reduce" })`(動きを減らす設定では滑らせない) |
 | IME の変換中の ⌘S で保存が走る | 保存のキーは変換中かを見ない | 未対応(合否一覧の残り) |
 | 既定のショートカットが JIS 配列で打てない(⇧⌘\ など) | US 配列の記号のキーは JIS で別の位置・別の組み合わせになる | JIS 配列で打てない記号のキーを既定にしない(M4 は ⇧⌘G に替えた) |

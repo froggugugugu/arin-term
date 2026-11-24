@@ -20,5 +20,6 @@
 | ADR-016 | [テーマ(システム・ライト・ダーク)を設定画面で選び、アプリの外観で切り替える](ADR_016_theme-mode.md) | Accepted(実機の見た目は本人の確認待ち) | 2026-11-21 |
 | ADR-017 | [Markdown のプレビューで Mermaid の図を出し、エディタに「/」コマンドを足す](ADR_017_mermaid-slash.md) | Accepted(実機の見た目は本人の確認待ち) | 2026-11-22 |
 | ADR-018 | [新しい版を GitHub の Releases に問い合わせて知らせる(設定で ON にしたときだけ)](ADR_018_update-check.md) | Accepted(実機の見た目は本人の確認待ち) | 2026-11-23 |
+| ADR-019 | [プロジェクトとタブをドラッグで並べ替え、タブの右クリックでまとめて閉じる](ADR_019_reorder-and-tab-menu.md) | Accepted(実機の手触りは本人の確認待ち) | 2026-11-24 |
 
 候補の出どころは `ARCH_multi-terminal.md` §14。

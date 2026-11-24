@@ -900,3 +900,146 @@ describe("actions(エディタで開く。M4.8。ADR-015 の 4、AC-E01)", () =>
     expect(fake.calls).toEqual([{ command: "open_entry", args: { projectId: "p1", path: "docs/a.md" } }]);
   });
 });
+
+describe("actions(並べ替えとタブをまとめて閉じる。ADR-019)", () => {
+  it("並べ替えは動かしたあとの位置を付けて呼ぶ", async () => {
+    const { fake, errors, actions } = setup();
+
+    await actions.moveProject("p1", 2);
+    await actions.moveTerminalTab("t3", 0);
+    await actions.moveEditorTab("e2", 1);
+
+    expect(fake.calls).toEqual([
+      { command: "move_project", args: { projectId: "p1", toIndex: 2 } },
+      { command: "move_terminal_tab", args: { terminalId: "t3", toIndex: 0 } },
+      { command: "move_editor_tab", args: { editorId: "e2", toIndex: 1 } },
+    ]);
+    expect(errors).toEqual([]);
+  });
+
+  it("動作中も未保存も無ければ確認を開かずに 1 回で閉じる", async () => {
+    const { fake, ui, actions } = setup();
+
+    await actions.closeTabs("p1", ["t2"], ["e1"]);
+
+    expect(fake.calls).toEqual([
+      {
+        command: "close_tabs",
+        args: { projectId: "p1", terminalIds: ["t2"], editorIds: ["e1"], dirtyEditorIds: [], confirmedTerminalIds: [], confirmedEditorIds: [] },
+      },
+    ]);
+    expect(ui.getState().closeTabsConfirmation).toBeNull();
+  });
+
+  it("確認が要れば確認を開き、確定で確認に出した一覧を確認済みとして送る", async () => {
+    const unsaved = { editorId: "e1", projectName: "app", path: "notes.md" };
+    let first = true;
+    const { fake, ui, actions } = setup({
+      close_tabs: () => {
+        if (!first) return { kind: "closed" };
+        first = false;
+        return { kind: "needsConfirmation", running: [running], unsaved: [unsaved] };
+      },
+    });
+
+    await actions.closeTabs("p1", ["t1", "t2"], ["e1"]);
+    expect(ui.getState().closeTabsConfirmation).toEqual({
+      projectId: "p1",
+      terminalIds: ["t1", "t2"],
+      editorIds: ["e1"],
+      running: [running],
+      unsaved: [unsaved],
+    });
+
+    await actions.confirmCloseTabs();
+    expect(ui.getState().closeTabsConfirmation).toBeNull();
+    expect(fake.calls.map((c) => c.args)).toEqual([
+      { projectId: "p1", terminalIds: ["t1", "t2"], editorIds: ["e1"], dirtyEditorIds: [], confirmedTerminalIds: [], confirmedEditorIds: [] },
+      {
+        projectId: "p1",
+        terminalIds: ["t1", "t2"],
+        editorIds: ["e1"],
+        dirtyEditorIds: [],
+        confirmedTerminalIds: ["t1"],
+        confirmedEditorIds: ["e1"],
+      },
+    ]);
+  });
+
+  it("確認のあとに増えていて Rust がもう一度確認を求めたら、新しい一覧で確認を開き直す", async () => {
+    const more = { ...running, terminalId: "t2", label: "ターミナル 2" };
+    let call = 0;
+    const { ui, actions } = setup({
+      close_tabs: () => {
+        call += 1;
+        return { kind: "needsConfirmation", running: call === 1 ? [running] : [running, more], unsaved: [] };
+      },
+    });
+
+    await actions.closeTabs("p1", ["t1", "t2"], []);
+    await actions.confirmCloseTabs();
+
+    expect(ui.getState().closeTabsConfirmation?.running).toEqual([running, more]);
+  });
+
+  it("画面が未保存と知っているエディタは、Rust の印を待たずに未保存として送る", async () => {
+    const fake = createFakeIpc();
+    const ipc = createIpc(fake.transport);
+    const ui = createUiStore();
+    const app = createAppStore();
+    const tree = createTreeStore();
+    const reportError = () => {};
+    const treeController = createTreeController({ ipc, tree, app, ui, reportError });
+    const dirty = new Set(["e2"]);
+    const actions = createActions({
+      ipc,
+      ui,
+      app,
+      tree,
+      treeController,
+      reportError,
+      editor: { openDocument: async () => {}, isDirty: (id) => dirty.has(id) },
+    });
+
+    await actions.closeTabs("p1", [], ["e1", "e2"]);
+
+    expect(fake.calls).toEqual([
+      {
+        command: "close_tabs",
+        args: {
+          projectId: "p1",
+          terminalIds: [],
+          editorIds: ["e1", "e2"],
+          dirtyEditorIds: ["e2"],
+          confirmedTerminalIds: [],
+          confirmedEditorIds: [],
+        },
+      },
+    ]);
+  });
+
+  it("キャンセルでは閉じず、何も挙げなければ呼ばない", async () => {
+    const { fake, ui, actions } = setup({
+      close_tabs: () => ({ kind: "needsConfirmation", running: [running], unsaved: [] }),
+    });
+
+    await actions.closeTabs("p1", ["t1"], []);
+    actions.cancelCloseTabs();
+    await actions.confirmCloseTabs();
+    await actions.closeTabs("p1", [], []);
+
+    expect(ui.getState().closeTabsConfirmation).toBeNull();
+    expect(fake.calls).toHaveLength(1);
+  });
+
+  it("閉じる確認が開いているあいだは設定画面を開かない", async () => {
+    const { ui, actions } = setup({
+      close_tabs: () => ({ kind: "needsConfirmation", running: [running], unsaved: [] }),
+    });
+
+    await actions.closeTabs("p1", ["t1"], []);
+    ui.getState().openSettings();
+
+    expect(ui.getState().settingsOpen).toBe(false);
+  });
+});

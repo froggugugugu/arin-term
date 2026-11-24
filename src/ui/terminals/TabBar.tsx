@@ -1,8 +1,11 @@
-import { type KeyboardEvent, useEffect, useRef } from "react";
+import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from "react";
 
 import { ariaKeyShortcuts, type ShortcutTable, shortcutLabel } from "../../logic/keys/shortcutTable";
 import { moveMenuFocus } from "../../logic/menu/menuNavigation";
+import { buildTabMenu, type TabMenuCommand, type TabRef, tabsToClose } from "../../logic/menu/tabMenu";
 import { projectColorStyle } from "../design/palette";
+import { ContextMenu } from "../menu/ContextMenu";
+import { useReorderDrag } from "../shell/useReorderDrag";
 import type { EditorTab, EditorTabId, ProjectColor, TerminalTab, TerminalTabId } from "../snapshotTypes";
 import { CloseIcon, FileIcon, PlusIcon } from "../tree/icons";
 
@@ -32,6 +35,19 @@ interface TabBarProps {
   onSelect: (id: TerminalTabId) => void;
   onClose: (id: TerminalTabId) => void;
   onNew: () => void;
+  /** ターミナルのタブをドラッグで動かした(ADR-019)。toIndex はターミナルのタブの中で動かしたあとの位置。 */
+  onMoveTerminal?: (id: TerminalTabId, toIndex: number) => void;
+  /** エディタのタブをドラッグで動かした(ADR-019)。toIndex はエディタのタブの中で動かしたあとの位置。 */
+  onMoveEditor?: (id: EditorTabId, toIndex: number) => void;
+  /** 右クリックのメニューでタブをまとめて閉じる(ADR-019)。動作中・未保存の確認は操作の側が出す。 */
+  onCloseTabs?: (terminalIds: readonly TerminalTabId[], editorIds: readonly EditorTabId[]) => void;
+}
+
+/** 開いている右クリックのメニュー(対象のタブと、開いた位置)。 */
+interface TabMenuState {
+  readonly target: TabRef;
+  readonly x: number;
+  readonly y: number;
 }
 
 /** タブの要素の id(tabpanel の aria-labelledby から指す)。ID に空白が入っても 1 語になるようにする。 */
@@ -70,6 +86,10 @@ const MOVE_KEYS: Readonly<Record<string, string>> = {
  * - エディタのタブ(M4.8。ADR-015 の 3・8)はターミナルのタブの後ろに開いた順で並ぶ。プロジェクト色の丸の代わりに文書の印を出し、
  *   未保存なら閉じるボタンの位置に「●」(マウスを載せると ×。macOS と同じ)。読み上げはタブの名前に「未保存」を足す。
  *   キーボードの移動・Delete はターミナルのタブと 1 つの並びとして扱う
+ * - ドラッグで並べ替える(ADR-019。src/ui/shell/useReorderDrag.ts)。ターミナルはターミナルの中、エディタはエディタの中だけ
+ *   (「同じ種類の中だけ」)。閉じるボタンからは始めない。並びは Rust が持ち、写しで届く
+ * - 右クリック(または Shift+F10)で「タブを閉じる」「ほかのタブを閉じる」「これより右を閉じる」(src/logic/menu/tabMenu.ts)。
+ *   「右」は見えている並び(ターミナル → エディタ)での右
  */
 export function TabBar({
   tabs,
@@ -87,6 +107,9 @@ export function TabBar({
   onSelect,
   onClose,
   onNew,
+  onMoveTerminal,
+  onMoveEditor,
+  onCloseTabs,
 }: TabBarProps) {
   const newKey = shortcutLabel(shortcuts, "terminal.new-tab");
   const newAriaKey = ariaKeyShortcuts(shortcuts, "terminal.new-tab");
@@ -100,6 +123,37 @@ export function TabBar({
         ? null
         : terminalKey(activeId);
   const keys = [...tabs.map((t) => terminalKey(t.id)), ...editorTabs.map((t) => editorKey(t.id))];
+  const order: TabRef[] = [
+    ...tabs.map((t): TabRef => ({ kind: "terminal", id: t.id })),
+    ...editorTabs.map((t): TabRef => ({ kind: "editor", id: t.id })),
+  ];
+  const [menu, setMenu] = useState<TabMenuState | null>(null);
+  const onReorderPointerDown = useReorderDrag({
+    axis: "x",
+    onReorder: (group, id, toIndex) => {
+      if (group === "editor") onMoveEditor?.(id, toIndex);
+      else onMoveTerminal?.(id, toIndex);
+    },
+  });
+  const keyOf = (tab: TabRef) => (tab.kind === "editor" ? editorKey(tab.id) : terminalKey(tab.id));
+  const openMenu = (target: TabRef, x: number, y: number) => {
+    if (onCloseTabs !== undefined) setMenu({ target, x, y });
+  };
+  const onTabContextMenu = (target: TabRef) => (event: MouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    openMenu(target, event.clientX, event.clientY);
+  };
+  const closeMenu = (restoreFocus: boolean) => {
+    const target = menu?.target;
+    setMenu(null);
+    if (restoreFocus && target !== undefined) tabRefs.current.get(keyOf(target))?.focus();
+  };
+  const runMenu = (command: TabMenuCommand) => {
+    if (menu === null) return;
+    const { terminalIds, editorIds } = tabsToClose(order, menu.target, command);
+    closeMenu(true);
+    onCloseTabs?.(terminalIds, editorIds);
+  };
   // Tab で止まるタブ: 表示中のタブ。表示中が並びに無ければ最初のタブ。
   const focusableKey = selectedKey !== null && keys.includes(selectedKey) ? selectedKey : (keys[0] ?? null);
 
@@ -121,6 +175,15 @@ export function TabBar({
     const ids = keys;
     const current = ids.findIndex((id) => tabRefs.current.get(id) === document.activeElement);
     if (current < 0) return;
+    if ((event.key === "F10" && event.shiftKey) || event.key === "ContextMenu") {
+      const target = order[current];
+      const el = tabRefs.current.get(ids[current] ?? "");
+      if (target === undefined || el === undefined) return;
+      event.preventDefault();
+      const rect = el.getBoundingClientRect();
+      openMenu(target, rect.left + 8, rect.bottom);
+      return;
+    }
     if (event.key === "Delete" || event.key === "Backspace") {
       event.preventDefault();
       const id = ids[current];
@@ -149,6 +212,7 @@ export function TabBar({
         aria-orientation="horizontal"
         className="tab-bar__list"
         onKeyDown={onListKeyDown}
+        onPointerDown={onReorderPointerDown}
       >
         {tabs.map((terminal) => {
           const key = terminalKey(terminal.id);
@@ -160,6 +224,9 @@ export function TabBar({
               className={selected ? "tab-bar__item tab-bar__item--selected project-colored" : "tab-bar__item project-colored"}
               style={projectColorStyle(color)}
               data-testid="tab-item"
+              data-reorder-group="terminal"
+              data-reorder-id={terminal.id}
+              onContextMenu={onTabContextMenu({ kind: "terminal", id: terminal.id })}
             >
               <button
                 ref={refOf(key)}
@@ -182,6 +249,7 @@ export function TabBar({
               <button
                 type="button"
                 className="tab-bar__close"
+                data-reorder-ignore=""
                 aria-label={`「${terminal.label}」を閉じる`}
                 title={closeKey === null ? "タブを閉じる" : `タブを閉じる(${closeKey})`}
                 tabIndex={-1}
@@ -199,7 +267,15 @@ export function TabBar({
           if (selected) classes.push("tab-bar__item--selected");
           if (editor.dirty) classes.push("tab-bar__item--dirty");
           return (
-            <div key={key} role="presentation" className={classes.join(" ")} data-testid="editor-tab-item">
+            <div
+              key={key}
+              role="presentation"
+              className={classes.join(" ")}
+              data-testid="editor-tab-item"
+              data-reorder-group="editor"
+              data-reorder-id={editor.id}
+              onContextMenu={onTabContextMenu({ kind: "editor", id: editor.id })}
+            >
               <button
                 ref={refOf(key)}
                 type="button"
@@ -222,6 +298,7 @@ export function TabBar({
               <button
                 type="button"
                 className="tab-bar__close"
+                data-reorder-ignore=""
                 aria-label={`「${editor.label}」を閉じる`}
                 title={closeKey === null ? "タブを閉じる" : `タブを閉じる(${closeKey})`}
                 tabIndex={-1}
@@ -249,6 +326,17 @@ export function TabBar({
       >
         <PlusIcon />
       </button>
+      {menu !== null && (
+        <ContextMenu
+          key={`${menu.target.kind}:${menu.target.id}:${menu.x}:${menu.y}`}
+          label="タブ"
+          entries={buildTabMenu(order, menu.target)}
+          x={menu.x}
+          y={menu.y}
+          onClose={closeMenu}
+          onSelect={runMenu}
+        />
+      )}
     </div>
   );
 }

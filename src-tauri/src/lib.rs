@@ -410,12 +410,15 @@ pub fn builder_with_settings_watcher<R: Runtime>(
             commands::terminal::new_terminal,
             commands::terminal::close_terminal,
             commands::terminal::select_terminal,
+            commands::terminal::move_terminal_tab,
+            commands::terminal::close_tabs,
             commands::project::add_project_by_dialog,
             commands::project::select_project,
             commands::project::remove_project,
             commands::project::relink_project,
             commands::project::set_project_color,
             commands::project::copy_project_path,
+            commands::project::move_project,
             commands::layout::set_pane_sizes,
             commands::layout::set_sidebar_collapsed,
             commands::layout::set_display_mode,
@@ -452,6 +455,7 @@ pub fn builder_with_settings_watcher<R: Runtime>(
             commands::editor::set_document_dirty,
             commands::editor::select_editor,
             commands::editor::close_editor,
+            commands::editor::move_editor_tab,
             commands::editor::set_editor_vim,
         ])
 }

@@ -19,6 +19,7 @@ import type { UiStore } from "../../state/uiStore";
 import type { TerminalManager } from "../../terminal/TerminalManager";
 import { applyInterfaceMetrics, InterfaceMetricsContext } from "../design/applyInterfaceMetrics";
 import { applyTranslucency } from "../design/applyTranslucency";
+import { CloseTabsDialog } from "../dialogs/CloseTabsDialog";
 import { QuitDialog } from "../dialogs/QuitDialog";
 import { RemoveProjectDialog } from "../dialogs/RemoveProjectDialog";
 import { SaveConflictDialog } from "../dialogs/SaveConflictDialog";
@@ -137,6 +138,7 @@ export function AppShell({ store, ui, tree, actions, terminals, editor, editors 
               }
             />
             <RemoveProjectDialog store={store} ui={ui} actions={actions} />
+            <CloseTabsDialog ui={ui} actions={actions} />
             <SettingsDialog store={store} ui={ui} actions={actions} editor={editor} />
             <UnsavedCloseDialog store={store} ui={ui} editor={editor} />
             <SaveConflictDialog store={store} ui={ui} editor={editor} />

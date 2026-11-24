@@ -10,9 +10,10 @@
 
 use std::sync::Arc;
 
+use arin_core::editor::EditorId;
 use arin_core::project::ProjectId;
 use arin_core::terminal::TerminalId;
-use arin_core::workspace::ConnectOutcome;
+use arin_core::workspace::{CloseTabsOutcome, CloseTabsRequest, ConnectOutcome};
 use tauri::State;
 use tauri::ipc::{Channel, InvokeResponseBody};
 
@@ -110,6 +111,46 @@ pub async fn close_terminal(
 ) -> Result<(), String> {
     let sessions = sessions.inner().clone();
     blocking(move || sessions.close_terminal(&terminal_id)).await
+}
+
+/// ターミナルのタブを、同じプロジェクトのターミナルのタブの中で動かす(タブのドラッグ。ADR-019)。`to_index` は動かした
+/// あとの位置(0 から。末尾より大きければ末尾)。変わったら写しが届く。
+#[tauri::command]
+pub fn move_terminal_tab(
+    sessions: State<'_, SessionRegistry>,
+    terminal_id: TerminalId,
+    to_index: usize,
+) -> Result<(), String> {
+    sessions
+        .move_terminal_tab(&terminal_id, to_index)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// `project_id` のタブのうち挙げたターミナルとエディタをまとめて閉じる(タブの右クリックのメニュー。ADR-019)。
+/// `dirty_editor_ids` は画面が未保存と知っているエディタ(Rust の印は遅れて届くことがある)。閉じるタブの動作中の
+/// ターミナルと未保存のエディタのうち、確認済み(`confirmed_terminal_ids`・`confirmed_editor_ids`。初めは空)に無いものが
+/// あれば、何も変えずに `needsConfirmation` と一覧を返す(画面が確認を出し、確認した一覧を付けて呼び直す。確認のあとに
+/// 増えていればもう一度確認を求める)。閉じたらそのシェルを終わらせる。
+#[tauri::command]
+pub async fn close_tabs(
+    sessions: State<'_, SessionRegistry>,
+    project_id: ProjectId,
+    terminal_ids: Vec<TerminalId>,
+    editor_ids: Vec<EditorId>,
+    dirty_editor_ids: Vec<EditorId>,
+    confirmed_terminal_ids: Vec<TerminalId>,
+    confirmed_editor_ids: Vec<EditorId>,
+) -> Result<CloseTabsOutcome, String> {
+    let sessions = sessions.inner().clone();
+    let request = CloseTabsRequest {
+        terminals: terminal_ids,
+        editors: editor_ids,
+        dirty_editors: dirty_editor_ids,
+        confirmed_terminals: confirmed_terminal_ids,
+        confirmed_editors: confirmed_editor_ids,
+    };
+    blocking(move || sessions.close_tabs(&project_id, &request)).await
 }
 
 /// そのタブを表示中にする(FR-044)。シェルには触れない(FR-042)。

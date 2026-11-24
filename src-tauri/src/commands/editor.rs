@@ -530,6 +530,20 @@ pub fn select_editor(
         .map_err(|e| e.to_string())
 }
 
+/// エディタのタブを、同じプロジェクトのエディタのタブの中で動かす(タブのドラッグ。ADR-019)。`to_index` は動かした
+/// あとの位置(0 から。末尾より大きければ末尾)。変わったら写しが届く。
+#[tauri::command]
+pub fn move_editor_tab(
+    sessions: State<'_, SessionRegistry>,
+    editor_id: EditorId,
+    to_index: usize,
+) -> Result<(), String> {
+    sessions
+        .move_editor_tab(&editor_id, to_index)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
 /// エディタを閉じる。未保存の変更があり `discard` が偽なら閉じずに `needs-confirmation`。
 #[tauri::command]
 pub fn close_editor(

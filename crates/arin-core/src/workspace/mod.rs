@@ -15,13 +15,15 @@ mod panes;
 mod projects;
 mod snapshot;
 mod state;
+mod tabs;
 mod terminals;
 
 pub use editors::ActiveTab;
 pub use events::{MenuCommand, QuitRequest};
 pub use outcome::{
-    AddProjectOutcome, CloseEditorOutcome, ConnectOutcome, ProjectRoot, RemoveOutcome,
-    RemoveProjectOutcome, RootResolution, RunningTerminal, Startup, UnsavedEditor, WorkspaceError,
+    AddProjectOutcome, CloseEditorOutcome, CloseTabsOutcome, CloseTabsRequest, CloseTabsResult,
+    ConnectOutcome, ProjectRoot, RemoveOutcome, RemoveProjectOutcome, RootResolution,
+    RunningTerminal, Startup, UnsavedEditor, WorkspaceError,
 };
 pub use snapshot::{
     AppSnapshot, DisplaySnapshot, EditorSettingsSnapshot, EditorTabSnapshot, FontSizeSnapshot,

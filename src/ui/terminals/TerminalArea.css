@@ -45,6 +45,16 @@
   color: var(--color-muted);
 }
 
+/* 並べ替え(ADR-019)で掴んだタブを、隣のタブより手前に重ねる。右クリックで名前の文字を選ばない。 */
+.tab-bar__item {
+  position: relative;
+}
+
+.tab-bar {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .tab-bar__item:hover {
   background: var(--color-control-hover);
 }

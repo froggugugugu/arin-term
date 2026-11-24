@@ -12,6 +12,7 @@ pub mod paths;
 pub mod persistence;
 pub mod ports;
 pub mod project;
+mod reorder;
 pub mod settings;
 pub mod shortcuts;
 pub mod terminal;

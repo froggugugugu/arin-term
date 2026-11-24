@@ -31,8 +31,9 @@ use arin_core::shortcuts::table::ShortcutTable;
 use arin_core::tree::{DirListing, TreeChange};
 use arin_core::update::UpdateNotice;
 use arin_core::workspace::{
-    AddProjectOutcome, AppSnapshot, CloseEditorOutcome, ConnectOutcome, DisplaySnapshot,
-    FontSizesSnapshot, MenuCommand, QuitRequest, RemoveProjectOutcome, TranslucencySnapshot,
+    AddProjectOutcome, AppSnapshot, CloseEditorOutcome, CloseTabsOutcome, ConnectOutcome,
+    DisplaySnapshot, FontSizesSnapshot, MenuCommand, QuitRequest, RemoveProjectOutcome,
+    TranslucencySnapshot,
 };
 use ts_rs::{Config, TS, TypeVisitor};
 
@@ -47,6 +48,8 @@ fn collect_generated(cfg: &Config) -> BTreeMap<PathBuf, String> {
     collector.visit::<ConnectOutcome>();
     collector.visit::<AddProjectOutcome>();
     collector.visit::<RemoveProjectOutcome>();
+    // タブをまとめて閉じる応答(ADR-019)。
+    collector.visit::<CloseTabsOutcome>();
     collector.visit::<ProjectColor>();
     collector.visit::<MenuCommand>();
     collector.visit::<QuitRequest>();
