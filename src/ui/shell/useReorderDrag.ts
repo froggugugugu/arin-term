@@ -9,7 +9,8 @@
 // - ドラッグ中は、掴んだ項目を浮かせてポインタに付けて並びの向きにだけ動かし(data-reorder-dragging)、落とす位置に
 //   隙間が空くようにあいだの項目を掴んだ項目の大きさぶんずらす(data-reorder-shift。macOS のタブ・一覧と同じ)。
 //   落とす位置は、ドラッグを始めたときの各項目の中心(並びのスクロールの量を足し引きする)で決める(ずらした位置では決めない)
-// - 離したら、位置が変わるときだけ onReorder(組, ID, 動かしたあとの位置)を呼ぶ。結果は写しの並びで届く
+// - 離したら、位置が変わるときだけ onReorder(組, ID, 動かしたあとの位置)を呼ぶ。結果は写しの並びで届く。
+//   ドラッグのあいだに写しで組の並びが変わっていたら(タブを閉じた・開いたなど)、何もしない
 // - 後片付けは 1 つの経路(離した・Esc・pointercancel・捕捉を失った・ウィンドウのフォーカスを失った・画面が隠れた・
 //   ボタンを離したのに up が届かなかった・部品が外れた)。ドラッグのあとに届く click は 1 回だけ捨てる(タブやカードを選ばない)
 
@@ -18,7 +19,7 @@ import "./ReorderDrag.css";
 import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef } from "react";
 
 import { DRAG_THRESHOLD_PX } from "../../logic/dnd/dragMachine";
-import { reorderIndex, shiftOf } from "../../logic/dnd/reorder";
+import { reorderIndex, sameOrder, shiftOf } from "../../logic/dnd/reorder";
 
 export interface ReorderDragOptions {
   /** 並びの向き(縦の一覧は y、横のタブは x)。 */
@@ -48,9 +49,12 @@ export function useReorderDrag({ axis, onReorder }: ReorderDragOptions) {
       if (item === null || !container.contains(item)) return;
       const group = item.dataset.reorderGroup ?? "";
       const id = item.dataset.reorderId ?? "";
-      const members = [...container.querySelectorAll<HTMLElement>("[data-reorder-id]")].filter(
-        (el) => el.dataset.reorderGroup === group,
-      );
+      /** いまの組の項目(並びの順)。 */
+      const groupMembers = () =>
+        [...container.querySelectorAll<HTMLElement>("[data-reorder-id]")].filter(
+          (el) => el.dataset.reorderGroup === group,
+        );
+      const members = groupMembers();
       const ids = members.map((el) => el.dataset.reorderId ?? "");
       const from = ids.indexOf(id);
       if (from < 0 || members.length < 2) return;
@@ -164,7 +168,12 @@ export function useReorderDrag({ axis, onReorder }: ReorderDragOptions) {
           stop("keep");
           return;
         }
-        const moved = to !== from;
+        // ドラッグのあいだに写しで並びが変わっていたら、掴んだときの並びで数えた位置は使えないので動かさない。
+        const unchanged = sameOrder(
+          ids,
+          groupMembers().map((el) => el.dataset.reorderId ?? ""),
+        );
+        const moved = to !== from && unchanged;
         const toIndex = to;
         stop("now");
         if (moved) onReorderRef.current(group, id, toIndex);

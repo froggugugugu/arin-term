@@ -21,9 +21,9 @@ mod terminals;
 pub use editors::ActiveTab;
 pub use events::{MenuCommand, QuitRequest};
 pub use outcome::{
-    AddProjectOutcome, CloseEditorOutcome, CloseTabsOutcome, CloseTabsResult, ConnectOutcome,
-    ProjectRoot, RemoveOutcome, RemoveProjectOutcome, RootResolution, RunningTerminal, Startup,
-    UnsavedEditor, WorkspaceError,
+    AddProjectOutcome, CloseEditorOutcome, CloseTabsOutcome, CloseTabsRequest, CloseTabsResult,
+    ConnectOutcome, ProjectRoot, RemoveOutcome, RemoveProjectOutcome, RootResolution,
+    RunningTerminal, Startup, UnsavedEditor, WorkspaceError,
 };
 pub use snapshot::{
     AppSnapshot, DisplaySnapshot, EditorSettingsSnapshot, EditorTabSnapshot, FontSizeSnapshot,

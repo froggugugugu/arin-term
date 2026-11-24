@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { reorderIndex, shiftOf } from "./reorder";
+import { reorderIndex, sameOrder, shiftOf } from "./reorder";
 
 // 幅 100 の項目が 4 つ並ぶ(中心は 50・150・250・350)。
 const CENTERS = [50, 150, 250, 350];
@@ -39,5 +39,14 @@ describe("shiftOf", () => {
 
   it("動かないときは何もずらさない", () => {
     expect(shifts(2, 2)).toEqual([0, 0, 0, 0]);
+  });
+});
+
+describe("sameOrder", () => {
+  it("同じ ID が同じ順で並んでいるときだけ同じ", () => {
+    expect(sameOrder(["a", "b"], ["a", "b"])).toBe(true);
+    expect(sameOrder(["a", "b"], ["b", "a"])).toBe(false);
+    expect(sameOrder(["a", "b"], ["a"])).toBe(false);
+    expect(sameOrder(["a"], ["a", "c"])).toBe(false);
   });
 });

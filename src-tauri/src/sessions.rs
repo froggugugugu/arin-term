@@ -50,8 +50,8 @@ use arin_core::terminal::{
 };
 use arin_core::workspace::{
     ActiveTab, AddProjectOutcome, AppSnapshot, CloseEditorOutcome, CloseTabsOutcome,
-    CloseTabsResult, ConnectOutcome, ConnectPlan, ProjectRoot, RemoveOutcome, RemoveProjectOutcome,
-    RunningTerminal, UnsavedEditor, Workspace, WorkspaceError,
+    CloseTabsRequest, CloseTabsResult, ConnectOutcome, ConnectPlan, ProjectRoot, RemoveOutcome,
+    RemoveProjectOutcome, RunningTerminal, UnsavedEditor, Workspace, WorkspaceError,
 };
 
 use crate::verify_log::{FlowRecorder, VerifyConfig, VerifyRecord};
@@ -710,12 +710,17 @@ impl SessionRegistry {
     }
 
     /// プロジェクトの並び順を変える(カードのドラッグ。ADR-019)。変わったときだけ写しを送る(保存が予約される)。
+    /// その ID のプロジェクトが無い(ドラッグのあいだに外された)ときは、失敗にせず何もしない(`false`。タイルの
+    /// `ignore_closed` と同じ扱い)。
     ///
     /// # Errors
     ///
-    /// その ID のプロジェクトが無いとき。
+    /// いまは失敗しない(形は他の操作にそろえてある)。
     pub fn move_project(&self, id: &ProjectId, to_index: usize) -> Result<bool, SessionError> {
-        let moved = lock(&self.inner.workspace).move_project(id, to_index)?;
+        let moved = match lock(&self.inner.workspace).move_project(id, to_index) {
+            Err(ProjectError::NotFound(_)) => false,
+            other => other?,
+        };
         if moved {
             self.notify();
         }
@@ -723,16 +728,17 @@ impl SessionRegistry {
     }
 
     /// ターミナルのタブを同じプロジェクトのターミナルの中で動かす(タブのドラッグ。ADR-019)。変わったときだけ写しを送る。
+    /// そのタブが無い(ドラッグのあいだに閉じた)ときは、失敗にせず何もしない(`ignore_closed` と同じ)。
     ///
     /// # Errors
     ///
-    /// その ID のタブが無いとき。
+    /// いまは失敗しない(形は他の操作にそろえてある)。
     pub fn move_terminal_tab(
         &self,
         id: &TerminalId,
         to_index: usize,
     ) -> Result<bool, SessionError> {
-        let moved = lock(&self.inner.workspace).move_terminal_tab(id, to_index)?;
+        let moved = ignore_closed(lock(&self.inner.workspace).move_terminal_tab(id, to_index))?;
         if moved {
             self.notify();
         }
@@ -740,21 +746,25 @@ impl SessionRegistry {
     }
 
     /// エディタのタブを同じプロジェクトのエディタの中で動かす(タブのドラッグ。ADR-019)。変わったときだけ写しを送る。
+    /// そのエディタが無い(ドラッグのあいだに閉じた)ときは、失敗にせず何もしない(`ignore_closed` と同じ)。
     ///
     /// # Errors
     ///
-    /// その ID のエディタが無いとき。
+    /// いまは失敗しない(形は他の操作にそろえてある)。
     pub fn move_editor_tab(&self, id: &EditorId, to_index: usize) -> Result<bool, SessionError> {
-        let moved = lock(&self.inner.workspace).move_editor_tab(id, to_index)?;
+        // 失敗は「その ID のエディタが無い」だけなので、何もしなかった(`false`)とみなす。
+        let moved = lock(&self.inner.workspace)
+            .move_editor_tab(id, to_index)
+            .unwrap_or_default();
         if moved {
             self.notify();
         }
         Ok(moved)
     }
 
-    /// `project` のタブのうち挙げたものをまとめて閉じる(タブの右クリックのメニュー。ADR-019)。閉じるタブに動作中の
-    /// ターミナル(`running_terminals`)か未保存のエディタがあり `confirmed` が偽なら、何も変えずに確認を求める
-    /// (写しは送らない)。閉じたらそのターミナルのセッションを終わらせる。
+    /// `project` のタブのうち挙げたものをまとめて閉じる(タブの右クリックのメニュー。ADR-019)。閉じるタブの動作中の
+    /// ターミナル(`running_terminals`)と未保存のエディタ(画面が知らせたものを含む)のうち、確認済みに無いものがあれば、
+    /// 何も変えずに確認を求める(写しは送らない)。閉じたらそのターミナルのセッションを終わらせる。
     ///
     /// シェルを終わらせるのに最大でおよそ 200ms 待つことがある(複数のタブは同時に終わらせる)。メインスレッドから呼ばない。
     ///
@@ -764,17 +774,14 @@ impl SessionRegistry {
     pub fn close_tabs(
         &self,
         project: &ProjectId,
-        terminals: &[TerminalId],
-        editors: &[EditorId],
-        confirmed: bool,
+        request: &CloseTabsRequest,
     ) -> Result<CloseTabsOutcome, SessionError> {
         let running: Vec<TerminalId> = self
             .running_terminals()
             .into_iter()
             .map(|t| t.terminal_id)
             .collect();
-        let result = lock(&self.inner.workspace)
-            .close_tabs(project, terminals, editors, &running, confirmed)?;
+        let result = lock(&self.inner.workspace).close_tabs(project, request, &running)?;
         let reply = CloseTabsOutcome::from(&result);
         if let CloseTabsResult::Closed { terminals } = result {
             self.end_sessions(&terminals);

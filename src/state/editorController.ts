@@ -102,6 +102,11 @@ export interface EditorController {
   handleCloseRequested(id: EditorId): void;
   /** 部品が未保存の変わり目を知らせた(EditorManager の onDirtyChange)。 */
   handleDirtyChange(id: EditorId, dirty: boolean): void;
+  /**
+   * 画面の部品が未保存か(部品が無ければ false)。Rust の印(写しの dirty)は set_document_dirty が届くまで遅れるので、
+   * タブをまとめて閉じるときはこちらも Rust へ知らせる(ADR-019)。
+   */
+  isDirty(id: EditorId): boolean;
 }
 
 /** 開かない理由の文言(ツリーの知らせ。AC-E02)。 */
@@ -259,6 +264,10 @@ export function createEditorController({ ipc, app, ui, editors, reportError }: E
         }
       }),
     selectEditor: (id) => run("エディタのタブを選べなかった", () => ipc.selectEditor(id)),
+    isDirty: (id) => {
+      const port = editors();
+      return port.has(id) && port.isDirty(id);
+    },
     requestClose: (id) => run("エディタのタブを閉じられなかった", () => close(id, false)),
     save: (id) => save(id, "normal"),
     resolveUnsavedClose: async (choice) => {

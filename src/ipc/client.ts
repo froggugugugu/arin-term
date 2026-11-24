@@ -65,13 +65,11 @@ export interface CommandMap {
   move_terminal_tab: { args: { terminalId: TerminalId; toIndex: number }; result: null };
   move_editor_tab: { args: { editorId: EditorId; toIndex: number }; result: null };
   /**
-   * タブをまとめて閉じる(タブの右クリックのメニュー。ADR-019)。動作中のターミナルか未保存のエディタがあり confirmed が
-   * false なら、何も変えずに needsConfirmation と一覧を返す(確認したら confirmed を true にして呼び直す)。
+   * タブをまとめて閉じる(タブの右クリックのメニュー。ADR-019)。dirtyEditorIds は画面が未保存と知っているエディタ。
+   * 閉じるタブの動作中のターミナルと未保存のエディタのうち、確認済み(confirmed…。初めは空)に無いものがあれば、
+   * 何も変えずに needsConfirmation と一覧を返す(確認した一覧を付けて呼び直す。増えていればもう一度確認を求める)。
    */
-  close_tabs: {
-    args: { projectId: ProjectId; terminalIds: TerminalId[]; editorIds: EditorId[]; confirmed: boolean };
-    result: CloseTabsOutcome;
-  };
+  close_tabs: { args: { projectId: ProjectId } & CloseTabsArgs; result: CloseTabsOutcome };
   ack_terminal_output: { args: { terminalId: TerminalId; bytes: number }; result: null };
   resize_terminal: { args: { terminalId: TerminalId; rows: number; cols: number }; result: null };
   add_project_by_dialog: { args: undefined; result: AddProjectOutcome };
@@ -175,6 +173,18 @@ export interface EventMap {
 }
 
 export type EventName = keyof EventMap;
+
+/** タブをまとめて閉じる求め(close_tabs の引数のうちプロジェクト以外。ADR-019)。 */
+export interface CloseTabsArgs {
+  terminalIds: TerminalId[];
+  editorIds: EditorId[];
+  /** 画面が未保存と知っているエディタ(Rust の未保存の印は遅れて届くことがある)。 */
+  dirtyEditorIds: EditorId[];
+  /** 本人が確認した動作中のターミナル。初めは空。 */
+  confirmedTerminalIds: TerminalId[];
+  /** 本人が確認した未保存のエディタ。初めは空。 */
+  confirmedEditorIds: EditorId[];
+}
 
 /** 通信の実体。コマンド名と引数を Rust へ送り、戻り値を返す。 */
 export type InvokeFn = <C extends CommandName>(
@@ -281,15 +291,10 @@ export interface ArinIpc {
   /** エディタのタブを、同じプロジェクトのエディタのタブの中で toIndex(動かしたあとの位置)へ動かす。 */
   moveEditorTab(id: EditorId, toIndex: number): Promise<void>;
   /**
-   * プロジェクトのタブのうち挙げたものをまとめて閉じる。動作中のターミナルか未保存のエディタがあり confirmed が false なら、
-   * 何も変えずに needsConfirmation と一覧を返す。
+   * プロジェクトのタブのうち挙げたものをまとめて閉じる。動作中のターミナルか未保存のエディタのうち確認済みに無いものが
+   * あれば、何も変えずに needsConfirmation と一覧を返す。
    */
-  closeTabs(
-    projectId: ProjectId,
-    terminalIds: readonly TerminalId[],
-    editorIds: readonly EditorId[],
-    confirmed: boolean,
-  ): Promise<CloseTabsOutcome>;
+  closeTabs(projectId: ProjectId, request: CloseTabsArgs): Promise<CloseTabsOutcome>;
   /** 出力を bytes バイト取り込んだことを知らせる(流量制御)。 */
   ackTerminalOutput(id: TerminalId, bytes: number): Promise<void>;
   /** 寸法(行・桁)を変える。 */
@@ -543,8 +548,7 @@ export function createIpc(transport: IpcTransport): ArinIpc {
     selectTerminal: (terminalId) => done(invoke("select_terminal", { terminalId })),
     moveTerminalTab: (terminalId, toIndex) => done(invoke("move_terminal_tab", { terminalId, toIndex })),
     moveEditorTab: (editorId, toIndex) => done(invoke("move_editor_tab", { editorId, toIndex })),
-    closeTabs: (projectId, terminalIds, editorIds, confirmed) =>
-      invoke("close_tabs", { projectId, terminalIds: [...terminalIds], editorIds: [...editorIds], confirmed }),
+    closeTabs: (projectId, request) => invoke("close_tabs", { projectId, ...request }),
     ackTerminalOutput: (terminalId, bytes) =>
       done(invoke("ack_terminal_output", { terminalId, bytes })),
     resizeTerminal: (terminalId, rows, cols) =>

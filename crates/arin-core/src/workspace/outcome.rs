@@ -87,6 +87,21 @@ impl From<&RemoveOutcome> for RemoveProjectOutcome {
     }
 }
 
+/// タブをまとめて閉じる求め(`Workspace::close_tabs`。ADR-019)。
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CloseTabsRequest {
+    /// 閉じるターミナル。
+    pub terminals: Vec<TerminalId>,
+    /// 閉じるエディタ。
+    pub editors: Vec<EditorId>,
+    /// 画面が未保存と知っているエディタ(Rust の未保存の印は画面から遅れて届くことがあるので、合わせて未保存とみなす)。
+    pub dirty_editors: Vec<EditorId>,
+    /// 本人が確認した動作中のターミナル(確認の一覧に出したもの)。初めの求めでは空。
+    pub confirmed_terminals: Vec<TerminalId>,
+    /// 本人が確認した未保存のエディタ。初めの求めでは空。
+    pub confirmed_editors: Vec<EditorId>,
+}
+
 /// タブをまとめて閉じようとした結果(タブの右クリックのメニュー。ADR-019)。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CloseTabsResult {

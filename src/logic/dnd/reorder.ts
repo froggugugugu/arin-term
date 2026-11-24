@@ -25,3 +25,11 @@ export function shiftOf(index: number, from: number, to: number): -1 | 0 | 1 {
   if (to < from && index >= to && index < from) return 1;
   return 0;
 }
+
+/**
+ * 掴んだときの並び(ID)といまの並びが同じか。ドラッグのあいだに写しで並びが変わった(タブを閉じた・開いた・
+ * ほかの操作で並べ替えた)ら、落とす位置は掴んだときの並びで数えたものなので、離しても動かさない。
+ */
+export function sameOrder(before: readonly string[], now: readonly string[]): boolean {
+  return before.length === now.length && before.every((id, i) => now[i] === id);
+}

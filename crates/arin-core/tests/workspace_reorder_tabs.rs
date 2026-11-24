@@ -12,7 +12,8 @@ use arin_core::persistence::codec::PersistedState;
 use arin_core::project::{Project, ProjectColor, ProjectError, ProjectId, RootReference};
 use arin_core::terminal::{TerminalError, TerminalId};
 use arin_core::workspace::{
-    ActiveTab, CloseTabsOutcome, CloseTabsResult, RootResolution, Startup, Workspace,
+    ActiveTab, CloseTabsOutcome, CloseTabsRequest, CloseTabsResult, RootResolution, Startup,
+    Workspace,
 };
 
 const HOME: &str = "/Users/someone";
@@ -216,10 +217,31 @@ fn エディタのタブはそのプロジェクトのエディタの中で動�
 
 // ── タブをまとめて閉じる ──
 
+/// 閉じる求め(確認はまだ)。
+fn request(terminals: &[TerminalId], editors: &[EditorId]) -> CloseTabsRequest {
+    CloseTabsRequest {
+        terminals: terminals.to_vec(),
+        editors: editors.to_vec(),
+        ..CloseTabsRequest::default()
+    }
+}
+
+/// 確認の一覧をそのまま確認済みにした求め(画面の「閉じる」)。
+fn confirmed(mut request: CloseTabsRequest, result: &CloseTabsResult) -> CloseTabsRequest {
+    let CloseTabsResult::NeedsConfirmation { running, unsaved } = result else {
+        panic!("確認を求めていない: {result:?}");
+    };
+    request.confirmed_terminals = running.iter().map(|t| t.terminal_id.clone()).collect();
+    request.confirmed_editors = unsaved.iter().map(|e| e.editor_id.clone()).collect();
+    request
+}
+
 #[test]
 fn 動作中も未保存も無ければ確認せずに閉じて閉じたターミナルを返す() {
     let (mut ws, tabs) = three_terminals();
-    let result = ws.close_tabs(&id(1), &tabs[1..], &[], &[], false).unwrap();
+    let result = ws
+        .close_tabs(&id(1), &request(&tabs[1..], &[]), &[])
+        .unwrap();
     assert_eq!(
         result,
         CloseTabsResult::Closed {
@@ -238,26 +260,22 @@ fn 閉じるタブに動作中か未保存があれば何も変えずに確認�
     // 動作中は t1 と t3。閉じるのは t3 とエディタだけ(t1 は閉じないので確認に出さない)
     let running = [tabs[0].clone(), tabs[2].clone()];
     let before = ws.snapshot();
-    let result = ws
-        .close_tabs(
-            &id(1),
-            &tabs[2..],
-            std::slice::from_ref(&doc),
-            &running,
-            false,
-        )
-        .unwrap();
-    let CloseTabsResult::NeedsConfirmation { running, unsaved } = &result else {
+    let ask = request(&tabs[2..], std::slice::from_ref(&doc));
+    let result = ws.close_tabs(&id(1), &ask, &running).unwrap();
+    let CloseTabsResult::NeedsConfirmation {
+        running: busy,
+        unsaved,
+    } = &result
+    else {
         panic!("確認を求めなかった: {result:?}");
     };
     assert_eq!(
-        running
-            .iter()
+        busy.iter()
             .map(|t| t.terminal_id.clone())
             .collect::<Vec<_>>(),
         [tabs[2].clone()]
     );
-    assert_eq!(running[0].label, "ターミナル 3");
+    assert_eq!(busy[0].label, "ターミナル 3");
     assert_eq!(unsaved.len(), 1);
     assert_eq!(unsaved[0].editor_id, doc);
     assert_eq!(unsaved[0].path.as_str(), "notes.md");
@@ -269,13 +287,7 @@ fn 閉じるタブに動作中か未保存があれば何も変えずに確認�
 
     // 確認したら閉じる(未保存の変更は捨てる)
     let result = ws
-        .close_tabs(
-            &id(1),
-            &tabs[2..],
-            std::slice::from_ref(&doc),
-            std::slice::from_ref(&tabs[2]),
-            true,
-        )
+        .close_tabs(&id(1), &confirmed(ask, &result), &running)
         .unwrap();
     assert_eq!(
         result,
@@ -290,15 +302,100 @@ fn 閉じるタブに動作中か未保存があれば何も変えずに確認�
 }
 
 #[test]
+fn 確認のあとに動作中や未保存が増えていたらもう一度確認を求める() {
+    let (mut ws, tabs) = three_terminals();
+    let doc = open(&mut ws, 1, "notes.md");
+    let ask = request(&tabs[1..], std::slice::from_ref(&doc));
+    // 確認した時点では t2 だけが動作中
+    let first = ws.close_tabs(&id(1), &ask, &tabs[1..2]).unwrap();
+    let ask = confirmed(ask, &first);
+    assert_eq!(ask.confirmed_terminals, [tabs[1].clone()]);
+
+    // 確認のあいだに t3 でもコマンドが始まった: 増えた分を含めて確認し直す
+    let before = ws.snapshot();
+    let again = ws.close_tabs(&id(1), &ask, &tabs[1..]).unwrap();
+    let CloseTabsResult::NeedsConfirmation { running, unsaved } = &again else {
+        panic!("確認し直さなかった: {again:?}");
+    };
+    assert_eq!(running.len(), 2);
+    assert!(unsaved.is_empty());
+    assert_eq!(ws.snapshot(), before);
+
+    // 確認のあいだに文書を書き換えた: 未保存が増えたので確認し直す
+    let ask = confirmed(ask, &again);
+    ws.set_editor_dirty(&doc, true).unwrap();
+    let third = ws.close_tabs(&id(1), &ask, &tabs[1..]).unwrap();
+    let CloseTabsResult::NeedsConfirmation { unsaved, .. } = &third else {
+        panic!("確認し直さなかった: {third:?}");
+    };
+    assert_eq!(unsaved[0].editor_id, doc);
+
+    // 全部を確認したら閉じる
+    let ask = confirmed(ask, &third);
+    assert!(matches!(
+        ws.close_tabs(&id(1), &ask, &tabs[1..]).unwrap(),
+        CloseTabsResult::Closed { .. }
+    ));
+}
+
+#[test]
+fn 画面が未保存と知っているエディタはラストの印がまだでも確認に出す() {
+    let mut ws = workspace_with(1);
+    let doc = open(&mut ws, 1, "draft.md");
+    // Rust の印はまだ立っていない(set_document_dirty が届く前)
+    let mut ask = request(&[], std::slice::from_ref(&doc));
+    ask.dirty_editors = vec![doc.clone()];
+    let result = ws.close_tabs(&id(1), &ask, &[]).unwrap();
+    let CloseTabsResult::NeedsConfirmation { unsaved, .. } = &result else {
+        panic!("確認を求めなかった: {result:?}");
+    };
+    assert_eq!(unsaved[0].editor_id, doc);
+    assert!(ws.editor(&doc).is_some());
+    // 閉じないエディタの知らせは見ない
+    let other = open(&mut ws, 1, "other.md");
+    let mut ask = request(&[], std::slice::from_ref(&other));
+    ask.dirty_editors = vec![doc.clone()];
+    assert!(matches!(
+        ws.close_tabs(&id(1), &ask, &[]).unwrap(),
+        CloseTabsResult::Closed { .. }
+    ));
+}
+
+#[test]
 fn ほかのタブを閉じるでエディタを残すとそのエディタを出す() {
     let (mut ws, tabs) = three_terminals();
     let a = open(&mut ws, 1, "a.md");
     let b = open(&mut ws, 1, "b.md");
     // ターミナルを表示中にしてから、a 以外を閉じる
     ws.activate_terminal(&tabs[0]).unwrap();
-    ws.close_tabs(&id(1), &tabs, &[b], &[], false).unwrap();
+    ws.close_tabs(&id(1), &request(&tabs, &[b]), &[]).unwrap();
     assert!(terminal_ids(&ws, 1).is_empty());
     assert_eq!(ws.active_tab(), Some(ActiveTab::Editor(a)));
+}
+
+#[test]
+fn 表示中のエディタを閉じてターミナルだけが残ると表示中のターミナルを出す() {
+    let (mut ws, tabs) = three_terminals();
+    ws.activate_terminal(&tabs[1]).unwrap();
+    let a = open(&mut ws, 1, "a.md");
+    let b = open(&mut ws, 1, "b.md");
+    assert_eq!(ws.active_tab(), Some(ActiveTab::Editor(b.clone())));
+    // ターミナル 3 枚の右(エディタ 2 つ)を閉じる
+    ws.close_tabs(&id(1), &request(&[], &[a, b]), &[]).unwrap();
+    assert!(editor_ids(&ws, 1).is_empty());
+    assert_eq!(ws.active_tab(), Some(ActiveTab::Terminal(tabs[1].clone())));
+}
+
+#[test]
+fn ほかのタブを閉じるでターミナルだけを残すとそのターミナルを出す() {
+    let (mut ws, tabs) = three_terminals();
+    let a = open(&mut ws, 1, "a.md");
+    // エディタを表示中のまま、t2 以外を閉じる(表示中のターミナルは t3 で、それも閉じる)
+    assert_eq!(ws.active_tab(), Some(ActiveTab::Editor(a.clone())));
+    let others = [tabs[0].clone(), tabs[2].clone()];
+    ws.close_tabs(&id(1), &request(&others, &[a]), &[]).unwrap();
+    assert_eq!(terminal_ids(&ws, 1), [tabs[1].clone()]);
+    assert_eq!(ws.active_tab(), Some(ActiveTab::Terminal(tabs[1].clone())));
 }
 
 #[test]
@@ -307,12 +404,12 @@ fn ほかのプロジェクトのタブと無いタブは無視し無いプロ�
     let other = terminal_ids(&ws, 2);
     let gone = TerminalId::new("terminal-99");
     let result = ws
-        .close_tabs(&id(1), &[other[0].clone(), gone], &[], &[], false)
+        .close_tabs(&id(1), &request(&[other[0].clone(), gone], &[]), &[])
         .unwrap();
     assert_eq!(result, CloseTabsResult::Closed { terminals: vec![] });
     assert_eq!(terminal_ids(&ws, 2), other);
     assert_eq!(
-        ws.close_tabs(&id(9), &[], &[], &[], false),
+        ws.close_tabs(&id(9), &CloseTabsRequest::default(), &[]),
         Err(ProjectError::NotFound(id(9)))
     );
 }
@@ -321,6 +418,7 @@ fn ほかのプロジェクトのタブと無いタブは無視し無いプロ�
 fn 表示中のタブを閉じると残ったうちの隣が表示中になる() {
     let (mut ws, tabs) = three_terminals();
     // 表示中は最後に開いた t3。t2 と t3 を閉じると t1
-    ws.close_tabs(&id(1), &tabs[1..], &[], &[], false).unwrap();
+    ws.close_tabs(&id(1), &request(&tabs[1..], &[]), &[])
+        .unwrap();
     assert_eq!(ws.active_tab(), Some(ActiveTab::Terminal(tabs[0].clone())));
 }

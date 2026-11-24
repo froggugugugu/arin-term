@@ -48,7 +48,8 @@
 - テーマ(システム・ライト・ダーク。ADR-016)は Rust がアプリの外観を替えて効かせる(`ThemeApplier`。`tokens.css` の `prefers-color-scheme` がそのまま追従する)。画面の CSS・JS に切替を書かない(`data-theme`・クラス・`matchMedia` で分けない)。模擬ランタイムは外観の切替を実装していない(呼ぶと panic する)ので、`AppHandle::set_theme` を直接呼ばず `ThemeApplier` を通す
 - タイルの番号キー(`view.focus-tile-1`〜`-9`)は Rust がメニューで受けて `focus_tile_at` を呼ぶ。番号は表示中のページの並び順で、画面の札「#n」は写しの `tileIds` の位置から出す(キーの表示ではないので表から引かない)
 - 並べ替え(ADR-019)の並びは Rust が持つ(`move_project`・`move_terminal_tab`・`move_editor_tab`。`toIndex` は動かしたあとの位置)。タブは同じプロジェクトの同じ種類の中だけで動き、種類をまたぐ口は作らない。画面のドラッグは `src/ui/shell/useReorderDrag.ts`(pointer のイベント。項目に `data-reorder-group`・`data-reorder-id`、始めない場所に `data-reorder-ignore`)、落とす位置の規則は `src/logic/dnd/reorder.ts`
-- タブをまとめて閉じるのは `close_tabs` の 1 回(画面から `close_terminal`・`close_editor` を並べて呼ばない)。動作中・未保存の確認は `remove_project` と同じく `needsConfirmation` を返して `confirmed: true` で呼び直す。メニューの項目と閉じるタブは `src/logic/menu/tabMenu.ts`
+- タブをまとめて閉じるのは `close_tabs` の 1 回(画面から `close_terminal`・`close_editor` を並べて呼ばない)。確認は真偽でなく、確認に出した ID の一覧(`confirmedTerminalIds`・`confirmedEditorIds`)を付けて呼び直す(確認のあいだに増えたら Rust がもう一度確認を求める)。画面が未保存と知っているエディタは `dirtyEditorIds` で送る(`set_document_dirty` は遅れて届く)。メニューの項目と閉じるタブは `src/logic/menu/tabMenu.ts`
+- 並べ替えのコマンドは対象が無いとき失敗にしない(`ignore_closed` と同じ)。ドラッグのあいだに写しで組の並びが変わったら、画面は離しても送らない
 - ターミナルの Shift+Enter は `ESC`+`CR` を送る(`src/logic/keys/newline.ts`。表より先に判定する。表には載せない)
 - 設定の知らせは写しの `notice` と別に持つ(Rust は `AppSettings`、画面は `uiStore` の `settingsNotice`)。中身は設定ファイルの問題と「設定ファイルを開く…」の結果(開けなかった・見本を作れなかった)の 2 つを 1 行にまとめたもの。開く結果の知らせは、次に開けたときと、読み直しで表か設定ファイルの問題の知らせが変わったときに消える。画面で閉じても、違う文の知らせが届けば出し直す
 

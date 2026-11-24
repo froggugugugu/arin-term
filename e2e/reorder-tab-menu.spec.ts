@@ -170,6 +170,30 @@ test.describe("タブの並べ替え(同じ種類の中だけ)", () => {
     expect(await readCallArgs(page, "move_terminal_tab")).toEqual([]);
   });
 
+  test("ドラッグのあいだに写しで並びが変わったら_離しても動かさない", async ({ page }) => {
+    const snapshot = projectsSnapshot([APP, LOG]);
+    await open(page, snapshot);
+
+    const first = await terminalItem(page, "p-app-t1").boundingBox();
+    if (first === null) throw new Error("タブが無い");
+    await dragTo(page, terminalItem(page, "p-app-t3"), { x: first.x + 4, y: first.y + first.height / 2 });
+    await expect(terminalItem(page, "p-app-t1")).toHaveAttribute("data-reorder-shift", "1");
+    // ドラッグのあいだに、ほかの操作(シェルの終了など)でターミナル 2 が閉じた
+    await emitEvent(page, "app-snapshot", {
+      ...snapshot,
+      projects: snapshot.projects.map((p) =>
+        p.id === APP.id ? { ...p, terminalIds: p.terminalIds.filter((t) => t !== "p-app-t2") } : p,
+      ),
+      terminals: snapshot.terminals.filter((t) => t.id !== "p-app-t2"),
+    });
+    await expect(terminalItem(page, "p-app-t2")).toHaveCount(0);
+    await page.mouse.up();
+
+    await expect(page.locator("[data-reorder-shift], [data-reorder-dragging]")).toHaveCount(0);
+    expect(await readCallArgs(page, "move_terminal_tab")).toEqual([]);
+    expect(await readCallArgs(page, "select_terminal")).toEqual([]);
+  });
+
   test("閉じるボタンからはドラッグを始めない", async ({ page }) => {
     await open(page, projectsSnapshot([APP]));
 
@@ -201,7 +225,7 @@ test.describe("タブの右クリックのメニュー", () => {
 
     await expect
       .poll(() => readCallArgs(page, "close_tabs"))
-      .toEqual([{ projectId: APP.id, terminalIds: ["p-app-t3"], editorIds: ["e1", "e2"], confirmed: false }]);
+      .toEqual([{ projectId: APP.id, terminalIds: ["p-app-t3"], editorIds: ["e1", "e2"], dirtyEditorIds: [], confirmedTerminalIds: [], confirmedEditorIds: [] }]);
     await expect(menu(page)).toHaveCount(0);
     await expect(page.getByTestId("close-tabs-dialog")).toHaveCount(0);
   });
@@ -217,8 +241,8 @@ test.describe("タブの右クリックのメニュー", () => {
     await expect
       .poll(() => readCallArgs(page, "close_tabs"))
       .toEqual([
-        { projectId: APP.id, terminalIds: ["p-app-t1", "p-app-t2", "p-app-t3"], editorIds: ["e2"], confirmed: false },
-        { projectId: APP.id, terminalIds: ["p-app-t1"], editorIds: [], confirmed: false },
+        { projectId: APP.id, terminalIds: ["p-app-t1", "p-app-t2", "p-app-t3"], editorIds: ["e2"], dirtyEditorIds: [], confirmedTerminalIds: [], confirmedEditorIds: [] },
+        { projectId: APP.id, terminalIds: ["p-app-t1"], editorIds: [], dirtyEditorIds: [], confirmedTerminalIds: [], confirmedEditorIds: [] },
       ]);
   });
 
@@ -251,8 +275,15 @@ test.describe("タブの右クリックのメニュー", () => {
     await dialog.getByRole("button", { name: "閉じる" }).click();
     await expect(dialog).toHaveCount(0);
     const calls = await readCallArgs(page, "close_tabs");
-    expect(calls.map((c) => c.confirmed)).toEqual([false, false, true]);
-    expect(calls[2]).toEqual({ projectId: APP.id, terminalIds: ["p-app-t3"], editorIds: ["e1", "e2"], confirmed: true });
+    expect(calls.map((c) => c.confirmedTerminalIds)).toEqual([[], [], ["p-app-t3"]]);
+    expect(calls[2]).toEqual({
+      projectId: APP.id,
+      terminalIds: ["p-app-t3"],
+      editorIds: ["e1", "e2"],
+      dirtyEditorIds: [],
+      confirmedTerminalIds: ["p-app-t3"],
+      confirmedEditorIds: ["e1"],
+    });
   });
 });
 

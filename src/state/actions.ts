@@ -99,7 +99,11 @@ export interface ActionsDeps {
    * エディタで開く(M4.8。./editorController.ts)。渡せば `.md`・`.markdown` の「開く」をここへ回す。
    * 渡さなければ(エディタを使わないテスト)今までどおり既定のアプリで開く。
    */
-  editor?: { openDocument(projectId: ProjectId, path: RelPath): Promise<void> };
+  editor?: {
+    openDocument(projectId: ProjectId, path: RelPath): Promise<void>;
+    /** 画面の部品が未保存か(タブをまとめて閉じるときに Rust へ知らせる。ADR-019)。 */
+    isDirty?(id: EditorId): boolean;
+  };
 }
 
 /** 画面の操作。どの Promise も失敗しない(失敗は報告済み)。 */
@@ -290,15 +294,25 @@ export function createActions({ ipc, ui, app, tree, treeController, reportError,
       }
     });
 
+  /**
+   * タブをまとめて閉じる。画面が未保存と知っているエディタも一緒に送る(Rust の印は遅れて届くことがある)。
+   * confirmed は本人が確認した一覧(初めは無し)。確認が要れば確認を開く(確認のあとに増えていれば開き直す)。
+   */
   const closeTabs = (
     projectId: ProjectId,
     terminalIds: readonly TerminalId[],
     editorIds: readonly EditorId[],
-    confirmed: boolean,
+    confirmed: { terminals: readonly TerminalId[]; editors: readonly EditorId[] } | null,
   ) =>
     run("タブを閉じられなかった", async () => {
       if (terminalIds.length === 0 && editorIds.length === 0) return;
-      const outcome = await ipc.closeTabs(projectId, terminalIds, editorIds, confirmed);
+      const outcome = await ipc.closeTabs(projectId, {
+        terminalIds: [...terminalIds],
+        editorIds: [...editorIds],
+        dirtyEditorIds: editorIds.filter((id) => editor?.isDirty?.(id) === true),
+        confirmedTerminalIds: [...(confirmed?.terminals ?? [])],
+        confirmedEditorIds: [...(confirmed?.editors ?? [])],
+      });
       if (outcome.kind === "needsConfirmation") {
         ui.getState().openCloseTabsConfirmation({
           projectId,
@@ -404,12 +418,16 @@ export function createActions({ ipc, ui, app, tree, treeController, reportError,
     moveProject: (id, toIndex) => run("プロジェクトの並びを変えられなかった", () => ipc.moveProject(id, toIndex)),
     moveTerminalTab: (id, toIndex) => run("タブの並びを変えられなかった", () => ipc.moveTerminalTab(id, toIndex)),
     moveEditorTab: (id, toIndex) => run("タブの並びを変えられなかった", () => ipc.moveEditorTab(id, toIndex)),
-    closeTabs: (projectId, terminalIds, editorIds) => closeTabs(projectId, terminalIds, editorIds, false),
+    closeTabs: (projectId, terminalIds, editorIds) => closeTabs(projectId, terminalIds, editorIds, null),
     confirmCloseTabs: async () => {
       const pending = ui.getState().closeTabsConfirmation;
       if (pending === null) return;
       ui.getState().closeCloseTabsConfirmation();
-      await closeTabs(pending.projectId, pending.terminalIds, pending.editorIds, true);
+      // 確認に出した一覧だけを確認済みとして送る(確認のあいだに増えたものは Rust がもう一度確認を求める)
+      await closeTabs(pending.projectId, pending.terminalIds, pending.editorIds, {
+        terminals: pending.running.map((t) => t.terminalId),
+        editors: pending.unsaved.map((e) => e.editorId),
+      });
     },
     cancelCloseTabs: () => ui.getState().closeCloseTabsConfirmation(),
     removeProject: (id) => remove(id, false),

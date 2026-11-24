@@ -703,14 +703,15 @@ fn 並び順を変えると写しと状態ファイルの並びが変わる(
         saved_order()
     );
 
-    // 無い ID は失敗し、何も変えない。元の並びに戻す。
-    let unknown = error_text(call(
+    // 無い ID(ドラッグのあいだに外された)は失敗にせず、何も変えない。元の並びに戻す。
+    let s = snapshot(handle, window);
+    call_ok::<()>(
         handle,
         window,
         "move_project",
         json!({ "projectId": "00000000-0000-4000-8000-000000000000", "toIndex": 0 }),
-    ));
-    assert!(unknown.contains("見つからない"), "{unknown}");
+    );
+    assert_eq!(snapshot(handle, window), s);
     call_ok::<()>(
         handle,
         window,
@@ -765,13 +766,21 @@ fn タブを並べ替え_まとめて閉じるとき動作中があれば確認�
         alpha_tabs(&snapshot(handle, window)),
         [third.clone(), connected.clone(), second.clone()]
     );
-    let unknown = error_text(call(
+    // 閉じたタブ(ドラッグのあいだに閉じた)は失敗にせず、何も変えない。
+    let s = snapshot(handle, window);
+    call_ok::<()>(
         handle,
         window,
         "move_editor_tab",
         json!({ "editorId": "editor-999", "toIndex": 0 }),
-    ));
-    assert!(unknown.contains("見つからない"), "{unknown}");
+    );
+    call_ok::<()>(
+        handle,
+        window,
+        "move_terminal_tab",
+        json!({ "terminalId": "terminal-999", "toIndex": 0 }),
+    );
+    assert_eq!(snapshot(handle, window), s);
 
     ctx.control.busy.store(true, Ordering::SeqCst);
     // 接続していないタブは動作中に数えないので、確認なしで閉じる。
@@ -779,7 +788,7 @@ fn タブを並べ替え_まとめて閉じるとき動作中があれば確認�
         handle,
         window,
         "close_tabs",
-        json!({ "projectId": alpha_id, "terminalIds": [third], "editorIds": [], "confirmed": false }),
+        json!({ "projectId": alpha_id, "terminalIds": [third], "editorIds": [], "dirtyEditorIds": [], "confirmedTerminalIds": [], "confirmedEditorIds": [] }),
     );
     assert_eq!(outcome, CloseTabsOutcome::Closed);
     // 動作中のタブを含むと、何も変えずに確認を求める。
@@ -793,7 +802,9 @@ fn タブを並べ替え_まとめて閉じるとき動作中があれば確認�
             "projectId": alpha_id,
             "terminalIds": [connected, second],
             "editorIds": [],
-            "confirmed": false
+            "dirtyEditorIds": [],
+            "confirmedTerminalIds": [],
+            "confirmedEditorIds": []
         }),
     );
     let CloseTabsOutcome::NeedsConfirmation { running, unsaved } = outcome else {
@@ -816,7 +827,7 @@ fn タブを並べ替え_まとめて閉じるとき動作中があれば確認�
         handle,
         window,
         "close_tabs",
-        json!({ "projectId": alpha_id, "terminalIds": [second], "editorIds": [], "confirmed": false }),
+        json!({ "projectId": alpha_id, "terminalIds": [second], "editorIds": [], "dirtyEditorIds": [], "confirmedTerminalIds": [], "confirmedEditorIds": [] }),
     );
     assert_eq!(outcome, CloseTabsOutcome::Closed);
     assert_eq!(alpha_tabs(&snapshot(handle, window)), [connected]);
