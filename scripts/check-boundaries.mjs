@@ -846,6 +846,48 @@ export function checkNoNetworkApi(root) {
   ]);
 }
 
+/**
+ * 8b. Rust のソースで外へ通信できるのは、新しい版の確認(`crates/arin-platform/src/release/`)だけ(ADR-018。NFR-008 の例外)。
+ * `curl`・`wget` の起動、NSURLSession、std::net のソケットを、ほかの場所に書かない。コメントの行は見ない。
+ * @returns {Violation[]}
+ */
+export function checkNetworkOnlyInRelease(root) {
+  const rule = "network-process";
+  const allowed = "crates/arin-platform/src/release/";
+  // コマンドの名前は文字列に書くので、コメントの行だけを除いた元の文で見る
+  const commands = [
+    ["curl", /\bcurl\b/],
+    ["wget", /\bwget\b/],
+  ];
+  // 型と関数は、コメントと文字列を除いた文で見る
+  const apis = [
+    ["NSURLSession", /\bNSURLSession\b/],
+    ["std::net", /\bstd\s*::\s*net\b|\bTcpStream\b|\bUdpSocket\b/],
+  ];
+  const violations = [];
+  const dirs = ["crates", "src-tauri/src"].map((d) => path.join(root, d)).filter((d) => fs.existsSync(d));
+  for (const dir of dirs) {
+    for (const file of walk(dir).filter((f) => f.endsWith(".rs"))) {
+      const rel = toPosix(path.relative(root, file));
+      if (rel.startsWith(allowed) || /\/tests\//.test(rel) || rel.includes("/target/")) continue;
+      const src = fs.readFileSync(file, "utf8");
+      const lines = src.split("\n");
+      const codeLines = stripRust(src).split("\n");
+      lines.forEach((text, i) => {
+        const hit =
+          (/^\s*(\/\/|\*|\/\*)/.test(text) ? undefined : commands.find(([, re]) => re.test(text))) ??
+          apis.find(([, re]) => re.test(codeLines[i] ?? ""));
+        if (hit !== undefined) {
+          violations.push(
+            violation(rule, rel, i + 1, text.trim(), `${hit[0]} は ${allowed} だけで使う(新しい版の確認のほかに外へ通信しない。NFR-008・ADR-018)`),
+          );
+        }
+      });
+    }
+  }
+  return violations;
+}
+
 /** 9. 画面のソースに innerHTML・outerHTML・insertAdjacentHTML・document.write・dangerouslySetInnerHTML が無いこと(§12)。 */
 export function checkNoHtmlInjection(root) {
   return checkForbiddenPatterns(root, "html-injection", [
@@ -1024,6 +1066,7 @@ export const CHECKS = [
   { id: "codemirror-ipc", title: "src/editor/codemirror が src/ipc を import しない", run: checkCodeMirrorNoIpc },
   { id: "http-client-crate", title: "HTTP クライアントのクレートが無い", run: checkNoHttpClientCrates },
   { id: "network-api", title: "画面のソースに通信の API が無い", run: checkNoNetworkApi },
+  { id: "network-process", title: "Rust の通信は新しい版の確認だけ", run: checkNetworkOnlyInRelease },
   { id: "html-injection", title: "画面のソースに HTML の差し込みが無い", run: checkNoHtmlInjection },
   { id: "csp-connect-src", title: "CSP の connect-src が制限されている", run: checkCspConnectSrc },
   { id: "csp-script-style", title: "CSP のスクリプトが自アプリだけ、スタイルが自アプリとインラインだけ", run: checkCspScriptStyle },

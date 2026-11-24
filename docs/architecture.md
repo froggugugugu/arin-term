@@ -13,11 +13,11 @@
 crates/arin-core/      # Core: 型・規則。入出力なし
 │                      #   paths/(相対パス・表示と挿入の文字列)、tree/(除外・変更の集約)、fileops/(名前・範囲・操作)、shortcuts/、project/(ID・色・パス・ProjectStore)、layout/(PaneSizes・tiles=グリッドとページ・font_sizes=文字の大きさの範囲と既定と刻み)、persistence/(state.json の codec・保存の予定)、settings/(settings.toml を読んだ結果の型・SettingsStore)、editor/(EditorId・EditorTab・EditorStore・版 FileStamp と要約・応答の型。M4.8)、
 │                      #   workspace/(Workspace・写し・イベントの中身・display=表示モードとページと拡大・font_sizes=文字の大きさの口・editors=エディタのタブ)、terminal/(起動の仕様・状態・流量制御・OSC 走査・attention=アテンションの走査器)、
-│                      #   ports/(PtyPort・状態ファイル・設定ファイル・ルート・乱数と時計・ペーストボード・fs・watch・desktop・document=文書の読み書き)
+│                      #   ports/(PtyPort・状態ファイル・設定ファイル・ルート・乱数と時計・ペーストボード・fs・watch・desktop・document=文書の読み書き・release=最新版の問い合わせ)、update/(版の比較と知らせ。ADR-018)
 crates/arin-platform/  # Platform: OS への入出力(storage/ = ready_marker・state_file・settings_file(TOML の解析)、pty/、bookmark/、fs/(fd 相対のファイル操作・ゴミ箱・document=文書の読み込みと一時ファイルからの改名による保存)、watch/(F_GETPATH・fsevents)、
-│                      #   system/(乱数・時計)、desktop/(ペーストボード・file_pasteboard・フォルダ選択のダイアログ・workspace(Finder・既定のアプリ)))
+│                      #   command.rs(コマンドを上限時間付きで起動)、release/(`/usr/bin/curl` で最新版を問い合わせる。通信はここだけ。ADR-018)、system/(乱数・時計)、desktop/(ペーストボード・file_pasteboard・フォルダ選択のダイアログ・workspace(Finder・既定のアプリ)))
 src-tauri/src/         # App: Tauri の組み立て(クレート名 arin、lib は arin_lib)
-│                      #   sessions.rs(PTY ごとのスレッドと流量制御)、projects.rs、persistence.rs([arin:state])、patrol.rs(ルートの見回り)、tree.rs・tree_watch.rs([arin:watch])・fileops.rs、settings.rs([arin:settings]。設定の読み込みと「設定ファイルを開く…」)・settings_watch.rs(保存の検知)、commands/editor.rs([arin:editor]。文書のコマンド)、
+│                      #   sessions.rs(PTY ごとのスレッドと流量制御)、projects.rs、persistence.rs([arin:state])、patrol.rs(ルートの見回り)、tree.rs・tree_watch.rs([arin:watch])・fileops.rs、settings.rs([arin:settings]。設定の読み込みと「設定ファイルを開く…」)・settings_watch.rs(保存の検知)、update.rs(新しい版の確認。ADR-018)、commands/editor.rs([arin:editor]。文書のコマンド)、
 │                      #   events.rs(イベント名)、commands/、menu.rs、lifecycle.rs(終了の確認・ドロップ)、
 │                      #   diagnostics.rs([arin:frontend-error])、verify_log.rs([arin:verify]。開発ビルドだけ)
 src/
@@ -55,7 +55,7 @@ PTY → 読み取りスレッド(未処理の量が上限を超えたら読ま�
 | ---- | ------------ |
 | Cargo の依存宣言 | arin-platform の依存は arin-core・portable-pty・notify・objc2 系・libc・base64・thiserror・toml。arin-core は serde・serde_json・thiserror・ts-rs だけ |
 | TypeScript のプロジェクト参照(`tsconfig.json` → `src/logic`・`src`・`e2e`) | `src/logic` から他を import すると `tsc -b` が失敗 |
-| `scripts/check-boundaries.mjs`(`npm run lint`) | arin-core の依存と `std::fs`/`process`/`net` 禁止、`@tauri-apps/*` は `src/ipc` だけ、`@xterm/*` は `src/terminal/xterm` だけ、`codemirror`・`@codemirror/*`・`@lezer/*`・`@replit/*` は `src/editor/codemirror` だけ、`src/ui` → `src/ipc`・`src/editor/codemirror` 禁止、`src/editor/codemirror` → `src/ipc` 禁止、通信クレート・通信 API・HTML 差し込みの禁止、CSP の `connect-src` |
+| `scripts/check-boundaries.mjs`(`npm run lint`) | arin-core の依存と `std::fs`/`process`/`net` 禁止、`@tauri-apps/*` は `src/ipc` だけ、`@xterm/*` は `src/terminal/xterm` だけ、`codemirror`・`@codemirror/*`・`@lezer/*`・`@replit/*` は `src/editor/codemirror` だけ、`src/ui` → `src/ipc`・`src/editor/codemirror` 禁止、`src/editor/codemirror` → `src/ipc` 禁止、通信クレート・通信 API・HTML 差し込みの禁止、Rust の通信(curl・NSURLSession・std::net)は `crates/arin-platform/src/release/` だけ(ADR-018)、CSP の `connect-src` |
 
 ## テスト構成
 
@@ -70,9 +70,10 @@ PTY → 読み取りスレッド(未処理の量が上限を超えたら読ま�
 | 設定ファイル(M4.5) | `crates/arin-core/tests/`(settings_load・shortcut_overrides・app_paths)、`crates/arin-platform/tests/settings_file.rs`、`src-tauri/tests/`(app_settings・settings_watch。偽の監視と偽の `DesktopPort`) | cargo test |
 | 文字の大きさ(M4.6) | `crates/arin-core/tests/`(font_sizes・workspace_font_sizes)、`src-tauri/tests/font_commands.rs` | cargo test |
 | Markdown エディタ(M4.8) | `crates/arin-core/tests/`(editor_document・workspace_editors)、`crates/arin-platform/tests/document.rs`、`src-tauri/tests/editor_commands.rs`(`harness = false`)、画面は `src/editor/*.test.ts`・`src/editor/codemirror/markdownAst.test.ts`・`src/ui/editor/MarkdownPreview.test.ts`・`src/state/editorController.test.ts`(本物の `CodeMirrorEngine.ts` は E2E だけ) | cargo test / vitest |
+| 新しい版の確認(ADR-018) | `crates/arin-core/src/update/`(単体)、`crates/arin-platform/src/release/`(単体。本物の GitHub への問い合わせは `#[ignore]`)、`src-tauri/tests/desktop_commands.rs`(偽の `ReleasePort`)、`src/state/startApp.test.ts`・`src/ui/shell/NoticeBar.test.ts`、`e2e/update-check.spec.ts` | cargo test / vitest / playwright |
 | 型の生成物の一致 | `crates/arin-core/tests/generated_types.rs` | cargo test |
 | スクリプト | `scripts/*.test.mjs`(default-shortcuts は見本の表と生成物の一致) | node --test |
-| 画面 E2E | `e2e/*.spec.ts`(app-shell、terminal、projects、tabs、m2-scenario、tree、tree-ops、tree-dnd、m3-scenario、tiles、m4-scenario、settings、m45-scenario、font-settings、m46-scenario、m47-scenario、editor、m48-scenario) | playwright(WebKit) |
+| 画面 E2E | `e2e/*.spec.ts`(app-shell、terminal、projects、tabs、m2-scenario、tree、tree-ops、tree-dnd、m3-scenario、tiles、m4-scenario、settings、m45-scenario、font-settings、m46-scenario、m47-scenario、editor、m48-scenario、update-check) | playwright(WebKit) |
 | 画面側の性能の計測 | `e2e/perf-tiles.spec.ts`(`npm run e2e` には入らない。`ARIN_PERF_E2E=1` のときだけ) | `npm run perf` |
 | 実アプリのスモーク | `scripts/smoke.mjs`(`--tiles` で 9 プロジェクトのタイル表示、`--settings` で設定ファイルを置いて起動、`--fonts` で文字の大きさを入れた `state.json` で 1 回起動) | `npm run smoke` |
 

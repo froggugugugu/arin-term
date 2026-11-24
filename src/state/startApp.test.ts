@@ -493,3 +493,44 @@ describe("startApp(設定の表と知らせへの追従。T65e)", () => {
     expect(reported).toEqual(["設定の変更を購読できなかったので、起動時の表のまま動かす: not allowed"]);
   });
 });
+
+describe("startApp(新しい版の確認の知らせ。ADR-018)", () => {
+  it("update-changed を購読してから今の知らせを取り_準備完了の前に受け手へ渡す", async () => {
+    const fake = createFakeIpc({ get_update_notice: () => ({ kind: "available", version: "0.4.0" }) });
+    const notices: unknown[] = [];
+    const result = await startApp({
+      ipc: createIpc(fake.transport),
+      store: createAppStore(),
+      mount: () => {},
+      logError: () => {},
+      onUpdateNotice: (n) => notices.push(n),
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(notices).toEqual([{ kind: "available", version: "0.4.0" }]);
+    expect(fake.listenerCount("update-changed")).toBe(1);
+    expect(fake.calls.map((c) => c.command)).toEqual(["get_app_snapshot", "get_update_notice", "notify_app_ready"]);
+
+    fake.emit("update-changed", { kind: "upToDate", version: "0.4.0" });
+    expect(notices.at(-1)).toEqual({ kind: "upToDate", version: "0.4.0" });
+  });
+
+  it("知らせを取れなくても起動は止めず_報告だけする", async () => {
+    const fake = createFakeIpc({
+      get_update_notice: () => Promise.reject(new Error("壊れた")),
+    });
+    const reported: string[] = [];
+    const result = await startApp({
+      ipc: createIpc(fake.transport),
+      store: createAppStore(),
+      mount: () => {},
+      logError: () => {},
+      onUpdateNotice: () => {},
+      reportError: (m) => reported.push(m),
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(reported).toHaveLength(1);
+    expect(reported[0]).toContain("新しい版の知らせを取得できなかった");
+  });
+});

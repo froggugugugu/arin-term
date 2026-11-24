@@ -20,6 +20,7 @@ thiserror = "=2.0.21"
 ts-rs = { version = "=12.0.1", default-features = false, features = ["serde-compat"] }
 # Tauri の本体とビルド補助。npm 側の @tauri-apps/cli・@tauri-apps/api 2.12.4 と同じ系列。
 # 機能は既定のまま。ネットワークに出られるプラグイン(HTTP、updater、shell など)は入れない(NFR-008)。
+# 新しい版の確認だけは例外で、/usr/bin/curl を arin-platform の release/ から起動する(ADR-018)。
 tauri = { version = "=2.12.5" }
 tauri-build = { version = "=2.7.4" }
 # PTY を開いてシェルを起動する(ADR-004)。使うのは arin-platform/src/pty/ だけ。0.9.0 は 2025-02 公開。

@@ -54,6 +54,8 @@ pub struct Workspace {
     pub(super) editor_vim: bool,
     /// テーマの選び方(`state.json` の `ui.theme`。ADR-016)。「既定に戻す」では変えない。
     pub(super) theme: ThemeMode,
+    /// 起動時に新しい版を確かめるか(`state.json` の `ui.checkUpdates`。ADR-018)。既定は偽。
+    pub(super) check_updates: bool,
     pub(super) notice: Option<String>,
 }
 
@@ -102,6 +104,7 @@ impl Workspace {
             );
         ws.editor_vim = state.layout.editor_vim;
         ws.theme = state.layout.theme;
+        ws.check_updates = state.layout.check_updates;
         ws.notice = notice;
 
         let ids: Vec<ProjectId> = ws
@@ -156,6 +159,7 @@ impl Workspace {
             translucency: Translucency::default(),
             editor_vim: false,
             theme: ThemeMode::default(),
+            check_updates: false,
             notice: None,
         }
     }
@@ -270,6 +274,7 @@ impl Workspace {
                 translucency: self.translucency,
                 editor_vim: self.editor_vim,
                 theme: self.theme,
+                check_updates: self.check_updates,
             },
         }
     }
@@ -286,6 +291,20 @@ impl Workspace {
     pub fn set_theme(&mut self, theme: ThemeMode) -> bool {
         let changed = self.theme != theme;
         self.theme = theme;
+        changed
+    }
+
+    /// 起動時に新しい版を確かめるか。
+    #[must_use]
+    pub fn check_updates(&self) -> bool {
+        self.check_updates
+    }
+
+    /// 起動時の新しい版の確認を切り替える(ADR-018)。変わったら `true`(このときだけ写しを送る。真のときだけ
+    /// `ui.checkUpdates` が書かれる)。「既定に戻す」はこれを変えない。
+    pub fn set_check_updates(&mut self, enabled: bool) -> bool {
+        let changed = self.check_updates != enabled;
+        self.check_updates = enabled;
         changed
     }
 
@@ -370,6 +389,7 @@ impl Workspace {
                 vim: self.editor_vim,
             },
             theme: self.theme,
+            check_updates: self.check_updates,
         }
     }
 

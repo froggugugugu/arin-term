@@ -8,6 +8,7 @@
 
 - `@tauri-apps/*` を import できるのは `src/ipc/` だけ。`@xterm/*` を import できるのは `src/terminal/xterm/` だけ。`codemirror`・`@codemirror/*`・`@lezer/*`・`@replit/*` を import できるのは `src/editor/codemirror/` だけ(M4.8)。`src/ui/` は `src/ipc/`・`src/terminal/xterm/`・`src/editor/codemirror/` を import しない(操作は `src/state`・`src/terminal`・`src/editor` 経由)。`src/terminal/xterm/`・`src/editor/codemirror/` は `src/ipc/` を import しない
 - `arin-core` は `std::fs`・`std::process`・`std::net` を使わない。依存は serde・serde_json・thiserror・ts-rs だけ。入出力は `arin-platform` に置く
+- 外への通信は新しい版の確認の 1 か所だけ(ADR-018。NFR-008 の例外)。`crates/arin-platform/src/release/` が `/usr/bin/curl` で `arin_core::update::LATEST_RELEASE_API` に問い合わせる。HTTP の crate は入れない。ほかの場所に `curl`・NSURLSession・`std::net` を書かない(境界検査の `network-process`)。ブラウザで開くのは `DesktopPort::open_release_page` で、Releases のページの下だけ(URL は Rust が版から作る)
 - 環境変数を読むのは `src-tauri/src/launch.rs` だけ。`arin-core` は値を引数で受け取る
 - 画面のソースに通信の API(`fetch(` など)と HTML の差し込み(`innerHTML`・`dangerouslySetInnerHTML` など)を書かない
 - CSP(`tauri.conf.json` の `csp`・`devCsp`): `connect-src` は IPC と自アプリだけ、スクリプトは `'self'`/`'none'` だけ、スタイルは `'self'`/`'none'`/`'unsafe-inline'` だけ
@@ -85,6 +86,7 @@
 - エディタの部品のテストは `src/test/fakeEditorEngine.ts`(CodeMirror も DOM も使わない)を渡す。本物の `CodeMirrorEngine.ts` は Vitest では動かない(DOM が無い)ので E2E で確かめる
 - E2E でエディタを出すときは `tauriMock.ts` の `withEditors`・`sampleEditorTab` で写しを作る。文書のコマンドの応答は `setMockReply` で替える
 - 文書の読み書きのテスト(`crates/arin-platform/tests/document.rs`)は一時フォルダの実パスで、拡張属性は `libc::setxattr`・`getxattr` で確かめる。`src-tauri/tests/editor_commands.rs` は `harness = false`
+- 新しい版の確認の結合テストは `UpdateChecker::use_port` で偽の `ReleasePort` に替える(`src-tauri/tests/desktop_commands.rs`)。本物の GitHub への問い合わせは `cargo test -p arin-platform --lib -- --ignored release` で手で回す。`state.json` の `ui.checkUpdates` は既定で偽なので、スモークと E2E は通信しない
 - スモークは「設定ファイルを開く…」を選ばない(本物の既定のアプリや Finder が開く)。テストは偽の `DesktopPort` を使う
 
 ## 6. 過去の問題事例

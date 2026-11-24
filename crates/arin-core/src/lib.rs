@@ -16,6 +16,7 @@ pub mod settings;
 pub mod shortcuts;
 pub mod terminal;
 pub mod tree;
+pub mod update;
 pub mod workspace;
 
 /// このクレートの版。

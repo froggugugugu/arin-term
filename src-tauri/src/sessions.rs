@@ -1023,6 +1023,21 @@ impl SessionRegistry {
         changed
     }
 
+    /// 起動時に新しい版を確かめるか(ADR-018)。
+    #[must_use]
+    pub fn check_updates(&self) -> bool {
+        lock(&self.inner.workspace).check_updates()
+    }
+
+    /// 起動時の新しい版の確認を切り替える(ADR-018)。変わったときだけ写しを送り `true` を返す。
+    pub fn set_check_updates(&self, enabled: bool) -> bool {
+        let changed = lock(&self.inner.workspace).set_check_updates(enabled);
+        if changed {
+            self.notify();
+        }
+        changed
+    }
+
     /// いまのテーマの選び方(起動時にアプリの外観へ当てるのに使う。ADR-016)。
     #[must_use]
     pub fn theme(&self) -> ThemeMode {

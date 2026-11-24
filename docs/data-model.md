@@ -29,6 +29,7 @@
 | `ui.windowTranslucency` / `ui.terminalTranslucency` | 整数(%) | ウィンドウの地(既定 45、0〜100)とターミナルの背景(既定 20、0〜80)の透過の度合い。5 刻み。既定のあいだはキーごとに書かない。無い・数でないときは既定、5 の倍数でない値は近い 5 の倍数に丸め、範囲の外は端に留める。どれも退避しない(M4.7。ADR-014。規則は `layout/translucency.rs`) |
 | `ui.editorVim` | 真偽 | エディタの Vim のキー操作(M4.8。ADR-015 の 6)。真のときだけ書く。無い・真偽値でないときは偽(退避しない。版は 1 のまま)。「既定に戻す」(`reset_appearance`)では戻さない |
 | `ui.theme` | 文字列 | テーマの選び方(ADR-016)。`"light"`・`"dark"` のときだけ書く。無い・知らない値はシステム(OS に追従。退避しない。版は 1 のまま)。「既定に戻す」(`reset_appearance`)では戻さない |
+| `ui.checkUpdates` | 真偽 | 起動時に新しい版を GitHub の Releases に問い合わせるか(ADR-018)。既定は偽。真のときだけ書く。無い・真偽値でないときは偽(退避しない。版は 1 のまま) |
 
 「見つからない」と表示用のパスは保存しない。エディタのタブも保存しない(再起動で開き直さない。ADR-015 の【要確認】2 の A)。
 
@@ -69,6 +70,7 @@ Rust から画面へ渡す状態の写し。画面は届いたもので丸ごと
 | `editors` | `EditorTabSnapshot[]` | エディタのタブ(M4.8。プロジェクトの並び順、その中は開いた順)。文書の本文と版は載せない(コマンドの応答で渡す) |
 | `editor` | `EditorSettingsSnapshot` | `vim`(`ui.editorVim`) |
 | `theme` | `ThemeMode` | `system`・`light`・`dark`(`ui.theme`。ADR-016) |
+| `checkUpdates` | 真偽 | 起動時に新しい版を確かめるか(`ui.checkUpdates`。ADR-018) |
 
 - `ProjectCardSnapshot`: `id`、`name`(表示名)、`color`、`displayPath`(ホームの中は `~` で始める)、`missing`、`showHidden`、`terminalIds`(タブの順)、`activeTerminalId`(0 枚なら `null`)、`editorIds`(開いた順)、`shownEditorId`(タブ表示でターミナルの代わりに出すエディタ。ターミナルのタブを選ぶ・作ると `null`)
 - `EditorTabSnapshot`(タブと版の型は `crates/arin-core/src/editor/`): `id`(`"editor-<n>"`)、`projectId`、`path`(`RelPath`)、`label`(ファイル名)、`dirty`(未保存。画面が `set_document_dirty` で送る。Rust は保存でも消さない)、`readOnly`(`hard-link`・`not-owner`・`not-writable`・`folder-not-writable` / `null`)

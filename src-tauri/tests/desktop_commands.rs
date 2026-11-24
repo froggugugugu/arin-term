@@ -28,13 +28,16 @@ use arin_core::fileops::{FileOpOutcome, NotAllowedReason};
 use arin_core::paths::shell::escape_shell_word;
 use arin_core::ports::desktop::{DesktopError, DesktopPort};
 use arin_core::ports::pasteboard::PasteboardPort;
+use arin_core::ports::release::{ReleaseFetchError, ReleasePort};
 use arin_core::ports::{ChildExit, PtyError, PtyPort, PtySession, PtySize, SpawnedPty};
 use arin_core::terminal::ShellLaunchSpec;
+use arin_core::update::UpdateNotice;
 use arin_core::workspace::{AddProjectOutcome, AppSnapshot};
 use arin_lib::TreePorts;
 use arin_lib::persistence::PersistencePorts;
 use arin_lib::projects::{FolderPicker, FolderPurpose, ProjectPorts};
 use arin_lib::sessions::ShellDefaults;
+use arin_lib::update::{self, UpdateChecker};
 use arin_platform::desktop::{MacFilePasteboard, MacPasteboard};
 use arin_platform::fs::LocalFileSystem;
 use arin_platform::system::UrandomIdSource;
@@ -203,6 +206,7 @@ impl PtySession for FakeSession {
 enum DesktopCall {
     Reveal(PathBuf),
     Open(PathBuf),
+    Page(String),
 }
 
 /// Finder もアプリも開かず、頼まれたパスと呼ばれたスレッドを記録する。`fail` を入れると次の 1 回をその失敗にする。
@@ -237,6 +241,10 @@ impl DesktopPort for FakeDesktop {
 
     fn open_with_default_app(&self, path: &Path) -> Result<(), DesktopError> {
         self.record(DesktopCall::Open(path.to_path_buf()))
+    }
+
+    fn open_release_page(&self, url: &str) -> Result<(), DesktopError> {
+        self.record(DesktopCall::Page(url.to_owned()))
     }
 }
 
@@ -1011,6 +1019,142 @@ fn ルートの外とドットドットは拒否する(
     }
 }
 
+/// 偽の問い合わせの口(ADR-018)。決めた本文を返し、呼ばれた回数を数える。
+struct FakeReleases {
+    body: Result<String, String>,
+    calls: Mutex<usize>,
+}
+
+impl ReleasePort for FakeReleases {
+    fn fetch_latest(&self) -> Result<String, ReleaseFetchError> {
+        *lock(&self.calls) += 1;
+        self.body.clone().map_err(ReleaseFetchError)
+    }
+}
+
+fn use_releases(handle: &AppHandle<MockRuntime>, body: Result<&str, &str>) -> Arc<FakeReleases> {
+    let fake = Arc::new(FakeReleases {
+        body: body.map(ToOwned::to_owned).map_err(ToOwned::to_owned),
+        calls: Mutex::new(0),
+    });
+    handle.state::<UpdateChecker>().use_port(fake.clone());
+    fake
+}
+
+fn update_notice(
+    handle: &AppHandle<MockRuntime>,
+    window: &WebviewWindow<MockRuntime>,
+) -> Option<UpdateNotice> {
+    call(handle, window, "get_update_notice", json!({}))
+        .expect("get_update_notice が失敗した")
+        .deserialize()
+        .expect("知らせを読めなかった")
+}
+
+fn wait_check(handle: &AppHandle<MockRuntime>) {
+    assert!(
+        wait_until(|| !update::is_running(handle)),
+        "確認が終わらなかった"
+    );
+}
+
+fn 新しい版の確認は知らせを残し_ページは版から作った_url_で開く(
+    handle: &AppHandle<MockRuntime>,
+    window: &WebviewWindow<MockRuntime>,
+    ctx: &Ctx,
+) {
+    ctx.reset();
+    // 既定はオフなので、起動時には問い合わせていない
+    assert_eq!(update_notice(handle, window), None);
+
+    // メニューから: 最新なら「最新です」、失敗なら理由
+    let version = handle.package_info().version.to_string();
+    use_releases(handle, Ok(&format!(r#"{{"tag_name":"v{version}"}}"#)));
+    update::check(handle, true);
+    wait_check(handle);
+    assert_eq!(
+        update_notice(handle, window),
+        Some(UpdateNotice::UpToDate { version })
+    );
+    use_releases(handle, Err("通信できない"));
+    update::check(handle, true);
+    wait_check(handle);
+    assert_eq!(
+        update_notice(handle, window),
+        Some(UpdateNotice::Failed {
+            reason: "通信できない".to_owned()
+        })
+    );
+    call(handle, window, "dismiss_update_notice", json!({})).expect("閉じられなかった");
+    assert_eq!(update_notice(handle, window), None);
+
+    // 設定でオンにすると、その場で確かめる。新しい版があれば知らせる(応答の html_url は使わない)
+    let fake = use_releases(
+        handle,
+        Ok(r#"{"tag_name":"v99.0.0","html_url":"https://evil.example/"}"#),
+    );
+    call(
+        handle,
+        window,
+        "set_check_updates",
+        json!({ "enabled": true }),
+    )
+    .expect("切り替えられなかった");
+    wait_check(handle);
+    assert_eq!(*lock(&fake.calls), 1);
+    assert_eq!(
+        update_notice(handle, window),
+        Some(UpdateNotice::Available {
+            version: "99.0.0".to_owned()
+        })
+    );
+    let snapshot: AppSnapshot = call(handle, window, "get_app_snapshot", json!({}))
+        .expect("写しを取れなかった")
+        .deserialize()
+        .expect("写しを読めなかった");
+    assert!(snapshot.check_updates);
+
+    call(handle, window, "open_release_page", json!({})).expect("開けなかった");
+    assert_eq!(
+        ctx.desktop.calls(),
+        vec![DesktopCall::Page(
+            "https://github.com/froggugugugu/arin-term/releases/tag/v99.0.0".to_owned()
+        )]
+    );
+
+    // 新しい版を出しているあいだは、確かめられなかった結果で上書きしない
+    use_releases(handle, Err("通信できない"));
+    update::check(handle, true);
+    wait_check(handle);
+    assert_eq!(
+        update_notice(handle, window),
+        Some(UpdateNotice::Available {
+            version: "99.0.0".to_owned()
+        })
+    );
+
+    // オンのまま同じ値を送っても問い合わせない。オフに戻すと知らせを消す
+    call(
+        handle,
+        window,
+        "set_check_updates",
+        json!({ "enabled": true }),
+    )
+    .expect("切り替えられなかった");
+    call(
+        handle,
+        window,
+        "set_check_updates",
+        json!({ "enabled": false }),
+    )
+    .expect("切り替えられなかった");
+    wait_check(handle);
+    assert_eq!(*lock(&fake.calls), 1);
+    assert_eq!(update_notice(handle, window), None);
+    call(handle, window, "dismiss_update_notice", json!({})).expect("閉じられなかった");
+    ctx.desktop.clear();
+}
+
 /// テスト用の名前付きのペーストボードの名前。
 fn pasteboard_name(kind: &str) -> String {
     format!(
@@ -1059,6 +1203,10 @@ const CHECKS: &[(&str, Check)] = &[
     (
         "ルートの外とドットドットは拒否する",
         ルートの外とドットドットは拒否する,
+    ),
+    (
+        "新しい版の確認は知らせを残し_ページは版から作った_url_で開く",
+        新しい版の確認は知らせを残し_ページは版から作った_url_で開く,
     ),
 ];
 

@@ -63,6 +63,9 @@ export type ActionsBackend = Pick<
   | "setTheme"
   | "resetAppearance"
   | "openSettingsFile"
+  | "dismissUpdateNotice"
+  | "openReleasePage"
+  | "setCheckUpdates"
   | "confirmQuit"
   | "setShowHidden"
   | "createEntry"
@@ -160,6 +163,12 @@ export interface Actions {
   resetAppearance(): Promise<void>;
   /** 設定ファイルを開く(設定画面のボタン。メニューの項目は Rust が直接開く)。 */
   openSettingsFile(): Promise<void>;
+  /** 起動時に新しい版を確かめるかを切り替える(ADR-018)。結果は写しの checkUpdates で届く。 */
+  setCheckUpdates(enabled: boolean): Promise<void>;
+  /** Releases のページをブラウザで開く(新しい版の知らせのボタン)。 */
+  openReleasePage(): Promise<void>;
+  /** 新しい版の知らせを閉じる(画面からすぐ消し、Rust の持つ知らせも消す)。 */
+  dismissUpdateNotice(): Promise<void>;
 
   // ── ツリー(M3)。開閉・選択は表示中のプロジェクトのツリーに効く ──
   /** フォルダを開く(未読込なら中身を求める。FR-013)。 */
@@ -414,6 +423,12 @@ export function createActions({ ipc, ui, app, tree, treeController, reportError,
     setTheme: (theme) => run("テーマを変えられなかった", () => ipc.setTheme(theme)),
     resetAppearance: () => run("見た目を既定に戻せなかった", () => ipc.resetAppearance()),
     openSettingsFile: () => run("設定ファイルを開けなかった", () => ipc.openSettingsFile()),
+    setCheckUpdates: (enabled) => run("アップデートの確認を切り替えられなかった", () => ipc.setCheckUpdates(enabled)),
+    openReleasePage: () => run("Releases のページを開けなかった", () => ipc.openReleasePage()),
+    dismissUpdateNotice: () => {
+      ui.getState().setUpdateNotice(null);
+      return run("知らせを閉じられなかった", () => ipc.dismissUpdateNotice());
+    },
 
     expandDir: (path) => treeController.expand(path),
     collapseDir: (path) => treeController.collapse(path),
