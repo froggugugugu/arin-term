@@ -10,6 +10,7 @@ import type { UiStore } from "../../state/uiStore";
 import { ContextMenu, type ContextMenuEntry } from "../menu/ContextMenu";
 import { PlusIcon } from "../tree/icons";
 import { runCardMenuCommand } from "../menu/runCardMenuCommand";
+import { useReorderDrag } from "../shell/useReorderDrag";
 import type { ProjectId } from "../snapshotTypes";
 import { ProjectCard } from "./ProjectCard";
 
@@ -31,6 +32,7 @@ interface ProjectCardListProps {
  * 設計書 §8「プロジェクト 0 件」)。そのときは見出しの + を出さない(同じ名前のボタンを 2 つにしない)。
  * カードは上下の矢印でも移れる。カードの右クリック(または Shift+F10)で、src/logic/menu の buildCardMenu の項目をそのままメニューに出す。
  * カード以外の場所(見出し・一覧の余白・0 件の案内)の右クリックでは「フォルダを追加…」だけのメニューを出す。
+ * カードはドラッグで並べ替えられる(ADR-019。src/ui/shell/useReorderDrag.ts)。並びは Rust が持ち、写しで届く。
  */
 export function ProjectCardList({ store, ui, actions }: ProjectCardListProps) {
   const projects = useStore(store, (s) => s.snapshot?.projects ?? null);
@@ -62,6 +64,10 @@ export function ProjectCardList({ store, ui, actions }: ProjectCardListProps) {
   };
 
   const addProject = () => void actions.addProjectByDialog();
+  const onReorderPointerDown = useReorderDrag({
+    axis: "y",
+    onReorder: (_group, id, toIndex) => void actions.moveProject(id, toIndex),
+  });
 
   // カード以外の場所(見出し・一覧の余白・0 件の案内)の右クリック。カードは自分のメニューを開いて既定の動作を止めるので、
   // 止められていなければここで開く。
@@ -97,11 +103,22 @@ export function ProjectCardList({ store, ui, actions }: ProjectCardListProps) {
           </button>
         </div>
       ) : (
-        <ul className="card-list" data-testid="card-list" aria-label="プロジェクト一覧" onKeyDown={onListKeyDown}>
+        <ul
+          className="card-list"
+          data-testid="card-list"
+          aria-label="プロジェクト一覧"
+          onKeyDown={onListKeyDown}
+          onPointerDown={onReorderPointerDown}
+        >
           {list.map((project) => {
             const selected = project.id === selectedId;
             return (
-              <li key={project.id} className="card-list__item">
+              <li
+                key={project.id}
+                className="card-list__item"
+                data-reorder-group="project"
+                data-reorder-id={project.id}
+              >
                 <ProjectCard
                   project={project}
                   selected={selected}

@@ -900,3 +900,84 @@ describe("actions(エディタで開く。M4.8。ADR-015 の 4、AC-E01)", () =>
     expect(fake.calls).toEqual([{ command: "open_entry", args: { projectId: "p1", path: "docs/a.md" } }]);
   });
 });
+
+describe("actions(並べ替えとタブをまとめて閉じる。ADR-019)", () => {
+  it("並べ替えは動かしたあとの位置を付けて呼ぶ", async () => {
+    const { fake, errors, actions } = setup();
+
+    await actions.moveProject("p1", 2);
+    await actions.moveTerminalTab("t3", 0);
+    await actions.moveEditorTab("e2", 1);
+
+    expect(fake.calls).toEqual([
+      { command: "move_project", args: { projectId: "p1", toIndex: 2 } },
+      { command: "move_terminal_tab", args: { terminalId: "t3", toIndex: 0 } },
+      { command: "move_editor_tab", args: { editorId: "e2", toIndex: 1 } },
+    ]);
+    expect(errors).toEqual([]);
+  });
+
+  it("動作中も未保存も無ければ確認を開かずに 1 回で閉じる", async () => {
+    const { fake, ui, actions } = setup();
+
+    await actions.closeTabs("p1", ["t2"], ["e1"]);
+
+    expect(fake.calls).toEqual([
+      { command: "close_tabs", args: { projectId: "p1", terminalIds: ["t2"], editorIds: ["e1"], confirmed: false } },
+    ]);
+    expect(ui.getState().closeTabsConfirmation).toBeNull();
+  });
+
+  it("確認が要れば確認を開き、確定で同じタブを確認済みで閉じる", async () => {
+    const unsaved = { editorId: "e1", projectName: "app", path: "notes.md" };
+    let first = true;
+    const { fake, ui, actions } = setup({
+      close_tabs: () => {
+        if (!first) return { kind: "closed" };
+        first = false;
+        return { kind: "needsConfirmation", running: [running], unsaved: [unsaved] };
+      },
+    });
+
+    await actions.closeTabs("p1", ["t1", "t2"], ["e1"]);
+    expect(ui.getState().closeTabsConfirmation).toEqual({
+      projectId: "p1",
+      terminalIds: ["t1", "t2"],
+      editorIds: ["e1"],
+      running: [running],
+      unsaved: [unsaved],
+    });
+
+    await actions.confirmCloseTabs();
+    expect(ui.getState().closeTabsConfirmation).toBeNull();
+    expect(fake.calls.map((c) => c.args)).toEqual([
+      { projectId: "p1", terminalIds: ["t1", "t2"], editorIds: ["e1"], confirmed: false },
+      { projectId: "p1", terminalIds: ["t1", "t2"], editorIds: ["e1"], confirmed: true },
+    ]);
+  });
+
+  it("キャンセルでは閉じず、何も挙げなければ呼ばない", async () => {
+    const { fake, ui, actions } = setup({
+      close_tabs: () => ({ kind: "needsConfirmation", running: [running], unsaved: [] }),
+    });
+
+    await actions.closeTabs("p1", ["t1"], []);
+    actions.cancelCloseTabs();
+    await actions.confirmCloseTabs();
+    await actions.closeTabs("p1", [], []);
+
+    expect(ui.getState().closeTabsConfirmation).toBeNull();
+    expect(fake.calls).toHaveLength(1);
+  });
+
+  it("閉じる確認が開いているあいだは設定画面を開かない", async () => {
+    const { ui, actions } = setup({
+      close_tabs: () => ({ kind: "needsConfirmation", running: [running], unsaved: [] }),
+    });
+
+    await actions.closeTabs("p1", ["t1"], []);
+    ui.getState().openSettings();
+
+    expect(ui.getState().settingsOpen).toBe(false);
+  });
+});

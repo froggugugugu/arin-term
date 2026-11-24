@@ -7,9 +7,10 @@
 
 use arin_core::project::{ProjectColor, ProjectId};
 use arin_core::workspace::{AddProjectOutcome, RemoveProjectOutcome};
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Manager, Runtime, State};
 
 use crate::projects::Projects;
+use crate::sessions::SessionRegistry;
 
 /// 待ってよいスレッドで `f` を行う。
 async fn blocking<R, T, F>(app: AppHandle<R>, f: F) -> Result<T, String>
@@ -77,4 +78,18 @@ pub fn copy_project_path<R: Runtime>(
     project_id: ProjectId,
 ) -> Result<(), String> {
     app.state::<Projects>().copy_path(&project_id)
+}
+
+/// プロジェクトの並び順を変える(カードのドラッグ。ADR-019)。`to_index` は動かしたあとの位置(0 から。末尾より大きければ
+/// 末尾)。変わったら写しが届き、保存が予約される(`state.json` の `projects` の並び)。
+#[tauri::command]
+pub fn move_project(
+    sessions: State<'_, SessionRegistry>,
+    project_id: ProjectId,
+    to_index: usize,
+) -> Result<(), String> {
+    sessions
+        .move_project(&project_id, to_index)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }

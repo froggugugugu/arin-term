@@ -8,6 +8,7 @@
 // ツリーの部品(T43b〜T43d)が読む M3 の状態: メニュー(treeMenu)、インライン編集(inlineEdit)、衝突の確認(treeConflict)、
 // 移動の確認(moveConfirmation)、ツリーの知らせ(treeNotice)、ドラッグ中(treeDragging)、ショートカットの表(shortcuts)。
 // M4.5(T65e): 設定の知らせ(settingsNotice)。表と同じく、起動時と settings-changed が届いたときに startApp が置き換える。
+// ADR-019: タブをまとめて閉じる確認(closeTabsConfirmation)。
 // M4.6(T70a): 設定画面の開閉(settingsOpen)。⌘, とメニューの「設定…」(menu-command の "open-settings")で開く。
 // M4.8(T83a。ADR-015 の 4・5・8): エディタのタブごとの表示の切替(editorViews)・帯(editorBanners)・プレビューの木
 // (editorPreviews)、閉じる確認(unsavedClose)、保存の衝突の確認(saveConflict)、開いたあとのフォーカスの求め
@@ -23,6 +24,7 @@ import type { NewEntryKind } from "../ipc/generated/NewEntryKind";
 import type { ProjectId } from "../ipc/generated/ProjectId";
 import type { RelPath } from "../ipc/generated/RelPath";
 import type { RunningTerminal } from "../ipc/generated/RunningTerminal";
+import type { TerminalId } from "../ipc/generated/TerminalId";
 import type { UnsavedEditor } from "../ipc/generated/UnsavedEditor";
 import { DEFAULT_SHORTCUT_TABLE } from "../logic/keys/defaultShortcuts";
 import type { ShortcutTable } from "../logic/keys/shortcutTable";
@@ -42,6 +44,19 @@ export interface RemoveConfirmation {
   /** そのプロジェクトの動作中のターミナル(タブの順)。 */
   readonly running: readonly RunningTerminal[];
   /** そのプロジェクトの未保存のエディタ(開いた順。M4.8)。 */
+  readonly unsaved: readonly UnsavedEditor[];
+}
+
+/** タブをまとめて閉じる確認(ADR-019)。close_tabs が needsConfirmation を返したときに開く。確定で同じタブを確認済みで閉じる。 */
+export interface CloseTabsConfirmation {
+  readonly projectId: ProjectId;
+  /** 閉じるターミナル(確認のあとに送り直す)。 */
+  readonly terminalIds: readonly TerminalId[];
+  /** 閉じるエディタ(確認のあとに送り直す)。 */
+  readonly editorIds: readonly EditorId[];
+  /** 閉じるタブのうち動作中のターミナル(タブの順)。 */
+  readonly running: readonly RunningTerminal[];
+  /** 閉じるタブのうち未保存のエディタ(タブの順)。 */
   readonly unsaved: readonly UnsavedEditor[];
 }
 
@@ -161,6 +176,12 @@ export interface UiState {
   ) => void;
   /** 削除の確認を閉じる。 */
   closeRemoveConfirmation: () => void;
+  /** 開いているタブをまとめて閉じる確認(ADR-019)。無ければ null。 */
+  readonly closeTabsConfirmation: CloseTabsConfirmation | null;
+  /** タブをまとめて閉じる確認を開く。開いていれば置き換える。 */
+  openCloseTabsConfirmation: (confirmation: CloseTabsConfirmation) => void;
+  /** タブをまとめて閉じる確認を閉じる。 */
+  closeCloseTabsConfirmation: () => void;
   /** カードのメニューを開く。開いていれば置き換える。 */
   openCardMenu: (projectId: ProjectId, position: { readonly x: number; readonly y: number }) => void;
   /** カードのメニューを閉じる。 */
@@ -299,6 +320,9 @@ export function createUiStore(): UiStore {
     openRemoveConfirmation: (projectId, running, unsaved = []) =>
       set({ removeConfirmation: { projectId, running, unsaved } }),
     closeRemoveConfirmation: () => set({ removeConfirmation: null }),
+    closeTabsConfirmation: null,
+    openCloseTabsConfirmation: (confirmation) => set({ closeTabsConfirmation: confirmation }),
+    closeCloseTabsConfirmation: () => set({ closeTabsConfirmation: null }),
     openCardMenu: (projectId, { x, y }) => set({ cardMenu: { projectId, x, y } }),
     closeCardMenu: () => set({ cardMenu: null }),
     dismissedNotice: null,
@@ -338,6 +362,7 @@ export function createUiStore(): UiStore {
         const blocked =
           s.quitConfirmation !== null ||
           s.removeConfirmation !== null ||
+          s.closeTabsConfirmation !== null ||
           s.treeConflict !== null ||
           s.moveConfirmation !== null ||
           s.unsavedClose !== null ||

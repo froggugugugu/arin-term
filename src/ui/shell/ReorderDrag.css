@@ -1,0 +1,34 @@
+/*
+ * 並べ替えのドラッグの見た目(ADR-019。macOS のタブとサイドバーの一覧にならう)。色は src/ui/design/tokens.css のトークン。
+ * - 掴んだ項目: 不透明の札にして控えめな影で浮かせ、並びの向きにだけポインタに付いて動く
+ * - 落とす位置: あいだの項目が掴んだ項目の大きさぶん滑って隙間を空ける(線は引かない。隙間が落とす位置)
+ */
+
+/* ドラッグ中は、どこの上でもカーソルを矢印にし、文字の選択を起こさない(useReorderDrag が html 要素に付ける)。 */
+html.is-reorder-dragging,
+html.is-reorder-dragging * {
+  cursor: default !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+/* 隙間を空ける動き。ドラッグ中だけ(離したあとは写しの並びにそのまま替わる)。動きを減らす設定では動かさない。 */
+html.is-reorder-dragging [data-reorder-id]:not([data-reorder-dragging]) {
+  transition: transform 160ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.is-reorder-dragging [data-reorder-id]:not([data-reorder-dragging]) {
+    transition: none;
+  }
+}
+
+[data-reorder-dragging] {
+  z-index: 2;
+  border-radius: var(--radius-m);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-drag-ghost);
+  color: var(--color-fg);
+  pointer-events: none;
+  will-change: transform;
+}

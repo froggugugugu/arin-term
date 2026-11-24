@@ -11,6 +11,7 @@ use ts_rs::TS;
 
 use super::path::{display_path, folder_name, is_in_trash, normalize_root};
 use super::{ColorAssigner, ProjectColor, ProjectId};
+use crate::reorder::move_item;
 
 /// プロジェクトの操作を受け付けられない理由。
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -366,6 +367,17 @@ impl ProjectStore {
         self.require(id)?;
         self.selected = Some(id.clone());
         Ok(())
+    }
+
+    /// 並び順を変える(カードのドラッグ。ADR-019)。`to_index` は動かしたあとの位置(0 から。末尾より大きければ末尾)。
+    /// 選択・色・ルートは変えない。位置が変わったら `true`。
+    ///
+    /// # Errors
+    ///
+    /// その ID が無いとき(`NotFound`。何も変えない)。
+    pub fn move_to(&mut self, id: &ProjectId, to_index: usize) -> Result<bool, ProjectError> {
+        let from = self.require(id)?;
+        Ok(move_item(&mut self.projects, from, to_index))
     }
 
     /// 色を変える(FR-059)。

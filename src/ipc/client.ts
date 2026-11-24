@@ -6,6 +6,7 @@ import type { AppSnapshot } from "./generated/AppSnapshot";
 import type { CheckDocumentOutcome } from "./generated/CheckDocumentOutcome";
 import type { CheckText } from "./generated/CheckText";
 import type { CloseEditorOutcome } from "./generated/CloseEditorOutcome";
+import type { CloseTabsOutcome } from "./generated/CloseTabsOutcome";
 import type { ConflictResolution } from "./generated/ConflictResolution";
 import type { ConnectOutcome } from "./generated/ConnectOutcome";
 import type { DirListing } from "./generated/DirListing";
@@ -60,6 +61,17 @@ export interface CommandMap {
   new_terminal: { args: { projectId: ProjectId } | undefined; result: TerminalId };
   close_terminal: { args: { terminalId: TerminalId }; result: null };
   select_terminal: { args: { terminalId: TerminalId }; result: null };
+  /** タブの並べ替え(ADR-019)。toIndex は同じプロジェクトの同じ種類のタブの並びで、動かしたあとの位置。 */
+  move_terminal_tab: { args: { terminalId: TerminalId; toIndex: number }; result: null };
+  move_editor_tab: { args: { editorId: EditorId; toIndex: number }; result: null };
+  /**
+   * タブをまとめて閉じる(タブの右クリックのメニュー。ADR-019)。動作中のターミナルか未保存のエディタがあり confirmed が
+   * false なら、何も変えずに needsConfirmation と一覧を返す(確認したら confirmed を true にして呼び直す)。
+   */
+  close_tabs: {
+    args: { projectId: ProjectId; terminalIds: TerminalId[]; editorIds: EditorId[]; confirmed: boolean };
+    result: CloseTabsOutcome;
+  };
   ack_terminal_output: { args: { terminalId: TerminalId; bytes: number }; result: null };
   resize_terminal: { args: { terminalId: TerminalId; rows: number; cols: number }; result: null };
   add_project_by_dialog: { args: undefined; result: AddProjectOutcome };
@@ -68,6 +80,8 @@ export interface CommandMap {
   relink_project: { args: { projectId: ProjectId }; result: boolean };
   set_project_color: { args: { projectId: ProjectId; color: ProjectColor }; result: null };
   copy_project_path: { args: { projectId: ProjectId }; result: null };
+  /** プロジェクトの並べ替え(カードのドラッグ。ADR-019)。toIndex は動かしたあとの位置。変わったら保存が予約される。 */
+  move_project: { args: { projectId: ProjectId; toIndex: number }; result: null };
   set_pane_sizes: { args: { sidebarWidth: number; cardAreaHeight: number }; result: null };
   set_sidebar_collapsed: { args: { collapsed: boolean }; result: null };
   /** 右ペインの表示(T47b)。結果は写しの display で届く。状態が変わったときだけ写しが送られる。 */
@@ -262,6 +276,20 @@ export interface ArinIpc {
   closeTerminal(id: TerminalId): Promise<void>;
   /** そのタブを表示中にする。 */
   selectTerminal(id: TerminalId): Promise<void>;
+  /** ターミナルのタブを、同じプロジェクトのターミナルのタブの中で toIndex(動かしたあとの位置)へ動かす。 */
+  moveTerminalTab(id: TerminalId, toIndex: number): Promise<void>;
+  /** エディタのタブを、同じプロジェクトのエディタのタブの中で toIndex(動かしたあとの位置)へ動かす。 */
+  moveEditorTab(id: EditorId, toIndex: number): Promise<void>;
+  /**
+   * プロジェクトのタブのうち挙げたものをまとめて閉じる。動作中のターミナルか未保存のエディタがあり confirmed が false なら、
+   * 何も変えずに needsConfirmation と一覧を返す。
+   */
+  closeTabs(
+    projectId: ProjectId,
+    terminalIds: readonly TerminalId[],
+    editorIds: readonly EditorId[],
+    confirmed: boolean,
+  ): Promise<CloseTabsOutcome>;
   /** 出力を bytes バイト取り込んだことを知らせる(流量制御)。 */
   ackTerminalOutput(id: TerminalId, bytes: number): Promise<void>;
   /** 寸法(行・桁)を変える。 */
@@ -284,6 +312,8 @@ export interface ArinIpc {
   setProjectColor(id: ProjectId, color: ProjectColor): Promise<void>;
   /** ルートの絶対パスを Rust がクリップボードに書く。選択は変えない。パスは画面に届かない。 */
   copyProjectPath(id: ProjectId): Promise<void>;
+  /** プロジェクトを toIndex(動かしたあとの位置)へ動かす。結果は写しの並びで届く。 */
+  moveProject(id: ProjectId, toIndex: number): Promise<void>;
   /**
    * 左ペインの幅とカード領域の高さ(CSS ピクセル)を Rust へ送る。Rust が最小寸法などの規則で直し、写しで返す。
    * 変わったら保存が予約される(0.5 秒まとめ)。
@@ -511,6 +541,10 @@ export function createIpc(transport: IpcTransport): ArinIpc {
     newTerminal: (projectId) => invoke("new_terminal", projectId === undefined ? undefined : { projectId }),
     closeTerminal: (terminalId) => done(invoke("close_terminal", { terminalId })),
     selectTerminal: (terminalId) => done(invoke("select_terminal", { terminalId })),
+    moveTerminalTab: (terminalId, toIndex) => done(invoke("move_terminal_tab", { terminalId, toIndex })),
+    moveEditorTab: (editorId, toIndex) => done(invoke("move_editor_tab", { editorId, toIndex })),
+    closeTabs: (projectId, terminalIds, editorIds, confirmed) =>
+      invoke("close_tabs", { projectId, terminalIds: [...terminalIds], editorIds: [...editorIds], confirmed }),
     ackTerminalOutput: (terminalId, bytes) =>
       done(invoke("ack_terminal_output", { terminalId, bytes })),
     resizeTerminal: (terminalId, rows, cols) =>
@@ -521,6 +555,7 @@ export function createIpc(transport: IpcTransport): ArinIpc {
     relinkProject: (projectId) => invoke("relink_project", { projectId }),
     setProjectColor: (projectId, color) => done(invoke("set_project_color", { projectId, color })),
     copyProjectPath: (projectId) => done(invoke("copy_project_path", { projectId })),
+    moveProject: (projectId, toIndex) => done(invoke("move_project", { projectId, toIndex })),
     setPaneSizes: (sidebarWidth, cardAreaHeight) =>
       done(invoke("set_pane_sizes", { sidebarWidth, cardAreaHeight })),
     setSidebarCollapsed: (collapsed) => done(invoke("set_sidebar_collapsed", { collapsed })),

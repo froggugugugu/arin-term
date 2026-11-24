@@ -41,6 +41,11 @@
   list-style: none;
 }
 
+/* 並べ替え(ADR-019)で掴んだカードを、隣のカードより手前に重ねる。 */
+.card-list__item {
+  position: relative;
+}
+
 /* 1 項目。高さは行に近い値に固定し、間は空けない(選択の塗りが隣と接しないよう上下に 1px の余白を内側に持つ)。 */
 .project-card {
   display: flex;

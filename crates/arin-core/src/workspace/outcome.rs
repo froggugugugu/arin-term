@@ -87,6 +87,51 @@ impl From<&RemoveOutcome> for RemoveProjectOutcome {
     }
 }
 
+/// タブをまとめて閉じようとした結果(タブの右クリックのメニュー。ADR-019)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CloseTabsResult {
+    /// 閉じるタブに動作中のターミナルか未保存のエディタがあるので確認が要る。何も変えていない。
+    NeedsConfirmation {
+        /// 閉じるタブのうち動作中のターミナル(タブの順)。
+        running: Vec<RunningTerminal>,
+        /// 閉じるタブのうち未保存のエディタ(タブの順)。
+        unsaved: Vec<UnsavedEditor>,
+    },
+    /// 閉じた。`terminals` は閉じたターミナル(呼び出し側がセッションを終わらせる)。エディタの未保存の変更は捨てた。
+    Closed {
+        /// 閉じたターミナル。
+        terminals: Vec<TerminalId>,
+    },
+}
+
+/// タブをまとめて閉じるコマンド(`close_tabs`)の応答(ADR-019)。閉じたタブの ID は画面に返さない(写しで届く)。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum CloseTabsOutcome {
+    /// 動作中のターミナルか未保存のエディタがあるので確認が要る。何も変えていない。画面が確認を出し、確認したら
+    /// `confirmed` を真にして呼び直す。
+    NeedsConfirmation {
+        /// 閉じるタブのうち動作中のターミナル(タブの順)。
+        running: Vec<RunningTerminal>,
+        /// 閉じるタブのうち未保存のエディタ(タブの順)。
+        unsaved: Vec<UnsavedEditor>,
+    },
+    /// 閉じた。
+    Closed,
+}
+
+impl From<&CloseTabsResult> for CloseTabsOutcome {
+    fn from(result: &CloseTabsResult) -> Self {
+        match result {
+            CloseTabsResult::NeedsConfirmation { running, unsaved } => Self::NeedsConfirmation {
+                running: running.clone(),
+                unsaved: unsaved.clone(),
+            },
+            CloseTabsResult::Closed { .. } => Self::Closed,
+        }
+    }
+}
+
 /// フォルダを登録するコマンド(`add_project_by_dialog`)の応答(FR-001・FR-010)。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(

@@ -34,6 +34,9 @@ interface TerminalAreaProps {
     | "newTerminal"
     | "selectTerminal"
     | "closeTerminal"
+    | "moveTerminalTab"
+    | "moveEditorTab"
+    | "closeTabs"
     | "focusTile"
     | "nextTilePage"
     | "previousTilePage"
@@ -182,6 +185,9 @@ export function TerminalArea({ store, ui, actions, terminals, editor, editors }:
         shownEditorId={shownDocument?.id ?? null}
         onSelectEditor={(id) => void editor.selectEditor(id)}
         onCloseEditor={(id) => void editor.requestClose(id)}
+        onMoveTerminal={(id, toIndex) => void actions.moveTerminalTab(id, toIndex)}
+        onMoveEditor={(id, toIndex) => void actions.moveEditorTab(id, toIndex)}
+        onCloseTabs={(terminalIds, editorIds) => void actions.closeTabs(project.id, terminalIds, editorIds)}
       />
       {shownDocument !== null ? (
         <EditorPanel

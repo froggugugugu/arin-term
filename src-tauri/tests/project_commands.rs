@@ -26,7 +26,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use arin_core::ports::{ChildExit, Foreground, PtyError, PtyPort, PtySession, PtySize, SpawnedPty};
 use arin_core::project::ProjectColor;
 use arin_core::terminal::ShellLaunchSpec;
-use arin_core::workspace::{AddProjectOutcome, AppSnapshot, RemoveProjectOutcome};
+use arin_core::workspace::{
+    AddProjectOutcome, AppSnapshot, CloseTabsOutcome, RemoveProjectOutcome,
+};
 use arin_lib::persistence::PersistencePorts;
 use arin_lib::projects::{FolderPicker, FolderPurpose, ProjectPorts};
 use arin_lib::sessions::ShellDefaults;
@@ -643,6 +645,183 @@ fn 再リンクで_id_と色を保ち_取り消すと何も変わらない(
     assert_eq!(snapshot(handle, window), s);
 }
 
+fn names(snapshot: &AppSnapshot) -> Vec<String> {
+    snapshot.projects.iter().map(|p| p.name.clone()).collect()
+}
+
+fn 並び順を変えると写しと状態ファイルの並びが変わる(
+    handle: &AppHandle<MockRuntime>,
+    window: &WebviewWindow<MockRuntime>,
+    ctx: &Ctx,
+) {
+    let before = snapshot(handle, window);
+    let order = names(&before);
+    assert!(
+        order.len() >= 2,
+        "並べ替えるプロジェクトが足りない: {order:?}"
+    );
+    let first = before.projects[0].id.as_str().to_owned();
+    let last = order.len() - 1;
+
+    call_ok::<()>(
+        handle,
+        window,
+        "move_project",
+        json!({ "projectId": first, "toIndex": last }),
+    );
+    let s = snapshot(handle, window);
+    let mut expected = order.clone();
+    let moved = expected.remove(0);
+    expected.push(moved.clone());
+    assert_eq!(names(&s), expected);
+    assert_eq!(selected(&s), selected(&before), "選択が変わった");
+
+    arin_lib::lifecycle::on_window_focus_changed(handle, false);
+    let state = ctx.state_dir.join("state.json");
+    let saved_order = || -> Vec<String> {
+        let Ok(text) = fs::read_to_string(&state) else {
+            return Vec::new();
+        };
+        let saved: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+        saved["projects"]
+            .as_array()
+            .map(|list| {
+                list.iter()
+                    .filter_map(|p| p["id"].as_str().map(ToOwned::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let expected_ids: Vec<String> = s
+        .projects
+        .iter()
+        .map(|p| p.id.as_str().to_owned())
+        .collect();
+    assert!(
+        wait_until(|| saved_order() == expected_ids),
+        "状態ファイルの並びが変わらなかった: {:?}",
+        saved_order()
+    );
+
+    // 無い ID は失敗し、何も変えない。元の並びに戻す。
+    let unknown = error_text(call(
+        handle,
+        window,
+        "move_project",
+        json!({ "projectId": "00000000-0000-4000-8000-000000000000", "toIndex": 0 }),
+    ));
+    assert!(unknown.contains("見つからない"), "{unknown}");
+    call_ok::<()>(
+        handle,
+        window,
+        "move_project",
+        json!({ "projectId": first, "toIndex": 0 }),
+    );
+    assert_eq!(names(&snapshot(handle, window)), order);
+}
+
+fn タブを並べ替え_まとめて閉じるとき動作中があれば確認を求める(
+    handle: &AppHandle<MockRuntime>,
+    window: &WebviewWindow<MockRuntime>,
+    ctx: &Ctx,
+) {
+    // alpha のタブ 1 枚目は最初の確認で接続済み。まだ接続していないタブを 2 枚足す。
+    let before = snapshot(handle, window);
+    let alpha_id = project_id_by_name(&before, "alpha");
+    let alpha_tabs = |s: &AppSnapshot| -> Vec<String> {
+        s.projects
+            .iter()
+            .find(|p| p.id.as_str() == alpha_id)
+            .map(|p| {
+                p.terminal_ids
+                    .iter()
+                    .map(|t| t.as_str().to_owned())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let connected = alpha_tabs(&before)[0].clone();
+    let second: String = call_ok(
+        handle,
+        window,
+        "new_terminal",
+        json!({ "projectId": alpha_id }),
+    );
+    let third: String = call_ok(
+        handle,
+        window,
+        "new_terminal",
+        json!({ "projectId": alpha_id }),
+    );
+
+    // 並べ替え: 3 枚目を先頭へ。
+    call_ok::<()>(
+        handle,
+        window,
+        "move_terminal_tab",
+        json!({ "terminalId": third, "toIndex": 0 }),
+    );
+    assert_eq!(
+        alpha_tabs(&snapshot(handle, window)),
+        [third.clone(), connected.clone(), second.clone()]
+    );
+    let unknown = error_text(call(
+        handle,
+        window,
+        "move_editor_tab",
+        json!({ "editorId": "editor-999", "toIndex": 0 }),
+    ));
+    assert!(unknown.contains("見つからない"), "{unknown}");
+
+    ctx.control.busy.store(true, Ordering::SeqCst);
+    // 接続していないタブは動作中に数えないので、確認なしで閉じる。
+    let outcome: CloseTabsOutcome = call_ok(
+        handle,
+        window,
+        "close_tabs",
+        json!({ "projectId": alpha_id, "terminalIds": [third], "editorIds": [], "confirmed": false }),
+    );
+    assert_eq!(outcome, CloseTabsOutcome::Closed);
+    // 動作中のタブを含むと、何も変えずに確認を求める。
+    let mid = snapshot(handle, window);
+    let killed_before = *lock(&ctx.control.killed);
+    let outcome: CloseTabsOutcome = call_ok(
+        handle,
+        window,
+        "close_tabs",
+        json!({
+            "projectId": alpha_id,
+            "terminalIds": [connected, second],
+            "editorIds": [],
+            "confirmed": false
+        }),
+    );
+    let CloseTabsOutcome::NeedsConfirmation { running, unsaved } = outcome else {
+        panic!("確認を求めなかった: {outcome:?}");
+    };
+    assert_eq!(
+        running
+            .iter()
+            .map(|t| t.terminal_id.as_str().to_owned())
+            .collect::<Vec<_>>(),
+        std::slice::from_ref(&connected)
+    );
+    assert!(unsaved.is_empty());
+    assert_eq!(snapshot(handle, window), mid, "確認の前に何か変わった");
+    assert_eq!(*lock(&ctx.control.killed), killed_before);
+    ctx.control.busy.store(false, Ordering::SeqCst);
+
+    // 残りの確認のため、接続済みの 1 枚だけを残す。
+    let outcome: CloseTabsOutcome = call_ok(
+        handle,
+        window,
+        "close_tabs",
+        json!({ "projectId": alpha_id, "terminalIds": [second], "editorIds": [], "confirmed": false }),
+    );
+    assert_eq!(outcome, CloseTabsOutcome::Closed);
+    assert_eq!(alpha_tabs(&snapshot(handle, window)), [connected]);
+}
+
 fn 動作中があれば確認を求め_中止なら何も変わらない(
     handle: &AppHandle<MockRuntime>,
     window: &WebviewWindow<MockRuntime>,
@@ -777,6 +956,14 @@ const CHECKS: &[(&str, Check)] = &[
     (
         "再リンクで_id_と色を保ち_取り消すと何も変わらない",
         再リンクで_id_と色を保ち_取り消すと何も変わらない,
+    ),
+    (
+        "並び順を変えると写しと状態ファイルの並びが変わる",
+        並び順を変えると写しと状態ファイルの並びが変わる,
+    ),
+    (
+        "タブを並べ替え_まとめて閉じるとき動作中があれば確認を求める",
+        タブを並べ替え_まとめて閉じるとき動作中があれば確認を求める,
     ),
     (
         "動作中があれば確認を求め_中止なら何も変わらない",

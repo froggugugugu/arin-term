@@ -15,6 +15,7 @@ use ts_rs::TS;
 use super::{FileStamp, ReadOnlyReason};
 use crate::paths::RelPath;
 use crate::project::ProjectId;
+use crate::reorder::move_item;
 
 /// エディタの識別子。画面とのやり取りでは文字列。
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
@@ -143,6 +144,35 @@ impl EditorStore {
             }
         }
         Ok(tab)
+    }
+
+    /// エディタを同じプロジェクトのエディタの中で動かす(タブのドラッグ。ADR-019)。`to_index` はそのプロジェクトの
+    /// エディタの並びで、動かしたあとの位置(0 から。末尾より大きければ末尾)。表示中のエディタは変えない。
+    /// 位置が変わったら `true`。
+    ///
+    /// # Errors
+    ///
+    /// その ID のエディタが無いとき(`EditorError::NotFound`。何も変えない)。
+    pub fn move_to(&mut self, id: &EditorId, to_index: usize) -> Result<bool, EditorError> {
+        let index = self.index(id)?;
+        let project = self.tabs[index].project.clone();
+        // そのプロジェクトのエディタが全体の並びのどこにあるか。この位置の中で並べ替える(ほかのプロジェクトの位置は変えない)。
+        let slots: Vec<usize> = self
+            .tabs
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.project == project)
+            .map(|(i, _)| i)
+            .collect();
+        let from = slots.iter().position(|&i| i == index).unwrap_or(0);
+        let mut group: Vec<EditorTab> = slots.iter().map(|&i| self.tabs[i].clone()).collect();
+        if !move_item(&mut group, from, to_index) {
+            return Ok(false);
+        }
+        for (slot, tab) in slots.into_iter().zip(group) {
+            self.tabs[slot] = tab;
+        }
+        Ok(true)
     }
 
     /// プロジェクトのエディタをすべて外し、外したタブを開いた順で返す(プロジェクトの削除)。

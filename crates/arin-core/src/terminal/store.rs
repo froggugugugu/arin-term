@@ -13,6 +13,7 @@
 
 use super::{TerminalError, TerminalId};
 use crate::project::ProjectId;
+use crate::reorder::move_item;
 
 /// タブ 1 枚。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,6 +105,17 @@ impl TerminalStore {
                 .collect(),
             None => Vec::new(),
         }
+    }
+
+    /// タブを同じプロジェクトの中で動かす(タブのドラッグ。ADR-019)。`to_index` は動かしたあとの位置(0 から。末尾より
+    /// 大きければ末尾)。表示中のタブ・番号・表示名は変えない。位置が変わったら `true`。
+    ///
+    /// # Errors
+    ///
+    /// その ID のタブが無いとき(`TerminalError::NotFound`。何も変えない)。
+    pub fn move_to(&mut self, id: &TerminalId, to_index: usize) -> Result<bool, TerminalError> {
+        let (g, t) = self.locate(id)?;
+        Ok(move_item(&mut self.groups[g].tabs, t, to_index))
     }
 
     /// そのタブを表示中にする。

@@ -20,6 +20,7 @@ import type { ArinIpc } from "../ipc/client";
 import type { AppSnapshot } from "../ipc/generated/AppSnapshot";
 import type { ConflictResolution } from "../ipc/generated/ConflictResolution";
 import type { DisplayMode } from "../ipc/generated/DisplayMode";
+import type { EditorId } from "../ipc/generated/EditorId";
 import type { FileOpOutcome } from "../ipc/generated/FileOpOutcome";
 import type { FontSizeTarget } from "../ipc/generated/FontSizeTarget";
 import type { InvalidNameReason } from "../ipc/generated/InvalidNameReason";
@@ -48,9 +49,13 @@ export type ActionsBackend = Pick<
   | "relinkProject"
   | "setProjectColor"
   | "copyProjectPath"
+  | "moveProject"
   | "newTerminal"
   | "closeTerminal"
   | "selectTerminal"
+  | "moveTerminalTab"
+  | "moveEditorTab"
+  | "closeTabs"
   | "setPaneSizes"
   | "setSidebarCollapsed"
   | "setDisplayMode"
@@ -103,6 +108,21 @@ export interface Actions {
   addProjectByDialog(): Promise<void>;
   /** プロジェクトを選ぶ(FR-002)。 */
   selectProject(id: ProjectId): Promise<void>;
+  /** プロジェクトを toIndex(動かしたあとの位置)へ動かす(カードのドラッグ。ADR-019)。 */
+  moveProject(id: ProjectId, toIndex: number): Promise<void>;
+  /** ターミナルのタブを同じプロジェクトのターミナルの中で動かす(タブのドラッグ。ADR-019)。 */
+  moveTerminalTab(id: TerminalId, toIndex: number): Promise<void>;
+  /** エディタのタブを同じプロジェクトのエディタの中で動かす(タブのドラッグ。ADR-019)。 */
+  moveEditorTab(id: EditorId, toIndex: number): Promise<void>;
+  /**
+   * タブをまとめて閉じる(タブの右クリックのメニュー。ADR-019)。動作中のターミナルか未保存のエディタがあれば、
+   * 閉じずに確認を開く。どちらも無ければ確認せずに閉じる。何も挙げなければ何もしない。
+   */
+  closeTabs(projectId: ProjectId, terminalIds: readonly TerminalId[], editorIds: readonly EditorId[]): Promise<void>;
+  /** 開いているタブをまとめて閉じる確認で「閉じる」を選んだ。確認を閉じ、確認済みで閉じる。確認が無ければ何もしない。 */
+  confirmCloseTabs(): Promise<void>;
+  /** 開いているタブをまとめて閉じる確認で「キャンセル」を選んだ。確認を閉じるだけ。 */
+  cancelCloseTabs(): void;
   /** プロジェクトを一覧から削除する(FR-003)。動作中があれば削除の確認を開く(削除はまだしない)。 */
   removeProject(id: ProjectId): Promise<void>;
   /** 開いている削除の確認で「削除」を選んだ。確認を閉じ、確認済みで削除する。確認が無ければ何もしない。 */
@@ -270,6 +290,26 @@ export function createActions({ ipc, ui, app, tree, treeController, reportError,
       }
     });
 
+  const closeTabs = (
+    projectId: ProjectId,
+    terminalIds: readonly TerminalId[],
+    editorIds: readonly EditorId[],
+    confirmed: boolean,
+  ) =>
+    run("タブを閉じられなかった", async () => {
+      if (terminalIds.length === 0 && editorIds.length === 0) return;
+      const outcome = await ipc.closeTabs(projectId, terminalIds, editorIds, confirmed);
+      if (outcome.kind === "needsConfirmation") {
+        ui.getState().openCloseTabsConfirmation({
+          projectId,
+          terminalIds,
+          editorIds,
+          running: outcome.running,
+          unsaved: outcome.unsaved,
+        });
+      }
+    });
+
   /**
    * ファイル操作の応答を扱う。
    * target は「見つからない」のときに親を読み直す項目、reload は済んだときに読み直すフォルダ。
@@ -361,6 +401,17 @@ export function createActions({ ipc, ui, app, tree, treeController, reportError,
   return {
     addProjectByDialog: () => run("フォルダを登録できなかった", () => ipc.addProjectByDialog()),
     selectProject: (id) => run("プロジェクトを選べなかった", () => ipc.selectProject(id)),
+    moveProject: (id, toIndex) => run("プロジェクトの並びを変えられなかった", () => ipc.moveProject(id, toIndex)),
+    moveTerminalTab: (id, toIndex) => run("タブの並びを変えられなかった", () => ipc.moveTerminalTab(id, toIndex)),
+    moveEditorTab: (id, toIndex) => run("タブの並びを変えられなかった", () => ipc.moveEditorTab(id, toIndex)),
+    closeTabs: (projectId, terminalIds, editorIds) => closeTabs(projectId, terminalIds, editorIds, false),
+    confirmCloseTabs: async () => {
+      const pending = ui.getState().closeTabsConfirmation;
+      if (pending === null) return;
+      ui.getState().closeCloseTabsConfirmation();
+      await closeTabs(pending.projectId, pending.terminalIds, pending.editorIds, true);
+    },
+    cancelCloseTabs: () => ui.getState().closeCloseTabsConfirmation(),
     removeProject: (id) => remove(id, false),
     confirmRemoveProject: async () => {
       const pending = ui.getState().removeConfirmation;
