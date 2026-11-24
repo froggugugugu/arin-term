@@ -7,12 +7,12 @@
 //! 全ターミナルの接続を直列にするロックの中で呼ぶので、コマンドが戻らないと全部の接続が止まるため。
 //! 超えたら子プロセスを kill して回収し、代わりの値を使う。
 
-use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::sync::mpsc;
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+#[cfg(test)]
+use crate::command::Outcome;
+use crate::command::Probe;
 
 const DSCL: &str = "/usr/bin/dscl";
 const DEFAULTS: &str = "/usr/bin/defaults";
@@ -20,20 +20,6 @@ const DEFAULTS: &str = "/usr/bin/defaults";
 /// コマンドの終了を待つ上限。ふだんは数十ミリ秒で終わる。負荷の高い起動直後でも足りるよう余裕を取りつつ、
 /// 戻らないときに接続を長く止めない値にする。
 const PROBE_LIMIT: Duration = Duration::from_secs(2);
-/// 終了を見回る間隔。
-const POLL: Duration = Duration::from_millis(10);
-/// 終了のあと、標準出力の読み取りの終わりを待つ最小の時間(上限時間ぎりぎりで終わったときに出力を取りこぼさない)。
-const DRAIN_GRACE: Duration = Duration::from_millis(100);
-
-/// 起動するコマンドと上限時間。テストでは差し替える。
-#[derive(Debug, Clone, Copy)]
-struct Probe<'a> {
-    program: &'a str,
-    /// 呼び出しごとの引数の前に置く引数。
-    leading: &'a [&'a str],
-    limit: Duration,
-}
-
 const DSCL_PROBE: Probe<'static> = Probe {
     program: DSCL,
     leading: &[],
@@ -45,92 +31,6 @@ const DEFAULTS_PROBE: Probe<'static> = Probe {
     leading: &[],
     limit: PROBE_LIMIT,
 };
-
-/// コマンドの結果。
-#[derive(Debug, PartialEq, Eq)]
-enum Outcome {
-    /// 成功で終わった。標準出力(UTF-8)。
-    Output(String),
-    /// 起動できない、失敗で終わった、出力が UTF-8 でない。
-    Failed,
-    /// 上限時間を超えたので kill して回収した。
-    TimedOut { pid: u32 },
-}
-
-impl Probe<'_> {
-    /// コマンドを起動し、上限時間まで終了を見回る。超えたら kill して回収する。
-    fn run(&self, args: &[&str]) -> Outcome {
-        let Ok(mut child) = Command::new(self.program)
-            .args(self.leading)
-            .args(args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-        else {
-            return Outcome::Failed;
-        };
-        let pid = child.id();
-        let deadline = Instant::now() + self.limit;
-        // 標準出力は別のスレッドで読み切る。読まずに終了を待つと、パイプが満ちたところで子が書き込みで止まる。
-        // 打ち切ったときは、kill でパイプの書き手が閉じるので、このスレッドも読み終えて抜ける。
-        let stdout = child.stdout.take().and_then(|mut out| {
-            let (tx, rx) = mpsc::channel();
-            thread::Builder::new()
-                .name("arin-probe-stdout".to_owned())
-                .spawn(move || {
-                    let mut bytes = Vec::new();
-                    let _ = tx.send(out.read_to_end(&mut bytes).map(|_| bytes));
-                })
-                .ok()
-                .map(|_| rx)
-        });
-        let Some(stdout) = stdout else {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Outcome::Failed;
-        };
-
-        let status = loop {
-            match child.try_wait() {
-                Ok(Some(status)) => break Ok(status),
-                Ok(None) if Instant::now() < deadline => thread::sleep(POLL),
-                Ok(None) => break Err(true),
-                Err(_) => break Err(false),
-            }
-        };
-        let status = match status {
-            Ok(status) => status,
-            Err(timed_out) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return if timed_out {
-                    Outcome::TimedOut { pid }
-                } else {
-                    Outcome::Failed
-                };
-            }
-        };
-        if !status.success() {
-            return Outcome::Failed;
-        }
-        let left = deadline
-            .saturating_duration_since(Instant::now())
-            .max(DRAIN_GRACE);
-        match stdout.recv_timeout(left) {
-            Ok(Ok(bytes)) => String::from_utf8(bytes).map_or(Outcome::Failed, Outcome::Output),
-            _ => Outcome::Failed,
-        }
-    }
-
-    /// 成功したら標準出力を返す。
-    fn stdout(&self, args: &[&str]) -> Option<String> {
-        match self.run(args) {
-            Outcome::Output(stdout) => Some(stdout),
-            Outcome::Failed | Outcome::TimedOut { .. } => None,
-        }
-    }
-}
 
 /// ユーザー情報から既定のシェルを引けないときに使うシェル(macOS の既定)。
 pub const FALLBACK_SHELL: &str = "/bin/zsh";
@@ -194,6 +94,7 @@ fn parse_locale(stdout: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::{Command, Stdio};
     use std::time::Instant;
 
     /// 引数を無視して `script` を動かす偽のコマンド(`sh -c script sh 引数…`)。

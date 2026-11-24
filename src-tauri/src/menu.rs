@@ -37,6 +37,7 @@ use crate::events::{EDITOR_CLOSE_REQUESTED_EVENT, MENU_COMMAND_EVENT};
 use crate::lifecycle;
 use crate::sessions::{ClosedTab, SessionRegistry};
 use crate::settings;
+use crate::update;
 
 /// ショートカットの表(アプリの管理状態。`Builder::manage` で登録する)。
 ///
@@ -99,6 +100,10 @@ pub const OPEN_SETTINGS_FILE_ID: &str = "app.open-settings-file";
 pub const OPEN_SETTINGS_FILE_LABEL: &str = "設定ファイルを開く…";
 /// 「設定ファイルを開く…」のキー。表の外の項目なので持たない(設定ファイルでも変えられない。ADR-013 の 6)。
 pub const OPEN_SETTINGS_FILE_ACCELERATOR: Option<&str> = None;
+/// 「アップデートを確認…」の項目の ID(ADR-018)。表の外の項目でキーを持たない。
+pub const CHECK_UPDATES_ID: &str = "app.check-updates";
+/// 「アップデートを確認…」の文言。
+pub const CHECK_UPDATES_LABEL: &str = "アップデートを確認…";
 
 use ShortcutCommandId as C;
 
@@ -231,7 +236,9 @@ pub fn build_with_table<R: Runtime>(
         open_file = open_file.accelerator(key);
     }
     let open_file = open_file.build(app)?;
-    let app_menu = app_menu.item(&open_file).separator();
+    let check_updates =
+        MenuItemBuilder::with_id(CHECK_UPDATES_ID, CHECK_UPDATES_LABEL).build(app)?;
+    let app_menu = app_menu.item(&open_file).item(&check_updates).separator();
     let mut app_menu = app_menu
         .hide_with_text(format!("{name} を隠す"))
         .hide_others_with_text("ほかを隠す")
@@ -345,6 +352,10 @@ fn entry<R: Runtime>(
 pub fn on_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     if id == OPEN_SETTINGS_FILE_ID {
         settings::open_settings_file(app);
+        return;
+    }
+    if id == CHECK_UPDATES_ID {
+        update::check(app, true);
         return;
     }
     let Some(command) = ShortcutCommandId::from_id(id) else {

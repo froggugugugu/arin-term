@@ -20,3 +20,6 @@ pub const SETTINGS_CHANGED_EVENT: &str = "settings-changed";
 /// 中身は `arin_core::editor::EditorCloseRequest`(`{ editorId }`)。画面が「保存」「保存しない」「キャンセル」を聞き、
 /// 閉じるなら `close_editor` を呼ぶ。
 pub const EDITOR_CLOSE_REQUESTED_EVENT: &str = "editor-close-requested";
+
+/// 新しい版の確認の結果を画面へ送るイベント(ADR-018)。中身は `arin_core::update::UpdateNotice`。
+pub const UPDATE_CHANGED_EVENT: &str = "update-changed";

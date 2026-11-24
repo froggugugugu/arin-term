@@ -16,7 +16,7 @@ interface SettingsDialogProps {
   store: AppStore;
   /** 開閉(settingsOpen)とショートカットの表(⌘W のキーを引く)。 */
   ui: UiStore;
-  actions: Pick<Actions, "stepFontSize" | "stepTranslucency" | "setTheme" | "resetAppearance" | "openSettingsFile">;
+  actions: Pick<Actions, "stepFontSize" | "stepTranslucency" | "setTheme" | "resetAppearance" | "openSettingsFile" | "setCheckUpdates">;
   /** Vim のキー操作の切替(M4.8。ADR-015 の 6)。 */
   editor: Pick<EditorController, "setVim">;
 }
@@ -57,6 +57,7 @@ export function SettingsDialog({ store, ui, actions, editor }: SettingsDialogPro
   const translucency = useStore(store, (s) => s.snapshot?.translucency ?? null);
   const vim = useStore(store, (s) => s.snapshot?.editor.vim ?? false);
   const theme = useStore(store, (s) => s.snapshot?.theme ?? "system");
+  const checkUpdates = useStore(store, (s) => s.snapshot?.checkUpdates ?? false);
   if (!open || fontSizes === null || translucency === null) return null;
   return (
     <SettingsSheet
@@ -64,6 +65,7 @@ export function SettingsDialog({ store, ui, actions, editor }: SettingsDialogPro
       translucency={translucency}
       vim={vim}
       theme={theme}
+      checkUpdates={checkUpdates}
       ui={ui}
       actions={actions}
       editor={editor}
@@ -76,6 +78,7 @@ interface SettingsSheetProps {
   translucency: Snapshot["translucency"];
   vim: boolean;
   theme: Snapshot["theme"];
+  checkUpdates: boolean;
   ui: UiStore;
   actions: SettingsDialogProps["actions"];
   editor: SettingsDialogProps["editor"];
@@ -84,7 +87,7 @@ interface SettingsSheetProps {
 /** 写しの値が既定か。 */
 const isDefault = (entry: { value: number; defaultValue: number }) => entry.value === entry.defaultValue;
 
-function SettingsSheet({ fontSizes, translucency, vim, theme, ui, actions, editor }: SettingsSheetProps) {
+function SettingsSheet({ fontSizes, translucency, vim, theme, checkUpdates, ui, actions, editor }: SettingsSheetProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const doneRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
@@ -94,6 +97,9 @@ function SettingsSheet({ fontSizes, translucency, vim, theme, ui, actions, edito
   const editorGroupId = useId();
   const vimLabelId = useId();
   const vimHintId = useId();
+  const updateGroupId = useId();
+  const updateLabelId = useId();
+  const updateHintId = useId();
   const close = () => ui.getState().closeSettings();
   const { terminal, interface: screen } = fontSizes;
   const allDefault = [terminal, screen, translucency.window, translucency.terminal].every(isDefault);
@@ -282,6 +288,36 @@ function SettingsSheet({ fontSizes, translucency, vim, theme, ui, actions, edito
               className="settings-switch"
               data-testid="editor-vim-switch"
               onClick={() => void editor.setVim(!vim)}
+            >
+              <span className="settings-switch__thumb" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="settings-sheet__group" aria-labelledby={updateGroupId}>
+        <h3 id={updateGroupId} className="settings-sheet__group-title">
+          アップデート
+        </h3>
+        <div className="settings-sheet__rows">
+          <div className="settings-row" data-testid="check-updates-row">
+            <div className="settings-row__text">
+              <span id={updateLabelId} className="settings-row__label">
+                起動時に新しい版を確かめる
+              </span>
+              <span id={updateHintId} className="settings-row__hint">
+                GitHub の Releases に問い合わせる
+              </span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={checkUpdates}
+              aria-labelledby={updateLabelId}
+              aria-describedby={updateHintId}
+              className="settings-switch"
+              data-testid="check-updates-switch"
+              onClick={() => void actions.setCheckUpdates(!checkUpdates)}
             >
               <span className="settings-switch__thumb" aria-hidden="true" />
             </button>

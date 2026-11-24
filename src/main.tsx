@@ -120,6 +120,8 @@ export async function boot(ipc: ArinIpc, container: HTMLElement): Promise<StartA
     // 設定が変わったと届くたびに startApp が取り直して渡す(T65e)。
     onShortcuts: (table) => ui.getState().setShortcuts(table),
     onSettingsNotice: (notice) => ui.getState().setSettingsNotice(notice),
+    // 新しい版の確認の知らせ(ADR-018)
+    onUpdateNotice: (notice) => ui.getState().setUpdateNotice(notice),
     reportError: reporter.report,
     mount: () => {
       // 描き終えてから準備完了を通知するため、描画を同期で済ませる。

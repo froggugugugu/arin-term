@@ -1,6 +1,7 @@
 import { useStore } from "zustand";
 
-import type { UiStore } from "../../state/uiStore";
+import type { Actions } from "../../state/actions";
+import type { UiStore, UpdateNotice } from "../../state/uiStore";
 import { CloseIcon } from "../tree/icons";
 
 interface NoticeBarProps {
@@ -43,6 +44,46 @@ export function SettingsNoticeBar({ ui }: { ui: UiStore }) {
   );
 }
 
+/** 新しい版の確認の知らせの文(ADR-018)。 */
+export function updateNoticeText(notice: UpdateNotice): string {
+  switch (notice.kind) {
+    case "available":
+      return `新しい版 v${notice.version} があります`;
+    case "upToDate":
+      return `Arin v${notice.version} は最新です`;
+    case "failed":
+      return `新しい版を確かめられませんでした: ${notice.reason}`;
+  }
+}
+
+/**
+ * 新しい版の確認の知らせ(ADR-018)。新しい版があれば「ダウンロードのページを開く」(Releases のページをブラウザで開く。
+ * 入れ替えは本人が行う)。メニューから確かめたときは「最新です」「確かめられませんでした」も出す。
+ */
+export function UpdateNoticeBar({
+  ui,
+  actions,
+}: {
+  ui: UiStore;
+  actions: Pick<Actions, "openReleasePage" | "dismissUpdateNotice">;
+}) {
+  const notice = useStore(ui, (s) => s.updateNotice);
+  if (notice === null) return null;
+  return (
+    <NoticeLine
+      text={updateNoticeText(notice)}
+      testId="update-notice"
+      closeLabel="アップデートの知らせを閉じる"
+      onDismiss={() => void actions.dismissUpdateNotice()}
+      action={
+        notice.kind === "available"
+          ? { label: "ダウンロードのページを開く", onClick: () => void actions.openReleasePage() }
+          : undefined
+      }
+    />
+  );
+}
+
 interface NoticeLineProps {
   text: string;
   /** 行の data-testid。文は `<testId>-text`。 */
@@ -50,15 +91,22 @@ interface NoticeLineProps {
   /** 閉じるボタンの読み上げの名前。 */
   closeLabel: string;
   onDismiss: () => void;
+  /** 文の右に置くボタン(任意)。 */
+  action?: { label: string; onClick: () => void } | undefined;
 }
 
 /** 知らせの 1 行(控えめな地、細い区切り線、右端に閉じるアイコンのボタン)。文は文字として差し込む。 */
-function NoticeLine({ text, testId, closeLabel, onDismiss }: NoticeLineProps) {
+function NoticeLine({ text, testId, closeLabel, onDismiss, action }: NoticeLineProps) {
   return (
     <div className="notice-bar" role="status" data-testid={testId}>
       <p className="notice-bar__text" data-testid={`${testId}-text`} title={text}>
         {text}
       </p>
+      {action !== undefined && (
+        <button type="button" className="button notice-bar__action" data-testid={`${testId}-action`} onClick={action.onClick}>
+          {action.label}
+        </button>
+      )}
       <button type="button" className="icon-button notice-bar__close" aria-label={closeLabel} title="閉じる" onClick={onDismiss}>
         <CloseIcon />
       </button>

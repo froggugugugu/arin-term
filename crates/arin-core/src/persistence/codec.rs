@@ -18,6 +18,7 @@
 //! - `ui.windowTranslucency`・`ui.terminalTranslucency` も同じ扱い。数は近い 5 の倍数に丸めて端に留める
 //!   (規則は `layout::translucency`)。既定のあいだはキーごとに書かない
 //! - `ui.editorVim` は真のときだけ書く。無い・真偽値でないときは退避せずに偽
+//! - `ui.checkUpdates`(ADR-018)も同じ。真のときだけ書く
 //! - `ui.theme`(ADR-016)は `"light"`・`"dark"` のときだけ書く。無い・知らない値は退避せずにシステム
 //! - JSON として読めない・版が正しくない・新しすぎる・形が違うときは「退避する」を返す(決定 (d))。
 //!   退避の名前は [`broken_file_name`] が時計の値から作る(【仮定】3)
@@ -65,6 +66,8 @@ pub struct PersistedLayout {
     pub editor_vim: bool,
     /// テーマの選び方(`ui.theme`。ADR-016)。無い・知らない値ならシステム。
     pub theme: ThemeMode,
+    /// 起動時に新しい版を確かめるか(`ui.checkUpdates`。ADR-018)。無い・真偽値でなければ偽。
+    pub check_updates: bool,
 }
 
 /// `state.json` に保存する内容。表示値(見つからない・表示用のパス)を持たない。
@@ -194,6 +197,12 @@ struct UiSection {
         skip_serializing_if = "is_system_theme"
     )]
     theme: ThemeMode,
+    #[serde(
+        default,
+        deserialize_with = "lenient_bool",
+        skip_serializing_if = "is_false"
+    )]
+    check_updates: bool,
 }
 
 impl Default for UiSection {
@@ -210,6 +219,7 @@ impl Default for UiSection {
             terminal_translucency: default_terminal_translucency(),
             editor_vim: false,
             theme: ThemeMode::default(),
+            check_updates: false,
         }
     }
 }
@@ -370,6 +380,7 @@ pub fn encode(state: &PersistedState) -> Result<String, EncodeError> {
             terminal_translucency: state.layout.translucency.terminal,
             editor_vim: state.layout.editor_vim,
             theme: state.layout.theme,
+            check_updates: state.layout.check_updates,
         },
     };
     let mut text = serde_json::to_string_pretty(&file)
@@ -455,6 +466,7 @@ fn tidy(file: StateFile) -> LoadedState {
                 },
                 editor_vim: file.ui.editor_vim,
                 theme: file.ui.theme,
+                check_updates: file.ui.check_updates,
             },
         },
         rebuild_bookmarks,

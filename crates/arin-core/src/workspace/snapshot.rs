@@ -52,6 +52,8 @@ pub struct AppSnapshot {
     pub editor: EditorSettingsSnapshot,
     /// テーマの選び方(`state.json` の `ui.theme`。無ければシステム。切替は `set_theme`。ADR-016)。
     pub theme: ThemeMode,
+    /// 起動時に新しい版を確かめるか(`state.json` の `ui.checkUpdates`。無ければ偽。切替は `set_check_updates`。ADR-018)。
+    pub check_updates: bool,
 }
 
 /// 写しに載せるエディタのタブ 1 つ(ADR-015 の 3)。版と絶対パスは載せない。

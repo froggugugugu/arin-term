@@ -65,4 +65,8 @@ editor: EditorSettingsSnapshot,
 /**
  * テーマの選び方(`state.json` の `ui.theme`。無ければシステム。切替は `set_theme`。ADR-016)。
  */
-theme: ThemeMode, };
+theme: ThemeMode, 
+/**
+ * 起動時に新しい版を確かめるか(`state.json` の `ui.checkUpdates`。無ければ偽。切替は `set_check_updates`。ADR-018)。
+ */
+checkUpdates: boolean, };

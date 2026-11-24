@@ -16,6 +16,7 @@ import {
   checkNoHtmlInjection,
   checkNoHttpClientCrates,
   checkNoNetworkApi,
+  checkNetworkOnlyInRelease,
   checkCodeMirrorImports,
   checkCodeMirrorNoIpc,
   checkMermaidImports,
@@ -41,8 +42,8 @@ describe("違反の無い見本", () => {
     assert.deepEqual(violations.map(formatViolation), []);
   });
 
-  it("15 項目すべてを走らせる", () => {
-    assert.equal(CHECKS.length, 15);
+  it("16 項目すべてを走らせる", () => {
+    assert.equal(CHECKS.length, 16);
   });
 
   it("CLI として実行すると終了コード 0 を返す", () => {
@@ -351,5 +352,17 @@ describe("出力と終了コード", () => {
     assert.equal(result.status, 1);
     assert.match(result.stdout + result.stderr, /html-injection/);
     assert.match(result.stdout + result.stderr, /src\/ui\/Name\.tsx:2/);
+  });
+});
+
+describe("8b. Rust の通信は新しい版の確認だけ(ADR-018)", () => {
+  it("release の外の curl の起動と std::net を見つけ_コメントと release の中は数えない", () => {
+    const violations = checkNetworkOnlyInRelease(fixture("network-process"));
+    assert.deepEqual(places(violations), ["src-tauri/src/leak.rs:3", "src-tauri/src/leak.rs:4"]);
+    assert.ok(violations.every((v) => v.rule === "network-process"));
+  });
+
+  it("違反の無い見本では何も出さない", () => {
+    assert.deepEqual(checkNetworkOnlyInRelease(fixture("clean")), []);
   });
 });

@@ -169,6 +169,7 @@ fn default_own_ids() -> BTreeSet<String> {
         .map(|b| b.command().as_str().to_owned())
         .collect();
     ids.insert(OPEN_SETTINGS_FILE_ID.to_owned());
+    ids.insert(menu::CHECK_UPDATES_ID.to_owned());
     ids
 }
 
@@ -559,6 +560,7 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 enum DesktopCall {
     Reveal(PathBuf),
     Open(PathBuf),
+    Page(String),
 }
 
 /// Finder もアプリも開かず、頼まれたパスと呼ばれたスレッドを記録する。`open_fails`・`reveal_fails` が真なら失敗を返す。
@@ -601,6 +603,10 @@ impl DesktopPort for FakeDesktop {
 
     fn open_with_default_app(&self, path: &Path) -> Result<(), DesktopError> {
         self.record(DesktopCall::Open(path.to_path_buf()), self.open_fails)
+    }
+
+    fn open_release_page(&self, url: &str) -> Result<(), DesktopError> {
+        self.record(DesktopCall::Page(url.to_owned()), false)
     }
 }
 

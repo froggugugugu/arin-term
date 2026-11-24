@@ -11,6 +11,7 @@ pub mod document;
 pub mod fs;
 pub mod pasteboard;
 mod pty;
+pub mod release;
 mod root;
 pub mod settings_file;
 pub mod state_file;

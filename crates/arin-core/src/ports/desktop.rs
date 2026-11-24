@@ -32,4 +32,12 @@ pub trait DesktopPort: Send + Sync {
     ///
     /// 無いとき(`DesktopError::NotFound`)、OS が受け付けなかったとき(`DesktopError::Failed`)。
     fn open_with_default_app(&self, path: &Path) -> Result<(), DesktopError>;
+
+    /// 既定のブラウザで Releases のページを開く(ADR-018)。開いてよいのは
+    /// `crate::update::is_release_page` が通す URL だけ(実装が確かめる)。
+    ///
+    /// # Errors
+    ///
+    /// 許していない URL のとき・OS が受け付けなかったとき(`DesktopError::Failed`)。
+    fn open_release_page(&self, url: &str) -> Result<(), DesktopError>;
 }

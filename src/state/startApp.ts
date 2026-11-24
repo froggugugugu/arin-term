@@ -21,6 +21,7 @@ import type { MenuCommand } from "../ipc/generated/MenuCommand";
 import type { QuitRequest } from "../ipc/generated/QuitRequest";
 import type { ShortcutTable } from "../ipc/generated/ShortcutTable";
 import type { TreeChange } from "../ipc/generated/TreeChange";
+import type { UpdateNotice } from "../ipc/generated/UpdateNotice";
 import { describeError } from "../logic/describeError";
 import type { AppStore } from "./appStore";
 
@@ -53,6 +54,8 @@ export interface StartAppDeps {
   onShortcuts?: (table: ShortcutTable) => void;
   /** Rust から受け取った設定の知らせ(1 行か null)の受け手(main.tsx が uiStore.setSettingsNotice へつなぐ)。渡さなければ取得しない。 */
   onSettingsNotice?: (notice: string | null) => void;
+  /** 新しい版の確認の知らせの受け手(ADR-018。main.tsx が uiStore.setUpdateNotice へつなぐ)。渡さなければ取得しない。 */
+  onUpdateNotice?: (notice: UpdateNotice | null) => void;
   /** 起動を止めない失敗(ショートカットの表・設定の知らせを取得できなかった、設定の変更を購読できなかった)の報告先。既定は logError。 */
   reportError?: (message: string) => void;
 }
@@ -67,6 +70,7 @@ export async function startApp({
   events = {},
   onShortcuts,
   onSettingsNotice,
+  onUpdateNotice,
   reportError,
 }: StartAppDeps): Promise<StartAppResult> {
   const fail = (what: string, cause: unknown): StartAppResult => {
@@ -127,6 +131,10 @@ export async function startApp({
     await followSettings({ ipc, onShortcuts, onSettingsNotice, report: reportError ?? ((m) => logError(m)) });
   }
 
+  if (onUpdateNotice !== undefined) {
+    await followUpdates(ipc, onUpdateNotice, reportError ?? ((m) => logError(m)));
+  }
+
   try {
     await ipc.notifyAppReady();
   } catch (cause) {
@@ -181,4 +189,30 @@ async function followSettings({ ipc, onShortcuts, onSettingsNotice, report }: Fo
   }
   if (notice.status === "fulfilled") onSettingsNotice?.(notice.value);
   else report(`設定の知らせを取得できなかった: ${describeError(notice.reason)}`);
+}
+
+/**
+ * 新しい版の確認の知らせ(ADR-018)。取得の前に update-changed を購読し(起動時の確認の結果を取りこぼさない)、
+ * そのあと get_update_notice で今の知らせを取る。どちらの失敗も起動を止めない。
+ */
+async function followUpdates(
+  ipc: Pick<ArinIpc, "getUpdateNotice" | "onUpdateChanged">,
+  onUpdateNotice: (notice: UpdateNotice | null) => void,
+  report: (message: string) => void,
+): Promise<void> {
+  let received = false;
+  try {
+    await ipc.onUpdateChanged((notice) => {
+      received = true;
+      onUpdateNotice(notice);
+    });
+  } catch (cause) {
+    report(`新しい版の確認の結果を購読できなかった: ${describeError(cause)}`);
+  }
+  try {
+    const notice = await ipc.getUpdateNotice();
+    if (!received) onUpdateNotice(notice);
+  } catch (cause) {
+    report(`新しい版の知らせを取得できなかった: ${describeError(cause)}`);
+  }
 }
