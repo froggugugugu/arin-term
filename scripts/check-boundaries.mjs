@@ -713,6 +713,18 @@ export function checkCodeMirrorImports(root) {
   );
 }
 
+/** Mermaid のパッケージか(ADR-017)。`mermaid` とそのサブパス、`@mermaid-js/*`。 */
+const isMermaidPackage = (name) => name === "mermaid" || name.startsWith("mermaid/") || name.startsWith("@mermaid-js/");
+
+/** 3c. Mermaid を import してよいのは src/editor/mermaid だけ(ADR-017)。 */
+export function checkMermaidImports(root) {
+  return checkImports(root, "mermaid-import", (rel, spec, target) =>
+    target.package && isMermaidPackage(target.package) && !isUnder(rel, "src/editor/mermaid")
+      ? `${spec} を import してよいのは src/editor/mermaid/ だけ`
+      : null,
+  );
+}
+
 /** 4. `@tauri-apps/*`(`@tauri-apps/api` とそのサブパス、プラグイン)を import してよいのは src/ipc だけ。 */
 export function checkTauriApiImports(root) {
   return checkImports(root, "tauri-api-import", (rel, spec, target) =>
@@ -722,11 +734,11 @@ export function checkTauriApiImports(root) {
   );
 }
 
-/** 5. src/ui が src/ipc・src/terminal/xterm・src/editor/codemirror を直接 import しないこと。 */
+/** 5. src/ui が src/ipc・src/terminal/xterm・src/editor/codemirror・src/editor/mermaid を直接 import しないこと。 */
 export function checkUiImports(root) {
   return checkImports(root, "ui-import", (rel, spec, target) => {
     if (!isUnder(rel, "src/ui") || !target.path) return null;
-    for (const dir of ["src/ipc", "src/terminal/xterm", "src/editor/codemirror"]) {
+    for (const dir of ["src/ipc", "src/terminal/xterm", "src/editor/codemirror", "src/editor/mermaid"]) {
       if (isUnder(target.path, dir)) return `src/ui から ${dir}/ を直接 import している(${spec})`;
     }
     return null;
@@ -1042,6 +1054,15 @@ export function checkCodeMirrorNoIpc(root) {
   );
 }
 
+/** 6c. src/editor/mermaid が src/ipc を import しないこと(ADR-017)。 */
+export function checkMermaidNoIpc(root) {
+  return checkImports(root, "mermaid-ipc", (rel, spec, target) =>
+    isUnder(rel, "src/editor/mermaid") && target.path && isUnder(target.path, "src/ipc")
+      ? `src/editor/mermaid から src/ipc/ を import している(${spec})`
+      : null,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // まとめて実行
 // ---------------------------------------------------------------------------
@@ -1056,14 +1077,16 @@ export const CHECKS = [
     title: "codemirror・@codemirror/*・@lezer/*・@replit/* は src/editor/codemirror だけ",
     run: checkCodeMirrorImports,
   },
+  { id: "mermaid-import", title: "mermaid・@mermaid-js/* は src/editor/mermaid だけ", run: checkMermaidImports },
   { id: "tauri-api-import", title: "@tauri-apps/api は src/ipc だけ", run: checkTauriApiImports },
   {
     id: "ui-import",
-    title: "src/ui が src/ipc・src/terminal/xterm・src/editor/codemirror を import しない",
+    title: "src/ui が src/ipc・src/terminal/xterm・src/editor/codemirror・src/editor/mermaid を import しない",
     run: checkUiImports,
   },
   { id: "xterm-ipc", title: "src/terminal/xterm が src/ipc を import しない", run: checkXtermNoIpc },
   { id: "codemirror-ipc", title: "src/editor/codemirror が src/ipc を import しない", run: checkCodeMirrorNoIpc },
+  { id: "mermaid-ipc", title: "src/editor/mermaid が src/ipc を import しない", run: checkMermaidNoIpc },
   { id: "http-client-crate", title: "HTTP クライアントのクレートが無い", run: checkNoHttpClientCrates },
   { id: "network-api", title: "画面のソースに通信の API が無い", run: checkNoNetworkApi },
   { id: "network-process", title: "Rust の通信は新しい版の確認だけ", run: checkNetworkOnlyInRelease },

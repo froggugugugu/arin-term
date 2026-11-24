@@ -22,6 +22,16 @@ Arin 本体は MIT License([LICENSE](LICENSE))です。
 
 版は `Cargo.lock` のものです。依存を更新して版が変わったときは、この表も合わせて直します。
 
+## Eclipse Public License 2.0 の部品
+
+画面には、Mermaid の図の配置に使う次の npm パッケージが含まれます(mermaid が引き込むもの)。`EPL-2.0 OR GPL-3.0-or-later` のうち Eclipse Public License 2.0(EPL-2.0)を選んでいます。Arin はこのソースに手を加えていません。ライセンスの全文は THIRD_PARTY_LICENSES.md、または https://www.eclipse.org/legal/epl-2.0/ にあります。
+
+| パッケージ | 版 | ソースの入手先 |
+| ---------- | -- | -------------- |
+| elkjs | 0.12.1 | https://github.com/kieler/elkjs 、https://www.npmjs.com/package/elkjs/v/0.12.1 |
+
+版は `package-lock.json` のものです。依存を更新して版が変わったときは、この表も合わせて直します。
+
 ## 商標
 
 macOS は Apple Inc. の商標です。Arin は Apple Inc. とは関係のない、個人が作っているツールです。

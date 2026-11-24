@@ -354,3 +354,41 @@ describe("EditorManager(エディタの部品を React の外で持つ。ADR-015
     expect(t.engine.created).toHaveLength(1);
   });
 });
+
+describe("EditorManager.renderDiagram(Mermaid の図。ADR-017)", () => {
+  it("描画は初めて描くときに 1 回だけ読み、結果をそのまま返す", async () => {
+    let loads = 0;
+    const sources: string[] = [];
+    const t = setup({
+      loadDiagrams: async () => {
+        loads++;
+        return {
+          render: async (source) => {
+            sources.push(source);
+            return { ok: true, light: "<svg>明</svg>", dark: "<svg>暗</svg>" };
+          },
+        };
+      },
+    });
+    expect(loads).toBe(0);
+    const [a, b] = await Promise.all([t.manager.renderDiagram("graph TD; A-->B"), t.manager.renderDiagram("x")]);
+    expect(loads).toBe(1);
+    expect(a).toEqual({ ok: true, light: "<svg>明</svg>", dark: "<svg>暗</svg>" });
+    expect(b.ok).toBe(true);
+    expect(sources).toEqual(["graph TD; A-->B", "x"]);
+  });
+
+  it("読み込めなければ失敗を返し、次の描画でもう一度読む", async () => {
+    let loads = 0;
+    const t = setup({
+      loadDiagrams: async () => {
+        loads++;
+        if (loads === 1) throw new Error("塊が無い");
+        return { render: async () => ({ ok: false, message: "文法の誤り" }) };
+      },
+    });
+    expect(await t.manager.renderDiagram("a")).toEqual({ ok: false, message: "図の部品を読み込めませんでした: 塊が無い" });
+    expect(await t.manager.renderDiagram("a")).toEqual({ ok: false, message: "文法の誤り" });
+    expect(loads).toBe(2);
+  });
+});
