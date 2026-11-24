@@ -6,14 +6,15 @@
 
 ## 1. 境界の規則(`npm run lint` が検査)
 
-- `@tauri-apps/*` を import できるのは `src/ipc/` だけ。`@xterm/*` を import できるのは `src/terminal/xterm/` だけ。`codemirror`・`@codemirror/*`・`@lezer/*`・`@replit/*` を import できるのは `src/editor/codemirror/` だけ(M4.8)。`src/ui/` は `src/ipc/`・`src/terminal/xterm/`・`src/editor/codemirror/` を import しない(操作は `src/state`・`src/terminal`・`src/editor` 経由)。`src/terminal/xterm/`・`src/editor/codemirror/` は `src/ipc/` を import しない
+- `@tauri-apps/*` を import できるのは `src/ipc/` だけ。`@xterm/*` を import できるのは `src/terminal/xterm/` だけ。`codemirror`・`@codemirror/*`・`@lezer/*`・`@replit/*` を import できるのは `src/editor/codemirror/` だけ(M4.8)。`mermaid`・`@mermaid-js/*` を import できるのは `src/editor/mermaid/` だけ(ADR-017)。`src/ui/` は `src/ipc/`・`src/terminal/xterm/`・`src/editor/codemirror/`・`src/editor/mermaid/` を import しない(操作は `src/state`・`src/terminal`・`src/editor` 経由)。`src/terminal/xterm/`・`src/editor/codemirror/`・`src/editor/mermaid/` は `src/ipc/` を import しない
 - `arin-core` は `std::fs`・`std::process`・`std::net` を使わない。依存は serde・serde_json・thiserror・ts-rs だけ。入出力は `arin-platform` に置く
+- 外への通信は新しい版の確認の 1 か所だけ(ADR-018。NFR-008 の例外)。`crates/arin-platform/src/release/` が `/usr/bin/curl` で `arin_core::update::LATEST_RELEASE_API` に問い合わせる。HTTP の crate は入れない。ほかの場所に `curl`・NSURLSession・`std::net` を書かない(境界検査の `network-process`)。ブラウザで開くのは `DesktopPort::open_release_page` で、Releases のページの下だけ(URL は Rust が版から作る)
 - 環境変数を読むのは `src-tauri/src/launch.rs` だけ。`arin-core` は値を引数で受け取る
 - 画面のソースに通信の API(`fetch(` など)と HTML の差し込み(`innerHTML`・`dangerouslySetInnerHTML` など)を書かない
 - CSP(`tauri.conf.json` の `csp`・`devCsp`): `connect-src` は IPC と自アプリだけ、スクリプトは `'self'`/`'none'` だけ、スタイルは `'self'`/`'none'`/`'unsafe-inline'` だけ
-- xterm.js と CodeMirror の要素は React の管理の外に置く(ADR-003。エディタは `EditorManager` が持ち、タブを替えても取り消しの履歴とカーソルが残る)。CodeMirror は初めてエディタを開くときに動的 import で読む(静的に import しない)
+- xterm.js と CodeMirror の要素は React の管理の外に置く(ADR-003。エディタは `EditorManager` が持ち、タブを替えても取り消しの履歴とカーソルが残る)。CodeMirror は初めてエディタを開くときに、Mermaid の描画は初めて図を描くときに動的 import で読む(静的に import しない)
 - WebKit の標準の右クリックのメニューは出さない(「再読み込み」で画面が読み込み直され、ターミナルの表示が消える)。`src/ui/shell/contextMenuGuard.ts` が文書全体で止め、文字の入力欄(input・textarea・contenteditable。ターミナルの中は除く)だけ残す。右クリックのメニューが要る場所は、部品が `ContextMenu` を開いて `preventDefault` する
-- プレビューは HTML の文字列を作らない。`markdownAst.ts` が自前の木(`markdownTypes.ts`)にし、`MarkdownPreview.tsx` が React の要素にする。`a[href]`・`img`・`input` を作らない。`style` 属性はプレビューの外側の要素 1 つ(文字の大きさ)だけ
+- プレビューは HTML の文字列を作らない。`markdownAst.ts` が自前の木(`markdownTypes.ts`)にし、`MarkdownPreview.tsx` が React の要素にする。`a[href]`・`img`・`input` を作らない。例外は Mermaid の図だけで、描画(`src/editor/mermaid/`)が作った SVG を blob: の URL にして `<picture>` の `<img>` で出す(ライト・ダークは `<source media>` で選ぶ。SVG を DOM に直接入れない。ADR-017)。`style` 属性はプレビューの外側の要素 1 つ(文字の大きさ)だけ
 - 画面から絶対パスを受け取らない・返さない(引数はプロジェクトの ID と相対パス)。ターミナルへ書く文字列は Rust が作る(`insertion_text`)
 - ファイルシステムの書き込みには実パスを渡す(途中にシンボリックリンクがあると失敗する)。削除と上書きの経路を作らない(置き換えはゴミ箱へ入れてから)。**例外は文書の保存 `save_document` の 1 つだけ**(ADR-015 の 5): 開いた `.md`・`.markdown` のふつうのファイルを、本人の保存の操作のときだけ、同じフォルダの新しい一時ファイル(`.arin-save-…`)に書き終えてから改名で置き換える。外で変わっていれば本人が「上書き保存」を選ばない限り置き換えない。ハードリンク・書けない・持ち主が違うファイルは読み取り専用で開く。「作る」は `RENAME_EXCL`(同じ名前ができていたら置き換えない)。消すのは、その保存が作って使わなかった一時ファイルだけ(`TempFile::discard`。押さえたままの fd と同じ項目がその名前にあるときだけ。本人が 2026-11-17 に了承)。ほかの項目を消す経路は作らない
 
@@ -47,6 +48,7 @@
 - ツリーの矢印キー(`src/logic/tree/treeKeys.ts`)と Enter(開く。ダブルクリックと同じ)は表に載せない。Enter は表に割り当てが無いときだけ効く(`FileTreeView.tsx` の `onKeyDown`。表が先)。名称変更の既定は F2(キーの書式は `F1`〜`F12` まで。ADR-012 の末尾の追記)
 - テーマ(システム・ライト・ダーク。ADR-016)は Rust がアプリの外観を替えて効かせる(`ThemeApplier`。`tokens.css` の `prefers-color-scheme` がそのまま追従する)。画面の CSS・JS に切替を書かない(`data-theme`・クラス・`matchMedia` で分けない)。模擬ランタイムは外観の切替を実装していない(呼ぶと panic する)ので、`AppHandle::set_theme` を直接呼ばず `ThemeApplier` を通す
 - タイルの番号キー(`view.focus-tile-1`〜`-9`)は Rust がメニューで受けて `focus_tile_at` を呼ぶ。番号は表示中のページの並び順で、画面の札「#n」は写しの `tileIds` の位置から出す(キーの表示ではないので表から引かない)
+- エディタの「/」コマンド(ADR-017)は CodeMirror の補完(言語の `autocomplete`)として出す。候補の表と差し込む文の組み立ては `src/logic/editor/slashCommands.ts`(純粋)、取り付けは `src/editor/codemirror/slashCompletion.ts`。候補を足すときは表に 1 行足し、`slashCommands.test.ts` と E2E の候補の数(`e2e/editor-mermaid-slash.spec.ts`)を合わせる
 - 並べ替え(ADR-019)の並びは Rust が持つ(`move_project`・`move_terminal_tab`・`move_editor_tab`。`toIndex` は動かしたあとの位置)。タブは同じプロジェクトの同じ種類の中だけで動き、種類をまたぐ口は作らない。画面のドラッグは `src/ui/shell/useReorderDrag.ts`(pointer のイベント。項目に `data-reorder-group`・`data-reorder-id`、始めない場所に `data-reorder-ignore`)、落とす位置の規則は `src/logic/dnd/reorder.ts`
 - タブをまとめて閉じるのは `close_tabs` の 1 回(画面から `close_terminal`・`close_editor` を並べて呼ばない)。確認は真偽でなく、確認に出した ID の一覧(`confirmedTerminalIds`・`confirmedEditorIds`)を付けて呼び直す(確認のあいだに増えたら Rust がもう一度確認を求める)。画面が未保存と知っているエディタは `dirtyEditorIds` で送る(`set_document_dirty` は遅れて届く)。メニューの項目と閉じるタブは `src/logic/menu/tabMenu.ts`
 - 並べ替えのコマンドは対象が無いとき失敗にしない(`ignore_closed` と同じ)。ドラッグのあいだに写しで組の並びが変わったら、画面は離しても送らない
@@ -62,6 +64,7 @@
 - 版は正確に固定する(npm は `^` なし、Cargo は `=`)。新しく選ぶ版は公開から 2 週間未満のものを避ける(ADR-003)
 - OS 連携のクレート(objc2 系・libc・base64)は Tauri が引き込む版と同じにする。Tauri を上げたら `Cargo.lock` に 2 つの版が載っていないか確かめ、ずれたら合わせる(ADR-009)
 - 依存(本番の npm・Rust の通常の依存)を変えたら `npm run licenses` で `THIRD_PARTY_LICENSES.md` を作り直してコミットする(`release.yml` が `licenses:check` で止める)。MPL-2.0 のクレートの版が変わったら `THIRD_PARTY_NOTICES.md` の表も直す
+- mermaid の推移的な `dompurify`(3.4.17)・`cytoscape`(3.34.4)は公開 2 週間の規則で `overrides` に止めている。2 週間を過ぎたら外して上げる(ADR-017)
 - `notify` は 8.2.1 に固定。推移的な `notify-types` は `Cargo.lock` で 2.1.0 に止めている(`cargo update` で上がりうる)
 - Biome は React のフックの 2 規則だけを見る。わざと依存を外すときは `biome-ignore` に理由を書く。後片付けで `ref.current` を読む誤りは検出されないのでレビューで見る(ADR-008)
 
@@ -86,8 +89,10 @@
 - `src/logic` のテストで `node:fs` を使うときは型の無い動的 import で読み込む(`interfaceMetrics.test.ts`)
 - E2E で文字の大きさを流すときは `tauriMock.ts` の `withFontSizes`、透過は `withTranslucency` で作った写しを流す(偽の Rust 側は写しを送り返さない)。`@tauri-apps/api` の `invoke` は空の引数を `{}` で送るので、引数なしのコマンドの記録は `{}` になる
 - エディタの部品のテストは `src/test/fakeEditorEngine.ts`(CodeMirror も DOM も使わない)を渡す。本物の `CodeMirrorEngine.ts` は Vitest では動かない(DOM が無い)ので E2E で確かめる
+- E2E で Mermaid の図を待つときは、初回の mermaid の読み込みがあるので上限を長めにする(`e2e/editor-mermaid-slash.spec.ts` は 15 秒)。補完の候補を選ぶときは、候補が出てから 150 ms 待ってからキーを押す(CodeMirror の `interactionDelay` の 75 ms のあいだは選ぶキーを受けず、Enter は改行に、↑↓ はカーソルの移動になる。`settleCompletions`)
 - E2E でエディタを出すときは `tauriMock.ts` の `withEditors`・`sampleEditorTab` で写しを作る。文書のコマンドの応答は `setMockReply` で替える
 - 文書の読み書きのテスト(`crates/arin-platform/tests/document.rs`)は一時フォルダの実パスで、拡張属性は `libc::setxattr`・`getxattr` で確かめる。`src-tauri/tests/editor_commands.rs` は `harness = false`
+- 新しい版の確認の結合テストは `UpdateChecker::use_port` で偽の `ReleasePort` に替える(`src-tauri/tests/desktop_commands.rs`)。本物の GitHub への問い合わせは `cargo test -p arin-platform --lib -- --ignored release` で手で回す。`state.json` の `ui.checkUpdates` は既定で偽なので、スモークと E2E は通信しない
 - スモークは「設定ファイルを開く…」を選ばない(本物の既定のアプリや Finder が開く)。テストは偽の `DesktopPort` を使う
 
 ## 6. 過去の問題事例
@@ -123,6 +128,8 @@
 | 外の変更の読み直しで未保存の印と版が失われる | 確かめの応答を待つあいだに打鍵・保存が挟まる | `check_document` は状態を変えず、本文を当てたあとにだけ `adopt_document` で版を持ち直す |
 | 書きかけで外の変更を見つけると `.arin-save-…` が残った | 削除の経路を作らない規則で、止めた保存の一時ファイルも残していた | 保存が自分で作った一時ファイルに限って片付ける(本人が了承)。名前が別のものに替わっていた・消せなかったときだけ残し、`[arin:editor]` に場所を出す。アプリが落ちたときの残りは片付けない(ツリーは隠しファイル表示が ON なら出す) |
 | stat が同じだと中身の変更を見落としうる | 版は stat の 4 つが同じなら中身を比べない | 大きさと mtime を保って書き換える道具の変更は拾えない(承知のうえ) |
+| Mermaid の小さな図が横いっぱいに拡大される | mermaid は既定で SVG の `width` を `100%` にする(図の種類ごとの `useMaxWidth`)。`<img>` では元の大きさが無くなる | 図の種類ごとに `useMaxWidth: false` を渡す(`MermaidRenderer.ts`)。広すぎる図だけ CSS の `max-width: 100%` で縮める |
+| Mermaid の塊が大きい | elk・cytoscape・katex を含め、mermaid の塊は合わせて約 5 MB | 図の種類ごとの別の塊で、初めて描くときに要るものだけ読む。本体は 724.8 kB |
 | エディタの塊が大きい | CodeMirror・lezer・Vim で `CodeMirrorEngine-*.js` が 737 kB(gzip 250 kB) | 動的 import で別の塊にし、最初に開くときだけ読む。本体は 693 → 719 kB |
 | 並べ替えのドラッグで、落とす位置の線が掴んだ項目と重なって取り消し線に見える | 掴んだ項目はポインタに付いて動くので、線のある境目の上に来る | 線を引かず、あいだの項目を滑らせて隙間を空ける。落とす位置はドラッグを始めたときの中心で決める(滑った位置で決めると行ったり来たりする。ADR-019) |
 | タブを右クリックするとタブ名の文字が選ばれる | WebKit は右クリックで語を選ぶ | `.tab-bar` に `user-select: none` |

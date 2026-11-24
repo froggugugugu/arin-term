@@ -48,7 +48,7 @@ PRD(`output/prd/PRD_multi-terminal.md:52`・`:58`)は非ゴール N1(テキス�
 - `src/editor/codemirror/markdownAst.ts` が `@lezer/markdown` の構文木(GFM: 表・タスクリスト・取り消し線・自動リンク)を、**自前の型の木**(`src/editor/markdownTypes.ts` の `MdBlock`・`MdInline`。React も lezer も含まない純粋なデータ)に変える。`src/ui/editor/MarkdownPreview.tsx` がその木を React の要素にする。HTML の文字列・`innerHTML`・`dangerouslySetInnerHTML`・無害化の部品はどこにも無い
 - 出すもの: 見出し 1〜6、段落、強調・太字・取り消し線、インラインのコード、コードの塊(色付けなし、等幅)、引用、番号つき・なしのリスト、タスク(印は読み取り専用の `☑`/`☐` の文字。`<input>` を作らない)、表(揃えを守る)、水平線、改行
 - 生の HTML(`HTMLBlock`・`HTMLTag`・`Comment`・`ProcessingInstruction`)は**書かれた文字のまま**出す(淡い等幅)
-- 画像は読み込まない。`[画像: 代わりの文字]` を出す(`<img>` を作らない)
+- 画像は読み込まない。`[画像: 代わりの文字]` を出す(`<img>` を作らない)。**例外**: Mermaid の塊だけは、自前の描画が作った SVG を blob: の URL にして `<img>` で出す(ADR-017)
 - リンクは開かない。`<a>` を作らず、`<span class="md-link">` に下線だけ付け、`title` に URL の文字を出す(クリックしても何もしない)
 - **方針の穴として見つけたものと手当て**:
   1. 文字参照(`&amp;`・`&#x3C;`)は lezer が `Entity` の節にするだけで、変換しない。自前で数値の参照と `amp`・`lt`・`gt`・`quot`・`apos`・`nbsp` だけを文字に直し、ほかの名前の参照は書かれたまま出す(HTML の名前の表 2000 件余りを持ち込まない)

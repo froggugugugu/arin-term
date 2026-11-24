@@ -16,8 +16,11 @@ import {
   checkNoHtmlInjection,
   checkNoHttpClientCrates,
   checkNoNetworkApi,
+  checkNetworkOnlyInRelease,
   checkCodeMirrorImports,
   checkCodeMirrorNoIpc,
+  checkMermaidImports,
+  checkMermaidNoIpc,
   checkTauriApiImports,
   checkUiImports,
   checkXtermImports,
@@ -39,8 +42,8 @@ describe("違反の無い見本", () => {
     assert.deepEqual(violations.map(formatViolation), []);
   });
 
-  it("13 項目すべてを走らせる", () => {
-    assert.equal(CHECKS.length, 13);
+  it("16 項目すべてを走らせる", () => {
+    assert.equal(CHECKS.length, 16);
   });
 
   it("CLI として実行すると終了コード 0 を返す", () => {
@@ -151,6 +154,33 @@ describe("3b. CodeMirror と lezer の隔離(ADR-015 の 1)", () => {
   it("抽象(src/editor)への import は違反でない", () => {
     assert.deepEqual(checkCodeMirrorNoIpc(fixture("clean")), []);
     assert.deepEqual(checkUiImports(fixture("clean")), []);
+  });
+});
+
+describe("3c. Mermaid の隔離(ADR-017)", () => {
+  it("src_editor_mermaid_の外からの_import(動的_import_を含む)は違反", () => {
+    const violations = checkMermaidImports(fixture("mermaid-outside"));
+    assert.deepEqual(places(violations), ["src/logic/editor/diagram.ts:2", "src/ui/editor/Diagram.tsx:2"]);
+    assert.match(violations[0].message, /src\/editor\/mermaid/);
+  });
+
+  it("src_editor_mermaid_の中は違反でない", () => {
+    assert.deepEqual(checkMermaidImports(fixture("clean")), []);
+  });
+
+  it("src_ui_から_src_editor_mermaid_を_import_すると違反", () => {
+    const violations = checkUiImports(fixture("mermaid-outside"));
+    assert.deepEqual(places(violations), ["src/ui/editor/Diagram.tsx:4"]);
+    assert.match(violations[0].message, /src\/editor\/mermaid/);
+  });
+
+  it("src_editor_mermaid_から_src_ipc_を_import_すると違反", () => {
+    const violations = checkMermaidNoIpc(fixture("mermaid-imports-ipc"));
+    assert.deepEqual(places(violations), ["src/editor/mermaid/MermaidRenderer.ts:3"]);
+  });
+
+  it("抽象(src/editor)への_import_は違反でない", () => {
+    assert.deepEqual(checkMermaidNoIpc(fixture("clean")), []);
   });
 });
 
@@ -322,5 +352,17 @@ describe("出力と終了コード", () => {
     assert.equal(result.status, 1);
     assert.match(result.stdout + result.stderr, /html-injection/);
     assert.match(result.stdout + result.stderr, /src\/ui\/Name\.tsx:2/);
+  });
+});
+
+describe("8b. Rust の通信は新しい版の確認だけ(ADR-018)", () => {
+  it("release の外の curl の起動と std::net を見つけ_コメントと release の中は数えない", () => {
+    const violations = checkNetworkOnlyInRelease(fixture("network-process"));
+    assert.deepEqual(places(violations), ["src-tauri/src/leak.rs:3", "src-tauri/src/leak.rs:4"]);
+    assert.ok(violations.every((v) => v.rule === "network-process"));
+  });
+
+  it("違反の無い見本では何も出さない", () => {
+    assert.deepEqual(checkNetworkOnlyInRelease(fixture("clean")), []);
   });
 });

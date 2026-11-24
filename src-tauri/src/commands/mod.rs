@@ -10,3 +10,4 @@ pub mod layout;
 pub mod project;
 pub mod terminal;
 pub mod tree;
+pub mod update;

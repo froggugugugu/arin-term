@@ -29,6 +29,7 @@ import type { SaveMode } from "./generated/SaveMode";
 import type { ShortcutTable } from "./generated/ShortcutTable";
 import type { TerminalId } from "./generated/TerminalId";
 import type { ThemeMode } from "./generated/ThemeMode";
+import type { UpdateNotice } from "./generated/UpdateNotice";
 import type { TranslucencyTarget } from "./generated/TranslucencyTarget";
 import type { TreeChange } from "./generated/TreeChange";
 
@@ -100,6 +101,13 @@ export interface CommandMap {
   reset_appearance: { args: undefined; result: null };
   /** 設定ファイルを開く(無いときだけ見本を作る。ADR-012 の 6)。パスは画面を通らない。 */
   open_settings_file: { args: undefined; result: null };
+  /** 新しい版の確認の知らせ(ADR-018)。無ければ null。そのあとは update-changed で届く。 */
+  get_update_notice: { args: undefined; result: UpdateNotice | null };
+  dismiss_update_notice: { args: undefined; result: null };
+  /** Releases のページをブラウザで開く(URL は Rust が持つ版から作る)。 */
+  open_release_page: { args: undefined; result: null };
+  /** 起動時に新しい版を確かめるか(写しの checkUpdates。オンにしたらその場で 1 回確かめる)。 */
+  set_check_updates: { args: { enabled: boolean }; result: null };
   next_tile_page: { args: undefined; result: null };
   previous_tile_page: { args: undefined; result: null };
   /** terminalId を渡すと、そのタイルにフォーカスしてから拡大する(タイトルバーのダブルクリック)。閉じたタイルなら何もしない。 */
@@ -170,6 +178,8 @@ export interface EventMap {
   "settings-changed": null;
   /** ⌘W(メニュー)で表示中のエディタが未保存だった(M4.8。ADR-015 の 4)。Rust は閉じずにこれを送る。 */
   "editor-close-requested": EditorCloseRequest;
+  /** 新しい版の確認の結果(ADR-018)。 */
+  "update-changed": UpdateNotice | null;
 }
 
 export type EventName = keyof EventMap;
@@ -359,6 +369,16 @@ export interface ArinIpc {
   resetAppearance(): Promise<void>;
   /** 設定ファイル(settings.toml)を既定のアプリで開く。無いときだけ見本を作る。 */
   openSettingsFile(): Promise<void>;
+  /** 新しい版の確認の知らせを取得する(ADR-018)。無ければ null。 */
+  getUpdateNotice(): Promise<UpdateNotice | null>;
+  /** 新しい版の確認の結果が届くたびに listener を呼ぶ。購読が済んだら、やめる関数で解決する。 */
+  onUpdateChanged(listener: (notice: UpdateNotice | null) => void): Promise<Unlisten>;
+  /** 新しい版の知らせを閉じる。 */
+  dismissUpdateNotice(): Promise<void>;
+  /** Releases のページをブラウザで開く。 */
+  openReleasePage(): Promise<void>;
+  /** 起動時に新しい版を確かめるかを切り替える。結果は写しの checkUpdates で届く。 */
+  setCheckUpdates(enabled: boolean): Promise<void>;
   /**
    * フォルダの中身を問い合わせる(ツリーの展開)。path はルート基準の相対パスで、ルートは空の文字列。
    * Rust が除外(隠しファイル表示が OFF のとき)と並び順を当てて返す。プロジェクトやフォルダが見つからなければ notFound、
@@ -574,6 +594,11 @@ export function createIpc(transport: IpcTransport): ArinIpc {
     setTheme: (theme) => done(invoke("set_theme", { theme })),
     resetAppearance: () => done(invoke("reset_appearance", undefined)),
     openSettingsFile: () => done(invoke("open_settings_file", undefined)),
+    getUpdateNotice: () => invoke("get_update_notice", undefined),
+    onUpdateChanged: (listener) => transport.listen("update-changed", listener),
+    dismissUpdateNotice: () => done(invoke("dismiss_update_notice", undefined)),
+    openReleasePage: () => done(invoke("open_release_page", undefined)),
+    setCheckUpdates: (enabled) => done(invoke("set_check_updates", { enabled })),
     listDirectory: (projectId, path) => invoke("list_directory", { projectId, path }),
     setShowHidden: (projectId, showHidden) => done(invoke("set_show_hidden", { projectId, showHidden })),
     onTreeChanged: (listener) => transport.listen("tree-changed", listener),

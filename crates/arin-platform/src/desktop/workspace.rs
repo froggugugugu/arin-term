@@ -37,6 +37,25 @@ impl DesktopPort for MacDesktop {
         check_openable(path)?;
         request_open(path)
     }
+
+    fn open_release_page(&self, url: &str) -> Result<(), DesktopError> {
+        if !arin_core::update::is_release_page(url) {
+            return Err(DesktopError::Failed(format!(
+                "開いてよいページではない: {url}"
+            )));
+        }
+        autoreleasepool(|_| {
+            let ns_url = NSURL::URLWithString(&NSString::from_str(url))
+                .ok_or_else(|| DesktopError::Failed(format!("URL を作れなかった: {url}")))?;
+            if NSWorkspace::sharedWorkspace().openURL(&ns_url) {
+                Ok(())
+            } else {
+                Err(DesktopError::Failed(format!(
+                    "ブラウザで開けなかった: {url}"
+                )))
+            }
+        })
+    }
 }
 
 /// Finder で表示する前の検査。絶対パスで、項目そのものがあること(リンクはたどらない。

@@ -170,6 +170,8 @@ test.describe("開閉とキーボード(AC-F01・AC-F12)", () => {
       page.getByRole("spinbutton", { name: "ターミナルの背景の透過" }),
       // M4.8 で Vim のキー操作の切替が透過の下に入った(ADR-015 の 6)
       dialog(page).getByRole("switch", { name: "Vim のキー操作" }),
+      // 新しい版の確認の切替がエディタの組の下に入った(ADR-018)
+      dialog(page).getByRole("switch", { name: "起動時に新しい版を確かめる" }),
       openFileButton(page),
       resetButton(page),
       doneButton(page),
@@ -454,7 +456,8 @@ test.describe("ターミナルと画面への反映(AC-F02〜F04)", () => {
 test.describe("見た目(AC-F13)", () => {
   for (const colorScheme of ["light", "dark"] as const) {
     test(`設定画面の画像を撮る_${colorScheme}`, async ({ page }) => {
-      await page.setViewportSize({ width: 960, height: 600 });
+      // ADR-018 でアップデートの組が増えたので、シートが枠に収まる高さにした(低いウィンドウではシートの中がスクロールする)
+      await page.setViewportSize({ width: 960, height: 700 });
       await page.emulateMedia({ colorScheme });
       const base = projectsSnapshot([APP, LOG]);
       await open(page, base);
@@ -484,8 +487,9 @@ test.describe("見た目(AC-F13)", () => {
       await page.screenshot({ path: shotPath(`edges-${colorScheme}`) });
 
       // M4.8 でエディタの組が増え、画面の文字が 18 のときは高さ 600 では縦に送る(シートは overflow-y: auto)。
-      // はみ出さないことは、既定のウィンドウより低い 720 の高さで確かめる(ADR-015 の 6)
-      await page.setViewportSize({ width: 960, height: 720 });
+      // はみ出さないことは、既定のウィンドウより低い 720 の高さで確かめる(ADR-015 の 6)。
+      // ADR-018 でアップデートの組が増えたので、既定のウィンドウの高さ 800 で確かめる
+      await page.setViewportSize({ width: 960, height: 800 });
       await emitEvent(page, "app-snapshot", withFontSizes(base, { terminal: 9, interface: 18 }));
       await expect(interfaceStepper(page)).toHaveAttribute("aria-valuenow", "18");
       await expect(upButton(page, "interface")).toBeDisabled();

@@ -35,8 +35,8 @@ use arin_core::workspace::{AppSnapshot, MenuCommand};
 use arin_lib::events::MENU_COMMAND_EVENT;
 use arin_lib::launch::LaunchConfig;
 use arin_lib::menu::{
-    self, EDIT_MENU_TITLE, OPEN_SETTINGS_FILE_ID, OPEN_SETTINGS_FILE_LABEL, Shortcuts,
-    TERMINAL_MENU_TITLE, VIEW_MENU_TITLE,
+    self, CHECK_UPDATES_ID, CHECK_UPDATES_LABEL, EDIT_MENU_TITLE, OPEN_SETTINGS_FILE_ID,
+    OPEN_SETTINGS_FILE_LABEL, Shortcuts, TERMINAL_MENU_TITLE, VIEW_MENU_TITLE,
 };
 use arin_lib::sessions::{SessionRegistry, ShellDefaults};
 use muda::accelerator::Accelerator;
@@ -168,6 +168,10 @@ fn focus_tile_entries() -> Vec<(String, String)> {
 }
 
 /// 表の外の自前の項目「設定ファイルを開く…」(キーなし。ADR-013 の 6)。
+fn check_updates() -> (String, String) {
+    (CHECK_UPDATES_ID.to_owned(), CHECK_UPDATES_LABEL.to_owned())
+}
+
 fn open_settings_file() -> (String, String) {
     (
         OPEN_SETTINGS_FILE_ID.to_owned(),
@@ -395,7 +399,7 @@ fn アプリ名のメニューの最後は自前の終了() {
         items.last(),
         Some(&(menu::QUIT_ID.to_owned(), format!("{name} を終了")))
     );
-    // 自前の項目は、先頭の「設定…」と「設定ファイルを開く…」と最後の「終了」だけ。
+    // 自前の項目は、先頭の「設定…」と「設定ファイルを開く…」と「アップデートを確認…」(ADR-018)と最後の「終了」だけ。
     // M4.6(T68d。ADR-013 の 6)で、M4.5 の「設定ファイルを開く…」(表の行 `app.open-settings`)の意味を「設定…」に替え、
     // 「設定ファイルを開く…」を表の外の項目として足したので、期待を「設定ファイルを開くと終了だけ」から直した。
     assert_eq!(
@@ -403,7 +407,8 @@ fn アプリ名のメニューの最後は自前の終了() {
             .iter()
             .filter(|(kind, _)| kind != "標準"
                 && kind != C::AppOpenSettings.as_str()
-                && kind != OPEN_SETTINGS_FILE_ID)
+                && kind != OPEN_SETTINGS_FILE_ID
+                && kind != CHECK_UPDATES_ID)
             .count(),
         0,
         "設定と設定ファイルを開くと終了のほかに自前の項目がある: {items:?}"
@@ -427,9 +432,14 @@ fn アプリ名のメニューの先頭は設定と設定ファイルを開く�
     assert_eq!(ShortcutCommandId::from_id(OPEN_SETTINGS_FILE_ID), None);
     let items = entries(&menu, &name);
     assert_eq!(
-        items[..3],
-        [own(C::AppOpenSettings), open_settings_file(), separator()],
-        "先頭が設定・設定ファイルを開く・区切り線ではない: {items:?}"
+        items[..4],
+        [
+            own(C::AppOpenSettings),
+            open_settings_file(),
+            check_updates(),
+            separator()
+        ],
+        "先頭が設定・設定ファイルを開く・アップデートを確認・区切り線ではない: {items:?}"
     );
     // 作った項目からアクセラレータを読み戻せないので、メニューを作るときに見る表のキーで確かめる。
     let table = app.state::<Shortcuts>().table();
@@ -451,7 +461,11 @@ fn アプリ名のメニューの先頭は設定と設定ファイルを開く�
         !own_ids(&menu).contains(C::AppOpenSettings.as_str()),
         "受け口が画面なのに載っている: {items:?}"
     );
-    assert_eq!(items[..2], [open_settings_file(), separator()], "{items:?}");
+    assert_eq!(
+        items[..3],
+        [open_settings_file(), check_updates(), separator()],
+        "{items:?}"
+    );
 }
 
 fn 見出しの並びと既存の項目は変わらない() {
@@ -471,11 +485,13 @@ fn 見出しの並びと既存の項目は変わらない() {
     );
     // アプリ名のメニューは、先頭の 3 つ(設定・設定ファイルを開く・区切り線)を足しただけで、残りは T65d の前と同じ。
     // M4.6(T68d。ADR-013 の 6)で「設定ファイルを開く…」を表の外の項目として「設定…」の下に足したので、期待に 1 つ足した。
+    // ADR-018 で「アップデートを確認…」をその下に足した。
     assert_eq!(
         entries(&menu, &name),
         vec![
             own(C::AppOpenSettings),
             open_settings_file(),
+            check_updates(),
             separator(),
             standard(&format!("{name} を隠す")),
             standard("ほかを隠す"),
@@ -633,6 +649,7 @@ fn 受け口がメニューの項目のものだけがメニューに載る() {
         "設定が期待に無い"
     );
     expected.insert(OPEN_SETTINGS_FILE_ID.to_owned());
+    expected.insert(CHECK_UPDATES_ID.to_owned());
     assert_eq!(own_ids(&menu), expected);
     for view in [
         C::ViewToggleDisplayMode,

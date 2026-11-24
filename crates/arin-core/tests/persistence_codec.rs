@@ -68,6 +68,7 @@ fn sample_state() -> PersistedState {
             translucency: Translucency::default(),
             editor_vim: false,
             theme: ThemeMode::System,
+            check_updates: false,
         },
     }
 }
@@ -248,6 +249,7 @@ fn 欠けたキーは既定値で補う() {
                 translucency: Translucency::default(),
                 editor_vim: false,
                 theme: ThemeMode::System,
+                check_updates: false,
             },
         }
     );
@@ -388,6 +390,7 @@ fn tree_キーの無い状態ファイルも読める() {
                 translucency: Translucency::default(),
                 editor_vim: false,
                 theme: ThemeMode::System,
+                check_updates: false,
             },
         }
     );
@@ -518,6 +521,7 @@ fn m3_state() -> PersistedState {
             translucency: Translucency::default(),
             editor_vim: false,
             theme: ThemeMode::System,
+            check_updates: false,
         },
     }
 }
@@ -1185,4 +1189,30 @@ fn 知らない値と型の違う値は退避せずシステム() {
         loaded(decode_value(&value)).state.layout.theme,
         ThemeMode::System
     );
+}
+
+// ── ui.checkUpdates(ADR-018) ──
+
+#[test]
+fn check_updates_は無ければ偽で_偽は書かず_真を書いて読み戻せる() {
+    let m3 = loaded(decode_str(M3_STATE_JSON));
+    assert!(!m3.state.layout.check_updates);
+    let value: Value = serde_json::from_str(&encode(&m3.state).expect("書ける")).unwrap();
+    assert!(value["ui"].get("checkUpdates").is_none(), "{value}");
+
+    let mut state = m3_state();
+    state.layout.check_updates = true;
+    let text = encode(&state).expect("書ける");
+    let value: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value["ui"]["checkUpdates"], json!(true));
+    assert_eq!(value["schemaVersion"], json!(1));
+    assert_eq!(loaded(decode_str(&text)).state, state);
+}
+
+#[test]
+fn check_updates_が真偽値でなければ退避せずに偽() {
+    let mut value: Value = serde_json::from_str(M3_STATE_JSON).unwrap();
+    value["ui"]["checkUpdates"] = json!("yes");
+    let back = loaded(decode_str(&value.to_string()));
+    assert!(!back.state.layout.check_updates);
 }

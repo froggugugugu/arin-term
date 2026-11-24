@@ -254,6 +254,7 @@ fn ペインの寸法は保存値に規則を当て_無ければ初期値() {
         translucency: Translucency::default(),
         editor_vim: false,
         theme: ThemeMode::System,
+        check_updates: false,
     };
     let ws = restore(Startup {
         state,
@@ -281,6 +282,7 @@ fn ペインの寸法は保存値に規則を当て_無ければ初期値() {
             translucency: Translucency::default(),
             editor_vim: false,
             theme: ThemeMode::System,
+            check_updates: false,
         }
     );
 }
@@ -310,6 +312,7 @@ fn 退避の知らせは写しに載り_保存する内容には入らない() {
                 translucency: Translucency::default(),
                 editor_vim: false,
                 theme: ThemeMode::System,
+                check_updates: false,
             },
         }
     );

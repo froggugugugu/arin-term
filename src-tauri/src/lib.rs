@@ -26,6 +26,7 @@ pub mod settings;
 pub mod settings_watch;
 pub mod tree;
 pub mod tree_watch;
+pub mod update;
 pub mod verify_log;
 
 use std::path::PathBuf;
@@ -43,6 +44,7 @@ use arin_core::workspace::{AppSnapshot, Workspace};
 use arin_platform::desktop::{MacDesktop, MacFilePasteboard};
 use arin_platform::fs::{LocalDocuments, LocalFileSystem};
 use arin_platform::pty::{FALLBACK_SHELL, NativePty, default_shell, system_locale};
+use arin_platform::release::CurlReleases;
 use arin_platform::watch::FsEventsWatcher;
 use tauri::{Builder, Emitter, Manager, Runtime};
 
@@ -261,6 +263,11 @@ pub fn builder_with_settings_watcher<R: Runtime>(
         .manage(settings)
         // 「設定ファイルを開く…」が Finder・既定のアプリに渡す口(T65d)。ツリーの「開く」と同じポート。
         .manage(settings::SettingsOpener::new(Arc::clone(&desktop)))
+        // 新しい版の確認(ADR-018)。問い合わせは `/usr/bin/curl`、ページはブラウザで開く。
+        .manage(update::UpdateChecker::new(
+            Arc::new(CurlReleases::new()),
+            Arc::clone(&desktop),
+        ))
         .menu(menu::build)
         .on_menu_event(|app, event| menu::on_menu_event(app, event.id().as_ref()))
         .setup(move |app| {
@@ -378,8 +385,13 @@ pub fn builder_with_settings_watcher<R: Runtime>(
                     e.kind()
                 ),
             }
+            // 設定でオンのときだけ、起動時に新しい版を確かめる(ADR-018。待たない)
+            let check_updates = sessions.check_updates();
             app.manage(sessions);
             app.manage(persistence);
+            if check_updates {
+                update::check(app.handle(), false);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -418,6 +430,10 @@ pub fn builder_with_settings_watcher<R: Runtime>(
             commands::layout::step_translucency,
             commands::layout::reset_appearance,
             commands::layout::set_theme,
+            commands::update::get_update_notice,
+            commands::update::dismiss_update_notice,
+            commands::update::open_release_page,
+            commands::update::set_check_updates,
             commands::tree::list_directory,
             commands::tree::set_show_hidden,
             commands::fileops::create_entry,

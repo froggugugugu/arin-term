@@ -101,6 +101,7 @@ export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapsho
     editors: [],
     editor: { vim: false },
     theme: "system",
+    checkUpdates: false,
     ...overrides,
   };
 }
@@ -447,6 +448,10 @@ const DEFAULT_REPLIES: TauriMockConfig = {
   set_theme: { ok: null },
   reset_appearance: { ok: null },
   open_settings_file: { ok: null },
+  get_update_notice: { ok: null },
+  dismiss_update_notice: { ok: null },
+  open_release_page: { ok: null },
+  set_check_updates: { ok: null },
   list_directory: { ok: { kind: "listed", entries: [] } },
   set_show_hidden: { ok: null },
   create_entry: { ok: { kind: "done", select: null } },

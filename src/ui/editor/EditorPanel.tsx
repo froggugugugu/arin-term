@@ -114,7 +114,7 @@ export function EditorPanel({ tab, fontSize, ui, editor, editors, panelId, label
         <EditorHost editors={editors} ui={ui} editorId={tab.id} hidden={mode === "preview"} />
         {previewVisible && (
           <section className="editor-panel__preview" aria-label="プレビュー" data-testid="editor-preview">
-            <MarkdownPreview blocks={blocks} fontSize={fontSize} />
+            <MarkdownPreview blocks={blocks} fontSize={fontSize} renderDiagram={editors.renderDiagram} />
           </section>
         )}
       </div>

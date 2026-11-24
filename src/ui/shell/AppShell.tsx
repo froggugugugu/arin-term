@@ -29,7 +29,7 @@ import { SettingsDialog } from "../settings/SettingsDialog";
 import { TerminalArea } from "../terminals/TerminalArea";
 import type { Snapshot } from "../snapshotTypes";
 import { SidebarIcon, TabsViewIcon, TilesViewIcon } from "../tree/icons";
-import { NoticeBar, SettingsNoticeBar } from "./NoticeBar";
+import { NoticeBar, SettingsNoticeBar, UpdateNoticeBar } from "./NoticeBar";
 import { PaneSplit } from "./PaneSplit";
 import { TreePane } from "./TreePane";
 import { usePaneSizes } from "./usePaneSizes";
@@ -121,6 +121,7 @@ export function AppShell({ store, ui, tree, actions, terminals, editor, editors 
           <>
             <NoticeBar notice={snapshot.notice} ui={ui} />
             <SettingsNoticeBar ui={ui} />
+            <UpdateNoticeBar ui={ui} actions={actions} />
             <PaneSplit
               panes={panes}
               cards={<ProjectCardList store={store} ui={ui} actions={actions} />}

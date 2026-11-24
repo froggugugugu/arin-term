@@ -26,6 +26,9 @@ import type { RelPath } from "../ipc/generated/RelPath";
 import type { RunningTerminal } from "../ipc/generated/RunningTerminal";
 import type { TerminalId } from "../ipc/generated/TerminalId";
 import type { UnsavedEditor } from "../ipc/generated/UnsavedEditor";
+import type { UpdateNotice } from "../ipc/generated/UpdateNotice";
+
+export type { UpdateNotice };
 import { DEFAULT_SHORTCUT_TABLE } from "../logic/keys/defaultShortcuts";
 import type { ShortcutTable } from "../logic/keys/shortcutTable";
 import type { TreeMenuTarget } from "../logic/menu/treeMenu";
@@ -250,6 +253,9 @@ export interface UiState {
   setSettingsNotice: (notice: string | null) => void;
   /** 設定の知らせを閉じる。 */
   dismissSettingsNotice: () => void;
+  /** 新しい版の確認の知らせ(ADR-018。get_update_notice と update-changed)。閉じたら null。 */
+  readonly updateNotice: UpdateNotice | null;
+  setUpdateNotice: (notice: UpdateNotice | null) => void;
   /** 設定画面(M4.6。ADR-013 の 5)が開いているか。 */
   readonly settingsOpen: boolean;
   /**
@@ -356,6 +362,8 @@ export function createUiStore(): UiStore {
     setSettingsNotice: (notice) =>
       set((s) => (s.settingsNotice === notice ? s : { settingsNotice: notice, settingsNoticeDismissed: false })),
     dismissSettingsNotice: () => set({ settingsNoticeDismissed: true }),
+    updateNotice: null,
+    setUpdateNotice: (notice) => set({ updateNotice: notice }),
     settingsOpen: false,
     openSettings: () =>
       set((s) => {

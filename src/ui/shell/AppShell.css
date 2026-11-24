@@ -213,6 +213,13 @@ body {
   color: inherit;
 }
 
+/* 知らせの行のボタン(新しい版のページを開く。ADR-018)。行の高さを変えないよう小さめにする。 */
+.notice-bar__action {
+  flex: none;
+  padding-block: 1px;
+  font-size: var(--font-size-s);
+}
+
 /* ペインの分割。左ペインの幅とカード領域の高さは PaneSplit が表示値(computePaneLayout)を書き、残りは flex で埋める。 */
 .pane-split {
   position: relative;
