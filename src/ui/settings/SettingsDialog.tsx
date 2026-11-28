@@ -16,7 +16,7 @@ interface SettingsDialogProps {
   store: AppStore;
   /** 開閉(settingsOpen)とショートカットの表(⌘W のキーを引く)。 */
   ui: UiStore;
-  actions: Pick<Actions, "stepFontSize" | "stepTranslucency" | "setTheme" | "resetAppearance" | "openSettingsFile" | "setCheckUpdates">;
+  actions: Pick<Actions, "stepFontSize" | "stepTranslucency" | "setTheme" | "resetAppearance" | "openSettingsFile" | "setCheckUpdates" | "setMiddleClickPaste">;
   /** Vim のキー操作の切替(M4.8。ADR-015 の 6)。 */
   editor: Pick<EditorController, "setVim">;
 }
@@ -58,6 +58,7 @@ export function SettingsDialog({ store, ui, actions, editor }: SettingsDialogPro
   const vim = useStore(store, (s) => s.snapshot?.editor.vim ?? false);
   const theme = useStore(store, (s) => s.snapshot?.theme ?? "system");
   const checkUpdates = useStore(store, (s) => s.snapshot?.checkUpdates ?? false);
+  const middleClickPaste = useStore(store, (s) => s.snapshot?.middleClickPaste ?? true);
   if (!open || fontSizes === null || translucency === null) return null;
   return (
     <SettingsSheet
@@ -66,6 +67,7 @@ export function SettingsDialog({ store, ui, actions, editor }: SettingsDialogPro
       vim={vim}
       theme={theme}
       checkUpdates={checkUpdates}
+      middleClickPaste={middleClickPaste}
       ui={ui}
       actions={actions}
       editor={editor}
@@ -79,6 +81,7 @@ interface SettingsSheetProps {
   vim: boolean;
   theme: Snapshot["theme"];
   checkUpdates: boolean;
+  middleClickPaste: boolean;
   ui: UiStore;
   actions: SettingsDialogProps["actions"];
   editor: SettingsDialogProps["editor"];
@@ -87,7 +90,17 @@ interface SettingsSheetProps {
 /** 写しの値が既定か。 */
 const isDefault = (entry: { value: number; defaultValue: number }) => entry.value === entry.defaultValue;
 
-function SettingsSheet({ fontSizes, translucency, vim, theme, checkUpdates, ui, actions, editor }: SettingsSheetProps) {
+function SettingsSheet({
+  fontSizes,
+  translucency,
+  vim,
+  theme,
+  checkUpdates,
+  middleClickPaste,
+  ui,
+  actions,
+  editor,
+}: SettingsSheetProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const doneRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
@@ -95,6 +108,9 @@ function SettingsSheet({ fontSizes, translucency, vim, theme, checkUpdates, ui, 
   const appearanceGroupId = useId();
   const shortcutGroupId = useId();
   const editorGroupId = useId();
+  const terminalGroupId = useId();
+  const middleClickLabelId = useId();
+  const middleClickHintId = useId();
   const vimLabelId = useId();
   const vimHintId = useId();
   const updateGroupId = useId();
@@ -261,6 +277,36 @@ function SettingsSheet({ fontSizes, translucency, vim, theme, checkUpdates, ui, 
               downLabel="透過を弱くする"
               onStep={(delta) => void actions.stepTranslucency("terminal", delta)}
             />
+          </div>
+        </div>
+      </section>
+
+      <section className="settings-sheet__group" aria-labelledby={terminalGroupId}>
+        <h3 id={terminalGroupId} className="settings-sheet__group-title">
+          ターミナル
+        </h3>
+        <div className="settings-sheet__rows">
+          <div className="settings-row" data-testid="middle-click-paste-row">
+            <div className="settings-row__text">
+              <span id={middleClickLabelId} className="settings-row__label">
+                選択して真ん中クリックで貼り付け
+              </span>
+              <span id={middleClickHintId} className="settings-row__hint">
+                選んだ文字はクリップボードに入れない
+              </span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={middleClickPaste}
+              aria-labelledby={middleClickLabelId}
+              aria-describedby={middleClickHintId}
+              className="settings-switch"
+              data-testid="middle-click-paste-switch"
+              onClick={() => void actions.setMiddleClickPaste(!middleClickPaste)}
+            >
+              <span className="settings-switch__thumb" aria-hidden="true" />
+            </button>
           </div>
         </div>
       </section>

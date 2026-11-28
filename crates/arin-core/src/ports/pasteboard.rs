@@ -1,6 +1,7 @@
 //! ペーストボードのポート。
 //!
-//! - `PasteboardPort`: 文字列を書く口(FR-064。ルートの絶対パスをコピーする。M2)
+//! - `PasteboardPort`: 文字列を読み書きする口(FR-064。ルートの絶対パスをコピーする。M2。
+//!   ターミナルの右クリックのコピー・ペースト。ADR-020)
 //! - `FilePasteboardPort`: ファイルの URL を読み書きする口と変更番号(FR-027。Finder と互換のコピー・ペースト。M3)
 //!
 //! 2 つを別の trait にしたのは、文字列だけを使う既存の偽物(`src-tauri/tests/` など)を書き換えずに済ませるため。
@@ -24,6 +25,13 @@ pub trait PasteboardPort: Send + Sync {
     ///
     /// OS が書き込みを受け付けなかったとき。
     fn write_text(&self, text: &str) -> Result<(), PasteboardError>;
+
+    /// プレーンテキストの中身を読む。文字列が無ければ `None`(ターミナルの右クリックの「ペースト」。ADR-020)。
+    ///
+    /// # Errors
+    ///
+    /// 読めなかったとき。
+    fn read_text(&self) -> Result<Option<String>, PasteboardError>;
 }
 
 /// ペーストボードのファイルの URL を読み書きする口。切り取りは、書いたときの変更番号と、ペーストのときの

@@ -4,7 +4,7 @@
 
 ## エントリーポイント
 
-- Rust: `src-tauri/src/main.rs` → `lib.rs`。`launch.rs` が環境変数を読み、`lib.rs` が設定ファイルを読んで(`settings.rs`。ショートカットの表と設定の知らせ)から状態ファイルを読み(`persistence.rs`)、`Workspace`・`SessionRegistry`・保存のスレッド・`Projects`・見回り(`patrol.rs`)・設定ファイルの監視(`settings_watch.rs`)・メニューを組み立て、`commands/`(`app.rs`・`terminal.rs`・`project.rs`・`layout.rs`・`tree.rs`・`fileops.rs`・`desktop.rs`・`editor.rs`)が画面からのコマンドを受ける
+- Rust: `src-tauri/src/main.rs` → `lib.rs`。`launch.rs` が環境変数を読み、`lib.rs` が設定ファイルを読んで(`settings.rs`。ショートカットの表と設定の知らせ)から状態ファイルを読み(`persistence.rs`)、`Workspace`・`SessionRegistry`・保存のスレッド・`Projects`・見回り(`patrol.rs`)・設定ファイルの監視(`settings_watch.rs`)・メニューを組み立て、`commands/`(`app.rs`・`clipboard.rs`・`terminal.rs`・`project.rs`・`layout.rs`・`tree.rs`・`fileops.rs`・`desktop.rs`・`editor.rs`)が画面からのコマンドを受ける
 - 画面: `src/main.tsx` が `createAppStore()`・`createUiStore()` でストアを作り、`startApp` で写しの取得と準備完了の通知を行い、`AppShell` に props で渡す
 
 ## ディレクトリ構成
@@ -38,7 +38,7 @@ src/
 ├── ui/design/         # tokens.css、palette.ts(プロジェクト色の値)、applyInterfaceMetrics(画面の文字の大きさを :root に当てる・InterfaceMetricsContext)
 ├── ui/settings/       # 設定画面(SettingsDialog・ValueStepper)
 ├── ui/editor/         # EditorPanel(上端の帯)・EditorHost(置き場所)・ViewSwitch(編集・並べて・プレビュー)・MarkdownPreview(木を React の要素に)・MermaidBlock(図を blob: の <img> で出す)
-├── logic/             # 純粋ロジック(DOM・他の src/* に依存しない。別 tsconfig。keys/ = キーとメニュー・クリップボードの振り分けとショートカットの表、menu/(treeMenu を含む)、panes/、tree/ = ツリーのモデル・仮想スクロール、dnd/ = ドラッグ、appearance/ = 画面の文字の大きさから追従させるトークンの値、editor/ = 文書のパスの判定・プレビューの解析の予定・「/」コマンドの表(slashCommands)。keys/editorKeyOwner = エディタの上のキーの受け手)
+├── logic/             # 純粋ロジック(DOM・他の src/* に依存しない。別 tsconfig。keys/ = キーとメニュー・クリップボードの振り分けとショートカットの表、menu/(treeMenu を含む)、panes/、tree/ = ツリーのモデル・仮想スクロール、dnd/ = ドラッグ、appearance/ = 画面の文字の大きさから追従させるトークンの値、editor/ = 文書のパスの判定・プレビューの解析の予定・「/」コマンドの表(slashCommands)。terminal/ = ターミナルの真ん中クリック・右クリックを受けるかの判定(mouseRouting。ADR-020)。keys/editorKeyOwner = エディタの上のキーの受け手)
 └── test/              # テスト補助(fakeIpc・fakeEditorEngine)
 e2e/                   # Playwright(fixtures/tauriMock.ts)
 scripts/               # 境界検査・カバレッジ・スモーク・perf/(fixtures/ は違反の見本)
@@ -75,7 +75,8 @@ PTY → 読み取りスレッド(未処理の量が上限を超えたら読ま�
 | 並べ替えとタブをまとめて閉じる(ADR-019) | `crates/arin-core/tests/workspace_reorder_tabs.rs`、`src-tauri/tests/project_commands.rs`(`move_project`・`move_terminal_tab`・`close_tabs`)、画面は `src/logic/dnd/reorder.test.ts`・`src/logic/menu/tabMenu.test.ts`・`src/state/actions.test.ts` | cargo test / vitest |
 | 型の生成物の一致 | `crates/arin-core/tests/generated_types.rs` | cargo test |
 | スクリプト | `scripts/*.test.mjs`(default-shortcuts は見本の表と生成物の一致) | node --test |
-| 画面 E2E | `e2e/*.spec.ts`(app-shell、terminal、projects、tabs、m2-scenario、tree、tree-ops、tree-dnd、m3-scenario、tiles、m4-scenario、settings、m45-scenario、font-settings、m46-scenario、m47-scenario、editor、m48-scenario、update-check、reorder-tab-menu) | playwright(WebKit) |
+| ターミナルの選択と真ん中クリック・右クリックのメニュー(ADR-020) | `crates/arin-core/tests/persistence_codec.rs`(`ui.middleClickPaste`)、`src-tauri/tests/desktop_commands.rs`(クリップボードの読み書き・切替)、画面は `src/terminal/TerminalManager.test.ts`・`src/logic/terminal/mouseRouting.test.ts`・`src/logic/menu/terminalMenu.test.ts`・`src/state/terminalSync.test.ts` | cargo test / vitest |
+| 画面 E2E | `e2e/*.spec.ts`(app-shell、terminal、projects、tabs、m2-scenario、tree、tree-ops、tree-dnd、m3-scenario、tiles、m4-scenario、settings、m45-scenario、font-settings、m46-scenario、m47-scenario、editor、m48-scenario、update-check、reorder-tab-menu、terminal-selection-paste) | playwright(WebKit) |
 | 画面側の性能の計測 | `e2e/perf-tiles.spec.ts`(`npm run e2e` には入らない。`ARIN_PERF_E2E=1` のときだけ) | `npm run perf` |
 | 実アプリのスモーク | `scripts/smoke.mjs`(`--tiles` で 9 プロジェクトのタイル表示、`--settings` で設定ファイルを置いて起動、`--fonts` で文字の大きさを入れた `state.json` で 1 回起動) | `npm run smoke` |
 

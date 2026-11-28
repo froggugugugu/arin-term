@@ -69,6 +69,7 @@ fn sample_state() -> PersistedState {
             editor_vim: false,
             theme: ThemeMode::System,
             check_updates: false,
+            middle_click_paste: true,
         },
     }
 }
@@ -250,6 +251,7 @@ fn 欠けたキーは既定値で補う() {
                 editor_vim: false,
                 theme: ThemeMode::System,
                 check_updates: false,
+                middle_click_paste: true,
             },
         }
     );
@@ -391,6 +393,7 @@ fn tree_キーの無い状態ファイルも読める() {
                 editor_vim: false,
                 theme: ThemeMode::System,
                 check_updates: false,
+                middle_click_paste: true,
             },
         }
     );
@@ -522,6 +525,7 @@ fn m3_state() -> PersistedState {
             editor_vim: false,
             theme: ThemeMode::System,
             check_updates: false,
+            middle_click_paste: true,
         },
     }
 }
@@ -1215,4 +1219,31 @@ fn check_updates_が真偽値でなければ退避せずに偽() {
     value["ui"]["checkUpdates"] = json!("yes");
     let back = loaded(decode_str(&value.to_string()));
     assert!(!back.state.layout.check_updates);
+}
+
+// ── ui.middleClickPaste(ADR-020) ──
+
+#[test]
+fn middle_click_paste_は無ければ真で_真は書かず_偽を書いて読み戻せる() {
+    let m3 = loaded(decode_str(M3_STATE_JSON));
+    assert!(m3.state.layout.middle_click_paste);
+    let value: Value = serde_json::from_str(&encode(&m3.state).expect("書ける")).unwrap();
+    assert!(value["ui"].get("middleClickPaste").is_none(), "{value}");
+
+    let mut state = m3_state();
+    state.layout.middle_click_paste = false;
+    let text = encode(&state).expect("書ける");
+    let value: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value["ui"]["middleClickPaste"], json!(false));
+    assert_eq!(loaded(decode_str(&text)).state, state);
+}
+
+#[test]
+fn middle_click_paste_が真偽値でなければ退避せずに真() {
+    for bad in [json!("no"), json!(null), json!(0)] {
+        let mut value: Value = serde_json::from_str(M3_STATE_JSON).unwrap();
+        value["ui"]["middleClickPaste"] = bad;
+        let back = loaded(decode_str(&value.to_string()));
+        assert!(back.state.layout.middle_click_paste);
+    }
 }

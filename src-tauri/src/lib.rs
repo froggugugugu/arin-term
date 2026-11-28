@@ -336,6 +336,9 @@ pub fn builder_with_settings_watcher<R: Runtime>(
                 Arc::clone(&fs),
                 Arc::clone(&file_pasteboard),
             ));
+            app.manage(commands::clipboard::Clipboard::new(Arc::clone(
+                &project_ports.pasteboard,
+            )));
             app.manage(Desktop::new(
                 sessions.clone(),
                 Arc::clone(&fs),
@@ -430,6 +433,9 @@ pub fn builder_with_settings_watcher<R: Runtime>(
             commands::layout::step_translucency,
             commands::layout::reset_appearance,
             commands::layout::set_theme,
+            commands::layout::set_middle_click_paste,
+            commands::clipboard::write_clipboard_text,
+            commands::clipboard::read_clipboard_text,
             commands::update::get_update_notice,
             commands::update::dismiss_update_notice,
             commands::update::open_release_page,

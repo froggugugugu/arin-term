@@ -255,6 +255,7 @@ fn ペインの寸法は保存値に規則を当て_無ければ初期値() {
         editor_vim: false,
         theme: ThemeMode::System,
         check_updates: false,
+        middle_click_paste: true,
     };
     let ws = restore(Startup {
         state,
@@ -283,6 +284,7 @@ fn ペインの寸法は保存値に規則を当て_無ければ初期値() {
             editor_vim: false,
             theme: ThemeMode::System,
             check_updates: false,
+            middle_click_paste: true,
         }
     );
 }
@@ -313,6 +315,7 @@ fn 退避の知らせは写しに載り_保存する内容には入らない() {
                 editor_vim: false,
                 theme: ThemeMode::System,
                 check_updates: false,
+                middle_click_paste: true,
             },
         }
     );

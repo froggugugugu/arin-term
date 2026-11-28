@@ -118,6 +118,8 @@ fn 写しの_json_の形() {
             // ADR-016(テーマの選び方。項目の追加なので写しの版は上げない)
             "theme": "system",
             "checkUpdates": false,
+            // ADR-020(項目の追加なので写しの版は上げない)
+            "middleClickPaste": true,
         })
     );
 }

@@ -19,6 +19,7 @@
 //!   (規則は `layout::translucency`)。既定のあいだはキーごとに書かない
 //! - `ui.editorVim` は真のときだけ書く。無い・真偽値でないときは退避せずに偽
 //! - `ui.checkUpdates`(ADR-018)も同じ。真のときだけ書く
+//! - `ui.middleClickPaste`(ADR-020)は逆で、偽のときだけ書く。無い・真偽値でないときは退避せずに真
 //! - `ui.theme`(ADR-016)は `"light"`・`"dark"` のときだけ書く。無い・知らない値は退避せずにシステム
 //! - JSON として読めない・版が正しくない・新しすぎる・形が違うときは「退避する」を返す(決定 (d))。
 //!   退避の名前は [`broken_file_name`] が時計の値から作る(【仮定】3)
@@ -48,7 +49,7 @@ const SECONDS_PER_DAY: u64 = 86_400;
 
 /// 保存する左ペインの寸法(CSS ピクセル)と右ペインの表示モードと文字の大きさと透過。
 /// ペインの寸法は読んだ値をそのまま持ち、文字の大きさと透過は読むときに規則を当てたものを持つ。
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PersistedLayout {
     /// 左ペインの幅(`ui.sidebarWidth`)。無い・null なら `None`。
     pub sidebar_width: Option<f64>,
@@ -68,6 +69,25 @@ pub struct PersistedLayout {
     pub theme: ThemeMode,
     /// 起動時に新しい版を確かめるか(`ui.checkUpdates`。ADR-018)。無い・真偽値でなければ偽。
     pub check_updates: bool,
+    /// 選択して真ん中クリックで貼り付けるか(`ui.middleClickPaste`。ADR-020)。無い・真偽値でなければ真。
+    pub middle_click_paste: bool,
+}
+
+impl Default for PersistedLayout {
+    fn default() -> Self {
+        Self {
+            sidebar_width: None,
+            sidebar_collapsed: false,
+            card_area_height: None,
+            display_mode: DisplayMode::default(),
+            font_sizes: FontSizes::default(),
+            translucency: Translucency::default(),
+            editor_vim: false,
+            theme: ThemeMode::default(),
+            check_updates: false,
+            middle_click_paste: true,
+        }
+    }
 }
 
 /// `state.json` に保存する内容。表示値(見つからない・表示用のパス)を持たない。
@@ -203,6 +223,12 @@ struct UiSection {
         skip_serializing_if = "is_false"
     )]
     check_updates: bool,
+    #[serde(
+        default = "default_true",
+        deserialize_with = "lenient_bool_true",
+        skip_serializing_if = "is_true"
+    )]
+    middle_click_paste: bool,
 }
 
 impl Default for UiSection {
@@ -220,6 +246,7 @@ impl Default for UiSection {
             editor_vim: false,
             theme: ThemeMode::default(),
             check_updates: false,
+            middle_click_paste: true,
         }
     }
 }
@@ -231,6 +258,26 @@ where
 {
     let value = Value::deserialize(deserializer)?;
     Ok(value.as_bool().unwrap_or(false))
+}
+
+/// 真偽値を読む。真偽値でない値(null を含む)は、状態ファイルを退避せずに真にする(既定が真の値。ADR-020)。
+fn lenient_bool_true<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    Ok(value.as_bool().unwrap_or(true))
+}
+
+/// 既定が真の値の既定。
+fn default_true() -> bool {
+    true
+}
+
+/// 真(既定)なら書かない。
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde の `skip_serializing_if` は参照を渡す。
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 /// 偽(既定)なら書かない。
@@ -381,6 +428,7 @@ pub fn encode(state: &PersistedState) -> Result<String, EncodeError> {
             editor_vim: state.layout.editor_vim,
             theme: state.layout.theme,
             check_updates: state.layout.check_updates,
+            middle_click_paste: state.layout.middle_click_paste,
         },
     };
     let mut text = serde_json::to_string_pretty(&file)
@@ -467,6 +515,7 @@ fn tidy(file: StateFile) -> LoadedState {
                 editor_vim: file.ui.editor_vim,
                 theme: file.ui.theme,
                 check_updates: file.ui.check_updates,
+                middle_click_paste: file.ui.middle_click_paste,
             },
         },
         rebuild_bookmarks,

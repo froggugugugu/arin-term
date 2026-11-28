@@ -1163,6 +1163,66 @@ fn pasteboard_name(kind: &str) -> String {
     )
 }
 
+/// ターミナルの右クリックの「コピー」「ペースト」(ADR-020)と、真ん中クリックの貼り付けの切替。
+fn クリップボードの文字列を読み書きし_真ん中クリックの切替は写しに出る(
+    handle: &AppHandle<MockRuntime>,
+    window: &WebviewWindow<MockRuntime>,
+    ctx: &Ctx,
+) {
+    call(
+        handle,
+        window,
+        "write_clipboard_text",
+        json!({ "text": "echo 日本語\nls" }),
+    )
+    .expect("書けなかった");
+    assert_eq!(
+        ctx.pasteboard.read_text().as_deref(),
+        Some("echo 日本語\nls")
+    );
+    // 空の文字列は書かない(中身を消さない)
+    call(
+        handle,
+        window,
+        "write_clipboard_text",
+        json!({ "text": "" }),
+    )
+    .expect("書けなかった");
+    assert_eq!(
+        ctx.pasteboard.read_text().as_deref(),
+        Some("echo 日本語\nls")
+    );
+    let read: String = call(handle, window, "read_clipboard_text", json!({}))
+        .expect("読めなかった")
+        .deserialize()
+        .expect("文字列でなかった");
+    assert_eq!(read, "echo 日本語\nls");
+
+    let snapshot = |handle, window| -> AppSnapshot {
+        call(handle, window, "get_app_snapshot", json!({}))
+            .expect("写しを取れなかった")
+            .deserialize()
+            .expect("写しを読めなかった")
+    };
+    assert!(snapshot(handle, window).middle_click_paste, "既定は真");
+    call(
+        handle,
+        window,
+        "set_middle_click_paste",
+        json!({ "enabled": false }),
+    )
+    .expect("切り替えられなかった");
+    assert!(!snapshot(handle, window).middle_click_paste);
+    call(
+        handle,
+        window,
+        "set_middle_click_paste",
+        json!({ "enabled": true }),
+    )
+    .expect("切り替えられなかった");
+    assert!(snapshot(handle, window).middle_click_paste);
+}
+
 const CHECKS: &[(&str, Check)] = &[
     (
         "相対パスのコピーで_src/a_b.ts_がペーストボードに入る",
@@ -1207,6 +1267,10 @@ const CHECKS: &[(&str, Check)] = &[
     (
         "新しい版の確認は知らせを残し_ページは版から作った_url_で開く",
         新しい版の確認は知らせを残し_ページは版から作った_url_で開く,
+    ),
+    (
+        "クリップボードの文字列を読み書きし_真ん中クリックの切替は写しに出る",
+        クリップボードの文字列を読み書きし_真ん中クリックの切替は写しに出る,
     ),
 ];
 

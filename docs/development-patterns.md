@@ -9,6 +9,7 @@
 - `@tauri-apps/*` を import できるのは `src/ipc/` だけ。`@xterm/*` を import できるのは `src/terminal/xterm/` だけ。`codemirror`・`@codemirror/*`・`@lezer/*`・`@replit/*` を import できるのは `src/editor/codemirror/` だけ(M4.8)。`mermaid`・`@mermaid-js/*` を import できるのは `src/editor/mermaid/` だけ(ADR-017)。`src/ui/` は `src/ipc/`・`src/terminal/xterm/`・`src/editor/codemirror/`・`src/editor/mermaid/` を import しない(操作は `src/state`・`src/terminal`・`src/editor` 経由)。`src/terminal/xterm/`・`src/editor/codemirror/`・`src/editor/mermaid/` は `src/ipc/` を import しない
 - `arin-core` は `std::fs`・`std::process`・`std::net` を使わない。依存は serde・serde_json・thiserror・ts-rs だけ。入出力は `arin-platform` に置く
 - 外への通信は新しい版の確認の 1 か所だけ(ADR-018。NFR-008 の例外)。`crates/arin-platform/src/release/` が `/usr/bin/curl` で `arin_core::update::LATEST_RELEASE_API` に問い合わせる。HTTP の crate は入れない。ほかの場所に `curl`・NSURLSession・`std::net` を書かない(境界検査の `network-process`)。ブラウザで開くのは `DesktopPort::open_release_page` で、Releases のページの下だけ(URL は Rust が版から作る)
+- 画面がクリップボードの文字列を読めるのは `read_clipboard_text` の 1 つだけ(ADR-020)。呼ぶのはターミナルの右クリックのメニューで本人が「ペースト」を選んだときだけにする(選択の入れ物・真ん中クリックはクリップボードを読み書きしない)
 - 環境変数を読むのは `src-tauri/src/launch.rs` だけ。`arin-core` は値を引数で受け取る
 - 画面のソースに通信の API(`fetch(` など)と HTML の差し込み(`innerHTML`・`dangerouslySetInnerHTML` など)を書かない
 - CSP(`tauri.conf.json` の `csp`・`devCsp`): `connect-src` は IPC と自アプリだけ、スクリプトは `'self'`/`'none'` だけ、スタイルは `'self'`/`'none'`/`'unsafe-inline'` だけ
@@ -52,6 +53,7 @@
 - 並べ替え(ADR-019)の並びは Rust が持つ(`move_project`・`move_terminal_tab`・`move_editor_tab`。`toIndex` は動かしたあとの位置)。タブは同じプロジェクトの同じ種類の中だけで動き、種類をまたぐ口は作らない。画面のドラッグは `src/ui/shell/useReorderDrag.ts`(pointer のイベント。項目に `data-reorder-group`・`data-reorder-id`、始めない場所に `data-reorder-ignore`)、落とす位置の規則は `src/logic/dnd/reorder.ts`
 - タブをまとめて閉じるのは `close_tabs` の 1 回(画面から `close_terminal`・`close_editor` を並べて呼ばない)。確認は真偽でなく、確認に出した ID の一覧(`confirmedTerminalIds`・`confirmedEditorIds`)を付けて呼び直す(確認のあいだに増えたら Rust がもう一度確認を求める)。画面が未保存と知っているエディタは `dirtyEditorIds` で送る(`set_document_dirty` は遅れて届く)。メニューの項目と閉じるタブは `src/logic/menu/tabMenu.ts`
 - 並べ替えのコマンドは対象が無いとき失敗にしない(`ignore_closed` と同じ)。ドラッグのあいだに写しで組の並びが変わったら、画面は離しても送らない
+- ターミナルの選択(ADR-020)は `TerminalManager` が全ターミナルで共通の 1 つの入れ物に持ち、システムのクリップボードには書かない。真ん中クリックは `TerminalHost` が捕捉の段階の `mousedown` で xterm.js より先に受ける。右クリックのメニューのコピー・ペーストは `write_clipboard_text`・`read_clipboard_text`(画面から `copy`・`paste` のイベントは起こせない)。マウスを使うアプリが動いているあいだ(`appOwnsMouse`)は、Option を押していなければどちらもアプリに渡す(`src/logic/terminal/mouseRouting.ts`)
 - ターミナルの Shift+Enter は `ESC`+`CR` を送る(`src/logic/keys/newline.ts`。表より先に判定する。表には載せない)
 - 設定の知らせは写しの `notice` と別に持つ(Rust は `AppSettings`、画面は `uiStore` の `settingsNotice`)。中身は設定ファイルの問題と「設定ファイルを開く…」の結果(開けなかった・見本を作れなかった)の 2 つを 1 行にまとめたもの。開く結果の知らせは、次に開けたときと、読み直しで表か設定ファイルの問題の知らせが変わったときに消える。画面で閉じても、違う文の知らせが届けば出し直す
 

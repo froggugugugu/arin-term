@@ -22,17 +22,24 @@ export interface TerminalSyncTarget {
   present(shown: readonly TerminalId[], background: readonly TerminalId[]): void;
   /** 全ターミナルの文字の大きさ(CSS ピクセル)。 */
   setFontSize(px: number): void;
+  /** 選択して真ん中クリックで貼り付けるか(ADR-020 の 4)。 */
+  setMiddleClickPaste(enabled: boolean): void;
 }
 
 /** 写しをターミナルの管理へ伝え続ける。外す関数を返す。写しがまだ無ければ届くまで何もしない。 */
 export function syncTerminals(store: AppStore, target: TerminalSyncTarget): () => void {
   let forwardedFontSize: number | null = null;
+  let forwardedMiddleClickPaste: boolean | null = null;
   const forward = (snapshot: AppSnapshot | null) => {
     if (snapshot === null) return;
     const fontSize = snapshot.fontSizes.terminal.value;
     if (fontSize !== forwardedFontSize) {
       forwardedFontSize = fontSize;
       target.setFontSize(fontSize);
+    }
+    if (snapshot.middleClickPaste !== forwardedMiddleClickPaste) {
+      forwardedMiddleClickPaste = snapshot.middleClickPaste;
+      target.setMiddleClickPaste(snapshot.middleClickPaste);
     }
     for (const terminal of snapshot.terminals) target.setStatus(terminal.id, terminal.status);
     target.retain(snapshot.terminals.map((t) => t.id));

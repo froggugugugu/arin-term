@@ -12,13 +12,16 @@ import { syncTerminals, type TerminalSyncTarget } from "./terminalSync";
 /** 伝えられたことを順に記録する受け手。 */
 function recorder() {
   const seen: string[] = [];
+  /** 真ん中クリックの設定は別に記録する(ほかの並びの検査を変えないため)。 */
+  const middle: boolean[] = [];
   const target: TerminalSyncTarget = {
     setStatus: (id, status) => seen.push(`status ${id} ${status.kind}`),
     retain: (ids) => seen.push(`retain ${[...ids].join(",")}`),
     present: (shown, background) => seen.push(`present [${shown.join(",")}] [${background.join(",")}]`),
     setFontSize: (px) => seen.push(`font ${px}`),
+    setMiddleClickPaste: (enabled) => middle.push(enabled),
   };
-  return { seen, target };
+  return { seen, middle, target };
 }
 
 const running: TerminalStatus = { kind: "running" };
@@ -183,6 +186,20 @@ describe("syncTerminals(写しをターミナルの管理へ伝える)", () => {
     store.getState().replaceSnapshot(withTerminalFontSize(twoProjects("B"), 21));
 
     expect(seen.filter((line) => line.startsWith("font"))).toEqual(["font 20", "font 21"]);
+  });
+
+  it("真ん中クリックの設定は変わったときだけ伝える(ADR-020)", () => {
+    const store = createAppStore();
+    const { middle, target } = recorder();
+    syncTerminals(store, target);
+
+    store.getState().replaceSnapshot(twoProjects("A"));
+    store.getState().replaceSnapshot(twoProjects("B"));
+    store.getState().replaceSnapshot({ ...twoProjects("B"), middleClickPaste: false });
+    store.getState().replaceSnapshot({ ...twoProjects("A"), middleClickPaste: false });
+    store.getState().replaceSnapshot(twoProjects("A"));
+
+    expect(middle).toEqual([true, false, true]);
   });
 
   it("隠したまま作るサーフェスも写しの大きさで作る", () => {

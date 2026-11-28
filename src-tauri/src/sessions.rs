@@ -1118,6 +1118,15 @@ impl SessionRegistry {
         changed
     }
 
+    /// 選択して真ん中クリックで貼り付けるかを切り替える(ADR-020)。変わったときだけ写しを送り `true` を返す。
+    pub fn set_middle_click_paste(&self, enabled: bool) -> bool {
+        let changed = lock(&self.inner.workspace).set_middle_click_paste(enabled);
+        if changed {
+            self.notify();
+        }
+        changed
+    }
+
     /// いまのテーマの選び方(起動時にアプリの外観へ当てるのに使う。ADR-016)。
     #[must_use]
     pub fn theme(&self) -> ThemeMode {

@@ -94,6 +94,7 @@ export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapsho
     editor: { vim: false },
     theme: "system",
     checkUpdates: false,
+    middleClickPaste: true,
     ...overrides,
   };
 }
@@ -167,6 +168,9 @@ export function createFakeIpc(handlers: Partial<FakeHandlers> = {}): FakeIpc {
     dismiss_update_notice: () => null,
     open_release_page: () => null,
     set_check_updates: () => null,
+    set_middle_click_paste: () => null,
+    write_clipboard_text: () => null,
+    read_clipboard_text: () => "",
     list_directory: () => ({ kind: "listed", entries: [] }),
     set_show_hidden: () => null,
     create_entry: () => ({ kind: "done", select: null }),

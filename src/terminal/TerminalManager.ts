@@ -11,6 +11,9 @@
 // - 置き場所(TerminalHost)への要素の付け外しもここで行い、React には要素を管理させない(ADR-003)
 // - コピー・ペースト: 画面のイベント → handleClipboard → フォーカスのあるサーフェスの選択の取得・貼り付け(§9.1)
 // - メニューの「すべてを選択」: menu-command イベント → handleMenuCommand → フォーカスのあるサーフェスの全選択
+// - 選択と真ん中クリック(ADR-020 の 1・2): 選択が変わるたびに、選んだ文字列を全ターミナルで共通の 1 つの入れ物に持つ
+//   (システムのクリップボードには書かない)。真ん中クリックでクリックしたターミナルに貼る。設定が OFF なら持たない
+// - 右クリックのメニュー(ADR-020 の 3): コピーはクリップボードに書き、ペーストはクリップボードを読んで貼る(Rust を通す)
 // - バイト列の入力: surface.onBinary → write_terminal_bytes。文字列の入力と同じ直列の列に入れる(順序を保つ)
 // - 写しとの同期(M2): retain で写しから消えたターミナルを破棄する(タブを閉じた・シェルが終わってタブが閉じた。
 //   状態は exited を経ずに消えることがある)。present で見えるターミナルの並び(タブ表示は 1 枚、タイル表示は
@@ -28,6 +31,8 @@ import { createCoalescer, type Coalescer, type Schedule } from "../logic/coalesc
 import { describeError } from "../logic/describeError";
 import { type ClipboardFocus, type ClipboardKind, routeClipboard } from "../logic/keys/clipboard";
 import { type MenuCommand, routeMenuCommand } from "../logic/keys/menuCommand";
+import type { TerminalMenuCommand } from "../logic/menu/terminalMenu";
+import { arinTakesMouse, middleClickAction } from "../logic/terminal/mouseRouting";
 import { createSerialSender, INPUT_QUEUE_LIMIT, latest, type SerialSender } from "../logic/serialSender";
 import type { TerminalStatus } from "../ipc/generated/TerminalStatus";
 import type { TerminalEngine, TerminalId, TerminalSize, TerminalSurface } from "./engine";
@@ -44,8 +49,20 @@ const TEXT_FORMAT = "text/plain";
 /** ターミナルが使う Rust の操作(ArinIpc の一部)。 */
 export type TerminalBackend = Pick<
   ArinIpc,
-  "connectTerminal" | "writeTerminal" | "writeTerminalBytes" | "ackTerminalOutput" | "resizeTerminal"
+  | "connectTerminal"
+  | "writeTerminal"
+  | "writeTerminalBytes"
+  | "ackTerminalOutput"
+  | "resizeTerminal"
+  | "writeClipboardText"
+  | "readClipboardText"
 >;
+
+/** 右クリックしたときにメニューを出すなら、その中身を決める様子。 */
+export interface TerminalMenuContext {
+  /** 開いたときの選択(無ければ空)。「コピー」はこれを書く(選ぶまでに出力で選択が外れても失わない)。 */
+  readonly selection: string;
+}
 
 /** サーフェスの要素を入れる置き場所(TerminalHost の要素)。 */
 export interface TerminalSlot {
@@ -124,6 +141,10 @@ export class TerminalManager {
   /** 求められた文字の大きさ(次のフレームで当てる)。新しく作るサーフェスはこの大きさで作る。 */
   #requestedFontSize: number | null = null;
   readonly #fontSizeFrame: Coalescer;
+  /** 選択して真ん中クリックで貼り付けるか(写しの middleClickPaste。ADR-020 の 4)。既定は ON。 */
+  #middleClickPaste = true;
+  /** 最後に選んだ文字列(全ターミナルで共通。選択を外しても残す)。無ければ空。 */
+  #selectionBuffer = "";
 
   constructor(engine: TerminalEngine, backend: TerminalBackend, options: TerminalManagerOptions = {}) {
     this.#engine = engine;
@@ -274,6 +295,79 @@ export class TerminalManager {
       if (entry.disposed) continue;
       entry.surface.setFontSize(px);
       this.#noteShownSize(entry);
+    }
+  }
+
+  /** 選択して真ん中クリックで貼り付けるかを切り替える(main.tsx が写しから伝える)。OFF にしたら持っている選択を捨てる。 */
+  setMiddleClickPaste(enabled: boolean): void {
+    this.#middleClickPaste = enabled;
+    if (!enabled) this.#selectionBuffer = "";
+  }
+
+  /**
+   * ID のターミナルの真ん中クリック(ADR-020 の 1・2)。Arin が受けたら true(呼び出し側は既定の動作と xterm.js への伝達を止める)。
+   * 持っている選択があれば、そのターミナルへフォーカスを移して貼る。設定が OFF・アプリがマウスを使っている
+   * (Option を押していない)・持っていない ID なら false。
+   */
+  handleMiddleClick(id: TerminalId, altKey: boolean): boolean {
+    const entry = this.#entries.get(id);
+    if (entry === undefined || entry.disposed) return false;
+    const { surface } = entry;
+    const action = middleClickAction({ enabled: this.#middleClickPaste, appOwnsMouse: surface.appOwnsMouse(), altKey });
+    if (action === "pass") return false;
+    if (this.#selectionBuffer !== "") {
+      surface.focus();
+      surface.paste(this.#selectionBuffer);
+    }
+    return true;
+  }
+
+  /**
+   * ID のターミナルの右クリックでメニューを出すか(ADR-020 の 2・3)。出すならその中身を決める様子、アプリに渡すなら null。
+   * 右クリックの単語の選択(xterm.js)が済んでから呼ぶ。
+   */
+  terminalMenuFor(id: TerminalId, altKey: boolean): TerminalMenuContext | null {
+    const entry = this.#entries.get(id);
+    if (entry === undefined || entry.disposed) return null;
+    if (!arinTakesMouse({ appOwnsMouse: entry.surface.appOwnsMouse(), altKey })) return null;
+    return { selection: entry.surface.getSelection() };
+  }
+
+  /**
+   * 右クリックのメニューの項目を実行する(ADR-020 の 3)。失敗は報告して投げない。
+   * `context` はメニューを開いたときの様子(`terminalMenuFor`)。「コピー」はその選択を書き、無ければいまの選択を書く。
+   */
+  async runTerminalMenu(id: TerminalId, command: TerminalMenuCommand, context?: TerminalMenuContext): Promise<void> {
+    const entry = this.#entries.get(id);
+    if (entry === undefined || entry.disposed) return;
+    const { surface } = entry;
+    switch (command) {
+      case "copy": {
+        const text = context?.selection || surface.getSelection();
+        if (text === "") return;
+        try {
+          await this.#backend.writeClipboardText(text);
+        } catch (cause) {
+          this.#reportError(`クリップボードに書けなかった: ${describeError(cause)}`);
+        }
+        return;
+      }
+      case "paste": {
+        let text: string;
+        try {
+          text = await this.#backend.readClipboardText();
+        } catch (cause) {
+          this.#reportError(`クリップボードを読めなかった: ${describeError(cause)}`);
+          return;
+        }
+        if (text === "" || entry.disposed) return;
+        surface.focus();
+        surface.paste(text);
+        return;
+      }
+      case "select-all":
+        surface.selectAll();
+        return;
     }
   }
 
@@ -487,6 +581,12 @@ export class TerminalManager {
     };
     surface.onInput((data) => pushInput([{ kind: "text", data }]));
     surface.onBinary((data) => pushInput([{ kind: "bytes", data: binaryToBytes(data) }]));
+    surface.onSelectionChange(() => {
+      if (entry.disposed || !this.#middleClickPaste) return;
+      const text = surface.getSelection();
+      // 選択を外しても、持っているものは残す(次に選ぶまで)。
+      if (text !== "") this.#selectionBuffer = text;
+    });
     surface.onResize((cols, rows) => {
       if (entry.disposed) return;
       this.#noteShownSize(entry);
