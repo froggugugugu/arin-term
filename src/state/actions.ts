@@ -71,6 +71,7 @@ export type ActionsBackend = Pick<
   | "dismissUpdateNotice"
   | "openReleasePage"
   | "setCheckUpdates"
+  | "setMiddleClickPaste"
   | "confirmQuit"
   | "setShowHidden"
   | "createEntry"
@@ -189,6 +190,8 @@ export interface Actions {
   openSettingsFile(): Promise<void>;
   /** 起動時に新しい版を確かめるかを切り替える(ADR-018)。結果は写しの checkUpdates で届く。 */
   setCheckUpdates(enabled: boolean): Promise<void>;
+  /** 選択して真ん中クリックで貼り付けるかを切り替える(ADR-020)。結果は写しの middleClickPaste で届く。 */
+  setMiddleClickPaste(enabled: boolean): Promise<void>;
   /** Releases のページをブラウザで開く(新しい版の知らせのボタン)。 */
   openReleasePage(): Promise<void>;
   /** 新しい版の知らせを閉じる(画面からすぐ消し、Rust の持つ知らせも消す)。 */
@@ -493,6 +496,8 @@ export function createActions({ ipc, ui, app, tree, treeController, reportError,
     resetAppearance: () => run("見た目を既定に戻せなかった", () => ipc.resetAppearance()),
     openSettingsFile: () => run("設定ファイルを開けなかった", () => ipc.openSettingsFile()),
     setCheckUpdates: (enabled) => run("アップデートの確認を切り替えられなかった", () => ipc.setCheckUpdates(enabled)),
+    setMiddleClickPaste: (enabled) =>
+      run("真ん中クリックの貼り付けを切り替えられなかった", () => ipc.setMiddleClickPaste(enabled)),
     openReleasePage: () => run("Releases のページを開けなかった", () => ipc.openReleasePage()),
     dismissUpdateNotice: () => {
       ui.getState().setUpdateNotice(null);

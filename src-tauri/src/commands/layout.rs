@@ -75,6 +75,12 @@ pub fn set_theme(
     }
 }
 
+/// 選択して真ん中クリックで貼り付けるかを切り替える(設定画面。ADR-020)。変わったら写しを送り、保存が予約される。
+#[tauri::command]
+pub fn set_middle_click_paste(sessions: State<'_, SessionRegistry>, enabled: bool) {
+    sessions.set_middle_click_paste(enabled);
+}
+
 /// 文字の大きさ 2 つと透過 2 つを既定に戻す(設定画面の「既定に戻す」。ADR-014 の 1・AC-G05。ADR-013 の
 /// `reset_font_sizes` を替えたもの)。変わったら写しを送る。
 #[tauri::command]

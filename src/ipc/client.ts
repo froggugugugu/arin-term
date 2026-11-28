@@ -108,6 +108,12 @@ export interface CommandMap {
   open_release_page: { args: undefined; result: null };
   /** 起動時に新しい版を確かめるか(写しの checkUpdates。オンにしたらその場で 1 回確かめる)。 */
   set_check_updates: { args: { enabled: boolean }; result: null };
+  /** 選択して真ん中クリックで貼り付けるか(写しの middleClickPaste。ADR-020)。 */
+  set_middle_click_paste: { args: { enabled: boolean }; result: null };
+  /** 文字列をクリップボードに書く(ターミナルの右クリックの「コピー」。ADR-020)。空の文字列は書かない。 */
+  write_clipboard_text: { args: { text: string }; result: null };
+  /** クリップボードのプレーンテキスト(ターミナルの右クリックの「ペースト」)。無ければ空の文字列。 */
+  read_clipboard_text: { args: undefined; result: string };
   next_tile_page: { args: undefined; result: null };
   previous_tile_page: { args: undefined; result: null };
   /** terminalId を渡すと、そのタイルにフォーカスしてから拡大する(タイトルバーのダブルクリック)。閉じたタイルなら何もしない。 */
@@ -379,6 +385,12 @@ export interface ArinIpc {
   openReleasePage(): Promise<void>;
   /** 起動時に新しい版を確かめるかを切り替える。結果は写しの checkUpdates で届く。 */
   setCheckUpdates(enabled: boolean): Promise<void>;
+  /** 選択して真ん中クリックで貼り付けるかを切り替える(ADR-020)。結果は写しの middleClickPaste で届く。 */
+  setMiddleClickPaste(enabled: boolean): Promise<void>;
+  /** 文字列をクリップボードに書く(ターミナルの右クリックの「コピー」)。 */
+  writeClipboardText(text: string): Promise<void>;
+  /** クリップボードのプレーンテキストを読む(ターミナルの右クリックの「ペースト」)。無ければ空の文字列。 */
+  readClipboardText(): Promise<string>;
   /**
    * フォルダの中身を問い合わせる(ツリーの展開)。path はルート基準の相対パスで、ルートは空の文字列。
    * Rust が除外(隠しファイル表示が OFF のとき)と並び順を当てて返す。プロジェクトやフォルダが見つからなければ notFound、
@@ -599,6 +611,9 @@ export function createIpc(transport: IpcTransport): ArinIpc {
     dismissUpdateNotice: () => done(invoke("dismiss_update_notice", undefined)),
     openReleasePage: () => done(invoke("open_release_page", undefined)),
     setCheckUpdates: (enabled) => done(invoke("set_check_updates", { enabled })),
+    setMiddleClickPaste: (enabled) => done(invoke("set_middle_click_paste", { enabled })),
+    writeClipboardText: (text) => done(invoke("write_clipboard_text", { text })),
+    readClipboardText: () => invoke("read_clipboard_text", undefined),
     listDirectory: (projectId, path) => invoke("list_directory", { projectId, path }),
     setShowHidden: (projectId, showHidden) => done(invoke("set_show_hidden", { projectId, showHidden })),
     onTreeChanged: (listener) => transport.listen("tree-changed", listener),

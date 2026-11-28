@@ -102,6 +102,7 @@ export function sampleSnapshot(overrides: Partial<AppSnapshot> = {}): AppSnapsho
     editor: { vim: false },
     theme: "system",
     checkUpdates: false,
+    middleClickPaste: true,
     ...overrides,
   };
 }
@@ -452,6 +453,9 @@ const DEFAULT_REPLIES: TauriMockConfig = {
   dismiss_update_notice: { ok: null },
   open_release_page: { ok: null },
   set_check_updates: { ok: null },
+  set_middle_click_paste: { ok: null },
+  write_clipboard_text: { ok: null },
+  read_clipboard_text: { ok: "" },
   list_directory: { ok: { kind: "listed", entries: [] } },
   set_show_hidden: { ok: null },
   create_entry: { ok: { kind: "done", select: null } },

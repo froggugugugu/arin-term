@@ -154,6 +154,14 @@
 
 ## 4. セッションログ(新しいものを上に)
 
+### 2026-11-28 — ターミナルの選択を真ん中クリックで貼り付け・右クリックのコピー/ペースト(ADR-020。ブランチ `feat/terminal-selection-paste`。main から分岐)
+
+- きっかけ: 本人の要望「選択部分のコピーと真ん中のマウスクリックで貼り付け」「右クリックでのコピ、貼り付け」。方式は本人が「アプリの中だけに持つ(既定 ON)」を選んだ
+- やったこと: 選択を `TerminalManager` の入れ物に持ち、真ん中クリックで貼る(クリップボードは使わない)。右クリックのメニュー(コピー・ペースト・すべてを選択。`write_clipboard_text`・`read_clipboard_text`)。マウスを使うアプリのあいだは Option なしならアプリに渡す。設定画面に「ターミナル」の組(`ui.middleClickPaste`、偽のときだけ書く)
+- 検証: `npm run lint` 終了 0、vitest 805 件・node --test 128 件・cargo test 76 バイナリすべて ok、`npm run e2e` 334 件、`npm run app && npm run smoke` 成功
+- レビュー: code-reviewer は MUST なし。SHOULD 2 件(開いたときの選択でコピー・メニューを ID に結びつける)を直した。verifier の gap(マウスを使うアプリでの右クリックが語を選び入れ物を上書きする)を直し、E2E に足した。文書の漏れを直した
+- 申し送り: 実機の確認(WKWebView での真ん中クリック・右クリックの手触り、vim の mouse=a での Option)。画面の文字が最大(18)のとき、既定の高さ 800 のウィンドウで設定画面が約 84px はみ出してシートの中がスクロールする(E2E は高さ 900 で確かめる形にした)
+
 ### 2026-11-20〜21 — テーマの切替(ADR-016)とファイルツリーの矢印キー(ブランチ `feat/theme-and-tree-keys`。main から分岐)
 
 - きっかけ: 本人が使っていて出した要望 2 つ。計画は `output/plans/abundant-shimmying-sphinx.md`(本人が了承)

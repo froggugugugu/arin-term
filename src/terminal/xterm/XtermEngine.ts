@@ -177,6 +177,15 @@ class XtermSurface implements TerminalSurface {
     return this.#terminal.getSelection();
   }
 
+  onSelectionChange(listener: () => void): void {
+    this.#terminal.onSelectionChange(listener);
+  }
+
+  appOwnsMouse(): boolean {
+    if (this.#disposed) return false;
+    return this.#terminal.modes.mouseTrackingMode !== "none";
+  }
+
   selectAll(): void {
     if (this.#disposed) return;
     this.#terminal.selectAll();

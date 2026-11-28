@@ -1674,3 +1674,146 @@ describe("TerminalManager(文字の大きさ。M4.6 の T69a、ADR-013 の 3)", 
     expect(fakeSurface(engine, "t1").fontSize).toBe(19);
   });
 });
+
+describe("TerminalManager(選択と真ん中クリック・右クリックのメニュー。ADR-020)", () => {
+  /** 2 枚のサーフェスを作る。 */
+  const two = () => {
+    const ctx = setup();
+    ctx.manager.getOrCreate("a");
+    ctx.manager.getOrCreate("b");
+    return ctx;
+  };
+
+  it("あるターミナルで選んだ文字列を、別のターミナルの真ん中クリックで貼る(フォーカスも移す)", () => {
+    const { engine, manager } = two();
+    const [a, b] = engine.created;
+
+    a?.emitSelection("echo hi");
+    // 選択を外しても持ったまま
+    a?.emitSelection("");
+
+    expect(manager.handleMiddleClick("b", false)).toBe(true);
+    expect(b?.pasted).toEqual(["echo hi"]);
+    expect(b?.focused).toBe(true);
+    expect(a?.pasted).toEqual([]);
+  });
+
+  it("何も選んでいなければ真ん中クリックは受けるが何も貼らない", () => {
+    const { engine, manager } = two();
+
+    expect(manager.handleMiddleClick("a", false)).toBe(true);
+    expect(engine.created[0]?.pasted).toEqual([]);
+  });
+
+  it("アプリがマウスを使っているあいだはアプリに渡し、Option を押していれば貼る", () => {
+    const { engine, manager } = two();
+    const [a, b] = engine.created;
+    a?.emitSelection("ls");
+    if (b !== undefined) b.mouseOwned = true;
+
+    expect(manager.handleMiddleClick("b", false)).toBe(false);
+    expect(b?.pasted).toEqual([]);
+    expect(manager.handleMiddleClick("b", true)).toBe(true);
+    expect(b?.pasted).toEqual(["ls"]);
+  });
+
+  it("設定が OFF なら選択を持たず、真ん中クリックも受けない。OFF にしたら持っていたものを捨てる", () => {
+    const { engine, manager } = two();
+    const [a, b] = engine.created;
+    a?.emitSelection("first");
+    manager.setMiddleClickPaste(false);
+
+    expect(manager.handleMiddleClick("b", false)).toBe(false);
+    a?.emitSelection("second");
+    manager.setMiddleClickPaste(true);
+    expect(manager.handleMiddleClick("b", false)).toBe(true);
+    expect(b?.pasted).toEqual([]);
+  });
+
+  it("持っていない ID の真ん中クリックは受けない", () => {
+    const { manager } = setup();
+
+    expect(manager.handleMiddleClick("nope", false)).toBe(false);
+  });
+
+  it("右クリックのメニューは選択の有無を返し、アプリがマウスを使っていれば Option なしでは出さない", () => {
+    const { engine, manager } = two();
+    const [a] = engine.created;
+
+    expect(manager.terminalMenuFor("a", false)).toEqual({ selection: "" });
+    if (a !== undefined) a.selection = "word";
+    expect(manager.terminalMenuFor("a", false)).toEqual({ selection: "word" });
+    if (a !== undefined) a.mouseOwned = true;
+    expect(manager.terminalMenuFor("a", false)).toBeNull();
+    expect(manager.terminalMenuFor("a", true)).toEqual({ selection: "word" });
+    expect(manager.terminalMenuFor("nope", false)).toBeNull();
+  });
+
+  it("メニューのコピーは選択をクリップボードに書き、選択が無ければ書かない", async () => {
+    const { engine, fake, manager } = two();
+    const [a] = engine.created;
+
+    await manager.runTerminalMenu("a", "copy");
+    expect(commands(fake)).not.toContain("write_clipboard_text");
+
+    if (a !== undefined) a.selection = "git status";
+    await manager.runTerminalMenu("a", "copy");
+    expect(fake.calls.filter((c) => c.command === "write_clipboard_text").map((c) => c.args)).toEqual([
+      { text: "git status" },
+    ]);
+  });
+
+  it("メニューのコピーは、開いたときの選択を書く(選ぶまでに選択が外れても)", async () => {
+    const { engine, fake, manager } = two();
+    const [a] = engine.created;
+    if (a !== undefined) a.selection = "kept";
+    const context = manager.terminalMenuFor("a", false);
+    if (a !== undefined) a.selection = "";
+
+    await manager.runTerminalMenu("a", "copy", context ?? undefined);
+    expect(fake.calls.filter((c) => c.command === "write_clipboard_text").map((c) => c.args)).toEqual([{ text: "kept" }]);
+  });
+
+  it("メニューのペーストはクリップボードの文字列を貼り、空なら何もしない", async () => {
+    let clipboard = "";
+    const { engine, manager } = setupWith(() => clipboard);
+    const surface = manager.getOrCreate("a");
+
+    await manager.runTerminalMenu("a", "paste");
+    expect(engine.created[0]?.pasted).toEqual([]);
+    clipboard = "npm test";
+    await manager.runTerminalMenu("a", "paste");
+    expect(engine.created[0]?.pasted).toEqual(["npm test"]);
+    expect(surface.hasFocus()).toBe(true);
+  });
+
+  it("メニューのすべてを選択は全選択する", async () => {
+    const { engine, manager } = two();
+
+    await manager.runTerminalMenu("a", "select-all");
+    expect(engine.created[0]?.selectAllCount).toBe(1);
+  });
+
+  it("クリップボードの読み書きの失敗は報告して投げない", async () => {
+    const { engine, errors, manager } = setup({
+      write_clipboard_text: () => {
+        throw new Error("だめ");
+      },
+      read_clipboard_text: () => {
+        throw new Error("だめ");
+      },
+    });
+    manager.getOrCreate("a");
+    if (engine.created[0] !== undefined) engine.created[0].selection = "x";
+
+    await manager.runTerminalMenu("a", "copy");
+    await manager.runTerminalMenu("a", "paste");
+    expect(errors).toHaveLength(2);
+    expect(engine.created[0]?.pasted).toEqual([]);
+  });
+});
+
+/** クリップボードの読み取りの応答を関数で返す組み立て。 */
+function setupWith(read: () => string) {
+  return setup({ read_clipboard_text: () => read() });
+}

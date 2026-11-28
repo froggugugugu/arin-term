@@ -58,6 +58,13 @@ export interface TerminalSurface {
   size(): TerminalSize;
   /** 選択している文字列。選択が無ければ空文字列。 */
   getSelection(): string;
+  /** 選択が変わったときに受け取る(選択を外したときも。ADR-020 の 1)。中身は getSelection で読む。 */
+  onSelectionChange(listener: () => void): void;
+  /**
+   * いま動いているアプリがマウスを使っているか(マウスの報告のモードが有効か。vim の mouse=a など)。
+   * 使っているあいだは真ん中クリックと右クリックをアプリに渡す(ADR-020 の 2)。破棄の後は false。
+   */
+  appOwnsMouse(): boolean;
   /** 画面とスクロールバックの全体を選択する(メニューの「すべてを選択」)。破棄の後は何もしない。 */
   selectAll(): void;
   /**

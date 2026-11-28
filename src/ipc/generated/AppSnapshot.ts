@@ -69,4 +69,9 @@ theme: ThemeMode,
 /**
  * 起動時に新しい版を確かめるか(`state.json` の `ui.checkUpdates`。無ければ偽。切替は `set_check_updates`。ADR-018)。
  */
-checkUpdates: boolean, };
+checkUpdates: boolean, 
+/**
+ * 選択して真ん中クリックで貼り付けるか(`state.json` の `ui.middleClickPaste`。無ければ真。切替は
+ * `set_middle_click_paste`。ADR-020)。
+ */
+middleClickPaste: boolean, };

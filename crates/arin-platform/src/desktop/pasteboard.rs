@@ -49,7 +49,7 @@ impl MacPasteboard {
         self.target == Target::General
     }
 
-    /// プレーンテキストの中身を読む。無ければ `None`(確かめるためのもの。アプリからは呼ばない)。
+    /// プレーンテキストの中身を読む。無ければ `None`(アプリは [`PasteboardPort::read_text`] を通して呼ぶ)。
     #[must_use]
     pub fn read_text(&self) -> Option<String> {
         autoreleasepool(|_| {
@@ -94,6 +94,11 @@ impl PasteboardPort for MacPasteboard {
                 ))
             }
         })
+    }
+
+    fn read_text(&self) -> Result<Option<String>, PasteboardError> {
+        // 同じ名前の固有のメソッド(`Option` を返す)を呼ぶ。固有のメソッドが trait のものより先に選ばれる。
+        Ok(MacPasteboard::read_text(self))
     }
 }
 

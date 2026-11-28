@@ -56,6 +56,8 @@ pub struct Workspace {
     pub(super) theme: ThemeMode,
     /// 起動時に新しい版を確かめるか(`state.json` の `ui.checkUpdates`。ADR-018)。既定は偽。
     pub(super) check_updates: bool,
+    /// 選択して真ん中クリックで貼り付けるか(`state.json` の `ui.middleClickPaste`。ADR-020)。既定は真。
+    pub(super) middle_click_paste: bool,
     pub(super) notice: Option<String>,
 }
 
@@ -105,6 +107,7 @@ impl Workspace {
         ws.editor_vim = state.layout.editor_vim;
         ws.theme = state.layout.theme;
         ws.check_updates = state.layout.check_updates;
+        ws.middle_click_paste = state.layout.middle_click_paste;
         ws.notice = notice;
 
         let ids: Vec<ProjectId> = ws
@@ -160,6 +163,7 @@ impl Workspace {
             editor_vim: false,
             theme: ThemeMode::default(),
             check_updates: false,
+            middle_click_paste: true,
             notice: None,
         }
     }
@@ -275,6 +279,7 @@ impl Workspace {
                 editor_vim: self.editor_vim,
                 theme: self.theme,
                 check_updates: self.check_updates,
+                middle_click_paste: self.middle_click_paste,
             },
         }
     }
@@ -305,6 +310,20 @@ impl Workspace {
     pub fn set_check_updates(&mut self, enabled: bool) -> bool {
         let changed = self.check_updates != enabled;
         self.check_updates = enabled;
+        changed
+    }
+
+    /// 選択して真ん中クリックで貼り付けるか。
+    #[must_use]
+    pub fn middle_click_paste(&self) -> bool {
+        self.middle_click_paste
+    }
+
+    /// 選択して真ん中クリックで貼り付けるかを切り替える(ADR-020)。変わったら `true`(このときだけ写しを送る。偽のときだけ
+    /// `ui.middleClickPaste` が書かれる)。「既定に戻す」はこれを変えない。
+    pub fn set_middle_click_paste(&mut self, enabled: bool) -> bool {
+        let changed = self.middle_click_paste != enabled;
+        self.middle_click_paste = enabled;
         changed
     }
 
@@ -390,6 +409,7 @@ impl Workspace {
             },
             theme: self.theme,
             check_updates: self.check_updates,
+            middle_click_paste: self.middle_click_paste,
         }
     }
 

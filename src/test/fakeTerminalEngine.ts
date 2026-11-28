@@ -17,6 +17,10 @@ export interface FakeSurface extends TerminalSurface {
   fitTo: TerminalSize | null;
   /** getSelection が返す選択の文字列(既定は空 = 選択なし)。 */
   selection: string;
+  /** appOwnsMouse が返す値(既定は false)。 */
+  mouseOwned: boolean;
+  /** 選択を selection に替えて、選択の変化の受け取り手へ流す(xterm.js の onSelectionChange と同じ)。 */
+  emitSelection(selection: string): void;
   /** hasFocus が返す値(既定は false)。focus で true になる(隠しているときは変えない)。 */
   focused: boolean;
   /** paste に渡された順の文字列。 */
@@ -61,6 +65,7 @@ export function createFakeTerminalEngine(): FakeTerminalEngine {
       const inputListeners: ((data: string) => void)[] = [];
       const resizeListeners: ((cols: number, rows: number) => void)[] = [];
       const binaryListeners: ((data: string) => void)[] = [];
+      const selectionListeners: (() => void)[] = [];
       /** 隠しているあいだに覚えた文字の大きさ(XtermSurface と同じく、表示に戻すときに当てる)。 */
       let pendingFontSize: number | null = null;
       const surface: FakeSurface = {
@@ -73,6 +78,7 @@ export function createFakeTerminalEngine(): FakeTerminalEngine {
         current: { rows: 24, cols: 80 },
         fitTo: null,
         selection: "",
+        mouseOwned: false,
         focused: false,
         pasted: [],
         visible: true,
@@ -163,6 +169,16 @@ export function createFakeTerminalEngine(): FakeTerminalEngine {
         },
         emitBinary(data) {
           for (const listener of binaryListeners) listener(data);
+        },
+        onSelectionChange(listener) {
+          selectionListeners.push(listener);
+        },
+        appOwnsMouse() {
+          return surface.mouseOwned;
+        },
+        emitSelection(selection) {
+          surface.selection = selection;
+          for (const listener of selectionListeners) listener();
         },
       };
       created.push(surface);

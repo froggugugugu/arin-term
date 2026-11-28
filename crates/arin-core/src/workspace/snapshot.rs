@@ -54,6 +54,9 @@ pub struct AppSnapshot {
     pub theme: ThemeMode,
     /// 起動時に新しい版を確かめるか(`state.json` の `ui.checkUpdates`。無ければ偽。切替は `set_check_updates`。ADR-018)。
     pub check_updates: bool,
+    /// 選択して真ん中クリックで貼り付けるか(`state.json` の `ui.middleClickPaste`。無ければ真。切替は
+    /// `set_middle_click_paste`。ADR-020)。
+    pub middle_click_paste: bool,
 }
 
 /// 写しに載せるエディタのタブ 1 つ(ADR-015 の 3)。版と絶対パスは載せない。

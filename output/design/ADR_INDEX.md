@@ -21,5 +21,6 @@
 | ADR-017 | [Markdown のプレビューで Mermaid の図を出し、エディタに「/」コマンドを足す](ADR_017_mermaid-slash.md) | Accepted(実機の見た目は本人の確認待ち) | 2026-11-22 |
 | ADR-018 | [新しい版を GitHub の Releases に問い合わせて知らせる(設定で ON にしたときだけ)](ADR_018_update-check.md) | Accepted(実機の見た目は本人の確認待ち) | 2026-11-23 |
 | ADR-019 | [プロジェクトとタブをドラッグで並べ替え、タブの右クリックでまとめて閉じる](ADR_019_reorder-and-tab-menu.md) | Accepted(実機の手触りは本人の確認待ち) | 2026-11-24 |
+| ADR-020 | [ターミナルの選択を真ん中クリックで貼り付け、右クリックのメニューでコピー・ペーストする](ADR_020_terminal-selection-paste.md) | Accepted(実機の手触りは本人の確認待ち) | 2026-11-28 |
 
 候補の出どころは `ARCH_multi-terminal.md` §14。
